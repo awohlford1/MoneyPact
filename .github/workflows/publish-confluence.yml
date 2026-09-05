@@ -1,0 +1,45 @@
+name: Publish Confluence
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: confluence-publication-main
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  publish:
+    name: Approved merged documentation publication
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: confluence-publication
+    steps:
+      - name: Check out merged main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install pinned converter
+        run: python3 -m pip install --require-hashes --only-binary=:all: -r config/publication-requirements.txt
+
+      - name: Validate publication contract and fixtures
+        run: python3 scripts/check-publication.py
+
+      - name: Recover successful publication checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/publish_confluence.py prepare '${{ github.event.before }}' '${{ github.sha }}' --run-id '${{ github.run_id }}' --run-attempt '${{ github.run_attempt }}'
+
+      - name: Publish approved selected documents
+        env:
+          CONFLUENCE_BASE_URL: ${{ secrets.CONFLUENCE_BASE_URL }}
+          CONFLUENCE_EMAIL: ${{ secrets.CONFLUENCE_EMAIL }}
+          CONFLUENCE_API_TOKEN: ${{ secrets.CONFLUENCE_API_TOKEN }}
+        run: python3 scripts/publish_confluence.py publish '${{ github.event.before }}' '${{ github.sha }}'

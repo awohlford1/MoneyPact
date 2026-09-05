@@ -11,6 +11,7 @@ const REQUIRED_CHECK_STAGES = [
   "npm run check:ci",
   "npm run check:secrets",
   "npm run check:env",
+  "npm run check:publication",
   "npm run check:docs",
   "npm run check:tokens",
   "npm run check:copy",
@@ -22,6 +23,7 @@ const REQUIRED_CHECK_STAGES = [
 ];
 
 const REQUIRED_ROOT_SCRIPTS = {
+  "check:publication": "node scripts/check-publication.mjs",
   "check:secrets": "node scripts/check-secrets.mjs",
   "check:env": "node --test scripts/check-environment.test.mjs && node scripts/check-environment.mjs",
   "check:copy": "node scripts/check-copy-language.mjs",
@@ -58,6 +60,7 @@ const REQUIRED_WORKFLOW_COMMANDS = [
   "python3 scripts/audit-cbd-107.py",
   "python3 scripts/audit-cbd-130.py",
   "python3 scripts/audit-cbd-108.py",
+  "python3 -m pip install --require-hashes --only-binary=:all: -r config/publication-requirements.txt",
   "npm ci",
   "npm audit --audit-level=high",
   "npm run check",

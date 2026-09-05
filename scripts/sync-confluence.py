@@ -1,58 +1,17 @@
 #!/usr/bin/env python3
-"""Publish approved repository documents to their Confluence pages.
+"""Legacy target registry, converter and read-only preview tool.
 
-The repository is the working source for Confluence-backed documentation. A
-document is synchronized to Confluence only after its change has merged to
-`main`, per the repository working rules in AGENTS.md. This script performs
-that synchronization so the published page is a mechanical copy of the merged
-file rather than a hand-retyped one.
+CBD-115 retires manual writes. Use the protected-main publication workflow;
+activation, approval and recovery instructions are in scripts/PUBLICATION.md.
+The registry and converter remain here for existing audit consumers.
 
-Setup
------
-    pip install markdown requests
+    python scripts/sync-confluence.py --list
+    python scripts/sync-confluence.py --dry-run --set cbd-69
 
-    export CONFLUENCE_BASE_URL=https://cobudget.atlassian.net
-    export CONFLUENCE_EMAIL=you@example.com
-    export CONFLUENCE_API_TOKEN=...      # id.atlassian.com/manage-profile/security/api-tokens
-
-Values are read from the environment first, then from an untracked `.env.local`
-at the repository root, which is where `docs/development.md` places secrets.
-The token is never written to disk or logged.
-
-Usage
------
-    python scripts/sync-confluence.py --dry-run            # convert only, write previews
-    python scripts/sync-confluence.py --only cbd-71-register
-    python scripts/sync-confluence.py --set cbd-69         # publish one document set
-    python scripts/sync-confluence.py --set cross-cutting  # the Future Feature Register
-    python scripts/sync-confluence.py                      # publish everything, in order
-
-Publish one page first and look at it in Confluence before doing a whole set.
-Markdown-to-storage conversion is deterministic but not visually identical to
-the Confluence editor, and these are approved governing documents.
-
-Safety behavior
----------------
-* Every target records the page title it expects. If the live title differs the
-  page is skipped, so a wrong or reused page ID cannot silently overwrite an
-  unrelated page. Page titles are managed in Confluence and are not derived from
-  the document heading; several intentionally differ. Read the live title before
-  changing an expected_title, and never relax the comparison to make a mismatch
-  pass.
-* Targets publish in dependency order. CBD-71 §2 cites the CBD-69 package and
-  the Future Feature Register as frozen source baselines, so both publish first;
-  CBD-91 cites the CBD-72 permission model and traceability record, so CBD-72
-  publishes before it. A baseline that fails *or is skipped* stops the run, so a
-  citing document can never publish while a source it cites did not. A dry run
-  reports every target instead of stopping, since it writes nothing.
-* `--dry-run` writes converted previews to `.confluence-preview/` and makes no
-  remote call other than reading current page metadata.
-* A ```mermaid fence publishes as a code block, keeping the diagram source
-  readable on the page. The installed mermaid app stores diagrams as page
-  attachments rendered in the browser, which a server-side publisher cannot
-  produce; see the MERMAID_FENCE comment before attempting macro output again.
-* After each write the page is read back and compared on a normalized text
-  projection. A mismatch is reported and sets a non-zero exit code.
+Dry runs require Markdown and requests, read current Confluence metadata and
+write local .confluence-preview files. They load validated operator values from
+the environment, then untracked .env.local. They never publish. The automated
+publisher does not use this credential loader, preview path or text normalizer.
 """
 
 from __future__ import annotations
@@ -1064,31 +1023,14 @@ def fetch_page(session: requests.Session, base: str, page_id: str) -> dict:
 
 
 def publish(session: requests.Session, base: str, target: Target, storage: str, version: int, title: str) -> None:
-    payload = {
-        "id": target.page_id,
-        "status": "current",
-        "title": title,
-        "body": {"representation": "storage", "value": storage},
-        "version": {
-            "number": version + 1,
-            "message": f"Sync from repository {target.path} on main",
-        },
-    }
-    response = session.put(
-        f"{base}/wiki/api/v2/pages/{target.page_id}",
-        json=payload,
-        headers={"Content-Type": "application/json"},
-        timeout=60,
-    )
-    if not response.ok:
-        raise RuntimeError(f"{response.status_code} {response.text[:400]}")
+    raise RuntimeError("Manual publication is disabled; use the protected-main CBD-115 workflow.")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="convert and write previews without publishing")
-    parser.add_argument("--only", metavar="KEY", help="publish a single target by key")
-    parser.add_argument("--set", metavar="DOC_SET", dest="doc_set", help="publish one document set, e.g. cbd-69")
+    parser.add_argument("--only", metavar="KEY", help="preview a single target by key")
+    parser.add_argument("--set", metavar="DOC_SET", dest="doc_set", help="preview one document set, e.g. cbd-69")
     parser.add_argument("--list", action="store_true", help="list targets and exit")
     args = parser.parse_args()
 
@@ -1105,6 +1047,8 @@ def main() -> int:
     if not selected:
         sys.exit("No targets matched. Use --list to see available keys.")
 
+    if not args.dry_run:
+        sys.exit("Manual publication is disabled. Use the protected-main CBD-115 workflow after approval.")
     session, base = session_from_env()
     if args.dry_run:
         PREVIEW_DIR.mkdir(exist_ok=True)
@@ -1122,22 +1066,19 @@ def main() -> int:
 
         try:
             page = fetch_page(session, base, target.page_id)
-        except Exception as error:  # noqa: BLE001 - surfaced to the operator
-            print(f"FAIL {target.key}: cannot read page {target.page_id}: {error}")
+        except Exception:  # Remote error details may contain credentials or content.
+            print(f"FAIL {target.key}: cannot read page {target.page_id}; details suppressed")
             failures += 1
             continue
 
         live_title = page.get("title", "")
         if live_title != target.expected_title:
             print(
-                f"SKIP {target.key}: page {target.page_id} is titled {live_title!r}, "
-                f"expected {target.expected_title!r}. Refusing to overwrite an unexpected page."
+                f"SKIP {target.key}: page {target.page_id} has an unexpected title. "
+                "Refusing to preview an unexpected page."
             )
             print(f"     If the page was deliberately renamed, update expected_title for {target.key}.")
             failures += 1
-            if target.baseline and not args.dry_run:
-                print(f"Stopping: a later target cites {target.key} as a frozen source baseline.")
-                break
             continue
 
         version = int(page["version"]["number"])
@@ -1151,39 +1092,6 @@ def main() -> int:
                 f"page v{version}; preview {preview.relative_to(REPO_ROOT)}{note}"
             )
             continue
-
-        try:
-            publish(session, base, target, storage, version, live_title)
-        except Exception as error:  # noqa: BLE001 - surfaced to the operator
-            print(f"FAIL {target.key}: publish failed: {error}")
-            failures += 1
-            if target.baseline:
-                print(f"Stopping: a later target cites {target.key} as a frozen source baseline.")
-                break
-            continue
-
-        try:
-            after = fetch_page(session, base, target.page_id)
-            published = normalize(after["body"]["storage"]["value"])
-            expected = normalize(storage)
-            # Report the version Confluence actually stored, not the one this
-            # run expected. When the converted storage is byte-identical to the
-            # live page Confluence keeps the existing version, so `version + 1`
-            # would claim a revision that does not exist and turn a no-op into
-            # false evidence of a publish.
-            stored = after.get("version", {}).get("number", version + 1)
-            unchanged = " (content already current, no new version)" if stored == version else ""
-            if published == expected:
-                print(f"OK   {target.key}: page v{stored} verified{unchanged}")
-            else:
-                print(
-                    f"WARN {target.key}: page v{stored} but read-back differs "
-                    f"({len(expected):,} vs {len(published):,} normalized chars). Review the page."
-                )
-                failures += 1
-        except Exception as error:  # noqa: BLE001 - surfaced to the operator
-            print(f"WARN {target.key}: published but verification failed: {error}")
-            failures += 1
 
     if failures:
         print(f"\n{failures} target(s) need attention.")

@@ -95,6 +95,9 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
+        run: python3 -m pip install --require-hashes --only-binary=:all: -r config/publication-requirements.txt
+
+      - name: Install Node dependencies
         run: npm ci
 
       - name: Audit dependency vulnerabilities
