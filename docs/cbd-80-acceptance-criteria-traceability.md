@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved v1.2** — Product Owner approved v1.0 on September 5, 2026, and two amendments the same day. All six acceptance criteria are met. **The release decision is taken** — §6, September 5, 2026: the nine `reliability-telemetry` metrics route to the S1 sink CBD-122 establishes, and the nineteen `aggregate-state` figures become a periodic written record. What remains is `OQ-80-005`, **where that record lives**, because §3.4 requires deletion and this repository cannot delete |
-| Document version | 1.2 |
+| Status | **Approved v1.3** — Product Owner approved v1.0 on September 5, 2026, and three amendments the same day. All six acceptance criteria are met. **The release decision is taken** — §6, September 5, 2026: the nine `reliability-telemetry` metrics route to the S1 sink CBD-122 establishes, and the nineteen `aggregate-state` figures become a periodic written record. What remains is `OQ-80-005`, **where that record lives**, because §3.4 requires deletion and this repository cannot delete |
+| Document version | 1.3 |
 | Owner | Alexander Wohlford |
 | Reviewer | Alexander Wohlford — Product Owner. **Approved September 5, 2026** after a review that corrected one citation |
 | Jira | [CBD-80](https://cobudget.atlassian.net/browse/CBD-80) |
@@ -101,13 +101,19 @@ Register §6 worked through the surfaces the product has and found that approved
 
 **It costs a trend view**, recorded at `OI-80-004`. Comparing four weeks means reading four records, and the retention series are where that matters most.
 
-**Implementing the decision surfaced a constraint the proposal had not.** §3.4 requires released figures to be deleted with the beta's operational records, and **a record committed to this repository can never be deleted** — git history is permanent, and these documents publish to Confluence. `OQ-80-005` carries where the record lives; the shape is settled and the place is not.
+**Implementing the decision surfaced a constraint the proposal had not**, and it is now also settled. §3.4 requires released figures to be deleted with the beta's operational records, and **a record committed to this repository can never be deleted** — git history is permanent, and these documents publish to Confluence.
+
+**The record lives in its own schema in the Cloud SQL instance CBD-108 selected**, with its own access role and retention. `AN-92-006` names *schemas* as the unit of separation, so this is the shape the contract contemplates rather than a workaround; deletion is a bounded `DROP`; and the instance is already in the approved composition, so there is no new provider and no new gate.
+
+**Object storage was the obvious answer and the corpus rules it out twice.** `OI-108-034` records that introducing it into a composition reopens `HG-102-013` — the one gate that could fail every candidate at once — and Google disclaims any bound on its lifecycle deletion timing, which §3.4 cannot accept either.
+
+**What remains is `OQ-80-007`**: the drop at beta end must be a stated step in the CBD-63 beta-operations runbook. A schema nobody drops is retained forever, and §3.4 would be satisfied on paper only.
 
 ## 6. What this package does not establish
 
 * **No source is implemented and none has been read.** Thirty-three sources are named against operational state that does not yet exist.
 * **No source has a schema**, because the product has none — `OQ-80-002`. Each needs a binding when its owning feature is built, and that binding is where a derivation can quietly change meaning.
-* **The figures have a form and no place** until `OQ-80-005` names a deletable store outside version control.
+* **The drop at beta end is not scheduled anywhere.** `OQ-80-007` — the store is named and its emptying is not, which CBD-63's runbook must carry.
 * **`MS-80-019` and `MS-80-020` may not be releasable at all**, pending `OQ-78-002` on `AB-74-014`.
 * **No safety source exists**, because CBD-79 defines no safety metric pending `OQ-13-007`.
 * **Written and reviewed by the same person.**
@@ -116,6 +122,7 @@ Register §6 worked through the surfaces the product has and found that approved
 
 | Version | Date | Author | Change | Status |
 | --- | --- | --- | --- | --- |
+| 1.3 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **`OQ-80-005` decided.** The periodic record lives in its own schema in the Cloud SQL instance CBD-108 selected, with its own access role and retention — `AN-92-006` names schemas as the unit of separation, so the contract contemplates this shape rather than tolerating it, deletion is a bounded `DROP`, and no new provider or gate is introduced. **Object storage was rejected on the corpus rather than on preference**: `OI-108-034` records that it reopens `HG-102-013`, and Google disclaims any bound on its lifecycle deletion timing, so it fails §3.4 as well. Raises `OQ-80-007`, that the drop at beta end must be a stated step in CBD-63's runbook rather than an assumption | **Approved v1.3** |
 | 1.2 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **`OQ-80-001` decided.** Two destinations rather than one: the nine `reliability-telemetry` metrics route to the S1 sink `CBD-122-AC05` already establishes — half the answer the v1.1 proposal had missed — and the nineteen `aggregate-state` figures become a periodic written record consumed by CBD-81's review, chosen because a record has no query interface for a drill-down to grow from. Implementing it surfaced `OQ-80-005`: §3.4 requires the figures to be deleted and **this repository cannot delete**, so the record must live in an operational store outside version control. `OQ-80-006` records a dependency on `CBD-122-AC01`'s closed attribute universe. `OI-80-004` accepts the lost trend view | **Approved v1.2** |
 | 1.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **Reopened and amended the day it closed.** The `OQ-13-007` decision gave CBD-79 two safety metrics — consent changes and revocation failures — and three sources needed registering: `MS-80-031`, `MS-80-032` and `MS-80-033`, all accepted as proposed. **The cross-package audit found them, not a person**: it failed on three unregistered proposals and two metrics no source served. The v1.0 closure comment predicted this and named the route, so it is the register working rather than the register breaking. No rule, naming decision, or existing source changes | **Approved v1.1** |
 | 1.0 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **Approved.** The review checked every cited identifier against its source and found that this register had restated `AN-92-004` faithfully and inherited its error: `AN-92-004` groups `DI-91-071` with S3 restricted security evidence, and the approved CBD-91 inventory classifies it **S1** non-secret key-lifecycle metadata. §3.3 now names only `DI-91-053` and `DI-91-062`, and `OQ-80-004` records the discrepancy against the two documents that own it. It narrows `OQ-13-007` rather than widening it. No source, derivation, or rule changes | **Approved v1.0** |
