@@ -2,10 +2,11 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft v0.2 — not approved.** Fixes shared conventions so CBD-77, CBD-78, and CBD-79 can be written concurrently without inventing three incompatible vocabularies. It defines no metric, names no measurement source, and sets no target. **v0.2 re-architects the document onto `AN-92-005` aggregate measurement**: v0.1 was built on a behavioural event pipeline, which `AN-92-001` disables for Private MVP. §2 records the collision and the two Product Owner decisions of September 5, 2026 that resolve it |
-| Document version | 0.2 |
+| Status | **Draft v0.3 — not approved.** Fixes shared conventions so CBD-77, CBD-78, and CBD-79 can be written concurrently without inventing three incompatible vocabularies. It defines no metric, names no measurement source, and sets no target. **v0.2 re-architects the document onto `AN-92-005` aggregate measurement**: v0.1 was built on a behavioural event pipeline, which `AN-92-001` disables for Private MVP. §2 records the collision and the four Product Owner decisions of September 5, 2026 that resolve it. **v0.3 closes `OQ-13-001`, `OQ-13-004` and `OQ-13-005`**: this document is owned by **CBD-368**, the authorized operational boundary is the **Worker** deployment unit, and the four conflicting criteria are amended in Jira |
+| Document version | 0.3 |
 | Owner | Alexander Wohlford |
-| Jira | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
+| Jira | [CBD-368](https://cobudget.atlassian.net/browse/CBD-368) — the subtask that owns this document and blocks CBD-77, CBD-78 and CBD-79 |
+| Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
 | Epic | [CBD-1](https://cobudget.atlassian.net/browse/CBD-1) |
 | Governing constraint | CBD-92 System Flow and Technical Threat Model, approved — `AN-92-001` through `AN-92-007` (pinned in §1) |
 | Governing scope source | CBD-76 MVP Boundary and Readiness Record, approved v1.0 (pinned in §1) |
@@ -81,7 +82,19 @@ The story's own title names *success metrics*, and `AN-92-001` names *success-me
 
 The reason is arithmetic rather than cautious. The approved demand model puts Base at **30 monthly active users**. `AN-92-005` forbids a released result that singles out a subject, space, relationship or small cohort; four-way cadence segmentation of thirty people produces cells of one and two, and a cell of one is an identification. **No approved source sets a minimum cell size**, and rather than invent one, the beta reports no cells at all.
 
-Decision 2 has a cost and it is recorded rather than absorbed: **`CBD-78-AC05` requires cadence segmentation of retention, and it cannot be satisfied during the beta.** §11 carries it.
+Decision 2 has a cost and it is recorded rather than absorbed: **`CBD-78-AC05` requires cadence segmentation of retention, and it cannot be satisfied during the beta.** §11 carries it, and it is amended in Jira as of the same day.
+
+**Decision 3 — the authorized operational boundary is the Worker deployment unit.** `AN-92-005` requires the aggregate to be computed *"inside an authorized operational boundary"* and names none; the approved topology does.
+
+`TD-103-001` fixes **two** deployment units, API and Worker, from one codebase and one image, and puts *"background domain calculators, scheduled work"* in the Worker. `TD-103-002` keeps the scheduler a managed trigger rather than a third unit, for a stated reason: *"the worker remains the only executor of domain effects, so `SA-92-*` authority is proven in exactly one place rather than two."*
+
+A separate reporting process would be a third executor and would cost exactly that property. The database cannot self-trigger, so it needs the Worker regardless, and anything reading results directly from production is the routine staff path `OP-92-001` default-denies. **Every measurement source records `boundary: worker`** (§3), and a source that cannot be computed there is not defined.
+
+**One constraint on the release surface, which is a different question from the boundary.** `OP-92-002` limits the routine support surface to allowlisted service-health state and safe status or error class, and bars it from disclosing *"customer/resource existence, counts, membership, lifecycle, destination, financial, security, or cross-space signals"* — **counts included**. `AN-92-005` authorizes releasing an aggregate for a product decision, so the figures are permitted; what is not permitted is putting them on the support surface. CBD-80 records the release surface per source and it is never that one.
+
+**Decision 4 — the four conflicting criteria are amended as §11 proposes**, and `CBD-80`'s summary becomes *"Create the measurement-source register and privacy rules"*. Applied in Jira on September 5, 2026. Each amendment carries the amending sentence and the contract that forced it, so a later reader sees why the criterion changed rather than only that it did.
+
+**Decision 5 — this document is owned by a subtask.** `CBD-368` *"Fix shared measurement and event conventions"* is created under CBD-13, carries seven acceptance criteria of its own, and **blocks CBD-77, CBD-78 and CBD-79**. It mirrors CBD-102's role for CBD-15: the conventions get an approval gate of their own, and the dependency is visible on the board rather than implied by a document nobody owns.
 
 ## 3. Measurement sources
 
@@ -98,7 +111,7 @@ A **measurement source** is a named piece of operational state that already exis
 
 `source_name`, `register_id`, `state_of_record`, `derivation`, `refresh_basis`, `boundary`.
 
-`boundary` names the authorized operational boundary inside which the aggregate is computed, which `AN-92-005` requires and which has no analogue in an event schema.
+`boundary` names the authorized operational boundary inside which the aggregate is computed, which `AN-92-005` requires and which has no analogue in an event schema. **Its value is `worker` for every source**, per decision 3 — the field exists so that a source computed anywhere else is visibly wrong rather than silently permitted.
 
 **There is no `actor_ref`, no `space_ref`, and no `idempotency_key`.** v0.1 required all three on every event. `AN-92-003` prohibits subject and space identifiers in telemetry, and `AN-92-005` prohibits persisting contributing customer-level records — so an identifier that would make duplicate detection possible is the identifier that makes the collection prohibited. Duplicate handling moves to §6, where it is a property of the derivation rather than of a retained record.
 
@@ -219,7 +232,9 @@ The alert-quality set is the highest-risk one: it appears in CBD-79's criteria, 
 
 ## 11. Acceptance criteria that conflict with an approved contract
 
-Four subtask criteria were written against the v0.1 event model and cannot be satisfied as worded. They are recorded here rather than quietly reinterpreted, and **each needs a Jira amendment before its subtask is written.** The approved contract governs in every case.
+Four subtask criteria were written against the v0.1 event model and could not be satisfied as worded. They are recorded here rather than quietly reinterpreted. **All four were amended in Jira on September 5, 2026, along with `CBD-80`'s summary** — the table below is kept as the record of what changed and why. The approved contract governed in every case.
+
+Each amended criterion carries its amending sentence and the contract that forced it, so the Jira text explains itself without this document.
 
 | Criterion | As written | Conflict | Proposed amendment |
 | --- | --- | --- | --- |
@@ -228,7 +243,7 @@ Four subtask criteria were written against the v0.1 event model and cannot be sa
 | `CBD-78-AC05` | Requires retention to be **segmented by cadence**, naming all four | Decision 2 releases no segments during the beta; at 30 monthly active users a four-way split produces cells of one | **Defer.** Restate as a post-beta capability, gated on the population decision CBD-81 owns. The criterion also spells one cadence *"paycheck-based"* where §9 fixes `paycheck`; the amendment adopts the vocabulary spelling |
 | `CBD-80-AC02`, `AC05` | *"Product analytics and operational telemetry are distinguished"*; *"Retention, access, **consent**, export, and deletion expectations are documented for analytics data."* | `AN-92-001` disables product analytics, so there is no such class to distinguish or govern; `AN-92-002` states that consent does not make a prohibited mechanism permitted | Distinguish **`aggregate-state` from `reliability-telemetry`** (§5); drop the consent basis, which cannot do the work asked of it |
 
-`CBD-80`'s summary — *"Create the analytics event catalog and privacy rules"* — also needs amendment, to a **measurement-source register**. The privacy half of that title survives intact.
+`CBD-80`'s summary was *"Create the analytics event catalog and privacy rules"* and is now **"Create the measurement-source register and privacy rules"**. The privacy half of the title survived intact.
 
 ## 12. Package conventions
 
@@ -246,15 +261,17 @@ Version pins follow the repository convention: the pinned document's path in one
 
 | ID | Question | Blocking |
 | --- | --- | --- |
-| `OQ-13-001` | Does this document belong to a new CBD-13 subtask that blocks CBD-77–79, mirroring CBD-102's role for CBD-15, or does it sit at story level unowned? | Approval, not drafting |
+| ~~`OQ-13-001`~~ | ~~Does this document belong to a new CBD-13 subtask that blocks CBD-77–79?~~ **Closed September 5, 2026 — yes.** `CBD-368` owns it and blocks all three | Closed |
 | `OQ-13-002` | Is the CBD-79 / CBD-81 threshold split in §10 correct? | CBD-79 |
 | `OQ-13-003` | The approved CBD-76 traceability report records CBD-1-AC05 coverage as *"CBD-13 and CBD-77–80"* and does not name CBD-81. Is that omission deliberate? | Nothing; record for post-merge correction |
-| `OQ-13-004` | The four §11 criteria need Jira amendment. Are the proposed amendments accepted as worded, and does `CBD-80`'s summary change with them? | CBD-77, CBD-78, CBD-80 |
-| `OQ-13-005` | `AN-92-005` requires the aggregate to be computed *"inside an authorized operational boundary"*, and no approved source names that boundary for CoBudget. Is it the application runtime, the database, or a separate reporting process? | CBD-80, which must record it per source |
+| ~~`OQ-13-004`~~ | ~~Are the four §11 amendments accepted as worded, and does `CBD-80`'s summary change with them?~~ **Closed September 5, 2026 — accepted as worded, and the summary changed.** Applied in Jira the same day | Closed |
+| ~~`OQ-13-005`~~ | ~~What is the authorized operational boundary `AN-92-005` requires?~~ **Closed September 5, 2026 — the Worker deployment unit**, on `TD-103-001` and `TD-103-002`. §2.3 decision 3 carries the reasoning and the separate release-surface constraint | Closed |
+| `OQ-13-006` | `OP-92-002` bars **counts** from the routine support surface, and `AN-92-005` permits releasing aggregates for product decisions. Which surface carries a released figure, and who may read it? | CBD-80, which must record the release surface per source. Raised by decision 3 |
 
 ## 14. Revision record
 
 | Version | Date | Author | Change | Status |
 | --- | --- | --- | --- | --- |
+| 0.3 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **Closes `OQ-13-001`, `OQ-13-004` and `OQ-13-005`.** The authorized operational boundary is the **Worker** deployment unit, on `TD-103-001`'s two units and `TD-103-002`'s *"exactly one place"* property; a separate reporting process would have been a third executor and cost it. The four conflicting criteria and `CBD-80`'s summary are amended in Jira. **`CBD-368` is created to own this document** and blocks CBD-77, CBD-78 and CBD-79, mirroring CBD-102's role for CBD-15. Raises `OQ-13-006`: `OP-92-002` bars counts from the routine support surface, so the release surface is a separate question from the boundary and CBD-80 records it per source. No metric, measurement source, threshold, or vocabulary changes | Draft; Product Owner approval required |
 | 0.2 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **Re-architected onto `AN-92-005`.** v0.1 specified an analytics event catalog, per-event `actor_ref` and `space_ref`, activation funnels with start and end events, a `product-analytics` stream, and retention cohorts — each named as disabled by `AN-92-001`, which `RV-92-005O` and `EG-91-019` confirm is settled rather than open. §2 records the collision and the two Product Owner decisions of September 5, 2026: re-scope to aggregate state, and release global figures only during the beta. §3 replaces events with measurement sources, §8 adds release and suppression rules, and §11 records the four subtask criteria that now need Jira amendment. The CBD-76 pin moves from 1.0 to 1.0.1 | Draft; Product Owner approval required |
 | 0.1 | September 5, 2026 | Alexander Wohlford | Initial conventions draft: metric record shape, event naming, stream classification, denominator discipline, closed vocabularies, and package boundaries | Superseded by 0.2 |
