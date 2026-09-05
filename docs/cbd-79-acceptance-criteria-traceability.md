@@ -2,14 +2,14 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft v0.1 — not approved.** **Three of six criteria are met, one is met for four of its five states, one is met by reference, and one is not met.** `CBD-79-AC04` is blocked on `OQ-13-007` and no safety metric is defined; `CBD-79-AC03`'s `incorrect` state has no measurable referent. Both are gaps in approved criteria rather than omissions here, and §2 says which is which |
-| Document version | 0.1 |
+| Status | **Draft v0.2 — not approved.** **Three of six criteria are met, and three are partial in different ways.** `CBD-79-AC04` is partially met — two of its four signals are measured and two are barred by name. `CBD-79-AC03` is met for four of five states, because `incorrect` has no measurable referent. `CBD-79-AC06` owns the response half and CBD-81 the numbers. §2 says which is which |
+| Document version | 0.2 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-79](https://cobudget.atlassian.net/browse/CBD-79) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
 | Governing conventions | `docs/cbd-13-measurement-conventions.md` — Document version **1.0.1**, approved |
 | Companion | `docs/cbd-79-reliability-and-safety-metrics.md`, which this report checks |
-| Mechanical audit | `scripts/audit-cbd-79.py` — 330 checks, every CBD-79-specific guard proven by deliberate violation |
+| Mechanical audit | `scripts/audit-cbd-79.py` — every CBD-79-specific guard proven by deliberate violation |
 | Confluence page | **Not published.** Registration follows approval |
 | Last updated | September 5, 2026 |
 
@@ -57,13 +57,20 @@ Metrics §3 rejects all three routes to measuring it — behavioural inference i
 
 ### CBD-79-AC04 — safety measures: denied cross-space access, consent changes, revocation failures, support incidents
 
-**Status: Not met, and blocked rather than deferred.**
+**Status: Partially met — two of four signals measured.**
 
-Every named signal is `AN-92-004` restricted security telemetry at S3, held under `DI-91-053` and `DI-91-062`. (`AN-92-004` also names `DI-91-071`, which the inventory classifies S1; `OQ-80-004` records the discrepancy, which narrows this blocker rather than widening it.) `AN-92-006` says an event collected for one purpose *"cannot be joined, enriched, exported, sold, shared, or reused for another."* **Computing a safety metric from it is a second purpose**, and whether that is the prohibited reuse is `OQ-13-007`.
+**The four signals do not behave alike**, and v0.1 treated them as one blocked question. The Product Owner decision of September 5, 2026 split them.
 
-**No metric is defined**, and that is a choice. Defining measures against a source that may be prohibited would either be wasted or would look authoritative enough to get built.
+| Signal | Standing |
+| --- | --- |
+| Consent changes | **`MT-79-011`** — `DI-91-007` application-datastore consent evidence, counted as `AN-92-005` aggregate state |
+| Revocation failures | **`MT-79-012`** — an operation that failed to complete is a safe outcome class under `AN-92-003` |
+| Denied cross-space access | **Barred.** `AN-92-003` excludes a *"security-decision"* label **by name** |
+| Related support incidents | **Barred.** Support is a distinct purpose under `AN-92-006`; `OP-92-002` bars counts on that surface |
 
-Metrics §4 states the two honest routes: a **separate operational source** counting denied access from the authorization layer's own state, which needs no amendment and is probably right, or an **explicit `AN-92-006` disposition**, which is a CBD-92 amendment. Choosing decides what the measures are, and `AC06` requires each to carry a response that cannot be written before the measure exists.
+**The seam is whether an operation completed versus what it decided.** A revocation that errors is a reliability outcome; an access request refused is a security decision, and `AN-92-003`'s exclusion list is written at exactly that line. `MT-79-012` counts terminal outcome classes and carries no decision label — **a metric counting refusals would be the same shape and would not be permitted.**
+
+Metrics §4.2 states what the two barred signals would need: an explicit `AN-92-006` disposition, which is a CBD-92 amendment weakening a purpose-separation rule that has no exceptions today; or an amendment to this criterion dropping them, which removes denied cross-space access from the safety measures entirely. **Neither is taken here**, and `OQ-79-001` carries the decision.
 
 ### CBD-79-AC05 — export and deletion: request, verification, completion, failure, elapsed time
 
@@ -90,11 +97,11 @@ The conventions record shape has no response field, so metrics §5 adds one, and
 | Connection and synchronization metrics | **Met** — five metrics | Metrics §6 |
 | Notification measures | **Met** — six states, one distribution | `MT-79-006` |
 | Alert quality | **Four of five states** — two here, two by reference, one unmeasurable | `MT-79-007`, `MT-79-008`, `OQ-79-002` |
-| Safety measures | **Not met** — blocked on `OQ-13-007` | Metrics §4, `OQ-79-001` |
+| Safety measures | **Partially met** — two of four signals measured | `MT-79-011`, `MT-79-012`, `OQ-79-001` |
 | Export and deletion measures | **Met** — two metrics | `MT-79-009`, `MT-79-010` |
 | Operational responses | **Met** — one per metric, checked mechanically | Metrics §5 |
 | Thresholds and bounds | **Not this package** — CBD-81 | `OQ-79-003` |
-| Structural audit | **Met** — 330 checks; eight CBD-79-specific guards proven by deliberate violation | `scripts/audit-cbd-79.py` |
+| Structural audit | **Met** — eight CBD-79-specific guards proven by deliberate violation | `scripts/audit-cbd-79.py` |
 
 ## 4. Where this package differs from its siblings
 
@@ -115,4 +122,5 @@ The conventions record shape has no response field, so metrics §5 adds one, and
 
 | Version | Date | Author | Change | Status |
 | --- | --- | --- | --- | --- |
-| 0.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Initial package: ten metrics with operational responses, the `incorrect` unmeasurability finding at `OQ-79-002`, the `CBD-79-AC04` blocker at `OQ-79-001`, the unset bounds at `OQ-79-003`, structural audit, and this report | Draft; Product Owner approval required |
+| 0.2 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **`OQ-13-007` decided.** The four `CBD-79-AC04` signals were treated as one blocked question and are not one: consent changes and revocation failures are measurable under approved contracts and become `MT-79-011` and `MT-79-012`; denied cross-space access and support incidents stay barred, the first because `AN-92-003` excludes a security-decision label **by name**. The criterion moves from not met to partially met, and §4.1 records the seam the two permitted measures turn on — whether an operation completed, not what it decided. Three new measurement sources are proposed, which CBD-80 must register | Draft; Product Owner approval required |
+| 0.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Initial package: ten metrics with operational responses, the `incorrect` unmeasurability finding at `OQ-79-002`, the `CBD-79-AC04` blocker at `OQ-79-001`, the unset bounds at `OQ-79-003`, structural audit, and this report | Superseded by 0.2 |

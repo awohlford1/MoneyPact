@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved v1.0** — Product Owner approved this exact package on September 5, 2026. Assigns `MS-80-nnn` identifiers to the **31** sources CBD-77, CBD-78 and CBD-79 proposed, and states the privacy, retention and release rules that govern them. §6 proposes the answer to `OQ-13-006` — which surface carries a released figure — as a construction of approved constraints rather than a new decision, and puts it to the Product Owner. **No source is implemented and none has been read** |
-| Document version | 1.0 |
+| Status | **Approved v1.1** — Product Owner approved v1.0 on September 5, 2026 and this amendment the same day. Assigns `MS-80-nnn` identifiers to the **34** sources CBD-77, CBD-78 and CBD-79 proposed, and states the privacy, retention and release rules that govern them. §6 proposes the answer to `OQ-13-006` — which surface carries a released figure — as a construction of approved constraints rather than a new decision, and puts it to the Product Owner. **No source is implemented and none has been read** |
+| Document version | 1.1 |
 | Owner | Alexander Wohlford |
 | Reviewer | Alexander Wohlford — Product Owner. **Approved September 5, 2026** after a review that corrected one citation |
 | Jira | [CBD-80](https://cobudget.atlassian.net/browse/CBD-80) |
@@ -88,7 +88,7 @@ Reliability, security, support, audit and aggregate-measurement schemas, stores,
 
 The conventions §3 give this register the right to accept, rename or merge a proposed name, and require every rename to be recorded.
 
-**Twenty-eight names are accepted as proposed.** Three decisions were made:
+**Thirty-one names are accepted as proposed.** Three decisions were made, all at v1.0; the three sources added at v1.1 were accepted unchanged:
 
 | Decision | Proposed | Registered | Why |
 | --- | --- | --- | --- |
@@ -133,7 +133,12 @@ Every source has `Boundary: worker`. Class is `aggregate-state` unless marked `r
 | `MS-80-029` | `data_request.terminal_state_count` | Export, deletion and archival requests | Count per terminal state. **Requests in verification are excluded**: the customer holds that step | Weekly | `MT-79-009` |
 | `MS-80-030` | `data_request.elapsed_bucket_count` | Export, deletion and archival requests | Count per elapsed-duration bucket, request created to terminal state | Weekly | `MT-79-010` |
 
-**Thirty sources for thirty-one proposals**, the difference being the retention merge at `MS-80-017`. Every `MT-` identifier in all three packages appears in the owning-metric column, and no source is registered that no metric reads.
+| `MS-80-031` | `consent_record.subject_change_count` | Consent, disclosure and revocation evidence — `DI-91-007` | Count of account subjects whose consent record shows at least one version change in the window. **Version changes only; no disclosure text, scope or role** | Weekly | `MT-79-011` |
+| `MS-80-032` | `consent_record.subject_active_count` | Consent, disclosure and revocation evidence — `DI-91-007` | Count of account subjects holding at least one active consent record at window close | Weekly | `MT-79-011` |
+| `MS-80-033` | `revocation_run.outcome_class_count` — `reliability-telemetry` | Worker job telemetry | Count of revocation operations per terminal outcome class. **Whether the operation completed, never what it decided** — `AN-92-003` excludes a security-decision label by name | Daily | `MT-79-012` |
+**33 sources for 34 proposals**, the difference being the retention merge at `MS-80-017`. Every `MT-` identifier in all three packages appears in the owning-metric column, and no source is registered that no metric reads.
+
+**`MS-80-031` through `MS-80-033` were added at v1.1**, after the `OQ-13-007` decision of September 5, 2026 gave CBD-79 two safety metrics it had not been able to define. **The cross-package audit found them rather than a person did**: it failed on three unregistered proposals and two metrics no source served, which is what this register exists to catch and the reason its closure comment said reopening was predictable rather than a surprise.
 
 ## 6. The release surface — `OQ-13-006`
 
@@ -174,5 +179,6 @@ Three properties follow, and each is a consequence of `AN-92-006`'s purpose sepa
 | `OQ-80-002` | **No source has a schema, because the product has none.** Every `State of record` names operational state rather than a table, and the derivations are stated to be reproducible rather than implementable | Recorded so the register is not mistaken for a specification. Each source needs a schema binding when the owning feature is built, and that binding is where a derivation can quietly change meaning |
 | `OQ-80-003` | **The refresh basis is a proposal.** Daily for `reliability-telemetry`, weekly for `aggregate-state`, on the reasoning that operations reach releasable volume faster than populations. CBD-81 confirms review cadence and may want a different refresh | Low consequence, but recorded because a refresh basis that disagrees with a review cadence produces figures nobody reads or reviews that outrun their data |
 | `OQ-80-004` | **Two approved documents disagree about `DI-91-071`.** `AN-92-004` describes `DI-91-053/062/071` as *"S3 restricted security evidence"*; the CBD-91 inventory classifies `DI-91-071` as **S1** non-secret key-lifecycle metadata, and `DF-91-011` routes it to analytics and support systems. One of the two is wrong | **It narrows `OQ-13-007` rather than widening it.** The safety signals CBD-79-AC04 names map to `DI-91-053` and `DI-91-062`, both genuinely S3; `DI-91-071` was never the obstacle. Recorded against CBD-91 and CBD-92, which own the two statements. **Found by the approval review** — this register had restated `AN-92-004` faithfully and inherited its error |
+| `OI-80-003` | **This register was reopened the day it closed.** `OQ-13-007` was decided after v1.0 merged, CBD-79 gained two safety metrics, and three sources needed registering. | **Recorded because it was predicted rather than discovered.** The v1.0 closure comment named the CBD-71 reopen-amend-re-close route and said closing was correct for the metrics that existed and not correct forever. It remains true: any further CBD-79 or CBD-81 work that defines a metric reopens this register again, and that is the cost of a register that is complete by construction rather than by assertion. |
 | `OI-80-001` | **`MS-80-017` merges two proposed sources**, and the merge is a decision this register made rather than a name it accepted. Both retention metrics now read one derivation | If `MT-78-005` and `MT-78-006` ever need different activity definitions, this merge is the thing that must be undone first. `RT-78-001` currently requires they do not |
 | `OI-80-002` | **Nothing here has been implemented or read.** Thirty sources are named against state that does not yet exist | The register is a specification. A later reader should not mistake a registered source for an available one |

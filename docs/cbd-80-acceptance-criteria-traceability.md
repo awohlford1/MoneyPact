@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved v1.0** — Product Owner approved this exact package on September 5, 2026. All six acceptance criteria are met. **One thing is proposed and not decided**: `OQ-80-001`, the release surface, which §6 of the register derives from approved constraints and puts to the Product Owner. Until it is answered every metric in CBD-77 through CBD-79 is defined, computable in principle, and **released nowhere** |
-| Document version | 1.0 |
+| Status | **Approved v1.1** — Product Owner approved v1.0 on September 5, 2026 and this amendment the same day. All six acceptance criteria are met. **One thing is proposed and not decided**: `OQ-80-001`, the release surface, which §6 of the register derives from approved constraints and puts to the Product Owner. Until it is answered every metric in CBD-77 through CBD-79 is defined, computable in principle, and **released nowhere** |
+| Document version | 1.1 |
 | Owner | Alexander Wohlford |
 | Reviewer | Alexander Wohlford — Product Owner. **Approved September 5, 2026** after a review that corrected one citation |
 | Jira | [CBD-80](https://cobudget.atlassian.net/browse/CBD-80) |
@@ -18,7 +18,7 @@
 
 | Document | Purpose |
 | --- | --- |
-| `docs/cbd-80-measurement-source-register.md` | Thirty registered sources, the naming decisions, the privacy and retention rules, and the release-surface proposal |
+| `docs/cbd-80-measurement-source-register.md` | Thirty-three registered sources, the naming decisions, the privacy and retention rules, and the release-surface proposal |
 | `docs/cbd-80-acceptance-criteria-traceability.md` | This report |
 | `scripts/audit-cbd-80.py` | Structural audit. **Unlike its siblings this one is cross-package**: it checks that every proposal in CBD-77, CBD-78 and CBD-79 is registered and that every metric there has a source |
 
@@ -28,7 +28,7 @@
 
 **Status: Met.**
 
-All thirty rows carry all six, and the audit fails a row with a missing column or an empty cell rather than trusting the table to look complete.
+All thirty-three rows carry all six, and the audit fails a row with a missing column or an empty cell rather than trusting the table to look complete.
 
 **`Boundary` is `worker` for every source**, per conventions decision 3. The field is kept rather than collapsed into a package constant precisely so a source computed elsewhere is visibly wrong.
 
@@ -36,7 +36,7 @@ This criterion was amended on September 5, 2026 from *"Each **event** has a stab
 
 ### CBD-80-AC02 — aggregate-state and reliability telemetry are distinguished
 
-**Status: Met.** Class is marked per row; nine sources are `reliability-telemetry` and the rest `aggregate-state`.
+**Status: Met.** Class is marked per row; ten sources are `reliability-telemetry` and the rest `aggregate-state`.
 
 **The distinction does work rather than labelling.** Register §3.3 forbids joining across the two streams, because a join would give the reliability stream a purpose it was not collected for — `AN-92-006`. The classes exist to make that rule expressible.
 
@@ -74,7 +74,7 @@ This criterion was amended on September 5, 2026 from *"Duplicate **event** handl
 
 | Deliverable | Status | Where |
 | --- | --- | --- |
-| Measurement source register | **Met** — thirty sources, thirty-one proposals, the difference recorded | Register §5 |
+| Measurement source register | **Met** — thirty-three sources, thirty-four proposals, the difference recorded | Register §5 |
 | Naming decisions | **Met** — one merge, one clarified pair, one rejected merge, each with its reason | Register §4 |
 | Privacy rules | **Met** — prohibited content, identifiers, purpose separation | Register §3 |
 | Retention, access, export, deletion | **Met** | Register §3.4 |
@@ -85,7 +85,7 @@ This criterion was amended on September 5, 2026 from *"Duplicate **event** handl
 
 The audit compares this register against all three sibling packages in both directions, and that is the guard this package exists to provide.
 
-**Thirty-one proposals, thirty sources.** The difference is `MS-80-017`, which merges the two retention sources CBD-78 proposed separately — both read the same `AD-78-001` derivation and differ only in window B, so two sources would let one drift from the other. `OI-80-001` records that if the two retention metrics ever need different activity definitions, this merge must be undone first.
+**34 proposals, 33 sources.** The difference is `MS-80-017`, which merges the two retention sources CBD-78 proposed separately — both read the same `AD-78-001` derivation and differ only in window B, so two sources would let one drift from the other. `OI-80-001` records that if the two retention metrics ever need different activity definitions, this merge must be undone first.
 
 **Every metric in CBD-77 through CBD-79 has at least one source, and every source has at least one metric.** A metric with no source is not computable; a source no metric reads should not be registered. Both directions are checked, because only checking one would let either kind of orphan through.
 
@@ -101,7 +101,7 @@ What is left is a **measurement surface holding only released aggregates**, read
 
 ## 6. What this package does not establish
 
-* **No source is implemented and none has been read.** Thirty sources are named against operational state that does not yet exist.
+* **No source is implemented and none has been read.** Thirty-three sources are named against operational state that does not yet exist.
 * **No source has a schema**, because the product has none — `OQ-80-002`. Each needs a binding when its owning feature is built, and that binding is where a derivation can quietly change meaning.
 * **No figure may be released anywhere** until `OQ-80-001` is answered.
 * **`MS-80-019` and `MS-80-020` may not be releasable at all**, pending `OQ-78-002` on `AB-74-014`.
@@ -112,5 +112,6 @@ What is left is a **measurement surface holding only released aggregates**, read
 
 | Version | Date | Author | Change | Status |
 | --- | --- | --- | --- | --- |
+| 1.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **Reopened and amended the day it closed.** The `OQ-13-007` decision gave CBD-79 two safety metrics — consent changes and revocation failures — and three sources needed registering: `MS-80-031`, `MS-80-032` and `MS-80-033`, all accepted as proposed. **The cross-package audit found them, not a person**: it failed on three unregistered proposals and two metrics no source served. The v1.0 closure comment predicted this and named the route, so it is the register working rather than the register breaking. No rule, naming decision, or existing source changes | **Approved v1.1** |
 | 1.0 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **Approved.** The review checked every cited identifier against its source and found that this register had restated `AN-92-004` faithfully and inherited its error: `AN-92-004` groups `DI-91-071` with S3 restricted security evidence, and the approved CBD-91 inventory classifies it **S1** non-secret key-lifecycle metadata. §3.3 now names only `DI-91-053` and `DI-91-062`, and `OQ-80-004` records the discrepancy against the two documents that own it. It narrows `OQ-13-007` rather than widening it. No source, derivation, or rule changes | **Approved v1.0** |
 | 0.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Initial package: thirty registered sources, the naming decisions at §4, the privacy and retention rules at §3, the release-surface proposal at §6, a cross-package structural audit, and this report | Superseded by 1.0 |
