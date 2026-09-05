@@ -173,14 +173,29 @@ def main() -> int:
                 audit.check(not re.search(pattern, line, re.I),
                             f"register: a source row uses the withdrawn event model ({name})")
 
-    # --- the stated total agrees with the table -----------------------------
-    stated = re.search(r"\*\*(?:Thirty|(\d+)) sources for (?:thirty-one|(\d+)) proposals\*\*", text)
-    audit.check(stated is not None, "register: must state the source and proposal totals")
+    # --- the stated totals agree with the table -----------------------------
+    # Derived, not pinned. The first version of this guard hardcoded 30 and 31,
+    # and failed the moment the OQ-13-007 decision added three sources -- it
+    # would have had to be edited on every amendment, which is the same defect
+    # as restating a figure by hand. It now reads the totals the document
+    # states and compares them to what the table and the siblings actually hold.
+    stated = re.search(r"\*\*(\d+) sources for (\d+) proposals\*\*", text)
     audit.check(
-        len(rows) == 30 and len(proposals) == 31,
-        f"register: the table holds {len(rows)} sources against {len(proposals)} "
-        "proposals, and the stated totals are thirty and thirty-one",
+        stated is not None,
+        "register: must state the source and proposal totals as digits, so they "
+        "can be compared to the table rather than trusted",
     )
+    if stated:
+        said_sources, said_proposals = int(stated.group(1)), int(stated.group(2))
+        audit.check(
+            said_sources == len(rows),
+            f"register: states {said_sources} sources; the table holds {len(rows)}",
+        )
+        audit.check(
+            said_proposals == len(proposals),
+            f"register: states {said_proposals} proposals; the sibling packages "
+            f"make {len(proposals)}",
+        )
 
     print(f"CBD-80 documentation audit: {audit.checks} checks")
     print(f"Failures: {len(audit.failures)}")

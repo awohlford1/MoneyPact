@@ -216,16 +216,32 @@ def main() -> int:
     # Both are gaps in approved criteria rather than omissions here, and both
     # are the kind of thing a later edit tidies away because it reads like an
     # admission. Each must keep its section and its open question.
-    audit.check("OQ-13-007" in text,
-                "metrics: CBD-79-AC04 is blocked on OQ-13-007 and must say so")
+    # Inverted at the OQ-13-007 decision of September 5, 2026. This required
+    # the words "No metric is defined for this criterion", which were true while
+    # CBD-79-AC04 was treated as one blocked question and became false the
+    # moment two of its four signals were written -- section 4.77 of the CBD-108
+    # corpus again, a guard requiring a statement a decision had falsified.
+    #
+    # What must stay true is narrower and more useful: both barred signals are
+    # still named, each with the contract that bars it, so a later edit cannot
+    # quietly report AC04 as fully met.
     audit.check(
-        "No metric is defined for this criterion" in text,
-        "metrics: must state plainly that no safety metric is defined, rather "
-        "than leaving CBD-79-AC04 looking answered",
+        re.search(r"security-decision", text) is not None,
+        "metrics: must name the AN-92-003 security-decision exclusion, which is "
+        "what bars a denied-access count",
     )
+    for signal, contract in (("Denied cross-space access", "AN-92-003"),
+                             ("Related support incidents", "AN-92-006")):
+        row = re.search(rf"^\| \*\*{re.escape(signal)}\*\* \| \*\*Barred\*\* \| (.+?) \|$",
+                        text, re.M)
+        audit.check(bool(row),
+                    f"metrics: {signal!r} must remain a barred row in the section 4 table")
+        if row:
+            audit.check(contract in row.group(1),
+                        f"metrics: {signal!r} must name {contract} as what bars it")
     audit.check(
         re.search(r"AN-92-006", text) is not None,
-        "metrics: must cite AN-92-006, which is what blocks CBD-79-AC04",
+        "metrics: must cite AN-92-006, which is what bars the support-incident signal",
     )
     # The claim must head its own section, where the three rejected routes are
     # argued, and not survive only as an open-item row. A finding reduced to a

@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft v0.1 — not approved.** Defines ten reliability metrics, mostly `AN-92-003` reliability telemetry. **Two criteria are not satisfied and say so**: `CBD-79-AC04`'s safety measures are blocked on `OQ-13-007`, and `CBD-79-AC03`'s `incorrect` limb has **no measurable referent** — §3 establishes that no approved source defines an alert as incorrect, and correctness is a judgment rather than a state. §7 adds the operational response `CBD-79-AC06` requires, which the conventions record shape does not carry |
-| Document version | 0.1 |
+| Status | **Draft v0.2 — not approved.** Defines twelve reliability and safety metrics, mostly `AN-92-003` reliability telemetry. **`CBD-79-AC04` is partially met** — §4 splits its four signals, two measurable and two barred by name, following the Product Owner decision of September 5, 2026. **One criterion remains partly unsatisfiable**: `CBD-79-AC03`'s `incorrect` limb has **no measurable referent** — §3 establishes that no approved source defines an alert as incorrect, and correctness is a judgment rather than a state. §7 adds the operational response `CBD-79-AC06` requires, which the conventions record shape does not carry |
+| Document version | 0.2 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-79](https://cobudget.atlassian.net/browse/CBD-79) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
@@ -45,20 +45,33 @@ CBD-79 defines how the private beta knows whether the product is working. It def
 
 **So `MT-79-007` measures `duplicate` and `MT-79-008` measures `late`. `incorrect` is recorded as unmeasurable at `OQ-79-002`.** It is a real gap in an approved criterion, not an omission in this package, and the honest options are to amend the criterion or to accept that alert correctness is assessed by reading alerts rather than by counting them.
 
-## 4. `CBD-79-AC04` is blocked, not deferred
+## 4. `CBD-79-AC04` splits four ways
 
 The criterion requires safety measures covering **denied cross-space access, consent changes, revocation failures, and related support incidents.**
 
-Every one of those signals is `AN-92-004` **restricted security telemetry at S3**, held under `DI-91-053` and `DI-91-062`, and `AN-92-004` says it *"remains S3 restricted security evidence… never product analytics."* (`AN-92-004` names a third class, `DI-91-071`, which the approved inventory classifies **S1** non-secret key-lifecycle metadata — a discrepancy between two approved documents, recorded at `OQ-80-004`. It narrows this blocker rather than widening it.) `AN-92-006` adds that an event collected for one purpose *"cannot be joined, enriched, exported, sold, shared, or reused for another."*
+**They are not one question.** Two are measurable today under contracts already approved, and two are barred by name. Treating the criterion as uniformly blocked — which this document did at v0.1 — left two measures unwritten for no contractual reason.
 
-**Computing a safety metric from that evidence is a second purpose for it.** Whether that is the reuse `AN-92-006` prohibits is `OQ-13-007`, raised at the CBD-368 approval review and unanswered.
+| Signal | Standing | Why |
+| --- | --- | --- |
+| **Consent changes** | **Measurable** — `MT-79-011` | `DI-91-007` is application-datastore consent evidence: a customer's own act recorded as versioned agreement. Counting version changes is `AN-92-005` aggregate state, and no security decision is involved |
+| **Revocation failures** | **Measurable** — `MT-79-012` | An operation that failed to complete is a safe outcome class. `AN-92-003` permits operation and outcome class in reliability telemetry, and the metric counts **whether the operation completed, not what it decided** |
+| **Denied cross-space access** | **Barred** | `AN-92-003` excludes a *"security-decision"* label from reliability telemetry **by name**; `AN-92-004` keeps the evidence single-purpose; `AN-92-006` bars reusing it. A denial is a security decision however it is counted |
+| **Related support incidents** | **Barred** | Support is a distinct purpose under `AN-92-006`, and `OP-92-002` bars the routine support surface from disclosing counts |
 
-**No metric is defined for this criterion**, and that is deliberate rather than incomplete. Defining metrics against a source that may be prohibited would either be wasted or, worse, would look authoritative and get built. The two honest routes are:
+### 4.1 The distinction the two permitted measures turn on
 
-1. **A separate operational source.** Denied access and revocation failures could be counted from the authorization layer's own operational state rather than from the security-evidence store — a different source for the same fact, which `AN-92-006` does not bar because nothing is reused.
-2. **An explicit `AN-92-006` disposition** permitting aggregate measurement over security evidence under stated conditions, which is a CBD-92 amendment.
+**Whether an operation completed is not the same fact as what it decided**, and `AN-92-003`'s exclusion list is written at exactly that seam. A revocation that errors is a reliability outcome; an access request that is refused is a security decision. The first is on the allowlist and the second is named in the exclusion.
 
-Route 1 is available without an amendment and is probably right. **This package does not take it**, because choosing between them decides what the safety measures *are*, and `CBD-79-AC06` requires each to carry an operational response — which cannot be written before the measure exists.
+`MT-79-012` is written to stay on the right side of that line: it counts terminal outcome classes of the revocation operation and carries no subject, space, membership, role or decision label. **A metric that counted refusals would be the same shape and would not be permitted**, which is why none is defined.
+
+### 4.2 What the two barred signals would need
+
+Neither is a research gap and neither can be worked around by better wording.
+
+* **An explicit `AN-92-006` disposition** permitting coarse non-drillable aggregates over security evidence and support data under stated conditions. A CBD-92 amendment, with CBD-94 and CBD-95 downstream, weakening a purpose-separation rule that currently has no exceptions.
+* **Or an amendment to `CBD-79-AC04`** dropping them, which would remove denied cross-space access from the safety measures entirely — arguably the single most important safety signal the product has.
+
+**This package takes neither.** `OQ-79-001` carries the decision, and the criterion is **partially met** rather than unmet: two of four signals are measured, and the two that are not are named with the contract that bars each.
 
 ## 5. Metric record extension
 
@@ -286,6 +299,48 @@ Every metric is `Release form: global` and `Boundary: worker`. `Class` and `Owne
 | Unhealthy condition | p90 approaches any committed window. **Approaching is the condition, not exceeding** — a commitment measured only on breach is measured too late |
 | **Operational response** | Raise the request path's priority in the worker queue before the commitment is missed, and record the near-miss in the release review |
 
+### MT-79-011 — Consent change rate
+
+| Field | Value |
+| --- | --- |
+| Class | `aggregate-state` |
+| Owner | `security` |
+| Purpose | Whether people are changing their consent, and how often. A rising rate with no disclosure change behind it points at copy people did not understand the first time, which `CBD-73` and `CBD-75` can fix and no other measure would surface |
+| Formula | subjects_with_consent_change ÷ subjects_with_active_consent |
+| Numerator | Account subjects whose consent record shows at least one version change in the window |
+| Denominator | Account subjects holding at least one active consent record at window close |
+| Measurement source | `consent_record.subject_change_count` *(proposed)*, `consent_record.subject_active_count` *(proposed)* |
+| Interval basis | Opens when a subject holds an active consent record; closes when that record's version changes |
+| Window | Calendar week, UTC |
+| Suppression | `withheld — population below release threshold` |
+| Connectivity | `MANUAL-OK` |
+| Data source | Application datastore, consent records — `DI-91-007`. **The count is of version changes, not of their content**: no disclosure text, no scope, no role, and nothing about what was consented to |
+| Collection method | Scheduled aggregate in the Worker over consent-record versions |
+| Review cadence | Weekly *(CBD-81 confirms)* |
+| Unhealthy condition | The rate rises while the governing disclosure version is unchanged, which means people are revising decisions the copy led them to make |
+| **Operational response** | Compare against the disclosure version in force under `CBD-73`. If it has not changed, route the copy to the `CBD-75` review; if it has, the rise is expected and is recorded rather than acted on |
+
+### MT-79-012 — Revocation completion rate
+
+| Field | Value |
+| --- | --- |
+| Class | `reliability-telemetry` |
+| Owner | `security` |
+| Purpose | Whether revocation completes. **A revocation that fails silently leaves access in place**, which is the outcome `CBD-73`'s revocation lifecycle exists to prevent and the one nobody would notice |
+| Formula | completed_revocations ÷ attempted_revocations |
+| Numerator | Revocation operations reaching a success outcome class |
+| Denominator | Revocation operations attempted in the window |
+| Measurement source | `revocation_run.outcome_class_count` *(proposed)* |
+| Interval basis | Opens when a revocation is initiated; closes at its terminal outcome class |
+| Window | Calendar day, UTC |
+| Suppression | `withheld — population below release threshold` |
+| Connectivity | `MANUAL-OK` |
+| Data source | Worker job telemetry on the `AN-92-003` S1 allowlist. **Operation class and outcome class only.** This counts whether the operation completed, **not what it decided** — the distinction §4.1 turns on, and the reason this metric is permitted where a denial count is not |
+| Collection method | Scheduled aggregate in the Worker over outcome classes |
+| Review cadence | Daily *(CBD-81 confirms)* |
+| Unhealthy condition | **Any failed revocation at all.** Like `MT-79-009` this is not a rate to optimise: one failure means one person retains access they revoked |
+| **Operational response** | Treat as a security incident. Verify the specific membership through the `OP-92-003` exceptional-purpose path — **the metric says a failure happened and deliberately cannot say which**, and that is the correct shape |
+
 ## 7. Denominator rules
 
 Per conventions §6.
@@ -302,7 +357,7 @@ Per conventions §6.
 
 | ID | Item | Effect |
 | --- | --- | --- |
-| `OQ-79-001` | **`CBD-79-AC04` is blocked on `OQ-13-007`.** Denied cross-space access, consent changes and revocation failures are `AN-92-004` restricted security telemetry at S3, and `AN-92-006` bars reuse across purposes. §4 states the two honest routes: a separate operational source, which needs no amendment, or an explicit `AN-92-006` disposition, which does | **No safety metric is defined.** The criterion is not met and this package does not pretend otherwise. Choosing the route decides what the measures are, and `AC06` requires each to carry a response that cannot be written first |
+| `OQ-79-001` | ~~**`CBD-79-AC04` is blocked on `OQ-13-007`.**~~ **Narrowed by the Product Owner decision of September 5, 2026.** The four signals do not behave alike: consent changes and revocation failures are measurable under approved contracts and are now `MT-79-011` and `MT-79-012`. **Denied cross-space access and support incidents remain barred** — `AN-92-003` excludes a security-decision label by name, and `AN-92-006` keeps support a distinct purpose | **`CBD-79-AC04` is partially met**, where v0.1 recorded it as unmet with no metric at all. What remains open is the two barred signals, and §4.2 states the only two routes: an `AN-92-006` disposition, or an amendment to the criterion. Neither is taken here |
 | `OQ-79-002` | **`incorrect` has no measurable referent.** It appears nowhere in the approved CBD-74 specification, and §3 rejects all three routes to measuring it: behavioural inference is disabled by `AN-92-001`, human reports are support data `AN-92-006` bars joining, and a product-side correctness rule contradicts `AB-74-001`'s closed catalog | **`CBD-79-AC03` is met for four of five states.** The criterion needs amendment, or acceptance that alert correctness is assessed by reading alerts rather than counting them. A gap in an approved criterion, not an omission here |
 | `OQ-79-003` | **Three bounds are named and none is a number**: the freshness bound (`MT-79-003`), the lateness bound (`MT-79-008`), and the committed windows (`MT-79-010`). Conventions §10 gives CBD-81 the numbers | Every unhealthy condition here is qualitative by design, and none is actionable until CBD-81 supplies the bound |
 | `OI-79-001` | **`acknowledged` and `dismissed` are answered by reference to CBD-78**, not redefined. §2 states why: two metrics for one quantity is what the conventions boundary exists to prevent, and CBD-78's carry the `AB-74-014` constraint | Means `CBD-79-AC03` cannot be read alone. A reader checking this package for five alert-quality states finds two, four, and a citation |
