@@ -228,19 +228,48 @@ def main() -> int:
     # The claim must stand in section 6, where the reading is argued, and not
     # only in the open-items table. Checking the whole document would pass on
     # either alone, which is how a guard ends up protecting nothing.
+    # Inverted at the OQ-78-002 decision of September 5, 2026. These guards
+    # required "not authorized for release", which was true while the question
+    # was open and false the moment it was answered -- section 4.77's defect,
+    # which this family has now hit often enough to expect.
+    #
+    # What must stay true is the four release conditions, and above all the
+    # fourth. Conditions 1 to 3 keep the figure away from members; only the
+    # ratchet stops the operator using it to press harder, which is what
+    # AB-74-014's broader first sentence actually forbids. It is also the
+    # condition a later edit would most plausibly drop, because it constrains
+    # the reader of the metric rather than its audience.
     section_six = re.search(r"^## 6\. .*?(?=^## 7\.)", text, re.S | re.M)
     audit.check(section_six is not None, "metrics: section 6 not found")
     if section_six:
+        body = section_six.group(0)
         audit.check(
-            "not authorized for release" in section_six.group(0),
-            "metrics section 6: must state that the two alert measures are "
-            "unauthorized for release until OQ-78-002 is confirmed",
+            "one-way ratchet" in body.lower(),
+            "metrics section 6: must state the one-way ratchet, which is the only "
+            "condition addressing AB-74-014's prohibition on using alert "
+            "behaviour to pressure",
         )
-    audit.check(
-        text.count("not authorized for release") >= 2,
-        "metrics: the release constraint must appear in section 6 and in the "
-        "open-items table, so neither can be dropped silently",
-    )
+        audit.check(
+            re.search(r"never\b[^.]{0,80}\bmore (?:numerous|frequent|insistent)", body, re.I)
+            is not None,
+            "metrics section 6: the ratchet must state what it forbids, not only "
+            "what it permits",
+        )
+        for condition in ("Global only", "Never a member-visible surface",
+                          "No response may name, contact, or differentiate a member"):
+            audit.check(condition in body,
+                        f"metrics section 6: release condition {condition!r} missing")
+
+    # The ratchet must ride on both metric records, not only in section 6. A
+    # reader who opens the record and not the section would otherwise see an
+    # ordinary aggregate.
+    for identifier in ALERT_CONSTRAINED:
+        body = blocks.get(identifier, "")
+        if body:
+            audit.check(
+                "may never justify sending more" in body,
+                f"{identifier}: must carry the one-way ratchet on its own record",
+            )
 
     print(f"CBD-78 documentation audit: {audit.checks} checks")
     print(f"Failures: {len(audit.failures)}")
