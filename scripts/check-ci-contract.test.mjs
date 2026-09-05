@@ -60,6 +60,7 @@ jobs:
       - run: python3 scripts/audit-cbd-77.py
       - run: python3 scripts/audit-cbd-78.py
       - run: python3 scripts/audit-cbd-79.py
+      - run: python3 scripts/audit-cbd-80.py
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npm run check

@@ -62,6 +62,7 @@ const REQUIRED_WORKFLOW_COMMANDS = [
   "python3 scripts/audit-cbd-77.py",
   "python3 scripts/audit-cbd-78.py",
   "python3 scripts/audit-cbd-79.py",
+  "python3 scripts/audit-cbd-80.py",
   "npm ci",
   "npm audit --audit-level=high",
   "npm run check",
