@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved v1.1** — Product Owner approved v1.0 on September 5, 2026 and this amendment the same day. Assigns `MS-80-nnn` identifiers to the **34** sources CBD-77, CBD-78 and CBD-79 proposed, and states the privacy, retention and release rules that govern them. §6 proposes the answer to `OQ-13-006` — which surface carries a released figure — as a construction of approved constraints rather than a new decision, and puts it to the Product Owner. **No source is implemented and none has been read** |
-| Document version | 1.1 |
+| Status | **Approved v1.2** — Product Owner approved v1.0 on September 5, 2026, and two amendments the same day. Assigns `MS-80-nnn` identifiers to the **34** sources CBD-77, CBD-78 and CBD-79 proposed, and states the privacy, retention and release rules that govern them. **§6 records the release decision of September 5, 2026**: two destinations rather than one, and the aggregate half is a written record rather than a surface. **No source is implemented and none has been read** |
+| Document version | 1.2 |
 | Owner | Alexander Wohlford |
 | Reviewer | Alexander Wohlford — Product Owner. **Approved September 5, 2026** after a review that corrected one citation |
 | Jira | [CBD-80](https://cobudget.atlassian.net/browse/CBD-80) |
@@ -140,45 +140,54 @@ Every source has `Boundary: worker`. Class is `aggregate-state` unless marked `r
 
 **`MS-80-031` through `MS-80-033` were added at v1.1**, after the `OQ-13-007` decision of September 5, 2026 gave CBD-79 two safety metrics it had not been able to define. **The cross-package audit found them rather than a person did**: it failed on three unregistered proposals and two metrics no source served, which is what this register exists to catch and the reason its closure comment said reopening was predictable rather than a surprise.
 
-## 6. The release surface — `OQ-13-006`
+## 6. The release surface — decided September 5, 2026
 
-**This section proposes an answer and does not take it.** The question is which surface carries a released figure and who may read it, and it is a construction of approved constraints rather than a measurement decision.
+`OQ-13-006` and `OQ-80-001` are closed. **The 28 metrics do not share one answer**, and the v1.1 proposal treated them as though they did.
 
-### What the constraints exclude
+### The two destinations
 
-| Surface | Why not |
-| --- | --- |
-| **The customer product** | `AB-74-014` prohibits visibility into whether another person acknowledged or dismissed. A member-visible figure is exactly that for `MS-80-019` and `MS-80-020`, and offers nothing for the rest |
-| **The routine support surface** | `OP-92-002` limits it to allowlisted service-health state, public version information, safe status or error class, and a customer-provided correlation identifier — and bars it from disclosing *"customer/resource existence, **counts**, membership, lifecycle, destination, financial, security, or cross-space signals."* **A released aggregate is a count** |
-| **The security-evidence store** | `AN-92-004` keeps it single-purpose; `AN-92-006` bars the join |
-| **A general operator console reading production** | `OP-92-001` default-denies routine staff access to customer content. A console that can compute an aggregate on demand can usually also read what it aggregates |
+| Class | Count | Destination |
+| --- | --- | --- |
+| `reliability-telemetry` | **9** | The **S1 reliability sink CBD-122 establishes**. Same purpose, so `AN-92-006` raises nothing — and `CBD-122-AC08` already emits terminal-state counts, which is the shape `MS-80-021` and `MS-80-025` produce |
+| `aggregate-state` | **19** | A **periodic written record**, computed by the Worker on its refresh basis and consumed by CBD-81's review process |
 
-### What is left, and it is a positive answer rather than a residue
+**Nothing new is built for the reliability half.** `CBD-122-AC05` establishes three destinations with three access roles — reliability, restricted diagnostics, audit — and the reliability metrics belong in the first of them. The register had proposed a new surface for all 28 and missed that half the answer was already planned.
 
-**A measurement surface distinct from all four**, holding only released aggregates: a figure, its window, its metric identifier, and its suppression state. It reads no production data at request time, because the Worker computes the aggregate on its refresh basis and writes only the result.
+### Why the aggregate half is a record and not a surface
 
-Three properties follow, and each is a consequence of `AN-92-006`'s purpose separation rather than an addition to it:
+Nineteen figures reviewed weekly is a document, not a dashboard. The reasoning is not economy:
 
-1. **It cannot answer a question it was not built to answer.** There is no query interface over customer state, so no drill-down exists to be requested.
-2. **Its store is separate from reliability, security, support and audit**, with its own retention — §3.4 — and no identifier that could join it to any of them.
-3. **A customer deletion request reaches it and finds nothing**, because it holds no customer-level record. §3.4 records this as a property of the design rather than a process to run.
+1. **There is no query interface, so there is no drill-down to grow one from.** A store with a read path can later be asked a question it was not built for; a written record cannot be asked anything.
+2. **Retention is the record's own**, which §3.4 already governs, rather than a store's lifecycle that would need its own rule.
+3. **`OP-92-001` is satisfied by construction.** No standing surface reads production, so no access role needs default-denying.
+
+**What it costs is a trend view.** Comparing four weeks means reading four records, and `MT-78-005`'s and `MT-78-006`'s retention series are exactly the measures where a trend matters most. Accepted, and recorded at `OI-80-004` rather than discovered later.
+
+### Where the record cannot live
+
+**Not in this repository, and this is a constraint rather than a preference.**
+
+§3.4 requires released figures to be *"retained for the beta and its review, then deleted with the beta's operational records."* **A record committed here can never be deleted** — git history is permanent, and these documents publish to Confluence, which would carry the figures further still.
+
+So the periodic record lives in a deletable operational store outside version control. **`OQ-80-005` carries where**, because naming it is an operations decision this register does not own. Until it is answered the figures have a form and no place, which is a smaller gap than having neither.
 
 ### Who may read it
 
-**The Product Owner**, as the only role `EX-102-001` permits to accept a residual and the only role CBD-81 assigns metric ownership to. For a solo project that is the whole answer; for a larger one it would need a role, and the surface should not be built in a way that assumes one reader forever.
+**The Product Owner**, as the only role `EX-102-001` permits to accept a residual and the only role CBD-81 assigns metric ownership to. For a solo project that is the whole answer; the record should not be shaped so that a second reader would require rebuilding it.
 
-**`MS-80-019` and `MS-80-020` carry a further constraint on top**, from CBD-78 §6: never a member-visible surface under any reading, regardless of what is decided here. `OQ-78-002` remains open on whether they may be released at all.
-
-**`OQ-80-001` puts this to the Product Owner.** Until it is answered, every metric in CBD-77 through CBD-79 is defined, computable in principle, and **released nowhere**.
+**`MS-80-019` and `MS-80-020` carry a further constraint on top**, from CBD-78 §6: never a member-visible surface under any reading. `OQ-78-002` remains open on whether they may be released at all.
 
 ## 7. What this package could not settle
 
 | ID | Item | Effect |
 | --- | --- | --- |
-| `OQ-80-001` | **The release surface is proposed, not decided.** §6 derives it from `OP-92-001`, `OP-92-002`, `AN-92-004`, `AN-92-006` and `AB-74-014`, which between them exclude every surface the product otherwise has | **No figure is released anywhere until it is answered.** The sources may be built and the aggregates computed; nothing may be read |
+| ~~`OQ-80-001`~~ | ~~The release surface is proposed, not decided.~~ **Closed September 5, 2026.** Two destinations, not one: the nine `reliability-telemetry` metrics route to the S1 sink CBD-122 establishes, and the nineteen `aggregate-state` figures become a periodic written record consumed by CBD-81's review | Closed. §6 carries the decision and the reasoning |
+| `OQ-80-005` | **Where does the periodic record live?** §3.4 requires released figures to be deleted with the beta's operational records, and **a record committed to this repository can never be deleted** — git history is permanent and these documents publish to Confluence. It must be a deletable operational store outside version control | **The figures have a form and no place until this is answered.** Naming the store is an operations decision this register does not own. Smaller than the gap `OQ-80-001` left, because the shape is now settled |
+| `OQ-80-006` | **`CBD-122-AC01` fixes the S1 sink's trace attributes to a closed universe.** The nine reliability metrics emit counts that may or may not already be in it; `CBD-122-AC08` covers queue depth, dead-letter count, terminal-state counts, scheduler lag and watermark age, which is some of what CBD-79 needs and not obviously all | A dependency on CBD-122 rather than a defect here. If the universe needs extending, that is CBD-122's amendment and it should know before it builds |
 | `OQ-80-002` | **No source has a schema, because the product has none.** Every `State of record` names operational state rather than a table, and the derivations are stated to be reproducible rather than implementable | Recorded so the register is not mistaken for a specification. Each source needs a schema binding when the owning feature is built, and that binding is where a derivation can quietly change meaning |
 | `OQ-80-003` | **The refresh basis is a proposal.** Daily for `reliability-telemetry`, weekly for `aggregate-state`, on the reasoning that operations reach releasable volume faster than populations. CBD-81 confirms review cadence and may want a different refresh | Low consequence, but recorded because a refresh basis that disagrees with a review cadence produces figures nobody reads or reviews that outrun their data |
 | `OQ-80-004` | **Two approved documents disagree about `DI-91-071`.** `AN-92-004` describes `DI-91-053/062/071` as *"S3 restricted security evidence"*; the CBD-91 inventory classifies `DI-91-071` as **S1** non-secret key-lifecycle metadata, and `DF-91-011` routes it to analytics and support systems. One of the two is wrong | **It narrows `OQ-13-007` rather than widening it.** The safety signals CBD-79-AC04 names map to `DI-91-053` and `DI-91-062`, both genuinely S3; `DI-91-071` was never the obstacle. Recorded against CBD-91 and CBD-92, which own the two statements. **Found by the approval review** — this register had restated `AN-92-004` faithfully and inherited its error |
+| `OI-80-004` | **The written record costs a trend view.** Comparing four weeks means reading four records, and the retention series at `MT-78-005` and `MT-78-006` are where a trend matters most | Accepted as part of the September 5, 2026 decision rather than discovered afterwards. A store would have given trends and a query interface; the interface is what was declined |
 | `OI-80-003` | **This register was reopened the day it closed.** `OQ-13-007` was decided after v1.0 merged, CBD-79 gained two safety metrics, and three sources needed registering. | **Recorded because it was predicted rather than discovered.** The v1.0 closure comment named the CBD-71 reopen-amend-re-close route and said closing was correct for the metrics that existed and not correct forever. It remains true: any further CBD-79 or CBD-81 work that defines a metric reopens this register again, and that is the cost of a register that is complete by construction rather than by assertion. |
 | `OI-80-001` | **`MS-80-017` merges two proposed sources**, and the merge is a decision this register made rather than a name it accepted. Both retention metrics now read one derivation | If `MT-78-005` and `MT-78-006` ever need different activity definitions, this merge is the thing that must be undone first. `RT-78-001` currently requires they do not |
 | `OI-80-002` | **Nothing here has been implemented or read.** Thirty sources are named against state that does not yet exist | The register is a specification. A later reader should not mistake a registered source for an available one |
