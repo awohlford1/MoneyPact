@@ -59,7 +59,7 @@ Metrics §3 rejects all three routes to measuring it — behavioural inference i
 
 **Status: Not met, and blocked rather than deferred.**
 
-Every named signal is `AN-92-004` restricted security telemetry at S3, held under `DI-91-053`, `DI-91-062` and `DI-91-071`. `AN-92-006` says an event collected for one purpose *"cannot be joined, enriched, exported, sold, shared, or reused for another."* **Computing a safety metric from it is a second purpose**, and whether that is the prohibited reuse is `OQ-13-007`.
+Every named signal is `AN-92-004` restricted security telemetry at S3, held under `DI-91-053` and `DI-91-062`. (`AN-92-004` also names `DI-91-071`, which the inventory classifies S1; `OQ-80-004` records the discrepancy, which narrows this blocker rather than widening it.) `AN-92-006` says an event collected for one purpose *"cannot be joined, enriched, exported, sold, shared, or reused for another."* **Computing a safety metric from it is a second purpose**, and whether that is the prohibited reuse is `OQ-13-007`.
 
 **No metric is defined**, and that is a choice. Defining measures against a source that may be prohibited would either be wasted or would look authoritative enough to get built.
 

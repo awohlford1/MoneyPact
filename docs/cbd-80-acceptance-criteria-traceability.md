@@ -2,9 +2,10 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft v0.1 — not approved.** All six acceptance criteria are met. **One thing is proposed and not decided**: `OQ-80-001`, the release surface, which §6 of the register derives from approved constraints and puts to the Product Owner. Until it is answered every metric in CBD-77 through CBD-79 is defined, computable in principle, and **released nowhere** |
-| Document version | 0.1 |
+| Status | **Approved v1.0** — Product Owner approved this exact package on September 5, 2026. All six acceptance criteria are met. **One thing is proposed and not decided**: `OQ-80-001`, the release surface, which §6 of the register derives from approved constraints and puts to the Product Owner. Until it is answered every metric in CBD-77 through CBD-79 is defined, computable in principle, and **released nowhere** |
+| Document version | 1.0 |
 | Owner | Alexander Wohlford |
+| Reviewer | Alexander Wohlford — Product Owner. **Approved September 5, 2026** after a review that corrected one citation |
 | Jira | [CBD-80](https://cobudget.atlassian.net/browse/CBD-80) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
 | Governing conventions | `docs/cbd-13-measurement-conventions.md` — Document version **1.0.1**, approved |
@@ -111,4 +112,5 @@ What is left is a **measurement surface holding only released aggregates**, read
 
 | Version | Date | Author | Change | Status |
 | --- | --- | --- | --- | --- |
-| 0.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Initial package: thirty registered sources, the naming decisions at §4, the privacy and retention rules at §3, the release-surface proposal at §6, a cross-package structural audit, and this report | Draft; Product Owner approval required |
+| 1.0 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **Approved.** The review checked every cited identifier against its source and found that this register had restated `AN-92-004` faithfully and inherited its error: `AN-92-004` groups `DI-91-071` with S3 restricted security evidence, and the approved CBD-91 inventory classifies it **S1** non-secret key-lifecycle metadata. §3.3 now names only `DI-91-053` and `DI-91-062`, and `OQ-80-004` records the discrepancy against the two documents that own it. It narrows `OQ-13-007` rather than widening it. No source, derivation, or rule changes | **Approved v1.0** |
+| 0.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Initial package: thirty registered sources, the naming decisions at §4, the privacy and retention rules at §3, the release-surface proposal at §6, a cross-package structural audit, and this report | Superseded by 1.0 |
