@@ -44,6 +44,13 @@ jobs:
       - name: Check pinned source versions
         run: python3 scripts/check-jira-freshness.py --offline
 
+      # Same shape: the half that needs credentials stays a manual step, and
+      # --offline says plainly that it checked nothing rather than passing
+      # silently. It computes CBD-368-AC06's completeness claim, which three
+      # hand sweeps got wrong -- CBD-13 conventions section 11.
+      - name: Check AN-92 criteria
+        run: python3 scripts/check-an92-criteria.py --offline
+
       - name: Check CBD-73 documentation package
         run: python3 scripts/audit-cbd-73.py
 
