@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft v0.1 — not approved.** Maps each CBD-78 acceptance criterion to the section that answers it. **Four of six criteria are met, one is met but not authorized for release, and one is deliberately not satisfied.** §2 states which is which and why, rather than reporting five of six and leaving a reader to find the gap |
-| Document version | 0.1 |
+| Status | **Draft v0.2 — not approved.** Maps each CBD-78 acceptance criterion to the section that answers it. **Five of six criteria are met and one is deliberately not satisfied.** §2 states which is which and why, rather than reporting five of six and leaving a reader to find the gap |
+| Document version | 0.2 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-78](https://cobudget.atlassian.net/browse/CBD-78) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
@@ -69,15 +69,19 @@ The criterion was amended on September 5, 2026 to defer segmentation. Convention
 
 ### CBD-78-AC06 — alert acknowledgement and dismissal rates with a clearly defined delivered-alert denominator
 
-**Status: Met, and not authorized for release.**
+**Status: Met, and authorized for release on four conditions.**
 
 The denominator is exact because `AB-74-002` makes **exactly one mandatory in-app instance per eligible recipient per shared event**. Informational instances are excluded: `AB-74-009` gives them no acknowledgement operation, so including them would report an impossibility as a failure.
 
-**The criterion runs against an approved anti-surveillance boundary.** `AB-74-014` prohibits *"visibility into whether another person read, acknowledged, or dismissed an instance"*, and CBD-74 restates it as *"no status visible to anyone else"*.
+**The criterion runs against an approved anti-surveillance boundary**, and the Product Owner settled it on September 5, 2026.
 
-Metrics §6 states the reading that reconciles them — `AB-74-014` governs member-visible surfaces and cross-member behaviour, `AN-92-005` permits a coarse non-drillable aggregate — and the three conditions it depends on. **`OQ-78-002` puts that reading to the Product Owner**, because it is a construction of an approved boundary rather than a measurement decision.
+`AB-74-014` prohibits *"visibility into whether another person read, acknowledged, or dismissed an instance"*. **Its three cited sources are all member-facing** — `CBD-12-AC22`'s coercion rules, `CBD-12-AC24`'s copy rules, and `RI-93-014`'s finding about other members seeing one person's provisional overspend — and none reaches aggregate measurement by the operator.
 
-Until it is confirmed, `MT-78-007` and `MT-78-008` are **defined and not authorized for release**. The audit enforces that the claim stands in §6 and in the open-items table, so neither can be dropped quietly.
+**The rule's first sentence is broader than its sources**, and that is what needed answering: *"No alert behavior may be used to pressure, punish, or surveil"* is not scoped to members, so an acknowledgement rate used to tune the catalog toward compliance would breach it even with no member ever seeing the figure.
+
+**Four conditions, and the fourth is the one that matters.** Three bound who sees the figure — global only, never a member-visible surface, no member-differentiating response. The fourth is a **one-way ratchet**: these figures may justify making alerts fewer, softer or less frequent, and may never justify making them more insistent.
+
+**The ratchet costs nothing a good response would have wanted.** An alert nobody acknowledges is not solved by repetition, so the permitted answers — fix, soften, remove — are the ones that would have been right anyway. What it removes is the option that would have made the metric an instrument of pressure.
 
 ## 3. Deliverables
 
@@ -115,4 +119,5 @@ Until it is confirmed, `MT-78-007` and `MT-78-008` are **defined and not authori
 
 | Version | Date | Author | Change | Status |
 | --- | --- | --- | --- | --- |
-| 0.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Initial package: eight metrics, `AD-78-001`, `RT-78-001`, the `AB-74-014` release constraint at metrics §6, structural audit, and this report. Records `OQ-78-001` on the half-right scope source, `OQ-78-002` on the anti-surveillance reading, and `OQ-78-003` on the deferred segmentation | Draft; Product Owner approval required |
+| 0.2 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **`OQ-78-002` decided.** Both alert measures are authorized for release on four conditions. The three that bound who sees the figure were already stated; the fourth is new and is what the rule's broader first sentence required — **a one-way ratchet**: these figures may justify making alerts fewer, softer or less frequent and may never justify making them more insistent. The three sources `AB-74-014` cites are all member-facing and do not dispose of that sentence; the ratchet forecloses it structurally rather than by intent. `CBD-78-AC06` moves from met-but-unreleasable to met | Draft; Product Owner approval required |
+| 0.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Initial package: eight metrics, `AD-78-001`, `RT-78-001`, the `AB-74-014` release constraint at metrics §6, structural audit, and this report. Records `OQ-78-001` on the half-right scope source, `OQ-78-002` on the anti-surveillance reading, and `OQ-78-003` on the deferred segmentation | Superseded by 0.2 |
