@@ -113,19 +113,19 @@ VOCABULARIES: tuple[Vocabulary, ...] = (
         name="metric-class",
         members=("aggregate-state", "reliability-telemetry"),
         canonical="docs/cbd-13-measurement-conventions.md §5",
-        applies_to=("cbd-13-*.md", "cbd-77-*.md", "cbd-78-*.md"),
+        applies_to=("cbd-13-*.md", "cbd-77-*.md", "cbd-78-*.md", "cbd-79-*.md"),
     ),
     Vocabulary(
         name="connectivity-marker",
         members=("CONN-REQUIRED", "MANUAL-OK"),
         canonical="docs/cbd-13-measurement-conventions.md §5",
-        applies_to=("cbd-13-*.md", "cbd-77-*.md", "cbd-78-*.md"),
+        applies_to=("cbd-13-*.md", "cbd-77-*.md", "cbd-78-*.md", "cbd-79-*.md"),
     ),
     Vocabulary(
         name="budget-cadence",
         members=("weekly", "monthly", "paycheck", "custom"),
         canonical="docs/cbd-13-measurement-conventions.md §9",
-        applies_to=("cbd-13-*.md", "cbd-77-*.md", "cbd-78-*.md"),
+        applies_to=("cbd-13-*.md", "cbd-77-*.md", "cbd-78-*.md", "cbd-79-*.md"),
     ),
     Vocabulary(
         name="invitation-state",
@@ -137,7 +137,7 @@ VOCABULARIES: tuple[Vocabulary, ...] = (
         name="notification-state",
         members=("enqueued", "delivered", "failed", "suppressed", "duplicate", "late"),
         canonical="docs/cbd-13-measurement-conventions.md §9",
-        applies_to=("cbd-13-*.md",),
+        applies_to=("cbd-13-*.md", "cbd-79-*.md"),
     ),
     # The set CBD-13 section 9 calls the highest-risk one: it appears in CBD-79's
     # criteria, in the CBD-13 parent criteria, and will appear again in CBD-80
@@ -146,7 +146,7 @@ VOCABULARIES: tuple[Vocabulary, ...] = (
         name="alert-quality-state",
         members=("duplicate", "late", "incorrect", "acknowledged", "dismissed"),
         canonical="docs/cbd-13-measurement-conventions.md §9",
-        applies_to=("cbd-13-*.md",),
+        applies_to=("cbd-13-*.md", "cbd-79-*.md"),
     ),
     Vocabulary(
         name="collaboration-action",
