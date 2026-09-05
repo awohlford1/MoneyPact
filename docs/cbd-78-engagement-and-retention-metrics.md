@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft v0.1 — not approved.** Defines the eight engagement and retention metrics for the private beta, each as an `AN-92-005` aggregate over operational state. **Retention is computed without a cohort**, because `AN-92-001` names cohorts; §4 states how. §3 defines the activity condition every retention measure turns on, and §6 records the constraint `AB-74-014` places on the two alert measures — the sharpest thing in this package |
-| Document version | 0.1 |
+| Status | **Draft v0.2 — not approved.** Defines the eight engagement and retention metrics for the private beta, each as an `AN-92-005` aggregate over operational state. **Retention is computed without a cohort**, because `AN-92-001` names cohorts; §4 states how. §3 defines the activity condition every retention measure turns on, and §6 records the `AB-74-014` decision of September 5, 2026: both alert measures are released, on four conditions including a one-way ratchet that forecloses the rule's broader prohibition structurally |
+| Document version | 0.2 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-78](https://cobudget.atlassian.net/browse/CBD-78) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
@@ -198,12 +198,13 @@ Every metric is `Class: aggregate-state`, `Release form: global`, `Boundary: wor
 | Measurement source | `alert_instance.firm_delivered_count` *(proposed)*, `alert_instance.firm_acknowledged_count` *(proposed)* |
 | Interval basis | Opens when a firm instance is created for a recipient; closes when that instance holds acknowledgement state |
 | Window | Calendar week, UTC |
-| Suppression | `withheld — population below release threshold`. **See §6: this metric carries a release constraint beyond suppression** |
+| Suppression | `withheld — population below release threshold`. **See §6: this metric carries four release conditions beyond suppression, including the one-way ratchet** |
 | Connectivity | `MANUAL-OK` |
 | Data source | Application database, recipient-instance table |
 | Collection method | Scheduled aggregate in the Worker. Counts instance state; retains no per-recipient row |
 | Review cadence | Weekly *(CBD-81 confirms)* |
 | Unhealthy condition | Acknowledgement falls across the whole firm catalog, which is a catalog problem rather than a member problem |
+| **Permitted response** | Fix, soften, or remove the alert. **This figure may never justify sending more** — §6 condition 4 |
 
 ### MT-78-008 — Firm alert dismissal rate
 
@@ -216,16 +217,17 @@ Every metric is `Class: aggregate-state`, `Release form: global`, `Boundary: wor
 | Measurement source | `alert_instance.firm_dismissed_count` *(proposed)*, `alert_instance.firm_delivered_count` *(proposed)* |
 | Interval basis | Opens when a firm instance is created; closes when that instance holds dismissal state |
 | Window | Calendar week, UTC |
-| Suppression | `withheld — population below release threshold`. **See §6** |
+| Suppression | `withheld — population below release threshold`. **See §6: four release conditions, including the one-way ratchet** |
 | Connectivity | `MANUAL-OK` |
 | Data source | Application database, recipient-instance table |
 | Collection method | Scheduled aggregate in the Worker |
 | Review cadence | Weekly *(CBD-81 confirms)* |
 | Unhealthy condition | Dismissal rises while acknowledgement falls, which means alerts are being cleared rather than read |
+| **Permitted response** | Reduce the catalog or soften the alerts being cleared. **This figure may never justify sending more** — §6 condition 4 |
 
-## 6. `AB-74-014` and the two alert measures
+## 6. `AB-74-014` and the two alert measures — decided September 5, 2026
 
-**This is the sharpest thing in the package and it is recorded rather than assumed away.**
+**This was the sharpest question in the package and it is now answered.**
 
 `AB-74-014` is approved and unambiguous:
 
@@ -235,13 +237,40 @@ CBD-74 restates it twice more: *"no status visible to anyone else"* and *"No sur
 
 `CBD-78-AC06` requires an acknowledgement and dismissal rate. **Read carelessly, `AB-74-014` prohibits it.**
 
-**The reading this package takes.** `AB-74-014` governs **member-visible surfaces and cross-member behaviour** — its cited sources are `CBD-12-AC22`/`AC24` and `RI-93-014`, all anti-coercion rules about one person seeing or pressuring another. `AN-92-005` separately permits a coarse, non-drillable aggregate released for a product decision. The two are compatible, and only on these terms:
+### What the rule's own sources are about
 
-1. **The figure is global and carries no member, space, or alert-category breakdown.** `MT-78-004`'s per-class reporting is permitted because a collaboration action class is not a person; `MT-78-007` and `MT-78-008` get no equivalent, because an alert-category breakdown at beta scale approaches a single recipient.
-2. **The figure never reaches a member-visible surface.** Not a dashboard, not a space view, not a notification, not an export. This is stronger than `OQ-13-006`'s general question about release surfaces: for these two metrics the answer is settled in the negative regardless of what CBD-80 decides for the rest.
-3. **No response to an unhealthy value may name, contact, or differentiate a member.** The `Unhealthy condition` for both is written as a catalog problem for exactly this reason.
+Every source `AB-74-014` cites is **member-facing**:
 
-**`OQ-78-002` puts the reading to the Product Owner**, because it is a construction of an approved boundary rather than a measurement decision, and because getting it wrong builds surveillance into a product whose premise is that it does not surveil. Until it is confirmed, `MT-78-007` and `MT-78-008` are **defined and not authorized for release**.
+| Source | What it addresses |
+| --- | --- |
+| `CBD-12-AC22` | Coercion, unwanted access, and non-retaliatory messaging — *"no **member**, including a sole Primary"* |
+| `CBD-12-AC24` | Collaboration **copy**, which must not imply *"surveillance entitlement"* |
+| `RI-93-014` | One identified person's provisional overspend that *"**other members** see before that person can correct it"* |
+
+None addresses aggregate measurement by the operator, and `AN-92-005` independently permits a coarse non-drillable aggregate for a product decision.
+
+### The part the sources do not answer
+
+**The rule's first sentence is broader than any of them.** *"No alert behavior may be used to pressure, punish, or surveil"* is not scoped to members. If an acknowledgement rate were used to tune the catalog toward higher compliance — more alerts, more often, more insistent — that would be alert behaviour used to pressure, by the operator rather than by a member.
+
+**That risk is real and the member-facing sources do not dispose of it.**
+
+### The decision, and the four conditions
+
+**Both metrics may be released**, on four conditions. The first three bound who sees the figure; **the fourth bounds what may be done with it**, which is what the broader sentence actually requires.
+
+1. **Global only.** No member, space, or alert-category breakdown. `MT-78-004`'s per-class reporting is permitted because a collaboration action class is not a person; these two get no equivalent, because an alert-category breakdown at beta scale approaches a single recipient.
+2. **Never a member-visible surface.** Not a dashboard, not a space view, not a notification, not an export. Settled in the negative regardless of what `OQ-80-001` decided for other figures.
+3. **No response may name, contact, or differentiate a member.** The `Unhealthy condition` on both is written as a catalog problem for exactly this reason.
+4. **A one-way ratchet.** These figures may justify making alerts **fewer, softer, or less frequent**. They may **never** justify making them more numerous, more frequent, or more insistent.
+
+### Why the ratchet, rather than a promise
+
+Conditions 1 to 3 keep the figure away from members. **None of them stops the operator from using it to press harder**, and that is the reading `AB-74-014`'s first sentence actually forbids.
+
+The ratchet forecloses it structurally. **A falling acknowledgement rate can mean the catalog is wrong, and the permitted answer to that is to fix or remove the alert — never to send more of it.** An alert nobody acknowledges is not solved by repetition, so the ratchet costs nothing a good response would have wanted.
+
+**It is also checkable.** A change that increases alert frequency, volume, or insistence may not cite `MT-78-007` or `MT-78-008` as its justification, and the audit requires the condition to stay stated.
 
 ## 7. Denominator rules
 
@@ -262,7 +291,7 @@ Per conventions §6, and in addition to the per-metric rules above.
 | ID | Item | Effect |
 | --- | --- | --- |
 | `OQ-78-001` | **The CBD-76 scope-source correction is half right for this package.** `OQ-77-001` says CBD-76 is not the scope source; for the collaboration half — invitations, alerts, comments — it is exactly the right one. The correction to the conventions should say *which half* rather than replacing one wrong pin with another | Recorded against the conventions. No metric changes |
-| `OQ-78-002` | **Does an aggregate acknowledgement rate sit inside `AB-74-014`?** §6 states the reading and the three conditions that make it compatible. It is a construction of an approved anti-surveillance boundary, not a measurement decision | **`MT-78-007` and `MT-78-008` are defined and not authorized for release** until confirmed. The other six metrics are unaffected |
+| ~~`OQ-78-002`~~ | ~~Does an aggregate acknowledgement rate sit inside `AB-74-014`?~~ **Closed September 5, 2026.** Both metrics may be released on four conditions — three bounding who sees the figure and a fourth, the one-way ratchet, bounding what may be done with it. §6 carries the reasoning: the rule's three cited sources are member-facing, and its broader first sentence is answered by the ratchet rather than by intent | Closed. **`MT-78-007` and `MT-78-008` are authorized for release** under §6 |
 | `OQ-78-003` | **`CBD-78-AC05` is deliberately not satisfied.** It requires cadence segmentation of retention; conventions decision 2 releases no segments during the beta, and the criterion was amended on September 5, 2026 to defer it | Recorded so the gap is visible from this document as well as from the ticket. CBD-81 owns the population decision that reopens it |
 | `OI-78-001` | **Eleven measurement sources are proposed and none exists.** CBD-80 assigns the `MS-80-nnn` identifiers | No metric is computable until CBD-80 completes |
 | `OI-78-002` | **A retention figure cannot be recomputed against a corrected `AD-78-001`.** `RT-78-001` retains neither window set, so changing the activity definition changes every future figure and no past one, and the series is not comparable across the change | Accepted, because retaining the sets is what `AN-92-005` prohibits. It means `AD-78-001` should be settled before the beta produces figures worth trusting |
