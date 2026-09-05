@@ -49,7 +49,7 @@ CBD-79 defines how the private beta knows whether the product is working. It def
 
 The criterion requires safety measures covering **denied cross-space access, consent changes, revocation failures, and related support incidents.**
 
-Every one of those signals is `AN-92-004` **restricted security telemetry at S3**, held under `DI-91-053`, `DI-91-062` and `DI-91-071`, and `AN-92-004` says it *"remains S3 restricted security evidence… never product analytics."* `AN-92-006` adds that an event collected for one purpose *"cannot be joined, enriched, exported, sold, shared, or reused for another."*
+Every one of those signals is `AN-92-004` **restricted security telemetry at S3**, held under `DI-91-053` and `DI-91-062`, and `AN-92-004` says it *"remains S3 restricted security evidence… never product analytics."* (`AN-92-004` names a third class, `DI-91-071`, which the approved inventory classifies **S1** non-secret key-lifecycle metadata — a discrepancy between two approved documents, recorded at `OQ-80-004`. It narrows this blocker rather than widening it.) `AN-92-006` adds that an event collected for one purpose *"cannot be joined, enriched, exported, sold, shared, or reused for another."*
 
 **Computing a safety metric from that evidence is a second purpose for it.** Whether that is the reuse `AN-92-006` prohibits is `OQ-13-007`, raised at the CBD-368 approval review and unanswered.
 

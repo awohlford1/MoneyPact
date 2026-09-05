@@ -2,9 +2,10 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft v0.1 — not approved.** Maps each CBD-77 acceptance criterion to the exact section that answers it and states plainly where the answer is *"met"*, *"partially met"*, or *"not met"*. **Five of six criteria are met and one is partially met**, because the suppression rule it depends on has no number until CBD-81 sets one. §4 records where the ticket's own text no longer matches what exists |
-| Document version | 0.1 |
+| Status | **Approved v1.0** — Product Owner approved this exact package on September 5, 2026. Maps each CBD-77 acceptance criterion to the exact section that answers it and states plainly where the answer is *"met"*, *"partially met"*, or *"not met"*. **Five of six criteria are met and one is partially met**, because the suppression rule it depends on has no number until CBD-81 sets one. §4 records where the ticket's own text no longer matches what exists |
+| Document version | 1.0 |
 | Owner | Alexander Wohlford |
+| Reviewer | Alexander Wohlford — Product Owner. **Approved September 5, 2026** after a review that corrected one citation |
 | Jira | [CBD-77](https://cobudget.atlassian.net/browse/CBD-77) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
 | Governing conventions | `docs/cbd-13-measurement-conventions.md` — Document version **1.0.1**, approved |
@@ -125,4 +126,5 @@ Recorded here because the amendment is four hours old and a reader of the ticket
 
 | Version | Date | Author | Change | Status |
 | --- | --- | --- | --- | --- |
-| 0.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Initial package: eight metrics, `UB-77-001`, denominator rules, structural audit, and this report. Records the CBD-76 scope-source correction at `OQ-77-001` and the suppression-threshold dependency at `OQ-77-002` | Draft; Product Owner approval required |
+| 1.0 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **Approved.** The review checked every cited identifier against its approved source rather than trusting the citation, and found one: the `UB-77-001` category limb cited `SD-071-010`, which establishes that spending targets are a distinct state and not that a space holds categories. Four decisions presuppose categories and none defines the entity; the limb is restated as inferential and recorded at `OQ-77-004`. **The audit did not catch it**, because it checks that a limb cites an approved source rather than that the source supports the claim. No metric, denominator, or figure changes | **Approved v1.0** |
+| 0.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Initial package: eight metrics, `UB-77-001`, denominator rules, structural audit, and this report. Records the CBD-76 scope-source correction at `OQ-77-001` and the suppression-threshold dependency at `OQ-77-002` | Superseded by 1.0 |

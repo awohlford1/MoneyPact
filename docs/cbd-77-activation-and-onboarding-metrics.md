@@ -2,9 +2,10 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft v0.1 — not approved.** Defines the eight activation and onboarding metrics for the private beta, each as an `AN-92-005` aggregate over operational state. **No analytics event is proposed, because `AN-92-001` disables the behavioural event pipeline for Private MVP.** Every metric is `global` release form under decision 2, computed inside the Worker boundary. §3 states the usable-budget condition the criteria turn on; §6 records the two places this package could not rest on an approved source |
-| Document version | 0.1 |
+| Status | **Approved v1.0** — Product Owner approved this exact package on September 5, 2026. Defines the eight activation and onboarding metrics for the private beta, each as an `AN-92-005` aggregate over operational state. **No analytics event is proposed, because `AN-92-001` disables the behavioural event pipeline for Private MVP.** Every metric is `global` release form under decision 2, computed inside the Worker boundary. §3 states the usable-budget condition the criteria turn on; §6 records the two places this package could not rest on an approved source |
+| Document version | 1.0 |
 | Owner | Alexander Wohlford |
+| Reviewer | Alexander Wohlford — Product Owner. **Approved September 5, 2026** after a review that corrected one citation |
 | Jira | [CBD-77](https://cobudget.atlassian.net/browse/CBD-77) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
 | Governing conventions | `docs/cbd-13-measurement-conventions.md` — Document version **1.0.1**, approved |
@@ -57,13 +58,15 @@ Three statements, because activation is the metric family most likely to be buil
 | --- | --- | --- |
 | **Profile** | The account subject has one financial profile | `CA-92-012` — one financial profile per account subject for Private MVP |
 | **Period** | The space has at least one materialized period whose boundaries are settled by its cadence | `SD-071-021` — initial weekly or monthly setup opens the complete current anchored period |
-| **Category** | The space has at least one spending category | `SD-071-010` — spending targets, expected income, actual income, current cash and pending activity are the period's stated quantities |
+| **Category** | The space has at least one spending category | **Presupposed, not defined.** `SD-071-005`, `SD-071-014`, `SD-071-027` and `SD-071-041` all operate on categories — prorating their targets, recording their provisional impact — and none defines the entity. `SD-071-010` establishes that spending targets are a state distinct from actual spending. See `OQ-77-004` |
 | **Allocation** | At least one category carries a target for the current period | `SD-071-005` / `SD-071-027` — category targets exist per period and prorate on transition |
 | **Account or transaction** | At least one manual account exists, **or** at least one transaction is classified into a period | `CA-92-004` explicit budget-space link; `SD-071-035` — a reliable date, not transaction time, determines period classification |
 
 **The disjunction in the fifth limb is deliberate.** `CBD-77-AC04` requires activation to be measurable before bank connectivity, and `SD-071-035` classifies a transaction on a reliable date rather than on a connection. A space with a manual account and no transaction is usable; so is a space with a classified transaction and no account record. Requiring both would make the metric unmeasurable during the manual-product beta, which is the failure `AC04` exists to prevent.
 
 **`UB-77-001` is a state condition, not a sequence.** It does not say the limbs were satisfied in an order, and no metric here asserts one.
+
+**One limb rests on a presupposition, and the approval review found it.** Four approved decisions operate on categories and none defines one; the defining specification is CBD-30, which is in Planning. The limb is sound — a category either exists in a space or does not, and the product cannot prorate a target for an entity it lacks — but it is the only limb of the five whose citation is inferential rather than definitional. `OQ-77-004` records it, and the audit did not catch it because it checks that a limb **cites** an approved source, not that the source **says** what the limb claims.
 
 ## 4. The metrics
 
@@ -234,5 +237,6 @@ Stated once and applied by every metric above, per conventions §6.
 | `OQ-77-001` | **The conventions pin CBD-76 as the governing scope source, and it is not the scope source for activation.** CBD-76's thirty rows are the CBD-12 oversight boundary; none is a period, category, allocation, account or transaction. §1.1 records the sources actually used | Recorded against the conventions, which own the pin. **No metric here changes** — this package used `SD-071-*` and `CA-92-*`, which do define the states. It matters for CBD-78 and CBD-79 as much as for this package |
 | `OQ-77-002` | **The suppression population is not a number.** Conventions §8 sets the rule and declines to set a minimum, because decision 2 releases no cells. Every `Suppression` field above therefore names the condition without a threshold, and `MT-77-004` and `MT-77-005` say only that theirs is *higher* | CBD-81 owns the number. Until it exists, no metric here can state when it releases rather than withholds, which makes the suppression rule unenforceable in practice |
 | `OQ-77-003` | **`CBD-82` is the elaboration of the financial-profile model and is Draft v0.1.** The profile limb of `UB-77-001` rests on `CA-92-012`, which is approved, so the limb stands. What is not settled is the *observable* form of a profile — whether "has one financial profile" is a row, a completeness state, or a set of required fields | `MT-77-003` and `MT-77-005` depend on the answer through `UB-77-001`. Recorded rather than guessed; CBD-80 records the state of record per source and will need it |
+| `OQ-77-004` | **The `UB-77-001` category limb has no defining approved source.** `SD-071-005`, `SD-071-014`, `SD-071-027` and `SD-071-041` presuppose categories; none defines the entity, and `SD-071-010` establishes only that spending targets are a distinct state. CBD-30 is the defining specification and is in Planning | The limb stands — the product cannot prorate a target for a category that does not exist — but it is inferential where the other four are definitional. **Found by the approval review, not by the audit**, which checks that a limb cites a source rather than that the source supports it |
 | `OI-77-001` | **Eight metrics propose nine measurement sources and none exists.** Every source is marked `proposed` per conventions §3, and CBD-80 assigns the `MS-80-nnn` identifiers and may rename | Expected, not a defect: the conventions define the proposal-then-assign flow precisely so these two packages do not edit each other. It does mean **no metric here is computable until CBD-80 completes** |
 | `OI-77-002` | **Nothing in this package has been measured.** The product is not built: budget spaces, periods, categories and manual transactions are approved designs, not running tables. Every `Data source` names where the state *will* live | The metrics are specifications, not results. A later reader should not mistake a defined metric for an observed one |

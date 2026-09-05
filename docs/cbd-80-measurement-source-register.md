@@ -2,9 +2,10 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft v0.1 — not approved.** Assigns `MS-80-nnn` identifiers to the **31** sources CBD-77, CBD-78 and CBD-79 proposed, and states the privacy, retention and release rules that govern them. §6 proposes the answer to `OQ-13-006` — which surface carries a released figure — as a construction of approved constraints rather than a new decision, and puts it to the Product Owner. **No source is implemented and none has been read** |
-| Document version | 0.1 |
+| Status | **Approved v1.0** — Product Owner approved this exact package on September 5, 2026. Assigns `MS-80-nnn` identifiers to the **31** sources CBD-77, CBD-78 and CBD-79 proposed, and states the privacy, retention and release rules that govern them. §6 proposes the answer to `OQ-13-006` — which surface carries a released figure — as a construction of approved constraints rather than a new decision, and puts it to the Product Owner. **No source is implemented and none has been read** |
+| Document version | 1.0 |
 | Owner | Alexander Wohlford |
+| Reviewer | Alexander Wohlford — Product Owner. **Approved September 5, 2026** after a review that corrected one citation |
 | Jira | [CBD-80](https://cobudget.atlassian.net/browse/CBD-80) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
 | Governing conventions | `docs/cbd-13-measurement-conventions.md` — Document version **1.0.1**, approved |
@@ -69,7 +70,7 @@ Reliability, security, support, audit and aggregate-measurement schemas, stores,
 
 **Two consequences this register enforces:**
 
-1. **No source reads a security-evidence store.** `AN-92-004` keeps `DI-91-053`, `DI-91-062` and `DI-91-071` single-purpose. This is why CBD-79 defines no safety metric and why `OQ-13-007` is open.
+1. **No source reads a security-evidence store.** `AN-92-004` keeps restricted security telemetry single-purpose, and this is why CBD-79 defines no safety metric and why `OQ-13-007` is open. **The classes are `DI-91-053` and `DI-91-062`.** `AN-92-004` names a third, `DI-91-071`, and the approved inventory classifies it **S1** — *"Non-secret service/key version, rotation, and lifecycle metadata"* — which is not security evidence and not restricted. `OQ-80-004` records the discrepancy between the two approved documents.
 2. **No source joins across streams.** A `reliability-telemetry` source and an `aggregate-state` source are never combined into one figure, because the join would give the reliability stream a purpose it was not collected for.
 
 ### 3.4 Retention, access, export and deletion — `CBD-80-AC05`
@@ -172,5 +173,6 @@ Three properties follow, and each is a consequence of `AN-92-006`'s purpose sepa
 | `OQ-80-001` | **The release surface is proposed, not decided.** §6 derives it from `OP-92-001`, `OP-92-002`, `AN-92-004`, `AN-92-006` and `AB-74-014`, which between them exclude every surface the product otherwise has | **No figure is released anywhere until it is answered.** The sources may be built and the aggregates computed; nothing may be read |
 | `OQ-80-002` | **No source has a schema, because the product has none.** Every `State of record` names operational state rather than a table, and the derivations are stated to be reproducible rather than implementable | Recorded so the register is not mistaken for a specification. Each source needs a schema binding when the owning feature is built, and that binding is where a derivation can quietly change meaning |
 | `OQ-80-003` | **The refresh basis is a proposal.** Daily for `reliability-telemetry`, weekly for `aggregate-state`, on the reasoning that operations reach releasable volume faster than populations. CBD-81 confirms review cadence and may want a different refresh | Low consequence, but recorded because a refresh basis that disagrees with a review cadence produces figures nobody reads or reviews that outrun their data |
+| `OQ-80-004` | **Two approved documents disagree about `DI-91-071`.** `AN-92-004` describes `DI-91-053/062/071` as *"S3 restricted security evidence"*; the CBD-91 inventory classifies `DI-91-071` as **S1** non-secret key-lifecycle metadata, and `DF-91-011` routes it to analytics and support systems. One of the two is wrong | **It narrows `OQ-13-007` rather than widening it.** The safety signals CBD-79-AC04 names map to `DI-91-053` and `DI-91-062`, both genuinely S3; `DI-91-071` was never the obstacle. Recorded against CBD-91 and CBD-92, which own the two statements. **Found by the approval review** — this register had restated `AN-92-004` faithfully and inherited its error |
 | `OI-80-001` | **`MS-80-017` merges two proposed sources**, and the merge is a decision this register made rather than a name it accepted. Both retention metrics now read one derivation | If `MT-78-005` and `MT-78-006` ever need different activity definitions, this merge is the thing that must be undone first. `RT-78-001` currently requires they do not |
 | `OI-80-002` | **Nothing here has been implemented or read.** Thirty sources are named against state that does not yet exist | The register is a specification. A later reader should not mistake a registered source for an available one |
