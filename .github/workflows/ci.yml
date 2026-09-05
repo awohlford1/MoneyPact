@@ -94,6 +94,19 @@ jobs:
       - name: Check CBD-108 documentation package
         run: python3 scripts/audit-cbd-108.py
 
+      # The three CBD-13 metric packages. Wired in one change after all three
+      # merged, per the approved measurement conventions section 12: each
+      # package writes its own audit and none touches this file, so three
+      # concurrent packages cannot conflict here.
+      - name: Check CBD-77 documentation package
+        run: python3 scripts/audit-cbd-77.py
+
+      - name: Check CBD-78 documentation package
+        run: python3 scripts/audit-cbd-78.py
+
+      - name: Check CBD-79 documentation package
+        run: python3 scripts/audit-cbd-79.py
+
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
