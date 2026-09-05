@@ -43,6 +43,7 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: python3 scripts/check-doc-vocabulary.py
       - run: python3 scripts/check-jira-freshness.py --offline
+      - run: python3 scripts/check-an92-criteria.py --offline
       - run: python3 scripts/audit-cbd-73.py
       - run: python3 scripts/audit-cbd-74.py
       - run: python3 scripts/audit-cbd-75.py
@@ -56,6 +57,11 @@ jobs:
       - run: python3 scripts/audit-cbd-107.py
       - run: python3 scripts/audit-cbd-130.py
       - run: python3 scripts/audit-cbd-108.py
+      - run: python3 scripts/audit-cbd-77.py
+      - run: python3 scripts/audit-cbd-78.py
+      - run: python3 scripts/audit-cbd-79.py
+      - run: python3 scripts/audit-cbd-80.py
+      - run: python3 scripts/check-citations.py
       - run: python3 -m pip install --require-hashes --only-binary=:all: -r config/publication-requirements.txt
       - run: npm ci
       - run: npm audit --audit-level=high

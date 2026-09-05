@@ -44,6 +44,13 @@ jobs:
       - name: Check pinned source versions
         run: python3 scripts/check-jira-freshness.py --offline
 
+      # Same shape: the half that needs credentials stays a manual step, and
+      # --offline says plainly that it checked nothing rather than passing
+      # silently. It computes CBD-368-AC06's completeness claim, which three
+      # hand sweeps got wrong -- CBD-13 conventions section 11.
+      - name: Check AN-92 criteria
+        run: python3 scripts/check-an92-criteria.py --offline
+
       - name: Check CBD-73 documentation package
         run: python3 scripts/audit-cbd-73.py
 
@@ -86,6 +93,31 @@ jobs:
 
       - name: Check CBD-108 documentation package
         run: python3 scripts/audit-cbd-108.py
+
+      # The three CBD-13 metric packages. Wired in one change after all three
+      # merged, per the approved measurement conventions section 12: each
+      # package writes its own audit and none touches this file, so three
+      # concurrent packages cannot conflict here.
+      - name: Check CBD-77 documentation package
+        run: python3 scripts/audit-cbd-77.py
+
+      - name: Check CBD-78 documentation package
+        run: python3 scripts/audit-cbd-78.py
+
+      - name: Check CBD-79 documentation package
+        run: python3 scripts/audit-cbd-79.py
+
+      # Cross-package: this one reads CBD-77, CBD-78 and CBD-79 as well as its
+      # own register, so it fails if a metric loses its source or a proposal is
+      # dropped. It is the check that keeps the three packages agreeing.
+      - name: Check CBD-80 documentation package
+        run: python3 scripts/audit-cbd-80.py
+
+      # Each package audit checks that a claim carries a citation. None checks
+      # that the citation resolves, so an invented identifier passed all four.
+      # The CBD-77 approval review found this by following citations by hand.
+      - name: Check citations resolve
+        run: python3 scripts/check-citations.py
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

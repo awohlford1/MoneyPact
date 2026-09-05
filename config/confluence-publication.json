@@ -3,6 +3,69 @@
   "bootstrap_sha": "210e408716a5f6bc85617ac2cdb6e3c9057580ea",
   "documents": [
     {
+      "path": "docs/cbd-13-measurement-conventions.md",
+      "disposition": "unpublished",
+      "rationale": "No approved automated page target is registered; CBD-115 does not create pages or infer publication approval.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-77-acceptance-criteria-traceability.md",
+      "disposition": "unpublished",
+      "rationale": "No approved automated page target is registered; CBD-115 does not create pages or infer publication approval.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-77-activation-and-onboarding-metrics.md",
+      "disposition": "unpublished",
+      "rationale": "No approved automated page target is registered; CBD-115 does not create pages or infer publication approval.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-78-acceptance-criteria-traceability.md",
+      "disposition": "unpublished",
+      "rationale": "No approved automated page target is registered; CBD-115 does not create pages or infer publication approval.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-78-engagement-and-retention-metrics.md",
+      "disposition": "unpublished",
+      "rationale": "No approved automated page target is registered; CBD-115 does not create pages or infer publication approval.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-79-acceptance-criteria-traceability.md",
+      "disposition": "unpublished",
+      "rationale": "No approved automated page target is registered; CBD-115 does not create pages or infer publication approval.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-79-reliability-and-safety-metrics.md",
+      "disposition": "unpublished",
+      "rationale": "No approved automated page target is registered; CBD-115 does not create pages or infer publication approval.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-80-acceptance-criteria-traceability.md",
+      "disposition": "unpublished",
+      "rationale": "No approved automated page target is registered; CBD-115 does not create pages or infer publication approval.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-80-measurement-source-register.md",
+      "disposition": "unpublished",
+      "rationale": "No approved automated page target is registered; CBD-115 does not create pages or infer publication approval.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
       "path": "docs/architecture.md",
       "disposition": "unpublished",
       "rationale": "architecture is held repository-only because no approved page target is registered; this task does not create pages.",

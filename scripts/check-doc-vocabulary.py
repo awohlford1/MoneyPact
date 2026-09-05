@@ -99,6 +99,61 @@ VOCABULARIES: tuple[Vocabulary, ...] = (
         canonical="docs/cbd-102-provider-requirements-hard-gate-catalog.md §3",
         applies_to=("cbd-10?-*.md", "cbd-130-*.md"),
     ),
+    # A two-member set carries no drift coverage: a run needs two distinct
+    # members, which for such a set is already complete, so it can never be
+    # partial. metric-class and connectivity-marker are registered for the
+    # canonical record only, and the CBD-13 proof asserts that rather than
+    # assuming it.
+    # CBD-13 measurement sets. Every glob below is exact rather than "cbd-7?-*",
+    # which would sweep in the approved CBD-73 through CBD-76 documents and
+    # report their correct text as drift -- the failure the scoping note above
+    # describes. CBD-77 through CBD-81 are added to each glob as they merge;
+    # only cbd-13-*.md exists today.
+    Vocabulary(
+        name="metric-class",
+        members=("aggregate-state", "reliability-telemetry"),
+        canonical="docs/cbd-13-measurement-conventions.md §5",
+        applies_to=("cbd-13-*.md", "cbd-77-*.md", "cbd-78-*.md", "cbd-79-*.md"),
+    ),
+    Vocabulary(
+        name="connectivity-marker",
+        members=("CONN-REQUIRED", "MANUAL-OK"),
+        canonical="docs/cbd-13-measurement-conventions.md §5",
+        applies_to=("cbd-13-*.md", "cbd-77-*.md", "cbd-78-*.md", "cbd-79-*.md"),
+    ),
+    Vocabulary(
+        name="budget-cadence",
+        members=("weekly", "monthly", "paycheck", "custom"),
+        canonical="docs/cbd-13-measurement-conventions.md §9",
+        applies_to=("cbd-13-*.md", "cbd-77-*.md", "cbd-78-*.md", "cbd-79-*.md"),
+    ),
+    Vocabulary(
+        name="invitation-state",
+        members=("sent", "accepted", "expired", "revoked", "declined"),
+        canonical="docs/cbd-13-measurement-conventions.md §9",
+        applies_to=("cbd-13-*.md", "cbd-78-*.md"),
+    ),
+    Vocabulary(
+        name="notification-state",
+        members=("enqueued", "delivered", "failed", "suppressed", "duplicate", "late"),
+        canonical="docs/cbd-13-measurement-conventions.md §9",
+        applies_to=("cbd-13-*.md", "cbd-79-*.md"),
+    ),
+    # The set CBD-13 section 9 calls the highest-risk one: it appears in CBD-79's
+    # criteria, in the CBD-13 parent criteria, and will appear again in CBD-80
+    # and CBD-81.
+    Vocabulary(
+        name="alert-quality-state",
+        members=("duplicate", "late", "incorrect", "acknowledged", "dismissed"),
+        canonical="docs/cbd-13-measurement-conventions.md §9",
+        applies_to=("cbd-13-*.md", "cbd-79-*.md"),
+    ),
+    Vocabulary(
+        name="collaboration-action",
+        members=("viewing", "editing", "acknowledgement", "commenting"),
+        canonical="docs/cbd-13-measurement-conventions.md §9",
+        applies_to=("cbd-13-*.md", "cbd-78-*.md"),
+    ),
 )
 
 # Glue that makes a sequence of members a list rather than prose. A comma or a
@@ -151,6 +206,65 @@ def enumerations(line: str, vocab: Vocabulary) -> list[list[str]]:
     return runs
 
 
+def claimed_by_a_complete_neighbour(
+    run: list[str], vocab: Vocabulary, line: str
+) -> Vocabulary | None:
+    """Return the vocabulary a run really belongs to, when it is not this one.
+
+    Two registered sets can share adjacent members. `notification-state` ends
+    `duplicate`, `late` and `alert-quality-state` begins with the same two, so a
+    *complete* listing of either contains an apparent *partial* listing of the
+    other and the checker reports correct text as drift.
+
+    A run is not drift when every member in it also belongs to another
+    vocabulary that is completely enumerated on the same line. The longer
+    complete run is the real enumeration; the short one is its shadow.
+
+    This can mask a genuinely incomplete enumeration whose members happen to be
+    a subset of a complete neighbour on the same line. That trade is deliberate:
+    the alternative is a guard that fails on correct text, which is worse than
+    no guard because it gets switched off. CBD-108 section 4.77 records the
+    same reasoning.
+    """
+    for other in VOCABULARIES:
+        if other.name == vocab.name:
+            continue
+        if not set(run).issubset(other.members):
+            continue
+        for other_run in enumerations(line, other):
+            if not set(other.members) - set(other_run):
+                return other
+    return None
+
+
+def excluded_deliberately(missing: list[str], vocab: Vocabulary, line: str) -> bool:
+    """True when the members absent from a run are named and explicitly excluded.
+
+    "Invitations in any terminal state -- accepted, expired, revoked, or
+    declined. `sent` is excluded" is correct writing: a proper subset with the
+    remainder named and a reason given. The run is incomplete and the sentence
+    is not, and reporting it as drift punishes exactly the precision this
+    checker exists to encourage.
+
+    So a run is not drift when every missing member appears in the same block
+    inside an exclusion construction. This can mask a genuine omission that
+    happens to sit near the word "excluded"; the trade is the same one the
+    overlap rule takes, and for the same reason -- a guard that fails on
+    correct text gets switched off.
+    """
+    if not any(re.search(marker, line, re.I) for marker in EXCLUSION_MARKERS):
+        return False
+    return all(find_members(line, vocab) and
+               any(member == hit[2] for hit in find_members(line, vocab))
+               for member in missing)
+
+
+EXCLUSION_MARKERS = (
+    r"\bis excluded\b", r"\bare excluded\b", r"\bexcludes?\b",
+    r"\bomitted\b", r"\bnot counted\b", r"\bleaves? the denominator\b",
+)
+
+
 def paragraph_blocks(text: str) -> list[tuple[int, str]]:
     """Join consecutive non-blank lines, returning (starting line number, text).
 
@@ -199,10 +313,22 @@ def main() -> int:
                 continue
             for number, line in blocks:
                 for run in enumerations(line, vocab):
-                    checked += 1
                     named = set(run)
                     missing = [m for m in vocab.members if m not in named]
                     where = f"{file.relative_to(REPO_ROOT).as_posix()}:{number}"
+                    if missing and excluded_deliberately(missing, vocab, line):
+                        if args.verbose:
+                            print(f"skip  {where}  {vocab.name}: missing members are "
+                                  "named and explicitly excluded")
+                        continue
+                    if missing:
+                        owner = claimed_by_a_complete_neighbour(run, vocab, line)
+                        if owner is not None:
+                            if args.verbose:
+                                print(f"skip  {where}  {vocab.name}: run belongs to "
+                                      f"{owner.name}, which is complete here")
+                            continue
+                    checked += 1
                     if missing:
                         failures += 1
                         print(f"DRIFT {where}")
