@@ -113,19 +113,19 @@ VOCABULARIES: tuple[Vocabulary, ...] = (
         name="metric-class",
         members=("aggregate-state", "reliability-telemetry"),
         canonical="docs/cbd-13-measurement-conventions.md §5",
-        applies_to=("cbd-13-*.md",),
+        applies_to=("cbd-13-*.md", "cbd-77-*.md"),
     ),
     Vocabulary(
         name="connectivity-marker",
         members=("CONN-REQUIRED", "MANUAL-OK"),
         canonical="docs/cbd-13-measurement-conventions.md §5",
-        applies_to=("cbd-13-*.md",),
+        applies_to=("cbd-13-*.md", "cbd-77-*.md"),
     ),
     Vocabulary(
         name="budget-cadence",
         members=("weekly", "monthly", "paycheck", "custom"),
         canonical="docs/cbd-13-measurement-conventions.md §9",
-        applies_to=("cbd-13-*.md",),
+        applies_to=("cbd-13-*.md", "cbd-77-*.md"),
     ),
     Vocabulary(
         name="invitation-state",
