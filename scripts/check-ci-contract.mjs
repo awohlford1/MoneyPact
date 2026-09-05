@@ -45,6 +45,7 @@ const REQUIRED_WORKFLOW_COMMANDS = [
   // runner does not have. The offline half compares pinned source versions
   // against the documents they name and is deterministic.
   "python3 scripts/check-jira-freshness.py --offline",
+  "python3 scripts/check-an92-criteria.py --offline",
   "python3 scripts/audit-cbd-73.py",
   "python3 scripts/audit-cbd-74.py",
   "python3 scripts/audit-cbd-75.py",
