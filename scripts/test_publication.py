@@ -903,6 +903,10 @@ class GitAndContractTests(unittest.TestCase):
     def test_workflow_guards_all_execution_boundary_changes(self):
         workflow = (p.ROOT / ".github/workflows/publish-confluence.yml").read_text(encoding="utf-8")
         validate_workflow(workflow)
+        command = "python3 -m pip install --require-hashes --only-binary=:all: -r config/publication-requirements.txt"
+        self.assertIn("'" + command + "'", workflow)
+        with self.assertRaises(p.PublicationError):
+            validate_workflow(workflow.replace("'" + command + "'", command))
         for old, new in (("push:", "pull_request_target:"), ("branches: [main]", "branches: ['*']"),
                          ("contents: read", "contents: write"), ("actions: read", "actions: write"),
                          ("cancel-in-progress: false", "cancel-in-progress: true"), ("queue: max", "queue: single"),

@@ -66,7 +66,7 @@ const REQUIRED_WORKFLOW_COMMANDS = [
   "python3 scripts/audit-cbd-79.py",
   "python3 scripts/audit-cbd-80.py",
   "python3 scripts/check-citations.py",
-  "python3 -m pip install --require-hashes --only-binary=:all: -r config/publication-requirements.txt",
+  "'python3 -m pip install --require-hashes --only-binary=:all: -r config/publication-requirements.txt'",
   "npm ci",
   "npm audit --audit-level=high",
   "npm run check",

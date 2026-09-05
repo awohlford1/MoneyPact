@@ -27,7 +27,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install pinned converter
-        run: python3 -m pip install --require-hashes --only-binary=:all: -r config/publication-requirements.txt
+        run: 'python3 -m pip install --require-hashes --only-binary=:all: -r config/publication-requirements.txt'
 
       - name: Validate publication contract and fixtures
         run: python3 scripts/check-publication.py

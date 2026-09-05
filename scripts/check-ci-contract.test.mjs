@@ -62,7 +62,7 @@ jobs:
       - run: python3 scripts/audit-cbd-79.py
       - run: python3 scripts/audit-cbd-80.py
       - run: python3 scripts/check-citations.py
-      - run: python3 -m pip install --require-hashes --only-binary=:all: -r config/publication-requirements.txt
+      - run: 'python3 -m pip install --require-hashes --only-binary=:all: -r config/publication-requirements.txt'
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npm run check
@@ -146,6 +146,11 @@ describe("CI contract checker", () => {
 
   it("accepts the complete hardened contract", () => {
     assert.deepEqual(failures(), []);
+  });
+
+  it("rejects unquoted colon-space in the publication dependency command", () => {
+    const command = "python3 -m pip install --require-hashes --only-binary=:all: -r config/publication-requirements.txt";
+    expectFailure(failures({ workflow: validWorkflow.replace(`'${command}'`, command) }), "is not in the reviewed command allowlist");
   });
 
   it("rejects floating external action references", () => {
