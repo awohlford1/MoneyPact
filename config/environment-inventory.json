@@ -106,7 +106,8 @@
       "name": "CONFLUENCE_BASE_URL",
       "classification": "tooling",
       "consumer": [
-        "scripts/sync-confluence.py"
+        "scripts/sync-confluence.py",
+        "scripts/publication_transport.py"
       ],
       "owner": "Engineering",
       "required": true,
@@ -124,7 +125,8 @@
       "name": "CONFLUENCE_EMAIL",
       "classification": "tooling",
       "consumer": [
-        "scripts/sync-confluence.py"
+        "scripts/sync-confluence.py",
+        "scripts/publication_transport.py"
       ],
       "owner": "Engineering",
       "required": true,
@@ -142,7 +144,8 @@
       "name": "CONFLUENCE_API_TOKEN",
       "classification": "tooling",
       "consumer": [
-        "scripts/sync-confluence.py"
+        "scripts/sync-confluence.py",
+        "scripts/publication_transport.py"
       ],
       "owner": "Engineering",
       "required": true,
@@ -210,6 +213,20 @@
       "placeholder": "",
       "description": "Secret API token; fill only in the untracked environment, never commit a value.",
       "group": "jira"
+    },
+    {
+      "name": "GH_TOKEN",
+      "classification": "tooling",
+      "consumer": ["scripts/publication_transport.py"],
+      "owner": "Engineering",
+      "required": true,
+      "sensitivity": "secret",
+      "source": "read-only GitHub workflow token, checkpoint step only",
+      "validation": {"kind": "token"},
+      "template": "included",
+      "placeholder": "",
+      "description": "Ephemeral read-only token to recover successful publication history; never used for Confluence writes.",
+      "group": "publication-checkpoint"
     },
     {
       "name": "CI",

@@ -1,0 +1,1414 @@
+{
+  "schema": 1,
+  "bootstrap_sha": "210e408716a5f6bc85617ac2cdb6e3c9057580ea",
+  "documents": [
+    {
+      "path": "docs/architecture.md",
+      "disposition": "unpublished",
+      "rationale": "architecture is held repository-only because no approved page target is registered; this task does not create pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/brand-foundation.md",
+      "disposition": "unpublished",
+      "rationale": "brand-foundation is held repository-only because no approved page target is registered; this task does not create pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-102-cost-template.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-102-cost-template.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-102-cost-template",
+      "page_id": "9469982",
+      "expected_title": "CBD-102 — Provider Cost Template",
+      "doc_set": "cbd-102",
+      "order": 44,
+      "depends_on": [
+        "cbd-102-demand-model"
+      ],
+      "policy": "approved",
+      "approved_sha256": "0c38f920ef553d2310c62abb217dbdffe1c8e461379a00dcc4fbc2fb86f16cd2"
+    },
+    {
+      "path": "docs/cbd-102-demand-model.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-102-demand-model.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-102-demand-model",
+      "page_id": "9273396",
+      "expected_title": "CBD-102 — Private MVP Demand Model",
+      "doc_set": "cbd-102",
+      "order": 43,
+      "depends_on": [
+        "cbd-102-rubric"
+      ],
+      "policy": "approved",
+      "approved_sha256": "712ccfea92653b17ac9e226f96cd335f53bb28d4f7eefa92d01ddc9e8298f6b0"
+    },
+    {
+      "path": "docs/cbd-102-evidence-register-and-exception-rules.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-102-evidence-register-and-exception-rules.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-102-evidence-register",
+      "page_id": "9601048",
+      "expected_title": "CBD-102 — Evidence Register and Exception Rules",
+      "doc_set": "cbd-102",
+      "order": 45,
+      "depends_on": [
+        "cbd-102-cost-template"
+      ],
+      "policy": "approved",
+      "approved_sha256": "526cf82aeae0177d99131bc0051fefd8debe25a8066ce25cf18a0fdbaeb7bdac"
+    },
+    {
+      "path": "docs/cbd-102-provider-evaluation-rubric.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-102-provider-evaluation-rubric.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-102-rubric",
+      "page_id": "9142327",
+      "expected_title": "CBD-102 — Weighted Provider Evaluation Rubric",
+      "doc_set": "cbd-102",
+      "order": 42,
+      "depends_on": [
+        "cbd-102-gate-catalog"
+      ],
+      "policy": "approved",
+      "approved_sha256": "f72a4b2a2dc57939460dbf99594c246620c0797de407171278f45a17095c21c3"
+    },
+    {
+      "path": "docs/cbd-102-provider-requirements-hard-gate-catalog.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-102-provider-requirements-hard-gate-catalog.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-102-gate-catalog",
+      "page_id": "9371654",
+      "expected_title": "CBD-102 — Provider Requirements and Hard-Gate Catalog",
+      "doc_set": "cbd-102",
+      "order": 41,
+      "depends_on": [
+        "cbd-75-standard"
+      ],
+      "policy": "approved",
+      "approved_sha256": "dacf421fd9c5abd5886b003757ed0828ff2d42ebaeb25110449a49696f15f617"
+    },
+    {
+      "path": "docs/cbd-103-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-103-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-103-traceability",
+      "page_id": "12386305",
+      "expected_title": "CBD-103 — Acceptance Criteria Traceability and Review Record",
+      "doc_set": "cbd-103",
+      "order": 49,
+      "depends_on": [
+        "cbd-103-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "33de0e747689b717930532299b0d1c12cb76b755a79f7df087127022cdd67882"
+    },
+    {
+      "path": "docs/cbd-103-candidate-shortlist-and-gate-evaluation.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-103-candidate-shortlist-and-gate-evaluation.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-103-evaluation",
+      "page_id": "12353537",
+      "expected_title": "CBD-103 — Hosting Candidate Shortlist and Gate Evaluation",
+      "doc_set": "cbd-103",
+      "order": 47,
+      "depends_on": [
+        "cbd-103-topology"
+      ],
+      "policy": "approved",
+      "approved_sha256": "f3d6ff05b1cc1104de761f06cdb84707e09e0854f08892a4deb6da3b851b1c2b"
+    },
+    {
+      "path": "docs/cbd-103-operational-and-cost-assessment.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-103-operational-and-cost-assessment.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-103-operational",
+      "page_id": "12320790",
+      "expected_title": "CBD-103 — Deployment, Outage, Support, Cost, and Exit Assessment",
+      "doc_set": "cbd-103",
+      "order": 48,
+      "depends_on": [
+        "cbd-103-evaluation"
+      ],
+      "policy": "approved",
+      "approved_sha256": "5755065fa8888e2cf960ee70a4d51cfe5dc06c45843a9c7b0e45b1505b00ce37"
+    },
+    {
+      "path": "docs/cbd-103-runtime-topology-specification.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-103-runtime-topology-specification.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-103-topology",
+      "page_id": "12320769",
+      "expected_title": "CBD-103 — Hosting and Runtime Topology Specification",
+      "doc_set": "cbd-103",
+      "order": 46,
+      "depends_on": [
+        "cbd-102-evidence-register"
+      ],
+      "policy": "approved",
+      "approved_sha256": "a9b50edc3f5147b6b0471445e9e827c646609128eaf1c2fdb6fd31d0dab07fa8"
+    },
+    {
+      "path": "docs/cbd-104-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-104-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-104-traceability",
+      "page_id": "13172737",
+      "expected_title": "CBD-104 — Acceptance Criteria Traceability and Review Record",
+      "doc_set": "cbd-104",
+      "order": 57,
+      "depends_on": [
+        "cbd-104-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "5bc5adb7e193ce2c07d55dd1fcb306d3d66893675a7eaa7e1147df4f58cd168b"
+    },
+    {
+      "path": "docs/cbd-104-candidate-shortlist-and-gate-evaluation.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-104-candidate-shortlist-and-gate-evaluation.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-104-evaluation",
+      "page_id": "13139969",
+      "expected_title": "CBD-104 — Identity Candidate Shortlist and Gate Evaluation",
+      "doc_set": "cbd-104",
+      "order": 55,
+      "depends_on": [
+        "cbd-104-specification"
+      ],
+      "policy": "approved",
+      "approved_sha256": "25d70250a49c2a9c2795aab6daa4af66726246b25c058ff13459fbc0385fae81"
+    },
+    {
+      "path": "docs/cbd-104-identity-integration-boundary-specification.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-104-identity-integration-boundary-specification.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-104-specification",
+      "page_id": "13107201",
+      "expected_title": "CBD-104 — Identity Integration Boundary Specification",
+      "doc_set": "cbd-104",
+      "order": 54,
+      "depends_on": [
+        "cbd-105-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "1f396491f575c8854b7fa2448a4055d75136ddcc48401084a8e28633e8bc511a"
+    },
+    {
+      "path": "docs/cbd-104-operational-and-cost-assessment.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-104-operational-and-cost-assessment.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-104-operational",
+      "page_id": "12877849",
+      "expected_title": "CBD-104 — Integration, Outage, Support, Cost, and Exit Assessment",
+      "doc_set": "cbd-104",
+      "order": 56,
+      "depends_on": [
+        "cbd-104-evaluation"
+      ],
+      "policy": "approved",
+      "approved_sha256": "a3733c0c49dc3fddf2ec9c8ed51bd023d8adf9fb359a7c42b691dddd77deb7f2"
+    },
+    {
+      "path": "docs/cbd-105-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-105-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-105-traceability",
+      "page_id": "12910593",
+      "expected_title": "CBD-105 — Acceptance Criteria Traceability and Review Record",
+      "doc_set": "cbd-105",
+      "order": 53,
+      "depends_on": [
+        "cbd-105-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "3faac0996b06e1dcfc51a1a7a8f6f2b892ecfa0c7f2e7e616bfdae1746d89699"
+    },
+    {
+      "path": "docs/cbd-105-candidate-shortlist-and-gate-evaluation.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-105-candidate-shortlist-and-gate-evaluation.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-105-evaluation",
+      "page_id": "12845057",
+      "expected_title": "CBD-105 — PostgreSQL Candidate Shortlist and Gate Evaluation",
+      "doc_set": "cbd-105",
+      "order": 51,
+      "depends_on": [
+        "cbd-105-specification"
+      ],
+      "policy": "approved",
+      "approved_sha256": "b4b6ccdacfcadbf4b4fa20be234f599fb84fb1f0e9bda56b195a83e1f57edd3a"
+    },
+    {
+      "path": "docs/cbd-105-data-protection-and-recovery-specification.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-105-data-protection-and-recovery-specification.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-105-specification",
+      "page_id": "12812289",
+      "expected_title": "CBD-105 — Data Protection and Recovery Specification",
+      "doc_set": "cbd-105",
+      "order": 50,
+      "depends_on": [
+        "cbd-103-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "7032929fa282ca2ca44f29e6e333d876b3b8f032aec4e96b2a310958e2bb406f"
+    },
+    {
+      "path": "docs/cbd-105-operational-and-cost-assessment.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-105-operational-and-cost-assessment.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-105-operational",
+      "page_id": "12877825",
+      "expected_title": "CBD-105 — Capacity, Maintenance, Monitoring, Cost, and Exit Assessment",
+      "doc_set": "cbd-105",
+      "order": 52,
+      "depends_on": [
+        "cbd-105-evaluation"
+      ],
+      "policy": "approved",
+      "approved_sha256": "c3ae8e0ab1b554aed3375a0015c6856de1c762b4bc1a7ab29ac1852b1f2789d5"
+    },
+    {
+      "path": "docs/cbd-106-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-106-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-106-traceability",
+      "page_id": "12877869",
+      "expected_title": "CBD-106 — Acceptance Criteria Traceability and Review Record",
+      "doc_set": "cbd-106",
+      "order": 61,
+      "depends_on": [
+        "cbd-106-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "97eeea4bd4d925fb03f437b99593f8b7db38127cf9cee706ec5f1452d6470941"
+    },
+    {
+      "path": "docs/cbd-106-candidate-shortlist-and-gate-evaluation.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-106-candidate-shortlist-and-gate-evaluation.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-106-evaluation",
+      "page_id": "12845090",
+      "expected_title": "CBD-106 — Transactional Email Candidate Shortlist and Gate Evaluation",
+      "doc_set": "cbd-106",
+      "order": 59,
+      "depends_on": [
+        "cbd-106-specification"
+      ],
+      "policy": "approved",
+      "approved_sha256": "aadc158cdcca472b4524035d8ea6f33fe7e0aabdbdfba5f17d837fc14b4b1775"
+    },
+    {
+      "path": "docs/cbd-106-email-delivery-and-content-boundary-specification.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-106-email-delivery-and-content-boundary-specification.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-106-specification",
+      "page_id": "13205505",
+      "expected_title": "CBD-106 — Email Delivery and Content Boundary Specification",
+      "doc_set": "cbd-106",
+      "order": 58,
+      "depends_on": [
+        "cbd-104-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "f6a9fa13d0b754a333d50c24f9cdd5ffe98ec2ddb18271f4772ab3f58b8cd441"
+    },
+    {
+      "path": "docs/cbd-106-operational-and-cost-assessment.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-106-operational-and-cost-assessment.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-106-operational",
+      "page_id": "13238273",
+      "expected_title": "CBD-106 — Deliverability, Operations, Cost, and Exit Assessment",
+      "doc_set": "cbd-106",
+      "order": 60,
+      "depends_on": [
+        "cbd-106-evaluation"
+      ],
+      "policy": "approved",
+      "approved_sha256": "383944bc60a8bccc028f2d5afc0385cfda16ea8a8d1558acba06309a6fa75c76"
+    },
+    {
+      "path": "docs/cbd-107-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-107-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-107-traceability",
+      "page_id": "13598721",
+      "expected_title": "CBD-107 — Acceptance Criteria Traceability and Review Record",
+      "doc_set": "cbd-107",
+      "order": 66,
+      "depends_on": [
+        "cbd-107-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "d6b07a12fdfc890b139c75db46def6f46cc6c9078df546409ef64112731b6d8b"
+    },
+    {
+      "path": "docs/cbd-107-candidate-shortlist-and-gate-evaluation.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-107-candidate-shortlist-and-gate-evaluation.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-107-evaluation",
+      "page_id": "13533185",
+      "expected_title": "CBD-107 — Financial-Data Connectivity Candidate Shortlist and Gate Evaluation",
+      "doc_set": "cbd-107",
+      "order": 63,
+      "depends_on": [
+        "cbd-107-specification"
+      ],
+      "policy": "approved",
+      "approved_sha256": "20197becc51deba05461cc4fb255a3b30d883dcd10825b6b2401cea5105e4add"
+    },
+    {
+      "path": "docs/cbd-107-connection-and-provenance-boundary-specification.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-107-connection-and-provenance-boundary-specification.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-107-specification",
+      "page_id": "13500417",
+      "expected_title": "CBD-107 — Connection and Provenance Boundary Specification",
+      "doc_set": "cbd-107",
+      "order": 62,
+      "depends_on": [
+        "cbd-106-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "4e6dca722629a3f5813fc11027457d920f85451c98ea1564dc535353f7926f46"
+    },
+    {
+      "path": "docs/cbd-107-evidence-request-programme.md",
+      "disposition": "unpublished",
+      "rationale": "cbd-107-evidence-request-programme is held repository-only because no approved page target is registered; this task does not create pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-107-operational-and-cost-assessment.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-107-operational-and-cost-assessment.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-107-operational",
+      "page_id": "13303816",
+      "expected_title": "CBD-107 — Connection Operations, Support, Cost, and Exit Assessment",
+      "doc_set": "cbd-107",
+      "order": 65,
+      "depends_on": [
+        "cbd-107-lifecycle"
+      ],
+      "policy": "approved",
+      "approved_sha256": "59c0e480d4816f291061f4da4e4299e2db5227804dd0519d3e4a9bfc11a2069c"
+    },
+    {
+      "path": "docs/cbd-107-transaction-lifecycle-and-coverage-map.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-107-transaction-lifecycle-and-coverage-map.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-107-lifecycle",
+      "page_id": "13565953",
+      "expected_title": "CBD-107 — Transaction Lifecycle, Coverage, and Provider-Signal Map",
+      "doc_set": "cbd-107",
+      "order": 64,
+      "depends_on": [
+        "cbd-107-evaluation"
+      ],
+      "policy": "approved",
+      "approved_sha256": "24458117d6a1a1d9adb78db8a0edac84e3bbea404f24f6142e80c92d7cb301bc"
+    },
+    {
+      "path": "docs/cbd-108-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-108-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-108-traceability",
+      "page_id": "20021249",
+      "expected_title": "CBD-108 — Acceptance Criteria Traceability and Review Record",
+      "doc_set": "cbd-108",
+      "order": 78,
+      "depends_on": [
+        "cbd-130-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "612623f5028d88b4fd78c6d16e1c34d40bd027b74bf329c0f1ea7779ecd011af"
+    },
+    {
+      "path": "docs/cbd-108-carried-item-disposition-register.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-108-carried-item-disposition-register.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-108-carried",
+      "page_id": "19660835",
+      "expected_title": "CBD-108 — Carried Item Disposition Register",
+      "doc_set": "cbd-108",
+      "order": 76,
+      "depends_on": [
+        "cbd-130-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "02712b39ce30818bc0c051aea28297cf05552401120f739f9fab3907ba9886d0"
+    },
+    {
+      "path": "docs/cbd-108-combined-cost-model.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-108-combined-cost-model.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-108-cost",
+      "page_id": "19988481",
+      "expected_title": "CBD-108 — Combined Cost Model",
+      "doc_set": "cbd-108",
+      "order": 75,
+      "depends_on": [
+        "cbd-130-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "cbe333702417b29a1afad29a7560c584977afdd9551a6554f57eaaae79277229"
+    },
+    {
+      "path": "docs/cbd-108-cross-category-coherence-review.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-108-cross-category-coherence-review.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-108-coherence",
+      "page_id": "19660815",
+      "expected_title": "CBD-108 — Cross-Category Coherence Review",
+      "doc_set": "cbd-108",
+      "order": 74,
+      "depends_on": [
+        "cbd-130-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "c30a2bc242d375b1969c67ef51b4ab8400e00029404b0c0fcbbe4a19657ec558"
+    },
+    {
+      "path": "docs/cbd-108-evidence-retrieval-pass.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-108-evidence-retrieval-pass.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-108-retrieval",
+      "page_id": "19660855",
+      "expected_title": "CBD-108 — Evidence Retrieval Pass",
+      "doc_set": "cbd-108",
+      "order": 77,
+      "depends_on": [
+        "cbd-130-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "ab3e56c4797fa5ac9f55159cb79d92af8024ff1dfc82dc159799a507b91a66de"
+    },
+    {
+      "path": "docs/cbd-108-provider-set-disposition-register.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-108-provider-set-disposition-register.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-108-disposition",
+      "page_id": "19955713",
+      "expected_title": "CBD-108 — Provider Set Disposition Register",
+      "doc_set": "cbd-108",
+      "order": 73,
+      "depends_on": [
+        "cbd-130-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "e96f0851aab8452767802e7d0c06147b7967bc33ccc6483fd0890dfb937ef9d0"
+    },
+    {
+      "path": "docs/cbd-112-ci-verification-record.md",
+      "disposition": "unpublished",
+      "rationale": "cbd-112-ci-verification-record is held repository-only because no approved page target is registered; this task does not create pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-130-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-130-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-130-traceability",
+      "page_id": "13860865",
+      "expected_title": "CBD-130 — Acceptance Criteria Traceability and Review Record",
+      "doc_set": "cbd-130",
+      "order": 70,
+      "depends_on": [
+        "cbd-130-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "c09fe74e56258c542b92ca7b06d45e97ad4932a086f3d391f7f8956d0a98d92e"
+    },
+    {
+      "path": "docs/cbd-130-candidate-shortlist-and-gate-evaluation.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-130-candidate-shortlist-and-gate-evaluation.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-130-evaluation",
+      "page_id": "13795329",
+      "expected_title": "CBD-130 — Push and SMS Candidate Shortlist, Gate Evaluation, and Rubric Scores",
+      "doc_set": "cbd-130",
+      "order": 68,
+      "depends_on": [
+        "cbd-130-specification"
+      ],
+      "policy": "approved",
+      "approved_sha256": "d76c570b1842505e32e4ee1df77f422a8e35a9f2b521f03a2b17c6926080705f"
+    },
+    {
+      "path": "docs/cbd-130-operational-and-cost-assessment.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-130-operational-and-cost-assessment.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-130-operational",
+      "page_id": "13828097",
+      "expected_title": "CBD-130 — Channel Operations, Registration, Cost, and Exit Assessment",
+      "doc_set": "cbd-130",
+      "order": 69,
+      "depends_on": [
+        "cbd-130-evaluation"
+      ],
+      "policy": "approved",
+      "approved_sha256": "0613b7d1cffc8fbae4198ded9d6a0dd33f833de7db9da082922974f26f6444f1"
+    },
+    {
+      "path": "docs/cbd-130-push-and-sms-delivery-boundary-specification.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-130-push-and-sms-delivery-boundary-specification.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-130-specification",
+      "page_id": "13434891",
+      "expected_title": "CBD-130 — Push and SMS Delivery Boundary Specification",
+      "doc_set": "cbd-130",
+      "order": 67,
+      "depends_on": [
+        "cbd-107-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "d544c6d0198bc26d2480c2d32ec786cf751d7c1822ffd41c907f194dee60ee81"
+    },
+    {
+      "path": "docs/cbd-67-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-67-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-67-traceability",
+      "page_id": "720897",
+      "expected_title": "CBD-67 — Acceptance Criteria Traceability and Review Record",
+      "doc_set": "cbd-67",
+      "order": 2,
+      "depends_on": [],
+      "policy": "approved",
+      "approved_sha256": "895bc639df6c8d189ee984dce80a670d01e4edd3567f15c06cd3cbfe193e4f17"
+    },
+    {
+      "path": "docs/cbd-67-weekly-monthly-cadence-scenario-catalog.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-67-weekly-monthly-cadence-scenario-catalog.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-67-scenarios",
+      "page_id": "688129",
+      "expected_title": "CBD-67 — Weekly and Monthly Cadence Scenario Catalog",
+      "doc_set": "cbd-67",
+      "order": 1,
+      "depends_on": [],
+      "policy": "approved",
+      "approved_sha256": "370d848a45778edaa817c3aad6a3ca7a4cc1291e99e6dbb18626a777d0b2d763"
+    },
+    {
+      "path": "docs/cbd-67-weekly-monthly-cadence-workflow-specification.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-67-weekly-monthly-cadence-workflow-specification.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-67-specification",
+      "page_id": "655361",
+      "expected_title": "CBD-67 — Weekly and Monthly Budget Cycle Workflow Specification",
+      "doc_set": "cbd-67",
+      "order": 0,
+      "depends_on": [],
+      "policy": "approved",
+      "approved_sha256": "13a0b84046132e235618afaca907af6989ed6dd64bf85562187cdd8a8232482b"
+    },
+    {
+      "path": "docs/cbd-68-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-68-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-68-traceability",
+      "page_id": "3768321",
+      "expected_title": "CBD-68 — Acceptance Criteria Traceability and Review Record",
+      "doc_set": "cbd-68",
+      "order": 5,
+      "depends_on": [],
+      "policy": "approved",
+      "approved_sha256": "cabfecfed2ca3bb092283b5e9518a1fe941d71b77fa1bf7c2de1f8b31e6aaf75"
+    },
+    {
+      "path": "docs/cbd-68-paycheck-custom-cadence-scenario-catalog.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-68-paycheck-custom-cadence-scenario-catalog.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-68-scenarios",
+      "page_id": "3342349",
+      "expected_title": "CBD-68 — Paycheck and Custom Cadence Scenario Catalog",
+      "doc_set": "cbd-68",
+      "order": 4,
+      "depends_on": [],
+      "policy": "approved",
+      "approved_sha256": "ae2409bc150e6f94a156bbb95135191e4946f8c925b897d550de5edef549e7aa"
+    },
+    {
+      "path": "docs/cbd-68-paycheck-custom-cadence-workflow-specification.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-68-paycheck-custom-cadence-workflow-specification.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-68-specification",
+      "page_id": "3735553",
+      "expected_title": "CBD-68 — Paycheck and Custom Budget Cadence Workflow Specification",
+      "doc_set": "cbd-68",
+      "order": 3,
+      "depends_on": [],
+      "policy": "approved",
+      "approved_sha256": "bd4f3e3ccbe3dec3d7d5593aae53c1c4e5e4462f90d96381a63088ed33c3b2fb"
+    },
+    {
+      "path": "docs/cbd-69-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-69-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-69-traceability",
+      "page_id": "3670026",
+      "expected_title": "CBD-69 — Acceptance Criteria Traceability",
+      "doc_set": "cbd-69",
+      "order": 11,
+      "depends_on": [
+        "cbd-69-scenarios"
+      ],
+      "policy": "approved",
+      "approved_sha256": "23f26edb1c0d9c22f67395ac9ff85c84d9982880d2ba597e24d9c904e547c467"
+    },
+    {
+      "path": "docs/cbd-69-period-edge-case-scenario-catalog.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-69-period-edge-case-scenario-catalog.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-69-scenarios",
+      "page_id": "3571722",
+      "expected_title": "CBD-69 — Period Edge Case Scenario Catalog",
+      "doc_set": "cbd-69",
+      "order": 10,
+      "depends_on": [
+        "cbd-69-specification"
+      ],
+      "policy": "approved",
+      "approved_sha256": "6527d1200054c978cc698c959debe68b190499a33fe06cad9381935e286120e3"
+    },
+    {
+      "path": "docs/cbd-69-period-edge-cases-validation-rule-specification.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-69-period-edge-cases-validation-rule-specification.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-69-specification",
+      "page_id": "3538946",
+      "expected_title": "CBD-69 — Period Edge Cases & Validation Rule Specification",
+      "doc_set": "cbd-69",
+      "order": 9,
+      "depends_on": [],
+      "policy": "approved",
+      "approved_sha256": "b2877f97509d6fa8fe900679d5594b33496903e15783a6a2be07b9bd18d19c77"
+    },
+    {
+      "path": "docs/cbd-70-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-70-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-70-traceability",
+      "page_id": "6225922",
+      "expected_title": "CBD-70 — Acceptance Criteria Traceability and Review Record",
+      "doc_set": "cbd-70",
+      "order": 8,
+      "depends_on": [],
+      "policy": "approved",
+      "approved_sha256": "44aea1779631340d22822389c9bc36982eeba9914e2c04b467671c8f38bf492a"
+    },
+    {
+      "path": "docs/cbd-70-calendar-example-set.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-70-calendar-example-set.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-70-calendar-examples",
+      "page_id": "6062090",
+      "expected_title": "CBD-70 — Deterministic Calendar Example Set",
+      "doc_set": "cbd-70",
+      "order": 6,
+      "depends_on": [],
+      "policy": "approved",
+      "approved_sha256": "b7ee96bd5d8443b2ea5c0b6f901472f7a0c19676064d3dc6796fb2f1f6c1e7fe"
+    },
+    {
+      "path": "docs/cbd-70-scenario-catalog.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-70-scenario-catalog.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-70-scenarios",
+      "page_id": "6422529",
+      "expected_title": "CBD-70 — Deterministic Budget Calendar and Financial Scenario Catalog",
+      "doc_set": "cbd-70",
+      "order": 7,
+      "depends_on": [],
+      "policy": "approved",
+      "approved_sha256": "d478d79cf749376d067b8d0e55e8c11de7fe2e5be45a7c23ba3be02a1a1326a1"
+    },
+    {
+      "path": "docs/cbd-71-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-71-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-71-traceability",
+      "page_id": "6782985",
+      "expected_title": "CBD-71 — Acceptance Criteria Traceability and Review Record",
+      "doc_set": "cbd-71",
+      "order": 15,
+      "depends_on": [
+        "future-feature-register"
+      ],
+      "policy": "approved",
+      "approved_sha256": "f3d9eef0d324e2fa7af00773fd22f608e38501309ce01be74fce1c58671c6fe6"
+    },
+    {
+      "path": "docs/cbd-71-mvp-schedule-decision-register.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-71-mvp-schedule-decision-register.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-71-register",
+      "page_id": "6914050",
+      "expected_title": "CBD-71 — MVP Schedule Decisions",
+      "doc_set": "cbd-71",
+      "order": 13,
+      "depends_on": [
+        "future-feature-register"
+      ],
+      "policy": "approved",
+      "approved_sha256": "a54f47bce94e689dd47743c8ca994f9363c2850ec16a269421e2a5fe6ef08e0f"
+    },
+    {
+      "path": "docs/cbd-71-validation-checklist.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-71-validation-checklist.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-71-checklist",
+      "page_id": "6160404",
+      "expected_title": "CBD-71 — MVP Schedule Decisions Validation Checklist",
+      "doc_set": "cbd-71",
+      "order": 14,
+      "depends_on": [
+        "future-feature-register"
+      ],
+      "policy": "approved",
+      "approved_sha256": "aa9be1da1b20723d2798d4be552cea1b62e66df0d3beb68d9afb39fee835113a"
+    },
+    {
+      "path": "docs/cbd-72-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-72-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-72-traceability",
+      "page_id": "8880172",
+      "expected_title": "CBD-72 — Acceptance Criteria Traceability and Review Record",
+      "doc_set": "cbd-72",
+      "order": 18,
+      "depends_on": [
+        "cbd-72-model"
+      ],
+      "policy": "approved",
+      "approved_sha256": "fb1aad8d93c9d9266119013ce4f69826f3b7fdd9187c3f2d3597158bbb5af6c4"
+    },
+    {
+      "path": "docs/cbd-72-authorization-scenario-catalog.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-72-authorization-scenario-catalog.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-72-scenarios",
+      "page_id": "8880151",
+      "expected_title": "CBD-72 — Authorization Scenario Catalog",
+      "doc_set": "cbd-72",
+      "order": 17,
+      "depends_on": [
+        "cbd-72-model"
+      ],
+      "policy": "approved",
+      "approved_sha256": "d1a51aee5f06be6efcafe3be3f0280d04c463a9af0aae0f88fae26e9bb469fa1"
+    },
+    {
+      "path": "docs/cbd-72-collaboration-permission-model.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-72-collaboration-permission-model.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-72-model",
+      "page_id": "8880130",
+      "expected_title": "CBD-72 — Collaboration Permission Model",
+      "doc_set": "cbd-72",
+      "order": 16,
+      "depends_on": [
+        "future-feature-register"
+      ],
+      "policy": "approved",
+      "approved_sha256": "e480180f06ee7fc4a6a3772327dfead4b827548e95cce4b8231c614c4a20188a"
+    },
+    {
+      "path": "docs/cbd-72-permission-matrix-audit.md",
+      "disposition": "unpublished",
+      "rationale": "cbd-72-permission-matrix-audit is held repository-only because no approved page target is registered; this task does not create pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-73-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-73-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-73-traceability",
+      "page_id": "11403286",
+      "expected_title": "CBD-73 — Acceptance Criteria Traceability and Review Record",
+      "doc_set": "cbd-73",
+      "order": 35,
+      "depends_on": [
+        "cbd-73-review-findings"
+      ],
+      "policy": "approved",
+      "approved_sha256": "246e6c8312fe2897bb39e0722fad6b29d6f4638def5baf79f8da85f2c7ebe1a4"
+    },
+    {
+      "path": "docs/cbd-73-customer-message-inventory.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-73-customer-message-inventory.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-73-message-inventory",
+      "page_id": "11403265",
+      "expected_title": "CBD-73 — Customer-Facing Message Inventory",
+      "doc_set": "cbd-73",
+      "order": 32,
+      "depends_on": [
+        "cbd-73-specification"
+      ],
+      "policy": "approved",
+      "approved_sha256": "46c295147f6e355b87cec751a3bdb0f0252ab31f42bcfc4ae0f4d6e277a7e379"
+    },
+    {
+      "path": "docs/cbd-73-exhaustive-review-findings.md",
+      "disposition": "registered",
+      "rationale": "Registered legacy target is held because its current status does not establish approval for this exact automated publication.",
+      "authority": "Repository status record in docs/cbd-73-exhaustive-review-findings.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-73-review-findings",
+      "page_id": "11468801",
+      "expected_title": "CBD-73 — Exhaustive Review Findings",
+      "doc_set": "cbd-73",
+      "order": 34,
+      "depends_on": [
+        "cbd-73-test-inventory"
+      ],
+      "policy": "held",
+      "approved_sha256": null
+    },
+    {
+      "path": "docs/cbd-73-invitation-consent-lifecycle-specification.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-73-invitation-consent-lifecycle-specification.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-73-specification",
+      "page_id": "11370497",
+      "expected_title": "CBD-73 — Invitation, Consent, and Revocation Lifecycle Specification",
+      "doc_set": "cbd-73",
+      "order": 31,
+      "depends_on": [
+        "cbd-95-follow-up-register"
+      ],
+      "policy": "approved",
+      "approved_sha256": "5d5c86af529f01926e096df80ad5961b022dc5a9515d448996523cc52e9017d7"
+    },
+    {
+      "path": "docs/cbd-73-negative-recovery-test-inventory.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-73-negative-recovery-test-inventory.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-73-test-inventory",
+      "page_id": "11436033",
+      "expected_title": "CBD-73 — Negative and Recovery Test Inventory",
+      "doc_set": "cbd-73",
+      "order": 33,
+      "depends_on": [
+        "cbd-73-message-inventory"
+      ],
+      "policy": "approved",
+      "approved_sha256": "1dfccb1fa94d5574b3002ffe425011526476a56e5104081cb89a878dc00a1b61"
+    },
+    {
+      "path": "docs/cbd-74-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-74-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-74-traceability",
+      "page_id": "18808833",
+      "expected_title": "CBD-74 — Acceptance Criteria Traceability and Review Record",
+      "doc_set": "cbd-74",
+      "order": 38,
+      "depends_on": [
+        "cbd-74-specification"
+      ],
+      "policy": "approved",
+      "approved_sha256": "add3b25a5aae26342e51304b1444f169f15667b0e5dadc6c59234c6a113bb665"
+    },
+    {
+      "path": "docs/cbd-74-accountability-alert-boundary-specification.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-74-accountability-alert-boundary-specification.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-74-specification",
+      "page_id": "18776065",
+      "expected_title": "CBD-74 — Accountability Alert Boundary Specification",
+      "doc_set": "cbd-74",
+      "order": 36,
+      "depends_on": [
+        "cbd-73-review-findings"
+      ],
+      "policy": "approved",
+      "approved_sha256": "8baaf1eb7126e17b0094eeda46ffeaa5c8e646b65f71ddbd401bb089ba5508c9"
+    },
+    {
+      "path": "docs/cbd-74-negative-recovery-test-inventory.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-74-negative-recovery-test-inventory.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-74-test-inventory",
+      "page_id": "18612245",
+      "expected_title": "CBD-74 — Alert Negative and Recovery Test Inventory",
+      "doc_set": "cbd-74",
+      "order": 37,
+      "depends_on": [
+        "cbd-74-specification"
+      ],
+      "policy": "approved",
+      "approved_sha256": "f77a1a8486fd097b7e9a889992065fbdb84ec5e7837cc169e477532f39122da7"
+    },
+    {
+      "path": "docs/cbd-75-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-75-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-75-traceability",
+      "page_id": "18874369",
+      "expected_title": "CBD-75 — Acceptance-Criteria Traceability and Review Record",
+      "doc_set": "cbd-75",
+      "order": 40,
+      "depends_on": [
+        "cbd-75-standard"
+      ],
+      "policy": "approved",
+      "approved_sha256": "9e6928080d420525bda961e9120783db1536ac095e9577b6cd6c5a3d37fff878"
+    },
+    {
+      "path": "docs/cbd-75-role-terminology-and-copy-standard.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-75-role-terminology-and-copy-standard.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-75-standard",
+      "page_id": "18841601",
+      "expected_title": "CBD-75 — Role Terminology and Customer-Facing Copy Standard",
+      "doc_set": "cbd-75",
+      "order": 39,
+      "depends_on": [
+        "cbd-74-specification"
+      ],
+      "policy": "approved",
+      "approved_sha256": "70bdcf041efa3a83eff3efc36e8161aa269b41ea506c2d034134e5a7a076e61f"
+    },
+    {
+      "path": "docs/cbd-76-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-76-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-76-traceability",
+      "page_id": "18579458",
+      "expected_title": "CBD-76 — Acceptance Criteria Traceability and Completeness Report",
+      "doc_set": "cbd-76",
+      "order": 72,
+      "depends_on": [
+        "cbd-130-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "6a6910af842ce74590130af4c408cc5daead99111b138f4f414b821f7dc86de9"
+    },
+    {
+      "path": "docs/cbd-76-mvp-boundary-and-readiness-record.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-76-mvp-boundary-and-readiness-record.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-76-record",
+      "page_id": "18612225",
+      "expected_title": "CBD-76 — MVP Boundary and Readiness Record",
+      "doc_set": "cbd-76",
+      "order": 71,
+      "depends_on": [
+        "cbd-130-operational"
+      ],
+      "policy": "approved",
+      "approved_sha256": "977733bb9e20b1e7c7bda7468e71a4768e4a26f40affe029fc1e1e493c9ced93"
+    },
+    {
+      "path": "docs/cbd-82-acceptance-criteria-traceability.md",
+      "disposition": "unpublished",
+      "rationale": "cbd-82-acceptance-criteria-traceability is held repository-only because no approved page target is registered; this task does not create pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-82-account-lifecycle-scenario-catalog.md",
+      "disposition": "unpublished",
+      "rationale": "cbd-82-account-lifecycle-scenario-catalog is held repository-only because no approved page target is registered; this task does not create pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-82-financial-profile-and-account-ownership-model.md",
+      "disposition": "unpublished",
+      "rationale": "cbd-82-financial-profile-and-account-ownership-model is held repository-only because no approved page target is registered; this task does not create pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-91-private-mvp-data-inventory.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-91-private-mvp-data-inventory.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-91-inventory",
+      "page_id": "8781826",
+      "expected_title": "CBD-91 — Private MVP Data Inventory",
+      "doc_set": "cbd-91",
+      "order": 19,
+      "depends_on": [
+        "cbd-72-traceability"
+      ],
+      "policy": "approved",
+      "approved_sha256": "6fd1ed70b32c74422dcaeb189529b92486098bc92015cfdbbb4f0b0dcaaffb6c"
+    },
+    {
+      "path": "docs/cbd-92-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-92-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-92-traceability",
+      "page_id": "8945690",
+      "expected_title": "CBD-92 — Acceptance Criteria Traceability and Review Record",
+      "doc_set": "cbd-92",
+      "order": 21,
+      "depends_on": [
+        "cbd-92-threat-model"
+      ],
+      "policy": "approved",
+      "approved_sha256": "82674f8fd8e6082cbbed95471a66dc445e3df9bc04461af4523f0f191957ec02"
+    },
+    {
+      "path": "docs/cbd-92-system-flow-technical-threat-model.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-92-system-flow-technical-threat-model.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-92-threat-model",
+      "page_id": "8945669",
+      "expected_title": "CBD-92 — System Flow, Trust Boundary, and Technical Threat Model",
+      "doc_set": "cbd-92",
+      "order": 20,
+      "depends_on": [
+        "cbd-91-inventory"
+      ],
+      "policy": "approved",
+      "approved_sha256": "4b20688f21c8a12231efc0b2e232ff6304b798533e87bd8d0d4b4a27ac340889"
+    },
+    {
+      "path": "docs/cbd-93-privacy-coercion-abuse-analysis.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-93-privacy-coercion-abuse-analysis.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-93-abuse-analysis",
+      "page_id": "8749076",
+      "expected_title": "CBD-93 — Privacy, Coercion, Surveillance, and Abuse-Case Analysis",
+      "doc_set": "cbd-93",
+      "order": 22,
+      "depends_on": [
+        "cbd-92-threat-model"
+      ],
+      "policy": "approved",
+      "approved_sha256": "b3102493ee3e40cdbcee580ca24b178399c9064e320f60a1bd683dd01bdc37a6"
+    },
+    {
+      "path": "docs/cbd-94-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-94-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-94-traceability",
+      "page_id": "9273364",
+      "expected_title": "CBD-94 — Acceptance Criteria Traceability and Review Record",
+      "doc_set": "cbd-94",
+      "order": 26,
+      "depends_on": [
+        "cbd-94-review-findings"
+      ],
+      "policy": "approved",
+      "approved_sha256": "932c8693bdfa48fe4f3d7ef1fb2303a3e047247fae2d367a0f3b215e22b02186"
+    },
+    {
+      "path": "docs/cbd-94-exhaustive-review-findings.md",
+      "disposition": "registered",
+      "rationale": "Registered legacy target is held because its current status does not establish approval for this exact automated publication.",
+      "authority": "Repository status record in docs/cbd-94-exhaustive-review-findings.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-94-review-findings",
+      "page_id": "9633793",
+      "expected_title": "CBD-94 — Exhaustive Review Findings",
+      "doc_set": "cbd-94",
+      "order": 25,
+      "depends_on": [
+        "cbd-94-verification-inventory"
+      ],
+      "policy": "held",
+      "approved_sha256": null
+    },
+    {
+      "path": "docs/cbd-94-risk-mitigation-requirement-register.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-94-risk-mitigation-requirement-register.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-94-register",
+      "page_id": "9601026",
+      "expected_title": "CBD-94 — Risk, Mitigation, and Security/Privacy Requirement Register",
+      "doc_set": "cbd-94",
+      "order": 23,
+      "depends_on": [
+        "cbd-93-abuse-analysis"
+      ],
+      "policy": "approved",
+      "approved_sha256": "e32bba19f9d39c7e36ff96d98794312eff03170d45ac53f4182a14cebdfdf2d6"
+    },
+    {
+      "path": "docs/cbd-94-verification-review-inventory.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-94-verification-review-inventory.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-94-verification-inventory",
+      "page_id": "9535490",
+      "expected_title": "CBD-94 — Verification, Negative-Test, and Specialist-Review Inventory",
+      "doc_set": "cbd-94",
+      "order": 24,
+      "depends_on": [
+        "cbd-94-register"
+      ],
+      "policy": "approved",
+      "approved_sha256": "d26f3b355b7f60b0c2f2cca73c071fe4664e3b5b367c7cb33bf1cebe36549bdc"
+    },
+    {
+      "path": "docs/cbd-95-acceptance-criteria-traceability.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-95-acceptance-criteria-traceability.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-95-traceability",
+      "page_id": "9895937",
+      "expected_title": "CBD-95 — Acceptance Criteria Traceability and Review Record",
+      "doc_set": "cbd-95",
+      "order": 30,
+      "depends_on": [
+        "cbd-95-follow-up-register"
+      ],
+      "policy": "approved",
+      "approved_sha256": "2605bc09edf92d36803a031f759a226c31b54583f2b0e178c5a4170e2b6e31b8"
+    },
+    {
+      "path": "docs/cbd-95-architecture-roadmap-follow-up-register.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-95-architecture-roadmap-follow-up-register.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-95-follow-up-register",
+      "page_id": "9863169",
+      "expected_title": "CBD-95 — Architecture, Roadmap, and Follow-up Register",
+      "doc_set": "cbd-95",
+      "order": 29,
+      "depends_on": [
+        "cbd-95-reconciliation-matrix"
+      ],
+      "policy": "approved",
+      "approved_sha256": "c157ec4137993b832326c5ccb5c4b3b0892a8c4219fceeff603209d18206cf4d"
+    },
+    {
+      "path": "docs/cbd-95-cbd-12-reconciliation-matrix.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-95-cbd-12-reconciliation-matrix.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-95-reconciliation-matrix",
+      "page_id": "9830401",
+      "expected_title": "CBD-95 — CBD-12 Security and Privacy Reconciliation Matrix",
+      "doc_set": "cbd-95",
+      "order": 28,
+      "depends_on": [
+        "cbd-95-manifest"
+      ],
+      "policy": "approved",
+      "approved_sha256": "96d928381c1eaeba21b269d626a80e114abc8183066733ba5d305f632def42df"
+    },
+    {
+      "path": "docs/cbd-95-execution-plan.md",
+      "disposition": "unpublished",
+      "rationale": "cbd-95-execution-plan is held repository-only because no approved page target is registered; this task does not create pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-95-threat-model-package-manifest.md",
+      "disposition": "registered",
+      "rationale": "Existing approved document; automation is limited to the pinned source content.",
+      "authority": "Repository status record in docs/cbd-95-threat-model-package-manifest.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "cbd-95-manifest",
+      "page_id": "9797633",
+      "expected_title": "CBD-95 — Threat-Model and Data-Inventory Package Manifest",
+      "doc_set": "cbd-95",
+      "order": 27,
+      "depends_on": [
+        "cbd-94-review-findings"
+      ],
+      "policy": "approved",
+      "approved_sha256": "4fefefb7609b98022a14770212b318f69fa87778495f47fa77df080a0cb5a408"
+    },
+    {
+      "path": "docs/cobudget-future-feature-register.md",
+      "disposition": "registered",
+      "rationale": "Registered legacy target is held because its current status does not establish approval for this exact automated publication.",
+      "authority": "Repository status record in docs/cobudget-future-feature-register.md; existing page identity from scripts/sync-confluence.py.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
+      "target": "future-feature-register",
+      "page_id": "950274",
+      "expected_title": "CoBudget Future Feature Register",
+      "doc_set": "cross-cutting",
+      "order": 12,
+      "depends_on": [
+        "cbd-69-traceability"
+      ],
+      "policy": "held",
+      "approved_sha256": null
+    },
+    {
+      "path": "docs/development.md",
+      "disposition": "unpublished",
+      "rationale": "development is held repository-only because no approved page target is registered; this task does not create pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/product-plan.md",
+      "disposition": "unpublished",
+      "rationale": "product-plan is held repository-only because no approved page target is registered; this task does not create pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/secret-scanning.md",
+      "disposition": "unpublished",
+      "rationale": "secret-scanning is held repository-only because no approved page target is registered; this task does not create pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    }
+  ],
+  "retained_pages": []
+}

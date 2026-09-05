@@ -65,6 +65,10 @@ Run all web checks with:
 npm run check
 ```
 
+The repository checks also require Python 3 and the hash-pinned publication
+converter. See [publication setup and activation gates](scripts/PUBLICATION.md)
+for isolated installation instructions. Offline checks do not publish pages.
+
 ## License
 
 No license has been selected. All rights are reserved until a license is added.
