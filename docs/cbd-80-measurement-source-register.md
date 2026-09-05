@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved v1.2** — Product Owner approved v1.0 on September 5, 2026, and two amendments the same day. Assigns `MS-80-nnn` identifiers to the **34** sources CBD-77, CBD-78 and CBD-79 proposed, and states the privacy, retention and release rules that govern them. **§6 records the release decision of September 5, 2026**: two destinations rather than one, and the aggregate half is a written record rather than a surface. **No source is implemented and none has been read** |
-| Document version | 1.2 |
+| Status | **Approved v1.3** — Product Owner approved v1.0 on September 5, 2026, and three amendments the same day. Assigns `MS-80-nnn` identifiers to the **34** sources CBD-77, CBD-78 and CBD-79 proposed, and states the privacy, retention and release rules that govern them. **§6 records the release decision of September 5, 2026**: two destinations rather than one, and the aggregate half is a written record rather than a surface. **No source is implemented and none has been read** |
+| Document version | 1.3 |
 | Owner | Alexander Wohlford |
 | Reviewer | Alexander Wohlford — Product Owner. **Approved September 5, 2026** after a review that corrected one citation |
 | Jira | [CBD-80](https://cobudget.atlassian.net/browse/CBD-80) |
@@ -163,13 +163,21 @@ Nineteen figures reviewed weekly is a document, not a dashboard. The reasoning i
 
 **What it costs is a trend view.** Comparing four weeks means reading four records, and `MT-78-005`'s and `MT-78-006`'s retention series are exactly the measures where a trend matters most. Accepted, and recorded at `OI-80-004` rather than discovered later.
 
-### Where the record cannot live
+### Where the record lives — decided September 5, 2026
 
-**Not in this repository, and this is a constraint rather than a preference.**
+**Not in this repository**, and that is a constraint rather than a preference. §3.4 requires released figures to be *"retained for the beta and its review, then deleted with the beta's operational records."* **A record committed here can never be deleted** — git history is permanent, and these documents publish to Confluence, which would carry the figures further still.
 
-§3.4 requires released figures to be *"retained for the beta and its review, then deleted with the beta's operational records."* **A record committed here can never be deleted** — git history is permanent, and these documents publish to Confluence, which would carry the figures further still.
+**The record lives in its own schema in the Cloud SQL instance CBD-108 selected**, with its own access role and its own retention.
 
-So the periodic record lives in a deletable operational store outside version control. **`OQ-80-005` carries where**, because naming it is an operations decision this register does not own. Until it is answered the figures have a form and no place, which is a smaller gap than having neither.
+| Property | How it is satisfied |
+| --- | --- |
+| **Deletable** | A schema is dropped. Deletion is bounded and immediate, which is what §3.4 requires and what version control cannot offer |
+| **Separate** | `AN-92-006` requires *"reliability, security, support, audit and aggregate-measurement **schemas**, stores, access roles and retention"* to remain distinct. **It names schemas as the unit of separation**, so this is the shape the contract contemplates rather than a workaround around it |
+| **No new exposure** | Cloud SQL is already in the approved composition and was assessed against `HG-102-013` at CBD-105. No new provider, no new subprocessor, no new gate |
+
+**Object storage was the obvious answer and the corpus rules it out.** CBD-108 §4.38 records Google disclaiming any bound on lifecycle deletion timing — *"applications shouldn't rely on lifecycle actions occurring within a certain amount of time"* — and `OI-108-034` records that introducing object storage into any composition **reopens `HG-102-013`**, the one gate that could fail every candidate at once. A store whose deletion is unbounded cannot satisfy §3.4 either, so it fails twice over.
+
+**What this decision does not do.** It names a store, not a schema design. The table shape, the access role's exact grants, and the drop procedure at beta end are build work, and `OQ-80-007` records that the drop must be a stated step rather than an assumption — a schema nobody drops is a schema retained forever, and §3.4 would then be satisfied on paper only.
 
 ### Who may read it
 
@@ -182,7 +190,8 @@ So the periodic record lives in a deletable operational store outside version co
 | ID | Item | Effect |
 | --- | --- | --- |
 | ~~`OQ-80-001`~~ | ~~The release surface is proposed, not decided.~~ **Closed September 5, 2026.** Two destinations, not one: the nine `reliability-telemetry` metrics route to the S1 sink CBD-122 establishes, and the nineteen `aggregate-state` figures become a periodic written record consumed by CBD-81's review | Closed. §6 carries the decision and the reasoning |
-| `OQ-80-005` | **Where does the periodic record live?** §3.4 requires released figures to be deleted with the beta's operational records, and **a record committed to this repository can never be deleted** — git history is permanent and these documents publish to Confluence. It must be a deletable operational store outside version control | **The figures have a form and no place until this is answered.** Naming the store is an operations decision this register does not own. Smaller than the gap `OQ-80-001` left, because the shape is now settled |
+| ~~`OQ-80-005`~~ | ~~Where does the periodic record live?~~ **Closed September 5, 2026: its own schema in the Cloud SQL instance CBD-108 selected**, with its own access role and retention. `AN-92-006` names schemas as the unit of separation, deletion is a bounded `DROP`, and the instance is already in the approved composition. Object storage was rejected — `OI-108-034` records that it reopens `HG-102-013`, and its deletion timing is unbounded | Closed. §6 carries the reasoning |
+| `OQ-80-007` | **The drop at beta end must be a stated step, not an assumption.** §3.4 requires the figures deleted with the beta's operational records, and a schema nobody drops is retained forever | **§3.4 would then be satisfied on paper only.** The step belongs in whatever runbook CBD-63 produces for beta operations, and this register cannot put it there. Recorded so it is not lost between the decision and the build |
 | `OQ-80-006` | **`CBD-122-AC01` fixes the S1 sink's trace attributes to a closed universe.** The nine reliability metrics emit counts that may or may not already be in it; `CBD-122-AC08` covers queue depth, dead-letter count, terminal-state counts, scheduler lag and watermark age, which is some of what CBD-79 needs and not obviously all | A dependency on CBD-122 rather than a defect here. If the universe needs extending, that is CBD-122's amendment and it should know before it builds |
 | `OQ-80-002` | **No source has a schema, because the product has none.** Every `State of record` names operational state rather than a table, and the derivations are stated to be reproducible rather than implementable | Recorded so the register is not mistaken for a specification. Each source needs a schema binding when the owning feature is built, and that binding is where a derivation can quietly change meaning |
 | `OQ-80-003` | **The refresh basis is a proposal.** Daily for `reliability-telemetry`, weekly for `aggregate-state`, on the reasoning that operations reach releasable volume faster than populations. CBD-81 confirms review cadence and may want a different refresh | Low consequence, but recorded because a refresh basis that disagrees with a review cadence produces figures nobody reads or reviews that outrun their data |

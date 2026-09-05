@@ -165,22 +165,43 @@ def main() -> int:
                            re.S | re.M)
     audit.check(open_items is not None, "register: section 7 open-items table not found")
     if open_items:
-        # Only the questions still open. OQ-80-001 was decided on September 5,
-        # 2026 and its row is struck; requiring it as an open row would demand
-        # the register misreport a settled decision, which is the defect this
-        # audit has now hit three times.
-        for question in ("OQ-80-002", "OQ-80-003", "OQ-80-005", "OQ-80-006"):
+        # Derived, not listed. Two earlier versions named the questions
+        # explicitly and both had to be edited the moment one was decided --
+        # first OQ-80-001, then OQ-80-005 -- which is the same by-hand
+        # restatement this audit exists to prevent elsewhere.
+        #
+        # The invariant does not need a list: every OQ-80 identifier the
+        # document mentions must hold a row in section 7, struck if it has been
+        # decided and unstruck if it has not. That catches a dropped row, a
+        # question raised in prose and never tabled, and a decision that erased
+        # its own record, without naming any of them.
+        table = open_items.group(0)
+        mentioned = set(re.findall(r"\bOQ-80-\d{3}\b", text))
+        audit.check(bool(mentioned), "register: no OQ-80 questions found at all")
+        for question in sorted(mentioned):
             audit.check(
-                re.search(rf"^\| `{question}` \|", open_items.group(0), re.M) is not None,
-                f"register: {question} must hold a row in the section 7 table, "
-                "not only a mention in prose",
+                re.search(rf"^\| ~?~?`{question}`~?~? \|", table, re.M) is not None,
+                f"register: {question} is mentioned but holds no row in the "
+                "section 7 table -- a question tracked in prose is not tracked",
             )
-        # A closed question keeps its row struck rather than deleted, so the
-        # decision stays visible to a later reader.
+        # At least one decided question keeps a struck row, so the convention
+        # of striking rather than deleting is itself enforced.
         audit.check(
-            re.search(r"^\| ~~`OQ-80-001`~~ \|", open_items.group(0), re.M) is not None,
-            "register: OQ-80-001 is decided and must keep a struck row, so the "
+            re.search(r"^\| ~~`OQ-80-\d{3}`~~ \|", table, re.M) is not None,
+            "register: a decided question must keep a struck row, so the "
             "decision remains visible rather than disappearing",
+        )
+        # The rule above catches a question raised in prose and never tabled.
+        # It does not catch a row deleted when nothing else mentions it -- the
+        # proof found exactly that gap by renaming OQ-80-006, whose only
+        # appearance was its own row. Requiring the identifiers to run 001
+        # upward with no gaps closes it: a deleted or renamed row leaves a hole.
+        tabled = sorted(int(n) for n in
+                        re.findall(r"^\| ~?~?`OQ-80-(\d{3})`~?~? \|", table, re.M))
+        audit.check(
+            tabled == list(range(1, len(tabled) + 1)),
+            f"register: section 7 questions must run OQ-80-001 upward with no "
+            f"gaps, got {tabled} -- a gap means a row was deleted or renamed",
         )
 
     # --- the withdrawn event model has not returned -------------------------
@@ -221,9 +242,13 @@ def main() -> int:
     for failure in audit.failures:
         print(f"  - {failure}")
     if not audit.failures:
-        print("Result: PASS (documentation integrity only; no source is implemented, "
-              "none has been read, and the released figures have a form and no place "
-              "until OQ-80-005 names a store outside version control)")
+        # Says only what stays true. Two earlier versions named the open
+        # question blocking release -- first OQ-80-001, then OQ-80-005 --
+        # and both went stale the moment that question was decided. A
+        # result line that has to be edited on every decision is the same
+        # restated-by-hand defect as everything else this audit checks.
+        print("Result: PASS (documentation integrity only; no source is implemented "
+              "and none has been read; section 7 carries what remains open)")
     return 1 if audit.failures else 0
 
 
