@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { inventory, root, sources, scanJavaScript, validateInventory } from "./check-environment.mjs";
@@ -9,6 +10,18 @@ const template = readFileSync(join(root, ".env.example"), "utf8");
 const files = sources();
 
 describe("environment contract", () => {
+  it("excludes isolated dependency caches but still scans first-party tooling", () => {
+    const fixture = mkdtempSync(join(tmpdir(), "cbd115-environment-"));
+    try {
+      mkdirSync(join(fixture, ".cache"));
+      mkdirSync(join(fixture, "scripts"));
+      writeFileSync(join(fixture, ".cache", "dependency.py"), "# third-party fixture");
+      writeFileSync(join(fixture, "scripts", "tool.py"), "# first-party fixture");
+      assert.deepEqual(Object.keys(sources(fixture)), ["scripts/tool.py"]);
+    } finally {
+      rmSync(fixture, { recursive: true, force: true });
+    }
+  });
   it("accepts the complete repository inventory", () => {
     assert.deepEqual(validateInventory(inventory, template, files), []);
   });

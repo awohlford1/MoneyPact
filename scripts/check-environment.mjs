@@ -11,7 +11,7 @@ const ts = createRequire(new URL("../packages/contracts/package.json", import.me
 
 export const root = dirname(dirname(fileURLToPath(import.meta.url)));
 export const inventory = JSON.parse(readFileSync(join(root, "config/environment-inventory.json"), "utf8"));
-const excluded = new Set(["node_modules", ".git", ".next", "dist", "build", "coverage", "__pycache__", ".confluence-preview", ".codex", ".agents"]);
+const excluded = new Set(["node_modules", ".git", ".next", "dist", "build", "coverage", "__pycache__", ".confluence-preview", ".codex", ".agents", ".cache"]);
 const inheritedTestPaths = new Set(["packages/budget-domain/src/shared/iso-date.test.ts", "packages/budget-domain/src/schedule/period.test.ts"]);
 const reviewedFileImports = {
   "packages/contracts/src/barrel.test.ts": ["pathToFileURL(path).href"],

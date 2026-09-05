@@ -64,7 +64,7 @@ class ToolConfigTests(unittest.TestCase):
                      mock.patch.object(sys, "argv", ["sync-confluence.py"] + (["--dry-run"] if dry else [])):
                     with self.assertRaises(SystemExit) as result:
                         publisher.main()
-                    self.assertIn(name, str(result.exception))
+                    self.assertIn(name if dry else "Manual publication is disabled", str(result.exception))
                     dependency.assert_not_called()
                     request.assert_not_called()
                     preview.mkdir.assert_not_called()

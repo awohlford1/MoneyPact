@@ -62,6 +62,7 @@ jobs:
       - run: python3 scripts/audit-cbd-79.py
       - run: python3 scripts/audit-cbd-80.py
       - run: python3 scripts/check-citations.py
+      - run: 'python3 -m pip install --require-hashes --only-binary=:all: -r config/publication-requirements.txt'
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npm run check
@@ -91,6 +92,7 @@ const validRootPackage = {
     "check:ci": "node --test scripts/check-ci-contract.test.mjs && node scripts/check-ci-contract.mjs",
     "check:env": "node --test scripts/check-environment.test.mjs && node scripts/check-environment.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
+    "check:publication": "node scripts/check-publication.mjs",
     "check:docs": "node scripts/check-mermaid.mjs",
     "check:tokens": "node scripts/check-tokens.mjs",
     "check:copy": "node scripts/check-copy-language.mjs",
@@ -99,7 +101,7 @@ const validRootPackage = {
     test: "npm run test --workspaces --if-present",
     build: "npm run build --workspaces --if-present",
     "check:pages": "node scripts/check-public-pages.mjs",
-    check: "npm run check:ci && npm run check:secrets && npm run check:env && npm run check:docs && npm run check:tokens && npm run check:copy && npm run lint && npm run typecheck && npm run test && npm run build && npm run check:pages",
+    check: "npm run check:ci && npm run check:secrets && npm run check:env && npm run check:publication && npm run check:docs && npm run check:tokens && npm run check:copy && npm run lint && npm run typecheck && npm run test && npm run build && npm run check:pages",
   },
 };
 
@@ -144,6 +146,11 @@ describe("CI contract checker", () => {
 
   it("accepts the complete hardened contract", () => {
     assert.deepEqual(failures(), []);
+  });
+
+  it("rejects unquoted colon-space in the publication dependency command", () => {
+    const command = "python3 -m pip install --require-hashes --only-binary=:all: -r config/publication-requirements.txt";
+    expectFailure(failures({ workflow: validWorkflow.replace(`'${command}'`, command) }), "is not in the reviewed command allowlist");
   });
 
   it("rejects floating external action references", () => {
