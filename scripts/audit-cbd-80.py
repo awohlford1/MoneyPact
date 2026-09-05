@@ -19,8 +19,12 @@ packages agree, so the guards that matter here are cross-package:
   cite them and a renumber breaks the citation silently.
 
 * The privacy rules that carry the whole re-architecture stay present: no
-  identifier reaches a measurement surface, no consent basis is recorded, and
-  the release surface stays an open question until it is answered.
+  identifier reaches a measurement surface, no consent basis is recorded, and a
+  customer deletion request reaches no measurement store.
+
+* Every open question holds a row in the section 7 table, and a decided one
+  keeps a struck row rather than disappearing, so a later reader sees the
+  decision and not just its absence.
 
 Documentation integrity only. It implements no source, reads no state, and does
 not establish that any figure can be released.
@@ -51,8 +55,12 @@ REQUIRED_RULES = {
         "No identifier reaches a measurement surface",
     "consent cannot do the work": "None is recorded, and none can do the work",
     "purpose separation": "AN-92-006",
-    "deletion finds nothing": "finds nothing",
-    "release surface open": "OQ-80-001",
+    # Pinned to the section 3.4 row rather than to a turn of phrase. The first
+    # version matched "finds nothing", which lived in section 6 and vanished
+    # when the release decision rewrote it -- while the rule itself, in section
+    # 3.4, had not changed at all. A guard on wording fails when the wording
+    # moves and passes when the rule goes.
+    "deletion reaches no measurement store": "reaches no measurement store",
 }
 
 EVENT_MODEL = {
@@ -157,12 +165,23 @@ def main() -> int:
                            re.S | re.M)
     audit.check(open_items is not None, "register: section 7 open-items table not found")
     if open_items:
-        for question in ("OQ-80-001", "OQ-80-002", "OQ-80-003"):
+        # Only the questions still open. OQ-80-001 was decided on September 5,
+        # 2026 and its row is struck; requiring it as an open row would demand
+        # the register misreport a settled decision, which is the defect this
+        # audit has now hit three times.
+        for question in ("OQ-80-002", "OQ-80-003", "OQ-80-005", "OQ-80-006"):
             audit.check(
                 re.search(rf"^\| `{question}` \|", open_items.group(0), re.M) is not None,
                 f"register: {question} must hold a row in the section 7 table, "
                 "not only a mention in prose",
             )
+        # A closed question keeps its row struck rather than deleted, so the
+        # decision stays visible to a later reader.
+        audit.check(
+            re.search(r"^\| ~~`OQ-80-001`~~ \|", open_items.group(0), re.M) is not None,
+            "register: OQ-80-001 is decided and must keep a struck row, so the "
+            "decision remains visible rather than disappearing",
+        )
 
     # --- the withdrawn event model has not returned -------------------------
     for name, pattern in EVENT_MODEL.items():
@@ -203,7 +222,8 @@ def main() -> int:
         print(f"  - {failure}")
     if not audit.failures:
         print("Result: PASS (documentation integrity only; no source is implemented, "
-              "none has been read, and no figure may be released until OQ-80-001 is answered)")
+              "none has been read, and the released figures have a form and no place "
+              "until OQ-80-005 names a store outside version control)")
     return 1 if audit.failures else 0
 
 

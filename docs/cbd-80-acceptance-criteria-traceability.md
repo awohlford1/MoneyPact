@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved v1.1** — Product Owner approved v1.0 on September 5, 2026 and this amendment the same day. All six acceptance criteria are met. **One thing is proposed and not decided**: `OQ-80-001`, the release surface, which §6 of the register derives from approved constraints and puts to the Product Owner. Until it is answered every metric in CBD-77 through CBD-79 is defined, computable in principle, and **released nowhere** |
-| Document version | 1.1 |
+| Status | **Approved v1.2** — Product Owner approved v1.0 on September 5, 2026, and two amendments the same day. All six acceptance criteria are met. **The release decision is taken** — §6, September 5, 2026: the nine `reliability-telemetry` metrics route to the S1 sink CBD-122 establishes, and the nineteen `aggregate-state` figures become a periodic written record. What remains is `OQ-80-005`, **where that record lives**, because §3.4 requires deletion and this repository cannot delete |
+| Document version | 1.2 |
 | Owner | Alexander Wohlford |
 | Reviewer | Alexander Wohlford — Product Owner. **Approved September 5, 2026** after a review that corrected one citation |
 | Jira | [CBD-80](https://cobudget.atlassian.net/browse/CBD-80) |
@@ -78,7 +78,7 @@ This criterion was amended on September 5, 2026 from *"Duplicate **event** handl
 | Naming decisions | **Met** — one merge, one clarified pair, one rejected merge, each with its reason | Register §4 |
 | Privacy rules | **Met** — prohibited content, identifiers, purpose separation | Register §3 |
 | Retention, access, export, deletion | **Met** | Register §3.4 |
-| Release surface | **Proposed, not decided** | Register §6, `OQ-80-001` |
+| Release surface | **Decided September 5, 2026** — two destinations; the aggregate half is a written record | Register §6 |
 | Structural audit | **Met** — 431 checks, eight guards proven by deliberate violation | `scripts/audit-cbd-80.py` |
 
 ## 4. What the cross-package check found
@@ -91,19 +91,23 @@ The audit compares this register against all three sibling packages in both dire
 
 **No proposal was silently dropped.** The audit fails if a proposed name is neither registered nor recorded in §4 as merged or renamed — proven by renaming a proposal in CBD-77 and watching the build fail.
 
-## 5. `OQ-80-001` — what is proposed, and why it is not taken here
+## 5. `OQ-80-001`, decided
 
-Register §6 works through the surfaces the product has and finds that **approved constraints exclude every one of them**: the customer product by `AB-74-014`, the routine support surface by `OP-92-002`'s bar on counts, the security store by `AN-92-004` and `AN-92-006`, and a general operator console by `OP-92-001`'s default-deny.
+Register §6 worked through the surfaces the product has and found that approved constraints exclude every one: the customer product by `AB-74-014`, the routine support surface by `OP-92-002`'s bar on counts, the security store by `AN-92-004` and `AN-92-006`, and a general operator console by `OP-92-001`'s default-deny.
 
-What is left is a **measurement surface holding only released aggregates**, reading no production data at request time. Three properties follow from `AN-92-006` rather than being added to it: it cannot answer a question it was not built to answer, its store is separate with its own retention, and a deletion request finds nothing in it.
+**The v1.1 proposal then treated all 28 metrics as needing one new surface, and that was wrong.** `CBD-122-AC05` already establishes three destinations with three access roles, and `CBD-122-AC08` already emits terminal-state counts — so the nine `reliability-telemetry` metrics have a destination that is being built anyway, for the same purpose, raising no `AN-92-006` question.
 
-**It is proposed and not taken because it creates a surface**, and that is a product decision rather than a construction of existing rules. The register states the reasoning so the decision can be made on stated terms rather than by default.
+**Only the nineteen `aggregate-state` figures needed an answer, and it is a written record rather than a surface.** The reasoning is not economy: a record has no query interface, so there is no drill-down for one to grow later; its retention is the record's own; and `OP-92-001` is satisfied by construction because nothing stands reading production.
+
+**It costs a trend view**, recorded at `OI-80-004`. Comparing four weeks means reading four records, and the retention series are where that matters most.
+
+**Implementing the decision surfaced a constraint the proposal had not.** §3.4 requires released figures to be deleted with the beta's operational records, and **a record committed to this repository can never be deleted** — git history is permanent, and these documents publish to Confluence. `OQ-80-005` carries where the record lives; the shape is settled and the place is not.
 
 ## 6. What this package does not establish
 
 * **No source is implemented and none has been read.** Thirty-three sources are named against operational state that does not yet exist.
 * **No source has a schema**, because the product has none — `OQ-80-002`. Each needs a binding when its owning feature is built, and that binding is where a derivation can quietly change meaning.
-* **No figure may be released anywhere** until `OQ-80-001` is answered.
+* **The figures have a form and no place** until `OQ-80-005` names a deletable store outside version control.
 * **`MS-80-019` and `MS-80-020` may not be releasable at all**, pending `OQ-78-002` on `AB-74-014`.
 * **No safety source exists**, because CBD-79 defines no safety metric pending `OQ-13-007`.
 * **Written and reviewed by the same person.**
@@ -112,6 +116,7 @@ What is left is a **measurement surface holding only released aggregates**, read
 
 | Version | Date | Author | Change | Status |
 | --- | --- | --- | --- | --- |
+| 1.2 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **`OQ-80-001` decided.** Two destinations rather than one: the nine `reliability-telemetry` metrics route to the S1 sink `CBD-122-AC05` already establishes — half the answer the v1.1 proposal had missed — and the nineteen `aggregate-state` figures become a periodic written record consumed by CBD-81's review, chosen because a record has no query interface for a drill-down to grow from. Implementing it surfaced `OQ-80-005`: §3.4 requires the figures to be deleted and **this repository cannot delete**, so the record must live in an operational store outside version control. `OQ-80-006` records a dependency on `CBD-122-AC01`'s closed attribute universe. `OI-80-004` accepts the lost trend view | **Approved v1.2** |
 | 1.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **Reopened and amended the day it closed.** The `OQ-13-007` decision gave CBD-79 two safety metrics — consent changes and revocation failures — and three sources needed registering: `MS-80-031`, `MS-80-032` and `MS-80-033`, all accepted as proposed. **The cross-package audit found them, not a person**: it failed on three unregistered proposals and two metrics no source served. The v1.0 closure comment predicted this and named the route, so it is the register working rather than the register breaking. No rule, naming decision, or existing source changes | **Approved v1.1** |
 | 1.0 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **Approved.** The review checked every cited identifier against its source and found that this register had restated `AN-92-004` faithfully and inherited its error: `AN-92-004` groups `DI-91-071` with S3 restricted security evidence, and the approved CBD-91 inventory classifies it **S1** non-secret key-lifecycle metadata. §3.3 now names only `DI-91-053` and `DI-91-062`, and `OQ-80-004` records the discrepancy against the two documents that own it. It narrows `OQ-13-007` rather than widening it. No source, derivation, or rule changes | **Approved v1.0** |
 | 0.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Initial package: thirty registered sources, the naming decisions at §4, the privacy and retention rules at §3, the release-surface proposal at §6, a cross-package structural audit, and this report | Superseded by 1.0 |
