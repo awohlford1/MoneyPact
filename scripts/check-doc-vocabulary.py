@@ -113,25 +113,25 @@ VOCABULARIES: tuple[Vocabulary, ...] = (
         name="metric-class",
         members=("aggregate-state", "reliability-telemetry"),
         canonical="docs/cbd-13-measurement-conventions.md §5",
-        applies_to=("cbd-13-*.md", "cbd-77-*.md"),
+        applies_to=("cbd-13-*.md", "cbd-77-*.md", "cbd-78-*.md"),
     ),
     Vocabulary(
         name="connectivity-marker",
         members=("CONN-REQUIRED", "MANUAL-OK"),
         canonical="docs/cbd-13-measurement-conventions.md §5",
-        applies_to=("cbd-13-*.md", "cbd-77-*.md"),
+        applies_to=("cbd-13-*.md", "cbd-77-*.md", "cbd-78-*.md"),
     ),
     Vocabulary(
         name="budget-cadence",
         members=("weekly", "monthly", "paycheck", "custom"),
         canonical="docs/cbd-13-measurement-conventions.md §9",
-        applies_to=("cbd-13-*.md", "cbd-77-*.md"),
+        applies_to=("cbd-13-*.md", "cbd-77-*.md", "cbd-78-*.md"),
     ),
     Vocabulary(
         name="invitation-state",
         members=("sent", "accepted", "expired", "revoked", "declined"),
         canonical="docs/cbd-13-measurement-conventions.md §9",
-        applies_to=("cbd-13-*.md",),
+        applies_to=("cbd-13-*.md", "cbd-78-*.md"),
     ),
     Vocabulary(
         name="notification-state",
@@ -152,7 +152,7 @@ VOCABULARIES: tuple[Vocabulary, ...] = (
         name="collaboration-action",
         members=("viewing", "editing", "acknowledgement", "commenting"),
         canonical="docs/cbd-13-measurement-conventions.md §9",
-        applies_to=("cbd-13-*.md",),
+        applies_to=("cbd-13-*.md", "cbd-78-*.md"),
     ),
 )
 
@@ -237,6 +237,34 @@ def claimed_by_a_complete_neighbour(
     return None
 
 
+def excluded_deliberately(missing: list[str], vocab: Vocabulary, line: str) -> bool:
+    """True when the members absent from a run are named and explicitly excluded.
+
+    "Invitations in any terminal state -- accepted, expired, revoked, or
+    declined. `sent` is excluded" is correct writing: a proper subset with the
+    remainder named and a reason given. The run is incomplete and the sentence
+    is not, and reporting it as drift punishes exactly the precision this
+    checker exists to encourage.
+
+    So a run is not drift when every missing member appears in the same block
+    inside an exclusion construction. This can mask a genuine omission that
+    happens to sit near the word "excluded"; the trade is the same one the
+    overlap rule takes, and for the same reason -- a guard that fails on
+    correct text gets switched off.
+    """
+    if not any(re.search(marker, line, re.I) for marker in EXCLUSION_MARKERS):
+        return False
+    return all(find_members(line, vocab) and
+               any(member == hit[2] for hit in find_members(line, vocab))
+               for member in missing)
+
+
+EXCLUSION_MARKERS = (
+    r"\bis excluded\b", r"\bare excluded\b", r"\bexcludes?\b",
+    r"\bomitted\b", r"\bnot counted\b", r"\bleaves? the denominator\b",
+)
+
+
 def paragraph_blocks(text: str) -> list[tuple[int, str]]:
     """Join consecutive non-blank lines, returning (starting line number, text).
 
@@ -288,6 +316,11 @@ def main() -> int:
                     named = set(run)
                     missing = [m for m in vocab.members if m not in named]
                     where = f"{file.relative_to(REPO_ROOT).as_posix()}:{number}"
+                    if missing and excluded_deliberately(missing, vocab, line):
+                        if args.verbose:
+                            print(f"skip  {where}  {vocab.name}: missing members are "
+                                  "named and explicitly excluded")
+                        continue
                     if missing:
                         owner = claimed_by_a_complete_neighbour(run, vocab, line)
                         if owner is not None:
