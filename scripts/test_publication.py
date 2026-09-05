@@ -58,7 +58,7 @@ class MemoryAPI:
 
 def workflow_run(identity=1, head=HEAD, attempt=1, status="completed", conclusion="failure"):
     return {"id": identity, "run_attempt": attempt, "event": "push", "head_branch": "main",
-            "status": status, "conclusion": conclusion, "repository": {"full_name": "awohlford1/CoBudget"},
+            "status": status, "conclusion": conclusion, "repository": {"full_name": "awohlford1/MoneyPact"},
             "path": ".github/workflows/publish-confluence.yml", "head_sha": head}
 
 
@@ -506,6 +506,11 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(len(history.runs()), 101)
         self.assertEqual(history.client.request.call_count, 2)
         self.assertNotIn('status=success', history.client.request.call_args.args[0])
+        self.assertTrue(history.client.request.call_args.args[0].startswith('/repos/awohlford1/MoneyPact/'))
+        old_identity = workflow_run()
+        old_identity['repository']['full_name'] = 'awohlford1/CoBudget'
+        with self.assertRaises(p.PublicationError):
+            mock_history([old_identity], []).runs()
         for field in ("event", "head_branch", "path", "repository", "id", "run_attempt", "head_sha"):
             changed = dict(run)
             changed[field] = {} if field == "repository" else "wrong"

@@ -81,7 +81,7 @@ class WorkflowHistory:
         # inconsistent pagination is not proof that no uncertain attempt exists.
         for page in range(1, 11):
             response = self.client.request(
-                "/repos/awohlford1/CoBudget/actions/workflows/publish-confluence.yml/runs"
+                "/repos/awohlford1/MoneyPact/actions/workflows/publish-confluence.yml/runs"
                 "?event=push&branch=main&per_page=100&page=" + str(page))
             if (not isinstance(response, dict) or not isinstance(response.get("workflow_runs"), list)
                     or type(response.get("total_count")) is not int or not 1 <= response["total_count"] < 1000):
@@ -89,7 +89,7 @@ class WorkflowHistory:
             for run in response["workflow_runs"]:
                 if (not isinstance(run, dict) or run.get("event") != "push" or run.get("head_branch") != "main"
                         or not isinstance(run.get("repository"), dict)
-                        or run.get("repository", {}).get("full_name") != "awohlford1/CoBudget"
+                        or run.get("repository", {}).get("full_name") != "awohlford1/MoneyPact"
                         or run.get("path") != ".github/workflows/publish-confluence.yml"
                         or type(run.get("id")) is not int or run["id"] < 1 or run["id"] in seen
                         or type(run.get("run_attempt")) is not int or not 1 <= run["run_attempt"] <= 100
@@ -129,7 +129,7 @@ class WorkflowHistory:
                         and run.get("conclusion") is None):
                     continue
                 response = self.client.request(
-                    f"/repos/awohlford1/CoBudget/actions/runs/{run['id']}/attempts/{attempt}/jobs?per_page=100")
+                    f"/repos/awohlford1/MoneyPact/actions/runs/{run['id']}/attempts/{attempt}/jobs?per_page=100")
                 # This pinned workflow has exactly one job. Empty/truncated or
                 # renamed execution evidence cannot establish a safe retry.
                 if (not isinstance(response, dict) or type(response.get("total_count")) is not int
