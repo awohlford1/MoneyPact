@@ -26,6 +26,11 @@ the meanings and timing deferral below. Their CBD-77/80 source candidate
 `7754c5cf6efff4cdd7718dd9022fbb34bf75d2e4` was independently approved in
 `CBD13-USABLE-REVIEW-001` but is not published or merged. Source integration
 remains a dependency; approved meanings are not reopened by that dependency.
+`CBD13-LIFECYCLE-001` approves lifecycle meanings in section 6.1, and
+`CBD81-BOUNDS-001` approves the DEC-81-003 specification-closure disposition.
+Matching lifecycle source amendments under `CBD13-LIFECYCLE-SPEC-001` are in
+progress in a separate branch, not reviewed or integrated. This package follows
+the approved decisions; it does not claim the source amendments have landed.
 Live Jira criteria, including `customfield_10066`, links and comments, were read
 on September 5, 2026. Jira owns issue fields; this document is the specification,
 not a staging copy of those fields. Parent completion is assessed in the
@@ -81,6 +86,21 @@ under replacement, deletion and period changes. Never substitute maximum current
 limb timestamps, updated_at, budget date or newly retained measurement history.
 Current-state usable-budget completion MT-77-003 and all five limbs remain
 required and applicable; the timing deferral does not waive them.
+
+Under `CBD81-BOUNDS-001`, specification acceptance may leave the exact freshness
+and alert-lateness classification bounds unset, pending evidence-based selection
+and Executive approval. This explicit closure-stage exception is not a Private
+MVP applicability deferral. MT-79-003/008 remain required beta evidence: no rate,
+healthy status, numerical release, baseline start or credit until the bounds and
+source/release prerequisites are approved and verified. Their D14 starts only
+when valid comparable releasable rates can be observed; rate observations that
+cannot yet be computed cannot supply their own classification bound.
+MT-79-010 duration baseline may start only after interval, terminal-state, source,
+bucket and release prerequisites pass. Compliance or near-breach judgments also
+require approved lifecycle-specific commitments and actionable approach rules.
+Missing applicable evidence follows the dated continuation/pause process and
+blocks dependent expansion or successful beta evaluation exit. There are still
+exactly four approved metric deferrals: MT-77-005 and MT-78-004/005/006.
 
 The counts above are approved minimum *windows*, not a statistical power claim
 or a population privacy threshold. Every constituent record must independently
@@ -192,14 +212,14 @@ no performance target is approved.
 | MT-78-008 — Firm alert dismissal rate | product | W4; W/R | Adverse increase: make alerts fewer, softer or less frequent. Same no-member-access and no-contact restrictions; never optimize for compliance |
 | MT-79-001 — Synchronization success rate | synchronization | D14; D/R | Adverse decline: inspect allowed safe outcome classes, reproduce the defect, reduce scheduled load or roll back affected sync code; retain valid structural exclusions |
 | MT-79-002 — Synchronization latency | synchronization | D14; D/R | p90 moves adversely to a higher approved bucket: check allowed queue/capacity evidence and bounded delivery controls; tune only within approved caps or reduce scheduling frequency |
-| MT-79-003 — Connection freshness | synchronization | D14; D/R; DEC-81-003 gate | Bound-dependent value unavailable until freshness bound is approved; thereafter deterioration triggers cursor and scheduler investigation alongside independently releasable sync outcomes; repair stale-success behavior |
+| MT-79-003 — Connection freshness | synchronization | D14; D/R; classification/source/release gates | Approved watermark and eligible-connection meaning in section 6.1. Required beta evidence, not deferred: no rate, healthy status, numeric release, baseline start or credit until classification bound and source/release prerequisites are approved and verified. Thereafter deterioration triggers cursor/scheduler investigation alongside independently releasable sync outcomes; repair stale-success behavior |
 | MT-79-004 — Synchronization retry rate | synchronization | D14; D/R | Adverse increase even with stable success: check bounded retry exhaustion/backoff, reduce schedule frequency or repair provider handling; never retry beyond approved bounds |
 | MT-79-005 — Terminal synchronization failure rate | synchronization | D14; D/R | New safe failure class or adverse growth: map approved taxonomy to relinking or code defect; use the existing authorized relinking flow; an unresolved CoBudget defect blocks the affected release |
 | MT-79-006 — Notification outcome distribution | notifications | D14; D/R | Adverse failed/late growth or unexplained suppressed growth: inspect queue, provider and transport caps; fix configuration or roll back. Correct suppression stays in denominator; no extra transport |
 | MT-79-007 — Alert duplicate rate | notifications | D14; D/R | Adverse rise or unexplained zero: test both trigger and dedup guard; a suppressed duplicate attempt is not a delivered duplicate. Fix attempts or missing instrumentation; confirmed duplicate delivery violates AB-74-001 and pauses affected delivery |
-| MT-79-008 — Alert lateness rate | notifications | D14; D/R; DEC-81-003 gate | Bound-dependent value unavailable until interval and lateness bound are approved; thereafter adverse rise triggers managed-scheduler versus Worker-capacity diagnosis; repair or roll back affected scheduling |
-| MT-79-009 — Export and deletion completion rate | security | W4 plus zero-failure guardrail; W/R | Any *releasable* failed terminal state triggers investigation using permitted service evidence; block affected release pending resolution. Individual content inspection requires a separate valid OP-92-003 purpose and gates |
-| MT-79-010 — Export and deletion elapsed time | security | W4; W/R; DEC-81-003 gate | Duration baseline may proceed only with valid interval/buckets; approaching an approved completion commitment triggers queue prioritization and release review. No completion-time compliance claim until lifecycle-specific bound is approved |
+| MT-79-008 — Alert lateness rate | notifications | D14; D/R; classification/source/release gates | Approved qualifying-source-to-in-app-availability interval in section 6.1. Required beta evidence, not deferred: no rate, healthy status, numeric release, baseline start or credit until classification bound and source/release prerequisites are approved and verified. Thereafter adverse rise triggers evaluation/fan-out/scheduler/Worker diagnosis and repair or rollback; excluded unavailable instances mean this rate cannot prove absence of dropped alerts |
+| MT-79-009 — Export and deletion completion rate | security | W4 plus zero-failure guardrail; W/R | Use approved accepted-request and source-specific terminal population in section 6.1; completion is completed/(completed+failed), counting each accepted request once at terminal transition. Valid cancellation/restoration and unfinished states are neither success nor failure. Any releasable failed terminal outcome triggers investigation and blocks affected release pending resolution; individual content inspection retains separate OP-92-003 purpose and gates |
+| MT-79-010 — Export and deletion elapsed time | security | W4; W/R; duration evidence/commitment gates | Elapsed distribution is time from accepted eligible request to terminal outcome over the same completed/failed population as MT-79-009. Baseline only after interval, terminal-state, source, bucket and release proof; no compliance or near-breach claim without approved lifecycle-specific commitment and actionable approach rules. Once authorized, approaching that commitment triggers queue prioritization and release review |
 | MT-79-011 — Consent change rate | security | W4; W/R | Adverse increase with unchanged disclosure version: review generic CBD-73/75 copy; fix ambiguity without inspecting consent content or discouraging revocation. A disclosure change may explain the shift |
 | MT-79-012 — Revocation completion rate | security | D14 plus zero-failure guardrail; D/R | Any *releasable* failed revocation triggers security incident triage and affected-access containment through existing authorized controls; investigate a membership only through the fully gated OP-92-003 path |
 
@@ -237,8 +257,8 @@ provide their own evidence and cannot have approval inferred from ownership.
 | --- | --- |
 | Continue | Remain within the authorized beta scope; no unresolved privacy/security violation or relevant product-contract failure; each available metric is reviewed and each applicable missing one has an owner, dated evidence plan and next review using only section 3 permitted disclosures. Approved deferred metrics retain a future source handoff without a current baseline deadline. Pending bank metrics do not stop manual measurement. Continuing with insufficient evidence must be explicit and time-bounded |
 | Pause | Immediately stop the affected measurement release on privacy/source invalidity; stop the affected capability for confirmed unsafe access, failed revocation or contract-breaking delivery. Pause the whole beta when impact cannot be contained or security requires it. Evidence insufficiency blocks expansion and triggers an explicit continuation/pause decision at the baseline deadline |
-| Expand | Separate Product Owner authorization after applicable baselines are accepted, defects remediated, operational bounds and release controls approved/verified, and no unresolved blocker relevant to expanded scope. No cadence segmentation or new source is authorized. Bank expansion additionally needs bank-path readiness and its deferred evidence plan |
-| Exit review successfully | Conclude beta evaluation only after all applicable baseline profiles have matured; approved-deferred MT-77-005 and MT-78-004/005/006 evidence is not required for current Private MVP success and is never labeled measured success, successful timing or successful retention; parent criterion gaps have approved dispositions; release/QA/security gates and lifecycle handoff evidence are complete. This is not permission for public launch, which retains CBD-94/95 and SRV-94-010 gates |
+| Expand | Separate Product Owner authorization after applicable baselines are accepted, defects remediated, operational bounds and release controls approved/verified, and no unresolved blocker relevant to expanded scope. No cadence segmentation or new source is authorized. MT-79-003/008/010 retain applicable evidence requirements under DEC-81-003; no expansion dependent on them without that evidence. Bank expansion additionally needs bank-path readiness and its deferred evidence plan |
+| Exit review successfully | Conclude beta evaluation only after all applicable baseline profiles have matured, including valid MT-79-003/008/010 evidence when applicable; the DEC-81-003 specification-closure exception does not waive beta evidence. Approved-deferred MT-77-005 and MT-78-004/005/006 evidence is not required for current Private MVP success and is never labeled measured success, successful timing or successful retention; parent criterion gaps have approved dispositions; release/QA/security gates and lifecycle handoff evidence are complete. This is not permission for public launch, which retains CBD-94/95 and SRV-94-010 gates |
 | End without success | Product Owner may stop beta despite missing evidence, explicitly recording an incomplete evaluation. Do not label this successful exit or parent acceptance |
 
 At either end, CBD-63's authorized runbook must stop measurement jobs and
@@ -254,7 +274,7 @@ runbook exists and is verified. This document authorizes no destructive action.
 | --- | --- | --- |
 | DEC-81-001 — approved | Executive accepted W4/D14/R4/R8 and their bounded review process: four complete product weeks, fourteen complete reliability days, two valid retention A/B pairs with earliest reviews at six/ten weeks; only valid releasable records count, and missing evidence requires a dated extension or pause decision | Decision source CBD81-BASELINE-001, explicit Executive selection communicated through Manager September 5, 2026. This approves operating review periods, not statistical/privacy guarantees, arbitrary performance targets, numerical privacy minima, source repairs, whole-package approval or CBD-13 closure. No automatic success |
 | DEC-81-002 — approved planning disposition | Executive accepted the reviewed generic-Withheld specification boundary, including process records, under CBD81-PRIVACY-001. All population-dependent withheld conditions have identical status, without hidden reasons, transition details, value-derived actions or baseline credit | CBD81-SECURITY-002 and CBD81-REVIEW-004 assessed candidate a5a25fc6d8740483ee484f839ac271c75dc6b354 within their stated scope. Exact numerical release policy still requires separate Security review, Executive approval and implementation verification: exact outputs/windows, populations, contribution checks, related outputs, repeat/revision rules, access, bindings, retention and synthetic inference tests. No numerical release, runtime enforcement, measurement waiver or final package/process approval. Review singling-out, complementary counts, repeated-window differencing, distributions, low-volume operations and higher percentile protection; volume alone is insufficient and later segmentation needs separate review |
-| DEC-81-003 | Establish freshness, alert-lateness and request-completion bounds from their product commitments, or keep bound-dependent judgments unavailable. Recommended: approve lifecycle-specific definitions before numbers, then select bounds using scheduler/retry/delivery and lifecycle evidence | synchronization, notifications and security prepare evidence; Product Owner decides before dependent computation/health claim. MT-79-008 source prose differs on source-fact-settled versus creation start: reconcile that interval first. The 30-day restoration grace is not a generic export/deletion completion SLO; archival has no countdown. Do not reinterpret either |
+| DEC-81-003 — approved specification-closure disposition | CBD81-BOUNDS-001 permits specification acceptance with exact freshness/lateness classification bounds unset pending evidence-based selection and Executive approval. This is a closure-stage exception, not a beta applicability deferral. CBD13-LIFECYCLE-001 approves the lifecycle meanings in section 6.1 | MT-79-003/008 require verified classification bounds plus source/release prerequisites before any rate, healthy status, numeric release, D14 start or credit. MT-79-010 duration baseline requires interval, terminal-state, source, bucket and release proof; compliance/near-breach claims require approved lifecycle-specific commitments and actionable approach rules. Applicable beta evidence is still required for expansion/successful exit. No numerical value approved; 30-day grace, 24-hour export expiry and backup expiry are not SLOs. Source amendments remain in progress, unreviewed/unintegrated; final process/package approval remains separate |
 | DEC-81-004 — settled | Executive approved technical correctness assessment through defined synthetic QA against approved alert rules, separate from production metrics, customer data and support data. CBD-13-AC05 and CBD-79-AC03 were clarified in live Jira; the other four alert measures remain unchanged | Manager communicated the explicit decision September 5, 2026. OQ-79-002 is resolved by this clarification; no new production metric, behavioral tracking or human reading of customer alerts. Defined synthetic QA and its execution evidence remain delivery requirements |
 | DEF-81-001 — approved deferral; future source gate | Permission does not prove action or viewing; budget/effective dates do not prove occurrence times; mutation/deletion can erase historical A/B evidence. Executive approved full MT-78-004 and MT-78-005/006 Private MVP deferral in CBD13-RETENTION-001 | Approved criterion disposition, not a current retention/breadth success requirement or evidence of computability. CBD-78 amendment merged in PR #237 at 01ca789; CBD-80 deferred-source follow-through is included in reviewed candidate 7754c5c awaiting integration. Future reopening requires an approved operational-source contract proving actual actions, occurrence times and historical A/B evidence under mutation/deletion, without behavioral events, activity history, retained membership or audit-purpose reuse; implementation and release gates remain |
 | DEF-81-002 — resolved population correction | CBD13-ACTIVATION-001 approved distinct populations, state immediately before exclusive UTC close, final-24-hour subject grace, matching rate membership and consumer-specific source intersections; broad shared MS-80-004 preserved | Independently approved in CBD13-ACTIVATION-REVIEW-001 and merged in PR #236 at c757f24. Prior MT-77-001/002/003/006 population inconsistency is resolved, not a remaining baseline blocker. This establishes source semantics only: profile/category meanings and MT-77-005 deferral are now approved separately; their reviewed source integration, actual bindings and release verification remain gates, with first-simultaneous timestamp proof required before future timing applicability |
@@ -303,6 +323,64 @@ otherwise. Header/count/naming discrepancies in CBD-80 and older status prose
 are outside this package's write scope; consult its actual register rows and
 latest explicit decisions, and route reconciliation through Manager. No source
 document is silently amended by this proposal.
+
+## 6.1 Approved lifecycle meanings and source handoff
+
+`CBD13-LIFECYCLE-001` approves these meanings for CBD-79 and matching CBD-80
+MS-80-023/028/029/030. Source amendments are in progress under
+`CBD13-LIFECYCLE-SPEC-001`, not independently reviewed or integrated. Approved
+meaning is distinct from source integration, physical binding and runtime proof.
+
+- **Freshness:** at observation T, age is T minus the last committed successful
+  sync watermark. Eligible connections are currently authorized and active for
+  sync; exclude orphaned, revoked, disconnected and lifecycle-stopped connections.
+  Eligible never-synced connections remain in the denominator, cannot be fresh,
+  and have missing age, never zero. Failed/superseded runs do not advance the
+  watermark. No freshness rate is computable until its classification bound is
+  approved and all source/release prerequisites are verified.
+- **Alert lateness:** from the durable source revision first satisfying the
+  applicable approved rule to the mandatory recipient instance becoming available
+  through its authorized in-app surface. Settlement applies only where the rule
+  requires it. Viewing, acknowledgement, external sends and quiet-hour expiry
+  are not endpoints. Count each instance becoming available in the window once;
+  still-unavailable/failed instances are excluded, so the metric cannot prove
+  absence of dropped alerts. The interval includes evaluation and fan-out delay.
+- **Request start and population:** accepted eligible authorized request after
+  required verification/confirmation; exclude rejection and verification attempts,
+  include queue delay. Count each accepted request once at terminal transition.
+  Inactivity archival starts at accepted binding after approved objection
+  conditions, not at proposal timestamp. Completion rate is
+  completed/(completed+failed); elapsed distribution uses the same population
+  and measures time to terminal outcome. Completed means evidenced applicable
+  success; failed means an approved terminal unsuccessful outcome. Retrying,
+  grace and pending cleanup are neither. Valid cancellation/restoration is
+  distinct, neither success nor failure; invent no cancellation absent from the
+  source contract. Excluded unfinished requests imply neither success nor no
+  failures. Existing generic-Withheld rules govern every disclosed state.
+- **Export and archival success:** export is the correctly scoped, recipient-bound
+  protected package ready for authorized retrieval, not download or expiry.
+  Archival is atomic archived state plus committed restrictions, with no erasure.
+- **Both deletion flows:** budget-space deletion succeeds after its restoration
+  window when defined payload/history/interactions/imports are irreversibly
+  purged to a minimal nonfinancial tombstone; cancellation returns to archived
+  without pending deletion. Personal-account deletion succeeds at irreversible
+  account/profile termination and approved private-data/shared-history dispositions:
+  necessary shared facts pseudonymized and minimal non-resurrection ledger
+  retained. Immediate authority shutdown is not completion; restoration does
+  not resurrect authority. Distinct source predicates do not create a released
+  breakdown.
+- **Deletion terminal boundary:** evidenced application-controlled terminal
+  disposition against the approved per-class/custodian schedule. Merely scheduling
+  cleanup is insufficient. Processor/backup obligations remain separately tracked
+  under their existing authorized contracts, not added measurement history or
+  labels. Neither endpoint claims erasure of recipient-held copies. FU-95-014/022
+  execution gates remain open; these metric definitions authorize no deletion.
+
+No new labels, behavioral events, measurement history, retained membership or
+purpose reuse is authorized. Grace, export expiry and backup expiry are not
+performance SLOs; archival has no invented countdown. Exact numerical thresholds,
+commitments, bindings and release verification remain future requirements under
+the approved section 2/DEC-81-003 disposition.
 
 ## 7. Synthetic alert correctness assessment
 
