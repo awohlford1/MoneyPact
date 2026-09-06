@@ -266,12 +266,33 @@ def main() -> int:
                            re.S | re.M)
     audit.check(open_items is not None, "metrics: section 8 open-items table not found")
     if open_items:
-        for question in ("OQ-79-001", "OQ-79-002", "OQ-79-003"):
+        # Derived rather than listed, ported from the CBD-80 audit after the
+        # same guard there needed editing once per decision. Every OQ-79
+        # identifier the document mentions must hold a row, struck if decided
+        # and unstruck if not, and the identifiers must run 001 upward with no
+        # gaps -- which catches a row deleted when nothing else mentions it,
+        # the case a mention-based rule alone misses.
+        table = open_items.group(0)
+        mentioned = set(re.findall(r"\bOQ-79-\d{3}\b", text))
+        audit.check(bool(mentioned), "metrics: no OQ-79 questions found at all")
+        for question in sorted(mentioned):
             audit.check(
-                re.search(rf"^\| `{question}` \|", open_items.group(0), re.M) is not None,
-                f"metrics: {question} must hold a row in the section 8 table, "
-                "not only a mention in prose",
+                re.search(rf"^\| ~?~?`{question}`~?~? \|", table, re.M) is not None,
+                f"metrics: {question} is mentioned but holds no row in the "
+                "section 8 table -- a question tracked in prose is not tracked",
             )
+        tabled = sorted(int(n) for n in
+                        re.findall(r"^\| ~?~?`OQ-79-(\d{3})`~?~? \|", table, re.M))
+        audit.check(
+            tabled == list(range(1, len(tabled) + 1)),
+            f"metrics: section 8 questions must run OQ-79-001 upward with no "
+            f"gaps, got {tabled} -- a gap means a row was deleted or renamed",
+        )
+        audit.check(
+            re.search(r"^\| ~~`OQ-79-\d{3}`~~ \|", table, re.M) is not None,
+            "metrics: a decided question must keep a struck row, so the "
+            "decision remains visible rather than disappearing",
+        )
 
     # --- acknowledged and dismissed are CBD-78's, by reference --------------
     # Redefining them here would create two metrics for one quantity and would

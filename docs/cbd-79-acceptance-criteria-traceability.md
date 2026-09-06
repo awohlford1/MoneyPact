@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | **Draft v0.2 — not approved.** **Three of six criteria are met, and three are partial in different ways.** `CBD-79-AC04` is partially met — two of its four signals are measured and two are barred by name. `CBD-79-AC03` is met for four of five states, because `incorrect` has no measurable referent. `CBD-79-AC06` owns the response half and CBD-81 the numbers. §2 says which is which |
-| Document version | 0.2 |
+| Document version | 0.3 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-79](https://cobudget.atlassian.net/browse/CBD-79) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
@@ -70,7 +70,15 @@ Metrics §3 rejects all three routes to measuring it — behavioural inference i
 
 **The seam is whether an operation completed versus what it decided.** A revocation that errors is a reliability outcome; an access request refused is a security decision, and `AN-92-003`'s exclusion list is written at exactly that line. `MT-79-012` counts terminal outcome classes and carries no decision label — **a metric counting refusals would be the same shape and would not be permitted.**
 
-Metrics §4.2 states what the two barred signals would need: an explicit `AN-92-006` disposition, which is a CBD-92 amendment weakening a purpose-separation rule that has no exceptions today; or an amendment to this criterion dropping them, which removes denied cross-space access from the safety measures entirely. **Neither is taken here**, and `OQ-79-001` carries the decision.
+**The two barred signals were decided on September 5, 2026, and the answer is neither amendment.**
+
+`AN-92-006` is the source of **four cross-cutting hard gates** — `HG-102-002`, `HG-102-003`, `HG-102-026`, `HG-102-033` — and `HG-102-003` restates the contract almost verbatim. All four were measured against every candidate in six provider categories, and a changed pass test requires re-measurement, so amending the contract would **reopen the approved CBD-102 catalog and the CBD-108 selections**.
+
+Amending this criterion would cost one ticket and delete a safety signal. **A criterion that no longer asks for denied cross-space access is a criterion nobody revisits.**
+
+So both signals are **barred for the Private MVP phase**, and the question goes to `SRV-94-010`, the independent public-launch security review, whose scope is *"evidence-gap scope, and resulting CBD-94 mitigations/residual decisions."* CBD-94 §11.8 makes that review a public-launch prerequisite, so the beta runs without these measures under every option except amending the contract — and the review reaches the question before it can matter.
+
+**This criterion is partially met and closes that way.** The gap is recorded and routed rather than resolved, and recorded is the honest state.
 
 ### CBD-79-AC05 — export and deletion: request, verification, completion, failure, elapsed time
 
@@ -97,7 +105,7 @@ The conventions record shape has no response field, so metrics §5 adds one, and
 | Connection and synchronization metrics | **Met** — five metrics | Metrics §6 |
 | Notification measures | **Met** — six states, one distribution | `MT-79-006` |
 | Alert quality | **Four of five states** — two here, two by reference, one unmeasurable | `MT-79-007`, `MT-79-008`, `OQ-79-002` |
-| Safety measures | **Partially met** — two of four signals measured | `MT-79-011`, `MT-79-012`, `OQ-79-001` |
+| Safety measures | **Partially met and closed that way** — two of four measured, two barred and routed to `SRV-94-010` | `MT-79-011`, `MT-79-012`, metrics §4.2 |
 | Export and deletion measures | **Met** — two metrics | `MT-79-009`, `MT-79-010` |
 | Operational responses | **Met** — one per metric, checked mechanically | Metrics §5 |
 | Thresholds and bounds | **Not this package** — CBD-81 | `OQ-79-003` |
@@ -122,5 +130,6 @@ The conventions record shape has no response field, so metrics §5 adds one, and
 
 | Version | Date | Author | Change | Status |
 | --- | --- | --- | --- | --- |
+| 0.3 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **`OQ-79-001` decided, and the answer is neither amendment.** `AN-92-006` sources four cross-cutting hard gates and `HG-102-003` restates it almost verbatim, so amending it would require re-measuring every candidate in six categories and reopen the approved CBD-102 catalog and CBD-108 selections. Amending the criterion would cost one ticket and **delete** a safety signal rather than defer it. Both barred signals are therefore barred **for the Private MVP phase**, with the question routed to `SRV-94-010`, whose scope is evidence gaps and residual decisions and which CBD-94 §11.8 makes a public-launch prerequisite. `CBD-79-AC04` is partially met and closes that way | Draft; Product Owner approval required |
 | 0.2 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **`OQ-13-007` decided.** The four `CBD-79-AC04` signals were treated as one blocked question and are not one: consent changes and revocation failures are measurable under approved contracts and become `MT-79-011` and `MT-79-012`; denied cross-space access and support incidents stay barred, the first because `AN-92-003` excludes a security-decision label **by name**. The criterion moves from not met to partially met, and §4.1 records the seam the two permitted measures turn on — whether an operation completed, not what it decided. Three new measurement sources are proposed, which CBD-80 must register | Draft; Product Owner approval required |
 | 0.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Initial package: ten metrics with operational responses, the `incorrect` unmeasurability finding at `OQ-79-002`, the `CBD-79-AC04` blocker at `OQ-79-001`, the unset bounds at `OQ-79-003`, structural audit, and this report | Superseded by 0.2 |
