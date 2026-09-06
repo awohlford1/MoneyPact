@@ -37,6 +37,12 @@ jobs:
       - name: Prove the documentation encoding guard
         run: python3 scripts/test_check_doc_encoding.py
 
+      # Guards the empty-body requirement for a newly created target page. A
+      # placeholder body fails the first publication with
+      # ambiguous-structural-change, which cost a run and a recovery record.
+      - name: Check the Confluence target creation helper
+        run: python3 scripts/test_create_confluence_target.py
+
       # Must precede the vocabulary check: that scanner decodes every document
       # as UTF-8 with no error handling, so one mis-encoded file aborts the run
       # with a byte offset and no filename. Ordered first, the path is named.
