@@ -28,6 +28,13 @@
       "head_sha": "e92fa8e92f1931a2e15d5fc2432eb367f1705387",
       "checkpoint_sha": "210e408716a5f6bc85617ac2cdb6e3c9057580ea",
       "authority": "CBD-115 storage-parser fix and retest approval, 2026-09-06: run 34050391130 attempt 1 read the first baseline (page 3538946) but rejected its storage with malformed-storage-manual-reconciliation before any PUT or subsequent target. Owner requested a fix and retest and supplied storage reproducing the named-character-reference incompatibility. Preserve the original checkpoint and all fresh baseline/conflict/version/readback gates, without asserting Live equals Desired. Manual environment approval must reconfirm draft clearance and the editing pause. This covers only the exact failed attempt."
+    },
+    {
+      "run_id": 34054684139,
+      "attempt": 1,
+      "head_sha": "ddd6a69dfffb4986838f4276a9f188ce09637834",
+      "checkpoint_sha": "3de88894e703baf4fd244ab5bb0aed550043d80b",
+      "authority": "CBD-115 first-publication reconciliation, 2026-09-06: run 34054684139 attempt 1 failed on its first target (cbd-13-conventions, page 20545539) with ambiguous-structural-change, before any PUT and before any subsequent target. The newly created pages carried placeholder bodies, and a first publication reconciles against an empty base, so the live body must be empty. Evidence that no write landed: stored_version was null and all eleven pages remained at version 1 after the failure. The pages were blanked to an empty body at version 2 on 2026-09-06 and each was re-checked against reconcile() with its real converted content. Checkpoint is the last successful publication 3de8889, preserving that success rather than the bootstrap, because an approval absent from that success must include it. All fresh baseline, conflict, version and readback gates remain; no assertion that Live equals Desired. Manual environment approval must reconfirm draft clearance and the editing pause. This covers only this exact failed attempt."
     }
   ]
 }
