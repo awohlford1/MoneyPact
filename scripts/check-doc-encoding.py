@@ -369,7 +369,10 @@ def documents(root: Path) -> list[Path]:
 
 
 def report(where: str, finding: Finding) -> None:
-    if finding.line is None:
+    # Branch on the kind, not on whether a position happens to be set: a fifth
+    # kind arriving without a position would otherwise silently print as
+    # UNREADABLE, which would be a lie about what was wrong with the file.
+    if finding.kind == "unreadable":
         print(f"UNREADABLE {where}")
     else:
         print(f"ENCODING {where}:{finding.line}:{finding.column}")

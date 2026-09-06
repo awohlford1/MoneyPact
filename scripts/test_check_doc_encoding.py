@@ -102,10 +102,25 @@ class CheckDocEncodingTests(unittest.TestCase):
             # Line 3 under CRLF, not line 2 and not line 5.
             self.assertIn("crlf.md:3:8", result.stdout)
             self.assertIn("0x92", result.stdout)
-            # A carriage return in the context line would break the report's
-            # own formatting; the guard strips it.
-            for line in result.stdout.splitlines():
-                self.assertNotIn("\r", line)
+            # A carriage return surviving into a context line would break the
+            # report's own formatting, so the proof it was stripped is that
+            # nothing comes between the context line and the fix line.
+            #
+            # The two obvious ways to write this cannot fail and so prove
+            # nothing. `assertNotIn("\r", line) for line in splitlines()` is
+            # vacuous because splitlines() splits on \r as well as \n, so a
+            # stray \r is consumed as a boundary and is never inside an
+            # element. `assertNotIn("\r", result.stdout)` is vacuous too:
+            # subprocess text capture is universal-newline, which translates a
+            # lone \r to \n before the assertion sees it -- verified against
+            # this Python by round-tripping "one\rSTRAY" through a pipe, which
+            # arrives as b"one\rSTRAY\r\n" in binary and "one\nSTRAY\n" in
+            # text. Both translations turn the defect into an extra line
+            # break, which is what this asserts on instead.
+            lines = result.stdout.splitlines()
+            context = "      context     : # CBD13-SOURCES-001 [\ufffd] Architecture"
+            self.assertIn(context, lines)
+            self.assertTrue(lines[lines.index(context) + 1].startswith("      fix"))
             self.assertIn("Second [", result.stdout)
 
             document.write_bytes(text.encode("utf-8"))
@@ -282,7 +297,8 @@ class CheckDocEncodingTests(unittest.TestCase):
             # And end to end: exit 1, a named file, no traceback.
             output = io.StringIO()
             with patch.object(guard, "documents", return_value=[unreadable]), \
-                    patch.object(guard.sys, "argv", ["check-doc-encoding.py"]), \
+                    patch.object(guard.sys, "argv",
+                                 ["check-doc-encoding.py", "--path", directory]), \
                     redirect_stdout(output):
                 status = guard.main()
             self.assertEqual(status, 1)
