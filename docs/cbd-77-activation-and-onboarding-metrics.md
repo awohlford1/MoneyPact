@@ -2,10 +2,10 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Candidate amendment v1.2**. Specific meanings approved in `CBD13-PROFILE-001`, `CBD13-CATEGORY-001` and `CBD13-USABLE-TIME-001`; CBD-80 also applies `CBD13-RETENTION-001`. Prior activation amendment independently reviewed and merged in PR #236; retention source amendment independently reviewed and merged in PR #237. This new candidate awaits independent review. Prior approvals remain in force; no whole-package approval, computation, release or closure is inferred |
+| Status | **Accepted specification v1.2** under CBD13-FINAL-ACCEPTANCE-001, with all recorded decisions and exceptions preserved. CBD13-FINAL-REVIEW-002 approves the integrated package and closes both prior findings; CBD13-FINAL-SECURITY-002 clears specification privacy only. No runtime measurement, numerical reporting, beta launch, deployment or Jira Done claimed |
 | Document version | 1.2 |
 | Owner | Alexander Wohlford |
-| Reviewer | Independent review pending for this candidate; prior activation/retention reviews remain valid only for their reviewed amendments |
+| Reviewer | Independent CBD13-FINAL-REVIEW-002: approve; CBD13-FINAL-SECURITY-002: clear for specification privacy acceptance |
 | Jira | [CBD-77](https://cobudget.atlassian.net/browse/CBD-77) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
 | Governing conventions | `docs/cbd-13-measurement-conventions.md` — Document version **1.0.1**, approved |
@@ -13,7 +13,7 @@
 | Governing schedule decisions | `docs/cbd-71-mvp-schedule-decision-register.md` — Document version **1.1**, approved |
 | Governing account model | CBD-92 `CA-92-001`–`CA-92-012`, approved |
 | Consuming packages | CBD-80 (measurement-source register); CBD-81 (targets and review) |
-| Confluence page | **Not published.** Registration follows approval |
+| Confluence page | **Unpublished to Confluence.** No verified target; future registration/publication readiness separately gated |
 | Last updated | September 5, 2026 |
 
 ## 1. Purpose and authority
@@ -218,7 +218,7 @@ Every metric below is `Class: aggregate-state`, `Release form: global`, `Boundar
 
 ## 5. Denominator rules
 
-Stated once and applied by every metric above, per conventions §6. The activation correction in `CBD13-ACTIVATION-001` was approved by the Executive; the prior activation amendment was independently reviewed and merged in PR #236; this new predicate/timing candidate awaits independent review and does not approve the whole package.
+Stated once and applied by every metric above, per conventions §6. The activation correction in `CBD13-ACTIVATION-001` was approved by the Executive; the prior activation amendment was independently reviewed and merged in PR #236; the predicate/timing specification is independently reviewed and accepted under CBD13-FINAL-ACCEPTANCE-001; implementation/release gates remain.
 
 **Windows are UTC calendar weeks [O,C), with Monday 00:00 boundaries.** Evaluate operational state immediately before C. Creation exactly at C belongs to the next window. For MT-77-001/002/003/006, completion means qualifying state at close, not a separately tracked completion during the week. A late-created space is eligible for MT-77-002/003 if it exists and is not archived at close; there is no space grace period.
 
@@ -257,3 +257,17 @@ Stated once and applied by every metric above, per conventions §6. The activati
 | Version | Authority | Change | Status |
 | --- | --- | --- | --- |
 | 1.2 | `CBD13-PROFILE-001`; `CBD13-CATEGORY-001`; `CBD13-USABLE-TIME-001`; shared `CBD13-RETENTION-001` follow-through; `CBD81-BASELINE-001` | Exact profile/category/target predicates; MT-77-008 matching set; MT-77-005 deferred with future slot/interval/W4; CBD-80 retention-source feasibility restrictions. Prior approved activation populations, IDs, owners, destinations, account OR transaction choice and privacy gates preserved | Candidate; independent review pending; no measured result or Done claim |
+
+## Final specification acceptance record
+
+CBD13-FINAL-ACCEPTANCE-001 accepts the reviewed package at
+`d4fc13ca47837c9b2faf83f4998aab2147bd5656`, including factual status updates.
+CBD13-FINAL-REVIEW-002 approves source `ff93a9b1ab901b5b88ebc1cca855ab10916fe4af`
+and the integrated package, closing both sent/sync findings. CBD13-FINAL-SECURITY-002 clears
+specification privacy only. Earlier draft/candidate revision entries describe
+history; this record establishes current acceptance without changing versions,
+definitions, approved exceptions or future implementation/release gates.
+Prior PRs #236/#237/#239/#240 are merged. Final source PR #242 merged at `1d1b2a8970f4f5bb5d7f72e98c462de0eb91e996` after required CI and verified GitHub readback. Its transport head 4d8aeaa added only already-merged CI wiring to reviewed source documents. The CBD-81 public PR is pending. Jira specification
+evidence and Executive acceptance are ready; workflow closure awaits authorized
+merges and verification. Confluence remains unpublished with no verified target;
+future target registration/publication readiness is separately gated.

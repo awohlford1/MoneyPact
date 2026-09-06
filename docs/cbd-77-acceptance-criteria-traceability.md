@@ -2,16 +2,16 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Candidate amendment v1.2**. Specific meanings approved in `CBD13-PROFILE-001`, `CBD13-CATEGORY-001` and `CBD13-USABLE-TIME-001`; CBD-80 also applies `CBD13-RETENTION-001`. Prior activation amendment independently reviewed and merged in PR #236; retention source amendment independently reviewed and merged in PR #237. This new candidate awaits independent review. Prior approvals remain in force; no whole-package approval, computation, release or closure is inferred |
+| Status | **Accepted specification v1.2** under CBD13-FINAL-ACCEPTANCE-001, with all recorded decisions and exceptions preserved. CBD13-FINAL-REVIEW-002 approves the integrated package and closes both prior findings; CBD13-FINAL-SECURITY-002 clears specification privacy only. No runtime measurement, numerical reporting, beta launch, deployment or Jira Done claimed |
 | Document version | 1.2 |
 | Owner | Alexander Wohlford |
-| Reviewer | Independent review pending for this candidate; prior activation/retention reviews remain valid only for their reviewed amendments |
+| Reviewer | Independent CBD13-FINAL-REVIEW-002: approve; CBD13-FINAL-SECURITY-002: clear for specification privacy acceptance |
 | Jira | [CBD-77](https://cobudget.atlassian.net/browse/CBD-77) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
 | Governing conventions | `docs/cbd-13-measurement-conventions.md` — Document version **1.0.1**, approved |
 | Companion | `docs/cbd-77-activation-and-onboarding-metrics.md`, which this report checks |
 | Mechanical audit | `scripts/audit-cbd-77.py` — 215 checks, every guard proven by deliberate violation |
-| Confluence page | **Not published.** Registration follows approval |
+| Confluence page | **Unpublished to Confluence.** No verified target; future registration/publication readiness separately gated |
 | Last updated | September 5, 2026 |
 
 ## 1. Package contents
@@ -26,7 +26,7 @@
 
 ### CBD-77-AC01 — numerator, denominator, interval basis, time window
 
-**Status: Prior activation correction independently reviewed and merged; current predicate/timing candidate review pending.** Metrics §4 and §5 implement Executive decision `CBD13-ACTIVATION-001`: MT-77-001/002/003/006 numerators are restricted to their denominator membership; [O,C) and the strict 24-hour cutoff are explicit. MT-77-001 preserves archived-only success as an exception, MT-77-002/003 exclude old or archived spaces, and MT-77-006 retains older period-holding spaces. MT-77-005 is explicitly deferred/unavailable under `CBD13-USABLE-TIME-001` as recorded below; field presence is not proof of computability.
+**Status: Prior activation correction independently reviewed and merged; predicate/timing specification independently reviewed and accepted under CBD13-FINAL-ACCEPTANCE-001.** Metrics §4 and §5 implement Executive decision `CBD13-ACTIVATION-001`: MT-77-001/002/003/006 numerators are restricted to their denominator membership; [O,C) and the strict 24-hour cutoff are explicit. MT-77-001 preserves archived-only success as an exception, MT-77-002/003 exclude old or archived spaces, and MT-77-006 retains older period-holding spaces. MT-77-005 is explicitly deferred/unavailable under `CBD13-USABLE-TIME-001` as recorded below; field presence is not proof of computability.
 
 All eight metrics carry `Numerator`, `Denominator`, `Interval basis` and `Window`, and the audit fails on a missing field rather than trusting the author. **`MT-77-004` and `MT-77-005` record `n/a` with a reason for numerator and denominator**, because a percentile distribution has neither, and the conventions require `n/a` to carry a reason rather than be omitted — which the audit also checks.
 
@@ -45,7 +45,7 @@ They are separate metrics with separate numerators, and §3 of the metrics docum
 
 ### CBD-77-AC03 — usable-budget minimum limbs and explicit timing deferral
 
-**Status: Approved logical meanings and timing scope disposition incorporated; candidate review pending.** Metrics §3 specifies the current active Primary Owner profile-existence test, active expense-category predicate and separate current-target/zero-target rule under `CBD13-PROFILE-001` / `CBD13-CATEGORY-001`. `OQ-77-003/004` retain physical binding and verification dependencies. `CBD13-USABLE-TIME-001` explicitly defers MT-77-005; MT-77-003 and all five limbs remain required/applicable. Future timing needs approved source proof under replacement/deletion/period changes; no current timestamp maximum, updated_at, budget date or newly retained measurement history substitutes.
+**Status: Approved logical meanings and timing scope disposition independently reviewed and accepted under CBD13-FINAL-ACCEPTANCE-001.** Metrics §3 specifies the current active Primary Owner profile-existence test, active expense-category predicate and separate current-target/zero-target rule under `CBD13-PROFILE-001` / `CBD13-CATEGORY-001`. `OQ-77-003/004` retain physical binding and verification dependencies. `CBD13-USABLE-TIME-001` explicitly defers MT-77-005; MT-77-003 and all five limbs remain required/applicable. Future timing needs approved source proof under replacement/deletion/period changes; no current timestamp maximum, updated_at, budget date or newly retained measurement history substitutes.
 
 `UB-77-001` states all five limbs. The audit checks citation presence, not whether a cited source proves an observable predicate:
 
@@ -77,7 +77,7 @@ This criterion was amended on September 5, 2026 from *"required events, properti
 
 ### CBD-77-AC06 — abandonment and retry do not inflate completion rates
 
-**Status: Prior activation correction independently reviewed and merged; current candidate review pending.** Metrics §5 requires distinct subjects/spaces and numerator membership within the same denominator. Multiple periods/accounts or join rows cannot multiply contributors. MT-77-001 counts a subject once even with several spaces; the following space-count rule applies to space-based metrics.
+**Status: Prior activation correction independently reviewed and merged; current specification independently reviewed and accepted under CBD13-FINAL-ACCEPTANCE-001.** Metrics §5 requires distinct subjects/spaces and numerator membership within the same denominator. Multiple periods/accounts or join rows cannot multiply contributors. MT-77-001 counts a subject once even with several spaces; the following space-count rule applies to space-based metrics.
 
 §5 states the rule and §2 states why it holds structurally rather than by deduplication: **every denominator counts spaces or subjects, each of which has exactly one current state.** A person who abandons and restarts within one space contributes one row because the space contributes one row.
 
@@ -154,6 +154,20 @@ The focused candidate maps CBD-77-AC01/06 to metrics §4/§5 and the correspondi
 | CBD-77-AC03; CBD13-CATEGORY-001 | CBD-77 §3 Category/Allocation and MT-77-008; CBD-80 MS-80-010/011: current active expense entity, stable identity and exclusions; same qualifying set for target numerator and category denominator, stored zero qualifies, missing fails, approved proration qualifies | CBD-30 feature owner physical predicate/target binding and proof |
 | CBD-77-AC01/02/03; CBD13-USABLE-TIME-001 | MT-77-005 and MS-80-007 explicitly deferred/unavailable; intended first-simultaneous interval and future W4 retained; MT-77-003 remains required with five limbs | Approved operational-source contract proving coexistence after replacement/deletion/period changes; no timestamp/history proxy, baseline credit or timing-success claim |
 | CBD-80-AC01/06; CBD13-RETENTION-001 | MS-80-015/016/017 carry merged CBD-78 MT-78-004/005/006 deferral: permissions are not actions, occurrence times and historical A/B evidence unproven under mutation/deletion | Approved operational-source proof without behavioral events, retained measurement membership or audit-purpose reuse; no zero, baseline credit or measured success |
-| CBD-80-AC03/04/05; CBD81-BASELINE-001 | Existing privacy rules, IDs, consumers, owners and destinations preserved; W4 and R4/R8 remain future applicable baselines for deferred metrics | Independent candidate review and CBD-81 applicability/exit follow-through; unchanged release/privacy gates |
+| CBD-80-AC03/04/05; CBD81-BASELINE-001 | Existing privacy rules, IDs, consumers, owners and destinations preserved; W4 and R4/R8 remain future applicable baselines for deferred metrics | Independent review and CBD-81 applicability/exit follow-through complete; unchanged release/privacy gates |
 
-CBD-81 follow-through must distinguish logical definition completion from physical-source readiness, apply the approved MT-77-005/MT-78-004/005/006 deferrals without successful baseline credit, and retain W4/R4/R8 for future applicability. R4/R8 still require two valid observation pairs with earliest reviews after six/ten weeks. No numerical privacy minimum, target, metric result or beta-success claim is added. This assignment does not edit CBD-81 or certify Jira Done. Structural checks and safe synthetic failure proofs are evidence of documentation integrity only; independent semantic review remains required.
+CBD-81 follow-through must distinguish logical definition completion from physical-source readiness, apply the approved MT-77-005/MT-78-004/005/006 deferrals without successful baseline credit, and retain W4/R4/R8 for future applicability. R4/R8 still require two valid observation pairs with earliest reviews after six/ten weeks. No numerical privacy minimum, target, metric result or beta-success claim is added. This assignment does not edit CBD-81 or certify Jira Done. Structural checks and safe synthetic failure proofs are evidence of documentation integrity only; independent semantic review is recorded in CBD13-FINAL-REVIEW-002.
+
+## Final specification acceptance record
+
+CBD13-FINAL-ACCEPTANCE-001 accepts the reviewed package at
+`d4fc13ca47837c9b2faf83f4998aab2147bd5656`, including factual status updates.
+CBD13-FINAL-REVIEW-002 approves source `ff93a9b1ab901b5b88ebc1cca855ab10916fe4af`
+and the integrated package, closing both sent/sync findings. CBD13-FINAL-SECURITY-002 clears
+specification privacy only. Earlier draft/candidate revision entries describe
+history; this record establishes current acceptance without changing versions,
+definitions, approved exceptions or future implementation/release gates.
+Prior PRs #236/#237/#239/#240 are merged. Final source PR #242 merged at `1d1b2a8970f4f5bb5d7f72e98c462de0eb91e996` after required CI and verified GitHub readback. Its transport head 4d8aeaa added only already-merged CI wiring to reviewed source documents. The CBD-81 public PR is pending. Jira specification
+evidence and Executive acceptance are ready; workflow closure awaits authorized
+merges and verification. Confluence remains unpublished with no verified target;
+future target registration/publication readiness is separately gated.
