@@ -290,10 +290,76 @@ def lifecycle_checks(text: str, audit: Audit) -> None:
 
 
 
+# Focused approved sent/synchronization requirement groups. Documentation only.
+FINAL_SOURCE_RULES = {'Terminal invitation source': ('| `MS-80-014` |',
+                                ('accepted',
+                                 'expired',
+                                 'revoked',
+                                 'declined',
+                                 '**`sent` is excluded**',
+                                 'not a production count or changed terminal population')),
+ 'Consumer-specific sync counts': ('| `MS-80-021` |',
+                                   ('MT-79-001 uses success and denominator counts over R(D) minus '
+                                    'S(D)',
+                                    'MT-79-004/005 denominators use all R(D)',
+                                    'Never reuse one supersession-filtered scalar',
+                                    'No cancellation-as-success/failure')),
+ 'All-run duration': ('| `MS-80-022` |',
+                      ('all R(D), including cancellations/supersession',
+                       'terminal timestamp minus first Worker-attempt timestamp',
+                       'including retries/backoff',
+                       'terminal-day attribution',
+                       'not per-run timings')),
+ 'All-run retry buckets': ('| `MS-80-024` |',
+                           ('all R(D), including zero',
+                            'cancelled/superseded runs',
+                            'positive-retry runs once',
+                            'denominator is all R(D)')),
+ 'Failed subset': ('| `MS-80-025` |',
+                   ('only terminal technical failures in R(D)',
+                    'denominator comes from all R(D) in MS-80-021',
+                    'Valid cancellations are not failures',
+                    'not complements',
+                    'No provider message, payload, or identifier')),
+ 'Projection evidence': ('## Approved invitation sent coverage',
+                         ('not proof of dispatch, delivery, receipt or recipient activity',
+                          'does not create terminal measurement membership',
+                          'INV-73-05',
+                          'INV-73-13',
+                          'INV-73-19',
+                          'VER-73-11',
+                          'not executed tests or runtime proof')),
+ 'Operational binding gate': ('## Approved synchronization terminal-day populations',
+                              ('Never-attempted queued work is excluded',
+                               'Unknown outcome or operational-identity mappings block computation',
+                               'Exact midnight belongs to the new day',
+                               'Postterminal replay requires an approved operational identity rule',
+                               'no new cancellation-reason labels, identifiers, per-run timing '
+                               'releases, tracking or retained measurement history'))}
+
+
+def final_source_checks(text: str, audit: Audit) -> None:
+    for label, (marker, required) in FINAL_SOURCE_RULES.items():
+        start = text.find(marker)
+        if start < 0:
+            body = ""
+        elif marker.startswith("|"):
+            body = text[start:].splitlines()[0]
+        else:
+            end = re.search(r"\n#{2,3} ", text[start + len(marker):])
+            stop = start + len(marker) + end.start() if end else len(text)
+            body = text[start:stop]
+        missing = [phrase for phrase in required if phrase not in body]
+        audit.check(not missing,
+                    f"docs/cbd-80-measurement-source-register.md: {label} missing approved invariant(s): {missing}")
+
+
+
 def main() -> int:
     audit = Audit()
     text = REGISTER.read_text(encoding="utf-8")
     conventions = CONVENTIONS.read_text(encoding="utf-8")
+    final_source_checks(text, audit)
     lifecycle_checks(text, audit)
     approved_amendment_checks(text, audit)
 

@@ -225,10 +225,77 @@ def lifecycle_checks(text: str, audit: Audit) -> None:
 
 
 
+# Focused approved sent/synchronization requirement groups. Documentation only.
+FINAL_SOURCE_RULES = {'Run populations': ('## Approved synchronization terminal-day populations',
+                     ('distinct operational sync runs with a first Worker attempt',
+                      'evidenced terminal transition in UTC day D = [00:00, next 00:00)',
+                      'Bounded retries belong to one run',
+                      'Never-attempted queued work is excluded',
+                      'terminally cancelled because superseded',
+                      'never inferred from a later run',
+                      'TD-103-007',
+                      'TD-103-008',
+                      'TD-103-010')),
+ 'Day and replay boundaries': ('## Approved synchronization terminal-day populations',
+                               ('Monday 23:58',
+                                'Tuesday 00:05',
+                                'once on Tuesday with seven-minute duration, and nothing on Monday',
+                                'Exact midnight belongs to the new day',
+                                'Pending work receives no terminal credit',
+                                'Duplicate delivery adds no contribution',
+                                'Postterminal replay requires an approved operational identity '
+                                'rule',
+                                'Unknown outcome or operational-identity mappings block '
+                                'computation')),
+ 'Success population': ('### MT-79-001',
+                        ('count(R(D) minus S(D))',
+                         'same R(D) minus S(D) population',
+                         'cancellation is never success or relabeled failure',
+                         'other approved cancellations remain',
+                         'not first-attempt day')),
+ 'Duration population': ('### MT-79-002',
+                         ('over all R(D)',
+                          'including cancellations and supersession',
+                          'First Worker attempt to terminal outcome, including retries and backoff',
+                          'not success-only latency',
+                          'not first-attempt day')),
+ 'Retry population': ('### MT-79-004',
+                      ('consuming at least one retry / count(R(D))',
+                       'one count per run even with multiple retries',
+                       'including subsequently cancelled/superseded work',
+                       'All R(D)',
+                       'not first-attempt day')),
+ 'Failure population': ('### MT-79-005',
+                        ('terminal technical failures in R(D) / count(R(D))',
+                         'only the failed subset',
+                         'cancellation is not failure',
+                         'All R(D), including valid cancellations and supersession',
+                         'MT-79-001/005 are not complements',
+                         'not first-attempt day'))}
+
+
+def final_source_checks(text: str, audit: Audit) -> None:
+    for label, (marker, required) in FINAL_SOURCE_RULES.items():
+        start = text.find(marker)
+        if start < 0:
+            body = ""
+        elif marker.startswith("|"):
+            body = text[start:].splitlines()[0]
+        else:
+            end = re.search(r"\n#{2,3} ", text[start + len(marker):])
+            stop = start + len(marker) + end.start() if end else len(text)
+            body = text[start:stop]
+        missing = [phrase for phrase in required if phrase not in body]
+        audit.check(not missing,
+                    f"docs/cbd-79-reliability-and-safety-metrics.md: {label} missing approved invariant(s): {missing}")
+
+
+
 def main() -> int:
     audit = Audit()
     text = METRICS.read_text(encoding="utf-8")
     conventions = CONVENTIONS.read_text(encoding="utf-8")
+    final_source_checks(text, audit)
     lifecycle_checks(text, audit)
 
     # --- the package pins the conventions version it was written against ----
