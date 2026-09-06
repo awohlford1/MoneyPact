@@ -69,7 +69,7 @@ MERMAID_FENCE = re.compile(r"^```mermaid[ \t]*\n(.*?)^```[ \t]*$", re.MULTILINE 
 
 @dataclass(frozen=True)
 class Target:
-    key: str
+    target: str
     doc_set: str
     page_id: str
     expected_title: str
@@ -103,70 +103,70 @@ TARGETS: tuple[Target, ...] = (
     # v1.1 synchronization-review draft status in both places; publishing them
     # reproduces that state and does not approve it.
     Target(
-        key="cbd-67-specification",
+        target="cbd-67-specification",
         doc_set="cbd-67",
         page_id="655361",
         expected_title="CBD-67 — Weekly and Monthly Budget Cycle Workflow Specification",
         path="docs/cbd-67-weekly-monthly-cadence-workflow-specification.md",
     ),
     Target(
-        key="cbd-67-scenarios",
+        target="cbd-67-scenarios",
         doc_set="cbd-67",
         page_id="688129",
         expected_title="CBD-67 — Weekly and Monthly Cadence Scenario Catalog",
         path="docs/cbd-67-weekly-monthly-cadence-scenario-catalog.md",
     ),
     Target(
-        key="cbd-67-traceability",
+        target="cbd-67-traceability",
         doc_set="cbd-67",
         page_id="720897",
         expected_title="CBD-67 — Acceptance Criteria Traceability and Review Record",
         path="docs/cbd-67-acceptance-criteria-traceability.md",
     ),
     Target(
-        key="cbd-68-specification",
+        target="cbd-68-specification",
         doc_set="cbd-68",
         page_id="3735553",
         expected_title="CBD-68 — Paycheck and Custom Budget Cadence Workflow Specification",
         path="docs/cbd-68-paycheck-custom-cadence-workflow-specification.md",
     ),
     Target(
-        key="cbd-68-scenarios",
+        target="cbd-68-scenarios",
         doc_set="cbd-68",
         page_id="3342349",
         expected_title="CBD-68 — Paycheck and Custom Cadence Scenario Catalog",
         path="docs/cbd-68-paycheck-custom-cadence-scenario-catalog.md",
     ),
     Target(
-        key="cbd-68-traceability",
+        target="cbd-68-traceability",
         doc_set="cbd-68",
         page_id="3768321",
         expected_title="CBD-68 — Acceptance Criteria Traceability and Review Record",
         path="docs/cbd-68-acceptance-criteria-traceability.md",
     ),
     Target(
-        key="cbd-70-calendar-examples",
+        target="cbd-70-calendar-examples",
         doc_set="cbd-70",
         page_id="6062090",
         expected_title="CBD-70 — Deterministic Calendar Example Set",
         path="docs/cbd-70-calendar-example-set.md",
     ),
     Target(
-        key="cbd-70-scenarios",
+        target="cbd-70-scenarios",
         doc_set="cbd-70",
         page_id="6422529",
         expected_title="CBD-70 — Deterministic Budget Calendar and Financial Scenario Catalog",
         path="docs/cbd-70-scenario-catalog.md",
     ),
     Target(
-        key="cbd-70-traceability",
+        target="cbd-70-traceability",
         doc_set="cbd-70",
         page_id="6225922",
         expected_title="CBD-70 — Acceptance Criteria Traceability and Review Record",
         path="docs/cbd-70-acceptance-criteria-traceability.md",
     ),
     Target(
-        key="cbd-69-specification",
+        target="cbd-69-specification",
         doc_set="cbd-69",
         page_id="3538946",
         expected_title="CBD-69 — Period Edge Cases & Validation Rule Specification",
@@ -174,7 +174,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-69-scenarios",
+        target="cbd-69-scenarios",
         doc_set="cbd-69",
         page_id="3571722",
         expected_title="CBD-69 — Period Edge Case Scenario Catalog",
@@ -182,7 +182,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-69-traceability",
+        target="cbd-69-traceability",
         doc_set="cbd-69",
         page_id="3670026",
         expected_title="CBD-69 — Acceptance Criteria Traceability",
@@ -190,7 +190,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="future-feature-register",
+        target="future-feature-register",
         doc_set="cross-cutting",
         page_id="950274",
         expected_title="CoBudget Future Feature Register",
@@ -198,21 +198,21 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-71-register",
+        target="cbd-71-register",
         doc_set="cbd-71",
         page_id="6914050",
         expected_title="CBD-71 — MVP Schedule Decisions",
         path="docs/cbd-71-mvp-schedule-decision-register.md",
     ),
     Target(
-        key="cbd-71-checklist",
+        target="cbd-71-checklist",
         doc_set="cbd-71",
         page_id="6160404",
         expected_title="CBD-71 — MVP Schedule Decisions Validation Checklist",
         path="docs/cbd-71-validation-checklist.md",
     ),
     Target(
-        key="cbd-71-traceability",
+        target="cbd-71-traceability",
         doc_set="cbd-71",
         page_id="6782985",
         expected_title="CBD-71 — Acceptance Criteria Traceability and Review Record",
@@ -225,7 +225,7 @@ TARGETS: tuple[Target, ...] = (
     # traceability record. The scenario catalog is not a baseline because no
     # later target cites it.
     Target(
-        key="cbd-72-model",
+        target="cbd-72-model",
         doc_set="cbd-72",
         page_id="8880130",
         expected_title="CBD-72 — Collaboration Permission Model",
@@ -233,14 +233,14 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-72-scenarios",
+        target="cbd-72-scenarios",
         doc_set="cbd-72",
         page_id="8880151",
         expected_title="CBD-72 — Authorization Scenario Catalog",
         path="docs/cbd-72-authorization-scenario-catalog.md",
     ),
     Target(
-        key="cbd-72-traceability",
+        target="cbd-72-traceability",
         doc_set="cbd-72",
         page_id="8880172",
         expected_title="CBD-72 — Acceptance Criteria Traceability and Review Record",
@@ -252,7 +252,7 @@ TARGETS: tuple[Target, ...] = (
     # itself a baseline because CBD-93 §1 and §12 cite the v1.0.1 inventory as
     # the authoritative input its whole analysis is built on.
     Target(
-        key="cbd-91-inventory",
+        target="cbd-91-inventory",
         doc_set="cbd-91",
         page_id="8781826",
         expected_title="CBD-91 — Private MVP Data Inventory",
@@ -265,7 +265,7 @@ TARGETS: tuple[Target, ...] = (
     # threat register throughout. The traceability record is not a baseline
     # because no later document cites it.
     Target(
-        key="cbd-92-threat-model",
+        target="cbd-92-threat-model",
         doc_set="cbd-92",
         page_id="8945669",
         expected_title="CBD-92 — System Flow, Trust Boundary, and Technical Threat Model",
@@ -273,7 +273,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-92-traceability",
+        target="cbd-92-traceability",
         doc_set="cbd-92",
         page_id="8945690",
         expected_title="CBD-92 — Acceptance Criteria Traceability and Review Record",
@@ -284,7 +284,7 @@ TARGETS: tuple[Target, ...] = (
     # CBD-94 §2 freezes its v1.1 blob and routes all 86 AB-93 scenarios, 96
     # active SG-93 safeguards, EG-93-001–010, and RI-93-001–019 from it.
     Target(
-        key="cbd-93-abuse-analysis",
+        target="cbd-93-abuse-analysis",
         doc_set="cbd-93",
         page_id="8749076",
         expected_title="CBD-93 — Privacy, Coercion, Surveillance, and Abuse-Case Analysis",
@@ -305,7 +305,7 @@ TARGETS: tuple[Target, ...] = (
     # text with the merged v1.0 content. Until then the repository files are
     # authoritative, per traceability record RV-94-019.
     Target(
-        key="cbd-94-register",
+        target="cbd-94-register",
         doc_set="cbd-94",
         page_id="9601026",
         expected_title="CBD-94 — Risk, Mitigation, and Security/Privacy Requirement Register",
@@ -313,7 +313,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-94-verification-inventory",
+        target="cbd-94-verification-inventory",
         doc_set="cbd-94",
         page_id="9535490",
         expected_title="CBD-94 — Verification, Negative-Test, and Specialist-Review Inventory",
@@ -321,7 +321,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-94-review-findings",
+        target="cbd-94-review-findings",
         doc_set="cbd-94",
         page_id="9633793",
         expected_title="CBD-94 — Exhaustive Review Findings",
@@ -329,7 +329,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-94-traceability",
+        target="cbd-94-traceability",
         doc_set="cbd-94",
         page_id="9273364",
         expected_title="CBD-94 — Acceptance Criteria Traceability and Review Record",
@@ -353,7 +353,7 @@ TARGETS: tuple[Target, ...] = (
     # text with the merged approved content. Until then the repository files on
     # `main` are authoritative.
     Target(
-        key="cbd-95-manifest",
+        target="cbd-95-manifest",
         doc_set="cbd-95",
         page_id="9797633",
         expected_title="CBD-95 — Threat-Model and Data-Inventory Package Manifest",
@@ -361,7 +361,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-95-reconciliation-matrix",
+        target="cbd-95-reconciliation-matrix",
         doc_set="cbd-95",
         page_id="9830401",
         expected_title="CBD-95 — CBD-12 Security and Privacy Reconciliation Matrix",
@@ -369,7 +369,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-95-follow-up-register",
+        target="cbd-95-follow-up-register",
         doc_set="cbd-95",
         page_id="9863169",
         expected_title="CBD-95 — Architecture, Roadmap, and Follow-up Register",
@@ -377,7 +377,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-95-traceability",
+        target="cbd-95-traceability",
         doc_set="cbd-95",
         page_id="9895937",
         expected_title="CBD-95 — Acceptance Criteria Traceability and Review Record",
@@ -398,7 +398,7 @@ TARGETS: tuple[Target, ...] = (
     # text with the merged approved v1.0 content. Until then the repository
     # files on `main` are authoritative, per OI-73-007.
     Target(
-        key="cbd-73-specification",
+        target="cbd-73-specification",
         doc_set="cbd-73",
         page_id="11370497",
         expected_title="CBD-73 — Invitation, Consent, and Revocation Lifecycle Specification",
@@ -406,7 +406,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-73-message-inventory",
+        target="cbd-73-message-inventory",
         doc_set="cbd-73",
         page_id="11403265",
         expected_title="CBD-73 — Customer-Facing Message Inventory",
@@ -414,7 +414,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-73-test-inventory",
+        target="cbd-73-test-inventory",
         doc_set="cbd-73",
         page_id="11436033",
         expected_title="CBD-73 — Negative and Recovery Test Inventory",
@@ -422,7 +422,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-73-review-findings",
+        target="cbd-73-review-findings",
         doc_set="cbd-73",
         page_id="11468801",
         expected_title="CBD-73 — Exhaustive Review Findings",
@@ -430,7 +430,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-73-traceability",
+        target="cbd-73-traceability",
         doc_set="cbd-73",
         page_id="11403286",
         expected_title="CBD-73 — Acceptance Criteria Traceability and Review Record",
@@ -448,7 +448,7 @@ TARGETS: tuple[Target, ...] = (
     # reserve the targets; the first successful run replaces that text with the
     # approved v1.0.1 (CBD-74) and v1.0 (CBD-75) content already merged to main.
     Target(
-        key="cbd-74-specification",
+        target="cbd-74-specification",
         doc_set="cbd-74",
         page_id="18776065",
         expected_title="CBD-74 — Accountability Alert Boundary Specification",
@@ -456,21 +456,21 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-74-test-inventory",
+        target="cbd-74-test-inventory",
         doc_set="cbd-74",
         page_id="18612245",
         expected_title="CBD-74 — Alert Negative and Recovery Test Inventory",
         path="docs/cbd-74-negative-recovery-test-inventory.md",
     ),
     Target(
-        key="cbd-74-traceability",
+        target="cbd-74-traceability",
         doc_set="cbd-74",
         page_id="18808833",
         expected_title="CBD-74 — Acceptance Criteria Traceability and Review Record",
         path="docs/cbd-74-acceptance-criteria-traceability.md",
     ),
     Target(
-        key="cbd-75-standard",
+        target="cbd-75-standard",
         doc_set="cbd-75",
         page_id="18841601",
         expected_title="CBD-75 — Role Terminology and Customer-Facing Copy Standard",
@@ -478,7 +478,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-75-traceability",
+        target="cbd-75-traceability",
         doc_set="cbd-75",
         page_id="18874369",
         expected_title="CBD-75 — Acceptance-Criteria Traceability and Review Record",
@@ -514,7 +514,7 @@ TARGETS: tuple[Target, ...] = (
     # at v1.0 on August 18, 2026 after a full audit; this run republishes that
     # approved content.
     Target(
-        key="cbd-102-gate-catalog",
+        target="cbd-102-gate-catalog",
         doc_set="cbd-102",
         page_id="9371654",
         expected_title="CBD-102 — Provider Requirements and Hard-Gate Catalog",
@@ -522,7 +522,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-102-rubric",
+        target="cbd-102-rubric",
         doc_set="cbd-102",
         page_id="9142327",
         expected_title="CBD-102 — Weighted Provider Evaluation Rubric",
@@ -530,7 +530,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-102-demand-model",
+        target="cbd-102-demand-model",
         doc_set="cbd-102",
         page_id="9273396",
         expected_title="CBD-102 — Private MVP Demand Model",
@@ -538,7 +538,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-102-cost-template",
+        target="cbd-102-cost-template",
         doc_set="cbd-102",
         page_id="9469982",
         expected_title="CBD-102 — Provider Cost Template",
@@ -546,7 +546,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-102-evidence-register",
+        target="cbd-102-evidence-register",
         doc_set="cbd-102",
         page_id="9601048",
         expected_title="CBD-102 — Evidence Register and Exception Rules",
@@ -569,7 +569,7 @@ TARGETS: tuple[Target, ...] = (
     # reserve the targets; the first successful run replaces that placeholder
     # text with the merged approved v1.0 content.
     Target(
-        key="cbd-103-topology",
+        target="cbd-103-topology",
         doc_set="cbd-103",
         page_id="12320769",
         expected_title="CBD-103 — Hosting and Runtime Topology Specification",
@@ -577,7 +577,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-103-evaluation",
+        target="cbd-103-evaluation",
         doc_set="cbd-103",
         page_id="12353537",
         expected_title="CBD-103 — Hosting Candidate Shortlist and Gate Evaluation",
@@ -585,7 +585,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-103-operational",
+        target="cbd-103-operational",
         doc_set="cbd-103",
         page_id="12320790",
         expected_title="CBD-103 — Deployment, Outage, Support, Cost, and Exit Assessment",
@@ -593,7 +593,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-103-traceability",
+        target="cbd-103-traceability",
         doc_set="cbd-103",
         page_id="12386305",
         expected_title="CBD-103 — Acceptance Criteria Traceability and Review Record",
@@ -616,7 +616,7 @@ TARGETS: tuple[Target, ...] = (
     # reserve the targets; the first successful run replaces that placeholder
     # text with the merged approved v1.0 content.
     Target(
-        key="cbd-105-specification",
+        target="cbd-105-specification",
         doc_set="cbd-105",
         page_id="12812289",
         expected_title="CBD-105 — Data Protection and Recovery Specification",
@@ -624,7 +624,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-105-evaluation",
+        target="cbd-105-evaluation",
         doc_set="cbd-105",
         page_id="12845057",
         expected_title="CBD-105 — PostgreSQL Candidate Shortlist and Gate Evaluation",
@@ -632,7 +632,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-105-operational",
+        target="cbd-105-operational",
         doc_set="cbd-105",
         page_id="12877825",
         expected_title="CBD-105 — Capacity, Maintenance, Monitoring, Cost, and Exit Assessment",
@@ -640,7 +640,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-105-traceability",
+        target="cbd-105-traceability",
         doc_set="cbd-105",
         page_id="12910593",
         expected_title="CBD-105 — Acceptance Criteria Traceability and Review Record",
@@ -662,7 +662,7 @@ TARGETS: tuple[Target, ...] = (
     # reserve the targets; the first successful run replaces that placeholder
     # text with the merged approved v1.0 content.
     Target(
-        key="cbd-104-specification",
+        target="cbd-104-specification",
         doc_set="cbd-104",
         page_id="13107201",
         expected_title="CBD-104 — Identity Integration Boundary Specification",
@@ -670,7 +670,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-104-evaluation",
+        target="cbd-104-evaluation",
         doc_set="cbd-104",
         page_id="13139969",
         expected_title="CBD-104 — Identity Candidate Shortlist and Gate Evaluation",
@@ -678,7 +678,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-104-operational",
+        target="cbd-104-operational",
         doc_set="cbd-104",
         page_id="12877849",
         expected_title="CBD-104 — Integration, Outage, Support, Cost, and Exit Assessment",
@@ -686,7 +686,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-104-traceability",
+        target="cbd-104-traceability",
         doc_set="cbd-104",
         page_id="13172737",
         expected_title="CBD-104 — Acceptance Criteria Traceability and Review Record",
@@ -708,7 +708,7 @@ TARGETS: tuple[Target, ...] = (
     # reserve the targets; the first successful run replaces that placeholder
     # text with the merged approved v1.0 content.
     Target(
-        key="cbd-106-specification",
+        target="cbd-106-specification",
         doc_set="cbd-106",
         page_id="13205505",
         expected_title="CBD-106 — Email Delivery and Content Boundary Specification",
@@ -716,7 +716,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-106-evaluation",
+        target="cbd-106-evaluation",
         doc_set="cbd-106",
         page_id="12845090",
         expected_title=(
@@ -726,7 +726,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-106-operational",
+        target="cbd-106-operational",
         doc_set="cbd-106",
         page_id="13238273",
         expected_title="CBD-106 — Deliverability, Operations, Cost, and Exit Assessment",
@@ -734,7 +734,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-106-traceability",
+        target="cbd-106-traceability",
         doc_set="cbd-106",
         page_id="12877869",
         expected_title="CBD-106 — Acceptance Criteria Traceability and Review Record",
@@ -757,7 +757,7 @@ TARGETS: tuple[Target, ...] = (
     # reserve the targets; the first successful run replaces that placeholder
     # text with the merged approved v1.0 content.
     Target(
-        key="cbd-107-specification",
+        target="cbd-107-specification",
         doc_set="cbd-107",
         page_id="13500417",
         expected_title="CBD-107 — Connection and Provenance Boundary Specification",
@@ -765,7 +765,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-107-evaluation",
+        target="cbd-107-evaluation",
         doc_set="cbd-107",
         page_id="13533185",
         expected_title=(
@@ -776,7 +776,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-107-lifecycle",
+        target="cbd-107-lifecycle",
         doc_set="cbd-107",
         page_id="13565953",
         expected_title="CBD-107 — Transaction Lifecycle, Coverage, and Provider-Signal Map",
@@ -784,7 +784,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-107-operational",
+        target="cbd-107-operational",
         doc_set="cbd-107",
         page_id="13303816",
         expected_title="CBD-107 — Connection Operations, Support, Cost, and Exit Assessment",
@@ -792,7 +792,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-107-traceability",
+        target="cbd-107-traceability",
         doc_set="cbd-107",
         page_id="13598721",
         expected_title="CBD-107 — Acceptance Criteria Traceability and Review Record",
@@ -814,7 +814,7 @@ TARGETS: tuple[Target, ...] = (
     # reserve the targets; the first successful run replaces that placeholder
     # text with the merged approved v1.0 content.
     Target(
-        key="cbd-130-specification",
+        target="cbd-130-specification",
         doc_set="cbd-130",
         page_id="13434891",
         expected_title="CBD-130 — Push and SMS Delivery Boundary Specification",
@@ -822,7 +822,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-130-evaluation",
+        target="cbd-130-evaluation",
         doc_set="cbd-130",
         page_id="13795329",
         expected_title=(
@@ -833,7 +833,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-130-operational",
+        target="cbd-130-operational",
         doc_set="cbd-130",
         page_id="13828097",
         expected_title="CBD-130 — Channel Operations, Registration, Cost, and Exit Assessment",
@@ -841,7 +841,7 @@ TARGETS: tuple[Target, ...] = (
         baseline=True,
     ),
     Target(
-        key="cbd-130-traceability",
+        target="cbd-130-traceability",
         doc_set="cbd-130",
         page_id="13860865",
         expected_title="CBD-130 — Acceptance Criteria Traceability and Review Record",
@@ -857,14 +857,14 @@ TARGETS: tuple[Target, ...] = (
     # Both pages were created as placeholders on September 4, 2026 to reserve
     # the targets after the package was approved at v1.0 and merged as f7edd90.
     Target(
-        key="cbd-76-record",
+        target="cbd-76-record",
         doc_set="cbd-76",
         page_id="18612225",
         expected_title="CBD-76 — MVP Boundary and Readiness Record",
         path="docs/cbd-76-mvp-boundary-and-readiness-record.md",
     ),
     Target(
-        key="cbd-76-traceability",
+        target="cbd-76-traceability",
         doc_set="cbd-76",
         page_id="18579458",
         expected_title="CBD-76 — Acceptance Criteria Traceability and Completeness Report",
@@ -890,42 +890,42 @@ TARGETS: tuple[Target, ...] = (
     # The six pages were created as placeholders on September 5, 2026 to
     # reserve the targets, after the approval merged as 445adde.
     Target(
-        key="cbd-108-disposition",
+        target="cbd-108-disposition",
         doc_set="cbd-108",
         page_id="19955713",
         expected_title="CBD-108 — Provider Set Disposition Register",
         path="docs/cbd-108-provider-set-disposition-register.md",
     ),
     Target(
-        key="cbd-108-coherence",
+        target="cbd-108-coherence",
         doc_set="cbd-108",
         page_id="19660815",
         expected_title="CBD-108 — Cross-Category Coherence Review",
         path="docs/cbd-108-cross-category-coherence-review.md",
     ),
     Target(
-        key="cbd-108-cost",
+        target="cbd-108-cost",
         doc_set="cbd-108",
         page_id="19988481",
         expected_title="CBD-108 — Combined Cost Model",
         path="docs/cbd-108-combined-cost-model.md",
     ),
     Target(
-        key="cbd-108-carried",
+        target="cbd-108-carried",
         doc_set="cbd-108",
         page_id="19660835",
         expected_title="CBD-108 — Carried Item Disposition Register",
         path="docs/cbd-108-carried-item-disposition-register.md",
     ),
     Target(
-        key="cbd-108-retrieval",
+        target="cbd-108-retrieval",
         doc_set="cbd-108",
         page_id="19660855",
         expected_title="CBD-108 — Evidence Retrieval Pass",
         path="docs/cbd-108-evidence-retrieval-pass.md",
     ),
     Target(
-        key="cbd-108-traceability",
+        target="cbd-108-traceability",
         doc_set="cbd-108",
         page_id="20021249",
         expected_title=(
@@ -940,77 +940,77 @@ TARGETS: tuple[Target, ...] = (
     # sources it registers, and CBD-81 follows all of them because it assigns
     # operating rules over the whole metric set.
     Target(
-        key="cbd-13-conventions",
+        target="cbd-13-conventions",
         doc_set="cbd-13",
         page_id="20545539",
         expected_title="CBD-13 — Measurement and Event Conventions",
         path="docs/cbd-13-measurement-conventions.md",
     ),
     Target(
-        key="cbd-77-metrics",
+        target="cbd-77-metrics",
         doc_set="cbd-77",
         page_id="20774913",
         expected_title="CBD-77 — Activation and Onboarding Metrics",
         path="docs/cbd-77-activation-and-onboarding-metrics.md",
     ),
     Target(
-        key="cbd-77-traceability",
+        target="cbd-77-traceability",
         doc_set="cbd-77",
         page_id="20643843",
         expected_title="CBD-77 — Acceptance Criteria Traceability and Completeness Report",
         path="docs/cbd-77-acceptance-criteria-traceability.md",
     ),
     Target(
-        key="cbd-78-metrics",
+        target="cbd-78-metrics",
         doc_set="cbd-78",
         page_id="20643863",
         expected_title="CBD-78 — Engagement and Retention Metrics",
         path="docs/cbd-78-engagement-and-retention-metrics.md",
     ),
     Target(
-        key="cbd-78-traceability",
+        target="cbd-78-traceability",
         doc_set="cbd-78",
         page_id="20807681",
         expected_title="CBD-78 — Acceptance Criteria Traceability and Completeness Report",
         path="docs/cbd-78-acceptance-criteria-traceability.md",
     ),
     Target(
-        key="cbd-79-metrics",
+        target="cbd-79-metrics",
         doc_set="cbd-79",
         page_id="20807701",
         expected_title="CBD-79 — Reliability and Safety Metrics",
         path="docs/cbd-79-reliability-and-safety-metrics.md",
     ),
     Target(
-        key="cbd-79-traceability",
+        target="cbd-79-traceability",
         doc_set="cbd-79",
         page_id="20545560",
         expected_title="CBD-79 — Acceptance Criteria Traceability and Completeness Report",
         path="docs/cbd-79-acceptance-criteria-traceability.md",
     ),
     Target(
-        key="cbd-80-register",
+        target="cbd-80-register",
         doc_set="cbd-80",
         page_id="20807721",
         expected_title="CBD-80 — Measurement Source Register and Privacy Rules",
         path="docs/cbd-80-measurement-source-register.md",
     ),
     Target(
-        key="cbd-80-traceability",
+        target="cbd-80-traceability",
         doc_set="cbd-80",
         page_id="20807741",
         expected_title="CBD-80 — Acceptance Criteria Traceability and Completeness Report",
         path="docs/cbd-80-acceptance-criteria-traceability.md",
     ),
     Target(
-        key="cbd-81-process",
+        target="cbd-81-process",
         doc_set="cbd-81",
         page_id="20447236",
         expected_title="CBD-81 — Beta targets and review process",
         path="docs/cbd-81-beta-targets-and-review-process.md",
     ),
     Target(
-        key="cbd-81-traceability",
+        target="cbd-81-traceability",
         doc_set="cbd-81",
         page_id="20545580",
         expected_title="CBD-81 — Acceptance criteria traceability",
@@ -1119,13 +1119,13 @@ def main() -> int:
 
     if args.list:
         for target in TARGETS:
-            print(f"{target.key:24} {target.doc_set:8} page {target.page_id:9} {target.path}")
+            print(f"{target.target:24} {target.doc_set:8} page {target.page_id:9} {target.path}")
         return 0
 
     selected = [
         target
         for target in TARGETS
-        if (not args.only or target.key == args.only) and (not args.doc_set or target.doc_set == args.doc_set)
+        if (not args.only or target.target == args.only) and (not args.doc_set or target.doc_set == args.doc_set)
     ]
     if not selected:
         sys.exit("No targets matched. Use --list to see available keys.")
@@ -1139,7 +1139,7 @@ def main() -> int:
     failures = 0
     for target in selected:
         if not target.file.exists():
-            print(f"FAIL {target.key}: missing {target.path}")
+            print(f"FAIL {target.target}: missing {target.path}")
             failures += 1
             continue
 
@@ -1150,28 +1150,28 @@ def main() -> int:
         try:
             page = fetch_page(session, base, target.page_id)
         except Exception:  # Remote error details may contain credentials or content.
-            print(f"FAIL {target.key}: cannot read page {target.page_id}; details suppressed")
+            print(f"FAIL {target.target}: cannot read page {target.page_id}; details suppressed")
             failures += 1
             continue
 
         live_title = page.get("title", "")
         if live_title != target.expected_title:
             print(
-                f"SKIP {target.key}: page {target.page_id} has an unexpected title. "
+                f"SKIP {target.target}: page {target.page_id} has an unexpected title. "
                 "Refusing to preview an unexpected page."
             )
-            print(f"     If the page was deliberately renamed, update expected_title for {target.key}.")
+            print(f"     If the page was deliberately renamed, update expected_title for {target.target}.")
             failures += 1
             continue
 
         version = int(page["version"]["number"])
 
         if args.dry_run:
-            preview = PREVIEW_DIR / f"{target.key}.html"
+            preview = PREVIEW_DIR / f"{target.target}.html"
             preview.write_text(storage, encoding="utf-8")
             note = f"; {diagrams} mermaid diagram(s) as code blocks" if diagrams else ""
             print(
-                f"DRY  {target.key}: {len(source):,} chars markdown -> {len(storage):,} chars storage; "
+                f"DRY  {target.target}: {len(source):,} chars markdown -> {len(storage):,} chars storage; "
                 f"page v{version}; preview {preview.relative_to(REPO_ROOT)}{note}"
             )
             continue
