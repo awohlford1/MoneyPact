@@ -40,7 +40,7 @@ const REQUIRED_EXTERNAL_ACTIONS = new Map([
   ["actions/setup-node", "820762786026740c76f36085b0efc47a31fe5020"],
 ]);
 
-const REQUIRED_WORKFLOW_COMMANDS = [
+export const REQUIRED_WORKFLOW_COMMANDS = [
   "python3 scripts/secret_scanner.py ci '${{ github.event_name }}' '${{ github.event.pull_request.base.sha }}' '${{ github.event.pull_request.head.sha }}' '${{ github.sha }}'",
   "python3 scripts/test_check_doc_encoding.py",
   "python3 scripts/check-doc-encoding.py",

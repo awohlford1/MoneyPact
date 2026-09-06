@@ -15,6 +15,7 @@
     "start:worker": "npm run start --workspace=@cobudget/worker",
     "build": "npm run build --workspaces --if-present",
     "start": "npm run start --workspace=@cobudget/web",
+    "gate": "node scripts/gate.mjs",
     "check:ci": "node --test scripts/check-ci-contract.test.mjs && node scripts/check-ci-contract.mjs",
     "check:env": "node --test scripts/check-environment.test.mjs && node scripts/check-environment.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
