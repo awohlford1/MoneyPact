@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft v0.2 — not approved.** **Three of six criteria are met, and three are partial in different ways.** `CBD-79-AC04` is partially met — two of its four signals are measured and two are barred by name. `CBD-79-AC03` is met for four of five states, because `incorrect` has no measurable referent. `CBD-79-AC06` owns the response half and CBD-81 the numbers. §2 says which is which |
-| Document version | 0.3 |
+| Status | **Candidate amendment v0.4**. Exact lifecycle semantics, later-bound specification-closure disposition and synthetic incorrect-alert QA route approved in `CBD13-LIFECYCLE-001`, `CBD81-BOUNDS-001` and `CBD13-CORRECTNESS-001`. This candidate awaits independent review; no whole-package approval, runtime proof, numerical release or Done claim. Prior decisions remain in force. |
+| Document version | 0.4 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-79](https://cobudget.atlassian.net/browse/CBD-79) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
@@ -17,15 +17,15 @@
 
 | Document | Purpose |
 | --- | --- |
-| `docs/cbd-79-reliability-and-safety-metrics.md` | Ten metrics with operational responses, the `incorrect` finding, the `CBD-79-AC04` blocker, and the CBD-78 boundary |
+| `docs/cbd-79-reliability-and-safety-metrics.md` | Reliability/safety metrics with operational responses, synthetic incorrect-alert QA disposition, lifecycle predicates and bound gates, and the unchanged CBD-78 boundary |
 | `docs/cbd-79-acceptance-criteria-traceability.md` | This report |
-| `scripts/audit-cbd-79.py` | Structural audit. Unlike CBD-77 and CBD-78 it validates `Class` and `Owner` against closed sets rather than constants, requires an operational response on every metric, and **keeps the two unsatisfied criteria visible** |
+| `scripts/audit-cbd-79.py` | Structural audit. Unlike CBD-77 and CBD-78 it validates `Class` and `Owner` against closed sets rather than constants, requires an operational response on every metric, and **keeps the safety exclusions and approved synthetic-QA disposition visible** |
 
 ## 2. Acceptance criteria
 
 ### CBD-79-AC01 — connection and synchronization success, latency, freshness, retry, terminal failure
 
-**Status: Met.** Five metrics, one per aspect: `MT-79-001` through `MT-79-005`.
+**Status: Scoped definition amendment incorporated; independent review pending.** Five metrics remain, `MT-79-001` through `MT-79-005`. MT-79-003 now uses the authorized active snapshot population, committed successful-sync watermark and never-synced missing-age rule. The approved CBD81-BOUNDS-001 closure-stage exception leaves its classification bound unset; the rate remains unavailable with no baseline start/credit or healthy claim until bound/source/release gates pass.
 
 **All five are `reliability-telemetry`, not `aggregate-state`**, and each `Data source` states that no connection, account or space identifier reaches the aggregate — `AN-92-003` allows service and version, coarse operation class, safe outcome class, duration bucket and aggregate health count, and nothing else.
 
@@ -39,19 +39,17 @@
 
 ### CBD-79-AC03 — alert quality distinguishes duplicate, late, incorrect, acknowledged, dismissed
 
-**Status: Met for four of five states.**
+**Status: Approved synthetic-QA and end-to-end timing definitions incorporated; candidate review pending.** `CBD13-CORRECTNESS-001` settles the incorrect-alert assessment route. No executed QA is claimed.
 
 | State | Where |
 | --- | --- |
-| `duplicate` | `MT-79-007` |
-| `late` | `MT-79-008` |
+| `duplicate` | `MT-79-007`, unchanged |
+| `late` | `MT-79-008`: durable source revision first satisfying the applicable rule to mandatory authorized in-app availability; same delivered-instance denominator, unavailable pending classification/source/release gates |
 | `acknowledged` | **CBD-78 `MT-78-007`**, by reference |
 | `dismissed` | **CBD-78 `MT-78-008`**, by reference |
-| `incorrect` | **No measurable referent** — metrics §3 |
+| `incorrect` | Synthetic QA against approved alert rules, separate from production metrics and customer/support data; metrics §3 and decided `OQ-79-002` |
 
-**`incorrect` is not a state the system holds.** The word appears nowhere in the approved CBD-74 specification. What CBD-74 defines is a closed catalog with fixed thresholds and system-owned deduplication, so an alert that fires is one whose trigger condition held; whether it was *useful* is a judgment.
-
-Metrics §3 rejects all three routes to measuring it — behavioural inference is disabled by `AN-92-001`, human reports are support data `AN-92-006` bars joining to a measurement, and a product-side correctness rule would contradict `AB-74-001`'s closed catalog. `OQ-79-002`.
+The synthetic assessment compares implementation outcomes with the approved rules; a fixed rule does not prove its implementation correct. No new production metric, behavioral tracking or customer/support-data reuse is authorized. QA must still be assigned and executed against the candidate, with independent evidence. The approved CBD81-BOUNDS-001 exception permits specification closure with lateness classification unset; beta applicability and required evidence remain.
 
 **The two states answered by reference are deliberate.** Redefining them here would create two metrics for one quantity and would drop the `AB-74-014` release constraint CBD-78 attaches to them. The audit fails if this package defines an acknowledgement or dismissal rate of its own.
 
@@ -82,21 +80,21 @@ So both signals are **barred for the Private MVP phase**, and the question goes 
 
 ### CBD-79-AC05 — export and deletion: request, verification, completion, failure, elapsed time
 
-**Status: Met.** `MT-79-009` covers request, completion and failure; `MT-79-010` covers elapsed time; verification is handled as a denominator exclusion rather than a metric, because it is a step the customer holds and elapsed time there is not a product failure.
+**Status: Approved lifecycle predicates incorporated; physical binding/runtime evidence and candidate review remain future.** MT-79-009/010 cover export, archival, budget-space deletion and personal-account deletion. Acceptance follows eligibility, authorization and required verification/confirmation, and includes subsequent queue delay. Source-specific completed endpoints and approved terminal failures share one population; valid cancellations/restorations and pending work are excluded from both the rate and elapsed distribution. Failed means an approved terminal unsuccessful outcome, not retry/grace/pending cleanup.
 
-**`MT-79-009`'s unhealthy condition is "any failed terminal state at all."** This is not a rate to optimise. `INC-76-005`, `INC-76-009` and `INC-76-010` each promise an outcome, and one broken promise is a finding.
+Metrics' Approved lifecycle measurement contract and CBD-80 MS-80-029/030 define export package-ready, atomic archival restrictions, irreversible budget-space purge, and personal account/profile terminal dispositions. Immediate authority shutdown and scheduled cleanup do not prove completion. Application-controlled completion requires approved per-class/custodian schedule evidence; processor/backup obligations remain separately tracked. FU-95-014/016/022 execution gates remain open, and no recipient-copy erasure claim is permitted.
 
 **Its operational response says the metric deliberately cannot identify the failure.** Finding out which request failed is an `OP-92-003` exceptional-purpose action through the authorized path, not something this measure supports — which is the correct shape and worth stating so nobody adds a drill-down later.
 
 ### CBD-79-AC06 — each unhealthy condition has an initial threshold or baseline rule and an operational response
 
-**Status: Met for the response half; the threshold half is CBD-81's.**
+**Status: Approved closure-stage bounds disposition incorporated; independent review pending.**
 
 Conventions §10 splits the criterion: **CBD-79 owns the condition and the response, CBD-81 owns the number.** That split was confirmed by the Product Owner's approval of the conventions on September 5, 2026, closing `OQ-13-002`.
 
 The conventions record shape has no response field, so metrics §5 adds one, and **the audit fails a response of "investigate"** — an intention is not an action.
 
-**Three bounds are named and none is a number** — freshness, lateness, and the committed windows. `OQ-79-003` records that every unhealthy condition here is qualitative until CBD-81 supplies them.
+**Classification bounds and performance commitments are distinct.** CBD81-BOUNDS-001 permits specification closure with freshness/lateness bounds unset, not a beta applicability deferral. MT-79-003/008 cannot report a rate, healthy status, numerical release or baseline start/credit until classification/source/release gates pass; D14 then starts on valid comparable releasable rates. MT-79-010 may baseline duration after interval/terminal/source/bucket/release gates, but cannot claim SLA/compliance or near-breach without lifecycle-specific commitments and actionable approach rules. Restoration grace, export expiry and backup expiry are not SLOs. OQ-79-003 remains open for numerical selection; missing beta evidence follows the approved dated continuation/pause process.
 
 ## 3. Deliverables
 
@@ -104,9 +102,9 @@ The conventions record shape has no response field, so metrics §5 adds one, and
 | --- | --- | --- |
 | Connection and synchronization metrics | **Met** — five metrics | Metrics §6 |
 | Notification measures | **Met** — six states, one distribution | `MT-79-006` |
-| Alert quality | **Four of five states** — two here, two by reference, one unmeasurable | `MT-79-007`, `MT-79-008`, `OQ-79-002` |
+| Alert quality | **Definition amendment incorporated; review pending** — `duplicate`, `late`, `incorrect`, `acknowledged`, `dismissed`: two production definitions here, synthetic QA for correctness, two CBD-78 references; execution unproven | `MT-79-007`, `MT-79-008`, metrics §3, `OQ-79-002` |
 | Safety measures | **Partially met and closed that way** — two of four measured, two barred and routed to `SRV-94-010` | `MT-79-011`, `MT-79-012`, metrics §4.2 |
-| Export and deletion measures | **Met** — two metrics | `MT-79-009`, `MT-79-010` |
+| Export and deletion measures | **Definition amendment incorporated; review pending** — both deletion scopes plus export/archival, shared terminal population and source-specific endpoints; runtime gates remain | `MT-79-009`, `MT-79-010` |
 | Operational responses | **Met** — one per metric, checked mechanically | Metrics §5 |
 | Thresholds and bounds | **Not this package** — CBD-81 | `OQ-79-003` |
 | Structural audit | **Met** — eight CBD-79-specific guards proven by deliberate violation | `scripts/audit-cbd-79.py` |
@@ -122,8 +120,8 @@ The conventions record shape has no response field, so metrics §5 adds one, and
 * **No metric has been measured**, and neither the product nor its provider connections exist.
 * **No metric is computable** — ten sources proposed, none assigned.
 * **No safety measure exists**, pending `OQ-13-007`.
-* **Alert correctness is not measured and cannot be** by any route this package could find.
-* **No bound is a number**, so no unhealthy condition is actionable until CBD-81 supplies one.
+* **Synthetic incorrect-alert QA is approved but not executed here.** It is separate from production metrics and customer/support data.
+* **No numerical classification bound or lifecycle commitment is approved here.** Freshness/lateness rates remain unavailable, while duration baseline eligibility depends on its separate source/bucket/release gates.
 * **Written and reviewed by the same person.**
 
 ## 6. Revision record
@@ -133,3 +131,24 @@ The conventions record shape has no response field, so metrics §5 adds one, and
 | 0.3 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **`OQ-79-001` decided, and the answer is neither amendment.** `AN-92-006` sources four cross-cutting hard gates and `HG-102-003` restates it almost verbatim, so amending it would require re-measuring every candidate in six categories and reopen the approved CBD-102 catalog and CBD-108 selections. Amending the criterion would cost one ticket and **delete** a safety signal rather than defer it. Both barred signals are therefore barred **for the Private MVP phase**, with the question routed to `SRV-94-010`, whose scope is evidence gaps and residual decisions and which CBD-94 §11.8 makes a public-launch prerequisite. `CBD-79-AC04` is partially met and closes that way | Draft; Product Owner approval required |
 | 0.2 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **`OQ-13-007` decided.** The four `CBD-79-AC04` signals were treated as one blocked question and are not one: consent changes and revocation failures are measurable under approved contracts and become `MT-79-011` and `MT-79-012`; denied cross-space access and support incidents stay barred, the first because `AN-92-003` excludes a security-decision label **by name**. The criterion moves from not met to partially met, and §4.1 records the seam the two permitted measures turn on — whether an operation completed, not what it decided. Three new measurement sources are proposed, which CBD-80 must register | Draft; Product Owner approval required |
 | 0.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Initial package: ten metrics with operational responses, the `incorrect` unmeasurability finding at `OQ-79-002`, the `CBD-79-AC04` blocker at `OQ-79-001`, the unset bounds at `OQ-79-003`, structural audit, and this report | Superseded by 0.2 |
+
+## Lifecycle amendment record
+
+| Version | Authority | Change | Status |
+| --- | --- | --- | --- |
+| 0.4 | `CBD13-LIFECYCLE-001`; `CBD81-BOUNDS-001`; `CBD13-CORRECTNESS-001` | Freshness snapshot; end-to-end alert lateness; accepted lifecycle start, both deletion scopes and source-specific application-controlled endpoints; matching completed-plus-failed rate/elapsed populations; synthetic correctness QA and explicit later-bound closure exception | Candidate; independent review pending. Existing approvals preserved; no measurement or executed QA claimed |
+
+## Lifecycle amendment traceability and CBD-81 handoff
+
+| Criterion / decision | Exact specification evidence | Remaining gate |
+| --- | --- | --- |
+| CBD-79-AC01; CBD13-LIFECYCLE-001 | MT-79-003 / MS-80-023 and Freshness snapshot: currently authorized active connections, committed successful watermark, exclusions, never-synced retained in denominator with missing age | Physical eligibility/watermark and safe bucket proof; approved classification bound and release controls |
+| CBD-79-AC03; CBD13-LIFECYCLE-001 | MT-79-008 / MS-80-028 and End-to-end alert interval: first durable rule satisfaction through authorized recipient-instance availability, evaluation/fan-out included, delivered-only matching population | Exact timestamp/bucket proof; classification bound and release controls; no dropped-alert coverage claim |
+| CBD-79-AC05; CBD-80-AC01/06; CBD13-LIFECYCLE-001 | MT-79-009/010 / MS-80-029/030 and Accepted request / Outcome sections: accepted authorized verified start, export package-ready, atomic archival, both deletion scopes, source-specific app-controlled endpoints, completed/(completed+failed) and same terminal elapsed population | FU-95-014/016/022 and source-specific class/custodian schedules, timestamp and runtime evidence; processor/backup obligations separately tracked |
+| CBD-79-AC03; CBD13-CORRECTNESS-001 | CBD-79 §3 and decided OQ-79-002: incorrect alerts assessed by synthetic QA against approved rules, separate from production metrics and customer/support data | QA assignment/execution and independent evidence; no new production metric or pretend pass |
+| CBD-79-AC01/02/03/06; CBD13-AC02/05/07; CBD81-AC01/06; CBD81-BOUNDS-001 | Later-bound specification disposition: closure exception with freshness/lateness bounds unset; MT-79-003/008 remain applicable but unavailable, no baseline start/credit or healthy claim; duration baseline separately gated | CBD-81 must preserve required beta evidence, D14 validity and dated continuation/pause process; no performance number or successful evaluation exit inferred |
+| CBD-80-AC03/04/05 | Existing privacy, purpose separation, source IDs, owners and destinations retained; lifecycle distinctions grant no new released subtype/outcome labels or tracking | Existing implementation and release gates; no access, retention or customer-data permission expanded |
+
+Manager reports fresh Jira read-back verification of the scoped closure exception in CBD-79-AC01/02/03/06, CBD-13-AC02/05/07 and CBD-81-AC01/06. Jira remains authoritative; this report maps the approved semantics and does not stage or apply Jira updates. The exception affects specification closure only, not Private MVP metric applicability. No expansion or successful beta evaluation exit is permitted without required evidence.
+
+CBD-81 integration must distinguish rates needing approved classification bounds from a duration baseline that can proceed after interval/terminal/source/bucket/release gates. Retain all approved metric/source slots, destinations and baseline periods. Do not use restoration grace, export expiry or backup expiry as SLOs. Runtime feasibility, synthetic QA execution, numerical classification/commitment selection and release controls remain future; independent review of this candidate is pending. No whole-package approval or Jira Done certification follows from these amendments.

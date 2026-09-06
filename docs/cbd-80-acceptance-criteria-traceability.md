@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Candidate amendment v1.5**. Specific meanings approved in `CBD13-PROFILE-001`, `CBD13-CATEGORY-001` and `CBD13-USABLE-TIME-001`; CBD-80 also applies `CBD13-RETENTION-001`. Prior activation amendment independently reviewed and merged in PR #236; retention source amendment independently reviewed and merged in PR #237. This new candidate awaits independent review. Prior approvals remain in force; no whole-package approval, computation, release or closure is inferred |
-| Document version | 1.5 |
+| Status | **Candidate amendment v1.6**. Exact lifecycle semantics, later-bound specification-closure disposition and synthetic incorrect-alert QA route approved in `CBD13-LIFECYCLE-001`, `CBD81-BOUNDS-001` and `CBD13-CORRECTNESS-001`. This candidate awaits independent review; no whole-package approval, runtime proof, numerical release or Done claim. Prior decisions remain in force. Base usable-definition candidate 7754c5c was independently reviewed but is not yet published or merged; prior activation/retention integration history is unchanged. |
+| Document version | 1.6 |
 | Owner | Alexander Wohlford |
 | Reviewer | Independent review pending for this candidate; prior activation/retention reviews remain valid only for their reviewed amendments |
 | Jira | [CBD-80](https://cobudget.atlassian.net/browse/CBD-80) |
@@ -156,3 +156,24 @@ CBD-80-AC01/06 corrections support CBD-13-AC02/07 and later CBD-81 source-gate r
 | CBD-80-AC03/04/05; CBD81-BASELINE-001 | Existing privacy rules, IDs, consumers, owners and destinations preserved; W4 and R4/R8 remain future applicable baselines for deferred metrics | Independent candidate review and CBD-81 applicability/exit follow-through; unchanged release/privacy gates |
 
 CBD-81 follow-through must distinguish logical definition completion from physical-source readiness, apply the approved MT-77-005/MT-78-004/005/006 deferrals without successful baseline credit, and retain W4/R4/R8 for future applicability. R4/R8 still require two valid observation pairs with earliest reviews after six/ten weeks. No numerical privacy minimum, target, metric result or beta-success claim is added. This assignment does not edit CBD-81 or certify Jira Done. Structural checks and safe synthetic failure proofs are evidence of documentation integrity only; independent semantic review remains required.
+
+## Lifecycle amendment record
+
+| Version | Authority | Change | Status |
+| --- | --- | --- | --- |
+| 1.6 | `CBD13-LIFECYCLE-001`; `CBD81-BOUNDS-001`; `CBD13-CORRECTNESS-001` | Freshness snapshot; end-to-end alert lateness; accepted lifecycle start, both deletion scopes and source-specific application-controlled endpoints; matching completed-plus-failed rate/elapsed populations; synthetic correctness QA and explicit later-bound closure exception | Candidate; independent review pending. Existing approvals preserved; no measurement or executed QA claimed |
+
+## Lifecycle amendment traceability and CBD-81 handoff
+
+| Criterion / decision | Exact specification evidence | Remaining gate |
+| --- | --- | --- |
+| CBD-79-AC01; CBD13-LIFECYCLE-001 | MT-79-003 / MS-80-023 and Freshness snapshot: currently authorized active connections, committed successful watermark, exclusions, never-synced retained in denominator with missing age | Physical eligibility/watermark and safe bucket proof; approved classification bound and release controls |
+| CBD-79-AC03; CBD13-LIFECYCLE-001 | MT-79-008 / MS-80-028 and End-to-end alert interval: first durable rule satisfaction through authorized recipient-instance availability, evaluation/fan-out included, delivered-only matching population | Exact timestamp/bucket proof; classification bound and release controls; no dropped-alert coverage claim |
+| CBD-79-AC05; CBD-80-AC01/06; CBD13-LIFECYCLE-001 | MT-79-009/010 / MS-80-029/030 and Accepted request / Outcome sections: accepted authorized verified start, export package-ready, atomic archival, both deletion scopes, source-specific app-controlled endpoints, completed/(completed+failed) and same terminal elapsed population | FU-95-014/016/022 and source-specific class/custodian schedules, timestamp and runtime evidence; processor/backup obligations separately tracked |
+| CBD-79-AC03; CBD13-CORRECTNESS-001 | CBD-79 §3 and decided OQ-79-002: incorrect alerts assessed by synthetic QA against approved rules, separate from production metrics and customer/support data | QA assignment/execution and independent evidence; no new production metric or pretend pass |
+| CBD-79-AC01/02/03/06; CBD13-AC02/05/07; CBD81-AC01/06; CBD81-BOUNDS-001 | Later-bound specification disposition: closure exception with freshness/lateness bounds unset; MT-79-003/008 remain applicable but unavailable, no baseline start/credit or healthy claim; duration baseline separately gated | CBD-81 must preserve required beta evidence, D14 validity and dated continuation/pause process; no performance number or successful evaluation exit inferred |
+| CBD-80-AC03/04/05 | Existing privacy, purpose separation, source IDs, owners and destinations retained; lifecycle distinctions grant no new released subtype/outcome labels or tracking | Existing implementation and release gates; no access, retention or customer-data permission expanded |
+
+Manager reports fresh Jira read-back verification of the scoped closure exception in CBD-79-AC01/02/03/06, CBD-13-AC02/05/07 and CBD-81-AC01/06. Jira remains authoritative; this report maps the approved semantics and does not stage or apply Jira updates. The exception affects specification closure only, not Private MVP metric applicability. No expansion or successful beta evaluation exit is permitted without required evidence.
+
+CBD-81 integration must distinguish rates needing approved classification bounds from a duration baseline that can proceed after interval/terminal/source/bucket/release gates. Retain all approved metric/source slots, destinations and baseline periods. Do not use restoration grace, export expiry or backup expiry as SLOs. Runtime feasibility, synthetic QA execution, numerical classification/commitment selection and release controls remain future; independent review of this candidate is pending. No whole-package approval or Jira Done certification follows from these amendments.

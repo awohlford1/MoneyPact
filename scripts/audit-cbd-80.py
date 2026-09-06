@@ -172,10 +172,129 @@ def approved_amendment_checks(text: str, audit: Audit) -> None:
 
 
 
+# Approved lifecycle/closure invariants. Logical documentation checks only;
+# source availability, synthetic QA execution and release safety remain gates.
+LIFECYCLE_RULES = {'Freshness source': ('| `MS-80-023` |',
+                      ('currently authorized and active',
+                       'T minus last committed successful sync watermark',
+                       'Never-synced eligible connections stay in denominator',
+                       'missing age never zero',
+                       'no extra released label',
+                       'baseline start/credit')),
+ 'Lateness source': ('| `MS-80-028` |',
+                     ('first rule satisfaction to authorized in-app availability',
+                      'evaluation/fan-out delay',
+                      'still-unavailable/failed excluded',
+                      'cannot prove absence of dropped alerts',
+                      'baseline start/credit')),
+ 'Terminal source': ('| `MS-80-029` |',
+                     ('budget-space deletion and personal-account deletion',
+                      'completed / (completed + failed)',
+                      'approved terminal unsuccessful outcome',
+                      'valid cancellation/restoration',
+                      'do not invent cancellation',
+                      'Processor/backup obligations separately tracked')),
+ 'Elapsed source': ('| `MS-80-030` |',
+                    ('completed-plus-failed terminal population as MS-80-029',
+                     'accepted eligible authorized request after verification/confirmation',
+                     'queue delay included',
+                     'same terminal transition as MS-80-029',
+                     'no SLA/compliance or near-breach claim')),
+ 'Freshness snapshot': ('### Freshness snapshot',
+                        ('currently authorized and active',
+                         'orphaned, revoked, disconnected and lifecycle-stopped',
+                         'T minus that watermark',
+                         'Failed or superseded runs do not advance',
+                         'never-synced eligible connection remains in the denominator',
+                         'missing age, never zero')),
+ 'Alert interval': ('### End-to-end alert interval',
+                    ('durable source revision first satisfying',
+                     'settlement is required only where that rule requires',
+                     'evaluation and fan-out delay',
+                     'Viewing, acknowledgement, external sends and quiet-hour expiry are not '
+                     'endpoints',
+                     'Still-unavailable and failed instances are excluded',
+                     'cannot prove absence of dropped alerts')),
+ 'Accepted request': ('### Accepted request and success predicates',
+                      ('budget-space deletion and personal-account deletion',
+                       'accepted eligible authorized request after required '
+                       'verification/confirmation',
+                       'queue delay after acceptance is included',
+                       'after the approved objection conditions',
+                       'not at proposal time')),
+ 'Export endpoint': ('| Export |',
+                     ('correctly scoped, recipient-bound protected package',
+                      'ready for authorized retrieval',
+                      'download and expiry are not completion endpoints',
+                      'FU-95-016')),
+ 'Archival endpoint': ('| Archival |',
+                       ('archived state and its restrictions are atomically committed',
+                        'archival erases nothing')),
+ 'Budget deletion endpoint': ('| Budget-space deletion |',
+                              ('After the restoration window',
+                               'irreversibly purged',
+                               'minimal nonfinancial tombstone',
+                               'FU-95-014',
+                               'archived-without-pending-deletion')),
+ 'Personal deletion endpoint': ('| Personal-account deletion |',
+                                ('After the restoration window, irreversible account/profile termination',
+                                 'private-data/shared-history dispositions',
+                                 'pseudonymized',
+                                 'minimal non-resurrection ledger',
+                                 'FU-95-022',
+                                 'Immediate authority shutdown is not completion',
+                                 'restoration does not resurrect authority')),
+ 'Application boundary': ('### Accepted request and success predicates',
+                          ('evidenced application-controlled terminal disposition',
+                           'approved per-class/custodian schedule',
+                           'Merely scheduling cleanup is insufficient',
+                           'Processor and backup obligations remain separately tracked',
+                           'does not certify their expiry or erasure of recipient-held copies')),
+ 'Outcome alignment': ('### Outcome and population alignment',
+                       ('completed / (completed + failed)',
+                        'same completed-plus-failed terminal population',
+                        'acceptance to terminal outcome, not success-only time',
+                        'once at its terminal transition',
+                        'regardless of acceptance week',
+                        'do not invent cancellation',
+                        'unfinished requests are excluded',
+                        'cannot imply success or absence of failures')),
+ 'Bounds and applicability': ('### Later-bound specification disposition',
+                              ('closure-stage exception, not a Private MVP applicability deferral',
+                               'no rate, healthy status, numerical release, baseline start or '
+                               'credit',
+                               'D14 starts only when valid comparable releasable rates',
+                               'interval, terminal-state, source, bucket and release prerequisites',
+                               'No SLA/compliance or near-breach claim',
+                               'restoration grace, export expiry and backup expiry are not '
+                               'performance SLOs',
+                               'no expansion or successful evaluation exit without required '
+                               'evidence',
+                               'dated continuation/pause process'))}
+
+
+def lifecycle_checks(text: str, audit: Audit) -> None:
+    for label, (marker, required) in LIFECYCLE_RULES.items():
+        start = text.find(marker)
+        if start < 0:
+            body = ""
+        elif marker.startswith("|"):
+            body = text[start:].splitlines()[0]
+        else:
+            end = re.search(r"\n#{2,3} ", text[start + len(marker):])
+            stop = start + len(marker) + end.start() if end else len(text)
+            body = text[start:stop]
+        missing = [phrase for phrase in required if phrase not in body]
+        audit.check(not missing,
+                    f"docs/cbd-80-measurement-source-register.md: {label} missing approved invariant(s): {missing}")
+
+
+
 def main() -> int:
     audit = Audit()
     text = REGISTER.read_text(encoding="utf-8")
     conventions = CONVENTIONS.read_text(encoding="utf-8")
+    lifecycle_checks(text, audit)
     approved_amendment_checks(text, audit)
 
     version = re.search(r"\| Document version \| ([\d.]+) \|", conventions)
