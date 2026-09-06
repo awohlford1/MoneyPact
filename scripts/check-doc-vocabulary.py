@@ -36,8 +36,11 @@ the first bad file, and hid every other finding in the tree behind it.
 
 A skipped document fails the run rather than passing quietly, because its
 enumerations are unverified and saying nothing about them would be a false
-pass. That is the reasoning .github/workflows/ci.yml records beside the sibling
-freshness step.
+pass. So does a scan that found no documents at all. That is the reasoning
+.github/workflows/ci.yml records beside its AN-92 criteria step, where
+`--offline` "says plainly that it checked nothing rather than passing
+silently" -- not beside the freshness step, whose comment is about pinned
+versions going stale.
 
 Scope and limits
 ----------------
@@ -339,7 +342,8 @@ def report_unchecked(where: str, error: Exception) -> None:
     print(f"UNCHECKED {where}")
     if isinstance(error, UnicodeDecodeError):
         print("      problem    : not valid UTF-8, so its enumerations were never read")
-        print(f"      remedy     : python scripts/check-doc-encoding.py --path {where}")
+        # Quoted so the line stays copy-pasteable for a path containing a space.
+        print(f'      remedy     : python scripts/check-doc-encoding.py --path "{where}"')
     else:
         detail = getattr(error, "strerror", None) or error
         print(f"      problem    : could not be opened: {type(error).__name__}: {detail}")
@@ -361,7 +365,18 @@ def main() -> int:
     checked = 0
     scanned = 0
     unchecked: list[str] = []
-    for file in sorted(root.rglob("*.md")):
+    # rglob matches on the name alone, so a *directory* called `something.md`
+    # is yielded as though it were a document. Opening one raises
+    # PermissionError on Windows, and the catch below would then print a remedy
+    # -- release the lock, fix the permissions -- that can never succeed,
+    # because there is no lock and no permission at fault. Filtering costs no
+    # coverage: rglob still descends into that directory and yields the real
+    # documents inside it. check-doc-encoding.py filters for the same reason.
+    #
+    # is_file() is also False for a dangling symlink, which is then skipped
+    # silently rather than reported. A document that disappears *after* this
+    # check is still caught, as an OSError, by the read below.
+    for file in sorted(entry for entry in root.rglob("*.md") if entry.is_file()):
         path = display_path(file)
         # UnicodeDecodeError is a ValueError, not an OSError, so both are named.
         # They are caught together because the property being defended is the
@@ -411,6 +426,17 @@ def main() -> int:
     # alone cannot distinguish a clean sweep from a sweep that skipped files.
     print(f"\n{checked} enumeration(s) checked across {len(VOCABULARIES)} "
           f"vocabularies in {scanned} document(s).")
+    if not scanned and not unchecked:
+        # Nothing was read and nothing was skipped, so there is no evidence
+        # either way and "No vocabulary drift." would be a claim about an empty
+        # set. The docstring above applies this reasoning to a document that
+        # could not be read; it applies just as well to a scan that never had
+        # one. Only a directory is named as the fix because only a directory
+        # works: unlike check-doc-encoding.py, this scan is rglob-only, so
+        # `--path` at a single file matches nothing and lands here.
+        print(f"Nothing to check under {args.path}. Name a directory containing "
+              "*.md documents.")
+        return 1
     if unchecked:
         print(f"{len(unchecked)} document(s) could not be read, so this run is not "
               f"a full sweep: {', '.join(unchecked)}")
