@@ -42,6 +42,7 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: python3 scripts/test_check_doc_encoding.py
+      - run: python3 scripts/test_create_confluence_target.py
       - run: python3 scripts/check-doc-encoding.py
       - run: python3 scripts/check-doc-vocabulary.py
       - run: python3 scripts/check-jira-freshness.py --offline

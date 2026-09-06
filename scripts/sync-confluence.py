@@ -23,7 +23,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from tool_config import ConfigurationError, load_tool_config
+from tool_config import ConfigurationError, load_env_file, load_tool_config
 
 
 def require(name: str):
@@ -1017,27 +1017,6 @@ TARGETS: tuple[Target, ...] = (
         path="docs/cbd-81-acceptance-criteria-traceability.md",
     ),
 )
-
-
-def load_env_file() -> dict[str, str]:
-    """Read `.env.local` if present. Values are returned, never logged.
-
-    `docs/development.md` places secrets in an untracked `.env.local`, so an
-    operator who followed that guidance should not also have to export the same
-    values into the shell. Environment variables still win, which keeps CI and
-    one-off overrides working.
-    """
-    path = REPO_ROOT / ".env.local"
-    if not path.is_file():
-        return {}
-    values: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip('"').strip("'")
-    return values
 
 
 def session_from_env() -> tuple[requests.Session, str]:

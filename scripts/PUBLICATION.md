@@ -2,8 +2,37 @@
 
 The repository is the working source. Only approved changes merged into `main`
 may be published. The permanent `publish-confluence.yml` workflow is the sole
-supported writer; the old `sync-confluence.py` CLI is dry-run only. No page is
-created or deleted, and no Confluence content is copied into repository files.
+supported writer; the old `sync-confluence.py` CLI is dry-run only. The workflow
+creates and deletes no page, and no Confluence content is copied into repository
+files. Creating an empty page for a document that has no target is a separate,
+owner-run step; see "Creating a target page" below.
+
+## Creating a target page
+
+A document cannot be registered until a page exists to register it against, and
+the publisher creates none. `scripts/create-confluence-target.py` makes one:
+
+    python scripts/create-confluence-target.py --parent <page id> docs/cbd-99-thing.md
+
+It creates the page **empty**, which is the part that is easy to get wrong by
+hand. A first publication reconciles the live page against an empty base, so a
+page carrying placeholder text fails with `ambiguous-structural-change`. That
+happened on the CBD-13 family: eleven pages were created with a placeholder
+paragraph, the run failed on the first target, and clearing it needed an
+owner-approved entry in `config/confluence-recovery.json`.
+
+The script refuses a document that is already registered and a title that
+already exists in the space, checks every title before creating anything so a
+late clash leaves nothing half-created, and writes nothing in the repository. It
+prints a manifest entry and a `TARGETS` row for each page, with the three
+authority fields left as TODO for you to fill in. Both surfaces must agree or
+the contract fails `registry-manifest-drift`.
+
+Credentials come from `CONFLUENCE_*` in `.env.local`, the same values the
+dry-run CLI uses. `scripts/test_create_confluence_target.py` covers the
+behaviour offline, including that the created body is empty by the publisher's
+own definition of empty.
+
 
 ## Current activation gate
 
@@ -14,7 +43,9 @@ offline tests do not establish live readiness. Before enabling publication:
 2. Have the Product Owner review the manifest, its held dispositions, dependency
    chain, and the exact existing target and source change for the smoke test.
    Do not use a governing baseline as an arbitrary test page. A non-governing
-   test target needs its own owner-approved registration; this tool cannot create it.
+   test target needs its own owner-approved registration; the publisher does not
+   create it. Use `scripts/create-confluence-target.py` for that, then register
+   the page it reports.
 3. Configure the GitHub `confluence-publication` environment to allow only the
    protected `main` branch (not tags), require manual review by `awohlford1`,
    allow self-review, and prohibit administrator bypass. The Product Owner

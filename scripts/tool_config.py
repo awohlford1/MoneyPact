@@ -9,6 +9,31 @@ from urllib.parse import urlsplit
 INVENTORY = Path(__file__).resolve().parents[1] / "config/environment-inventory.json"
 
 
+def load_env_file():
+    """Read `.env.local` if present. Values are returned, never logged.
+
+    `docs/development.md` places secrets in an untracked `.env.local`, so an
+    operator who followed that guidance should not also have to export the same
+    values into the shell. Environment variables still win, which keeps CI and
+    one-off overrides working.
+
+    This lived in sync-confluence.py until a second tool needed it. It is
+    configuration loading, so it belongs beside load_tool_config rather than
+    being copied.
+    """
+    path = INVENTORY.parents[1] / ".env.local"
+    if not path.is_file():
+        return {}
+    values = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        values[name.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
 class ConfigurationError(ValueError):
     """Contains only variable names and fixed validation rules, never values."""
 

@@ -107,7 +107,8 @@
       "classification": "tooling",
       "consumer": [
         "scripts/sync-confluence.py",
-        "scripts/publication_transport.py"
+        "scripts/publication_transport.py",
+        "scripts/create-confluence-target.py"
       ],
       "owner": "Engineering",
       "required": true,
@@ -126,7 +127,8 @@
       "classification": "tooling",
       "consumer": [
         "scripts/sync-confluence.py",
-        "scripts/publication_transport.py"
+        "scripts/publication_transport.py",
+        "scripts/create-confluence-target.py"
       ],
       "owner": "Engineering",
       "required": true,
@@ -145,7 +147,8 @@
       "classification": "tooling",
       "consumer": [
         "scripts/sync-confluence.py",
-        "scripts/publication_transport.py"
+        "scripts/publication_transport.py",
+        "scripts/create-confluence-target.py"
       ],
       "owner": "Engineering",
       "required": true,
