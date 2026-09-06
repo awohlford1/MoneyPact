@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Candidate amendment v0.4**. Exact sent-projection and synchronization-population corrections approved by `CBD13-INVITATION-SENT-001` / `CBD13-SYNC-POPULATIONS-001` within the affected package scope. Prior decisions and merged lifecycle amendment remain intact. This candidate awaits independent review; no whole-package approval, runtime evidence, numerical release or Done claim |
+| Status | **Accepted specification v0.4** under CBD13-FINAL-ACCEPTANCE-001, with all recorded decisions and exceptions preserved. CBD13-FINAL-REVIEW-002 approves the integrated package and closes both prior findings; CBD13-FINAL-SECURITY-002 clears specification privacy only. No runtime measurement, numerical reporting, beta launch, deployment or Jira Done claimed |
 | Document version | 0.4 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-78](https://cobudget.atlassian.net/browse/CBD-78) |
@@ -13,7 +13,7 @@
 | Governing invitation model | `docs/cbd-73-invitation-consent-lifecycle-specification.md`, approved |
 | Governing schedule decisions | `docs/cbd-71-mvp-schedule-decision-register.md` — Document version **1.1**, approved |
 | Consuming packages | CBD-80 (measurement-source register); CBD-81 (targets and review) |
-| Confluence page | **Not published.** Registration follows approval |
+| Confluence page | **Unpublished to Confluence.** No verified target; future registration/publication readiness separately gated |
 | Last updated | September 5, 2026 |
 
 ## 1. Purpose and authority
@@ -323,3 +323,17 @@ Synthetic validation must reference the existing CBD-73 negative/recovery invent
 | Version | Authority | Change | Status |
 | --- | --- | --- | --- |
 | 0.4 | `CBD13-INVITATION-SENT-001`; `CBD13-SYNC-POPULATIONS-001` | Sent projection/synthetic-validation clarification and metric-specific terminal-day synchronization populations, with corresponding shared source derivations; all unrelated decisions preserved | Candidate; independent review pending; no runtime or executed-QA claim |
+
+## Final specification acceptance record
+
+CBD13-FINAL-ACCEPTANCE-001 accepts the reviewed package at
+`d4fc13ca47837c9b2faf83f4998aab2147bd5656`, including factual status updates.
+CBD13-FINAL-REVIEW-002 approves source `ff93a9b1ab901b5b88ebc1cca855ab10916fe4af`
+and the integrated package, closing both sent/sync findings. CBD13-FINAL-SECURITY-002 clears
+specification privacy only. Earlier draft/candidate revision entries describe
+history; this record establishes current acceptance without changing versions,
+definitions, approved exceptions or future implementation/release gates.
+Prior PRs #236/#237/#239/#240 are merged. Final source PR #242 merged at `1d1b2a8970f4f5bb5d7f72e98c462de0eb91e996` after required CI and verified GitHub readback. Its transport head 4d8aeaa added only already-merged CI wiring to reviewed source documents. The CBD-81 public PR is pending. Jira specification
+evidence and Executive acceptance are ready; workflow closure awaits authorized
+merges and verification. Confluence remains unpublished with no verified target;
+future target registration/publication readiness is separately gated.

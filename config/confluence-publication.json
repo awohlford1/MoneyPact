@@ -68,14 +68,14 @@
     {
       "path": "docs/cbd-81-acceptance-criteria-traceability.md",
       "disposition": "unpublished",
-      "rationale": "Draft CBD-81 specification; no verified existing Confluence counterpart or approved automated page target is registered.",
+      "rationale": "Accepted CBD-81 specification; no verified existing Confluence counterpart or approved automated page target is registered.",
       "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
       "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
     },
     {
       "path": "docs/cbd-81-beta-targets-and-review-process.md",
       "disposition": "unpublished",
-      "rationale": "Draft CBD-81 specification; no verified existing Confluence counterpart or approved automated page target is registered.",
+      "rationale": "Accepted CBD-81 specification; no verified existing Confluence counterpart or approved automated page target is registered.",
       "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
       "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
     },

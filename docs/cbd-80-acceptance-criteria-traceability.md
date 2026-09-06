@@ -2,16 +2,16 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Candidate amendment v1.7**. Exact sent-projection and synchronization-population corrections approved by `CBD13-INVITATION-SENT-001` / `CBD13-SYNC-POPULATIONS-001` within the affected package scope. Prior decisions and merged lifecycle amendment remain intact. This candidate awaits independent review; no whole-package approval, runtime evidence, numerical release or Done claim |
+| Status | **Accepted specification v1.7** under CBD13-FINAL-ACCEPTANCE-001, with all recorded decisions and exceptions preserved. CBD13-FINAL-REVIEW-002 approves the integrated package and closes both prior findings; CBD13-FINAL-SECURITY-002 clears specification privacy only. No runtime measurement, numerical reporting, beta launch, deployment or Jira Done claimed |
 | Document version | 1.7 |
 | Owner | Alexander Wohlford |
-| Reviewer | Independent review pending for this candidate; prior activation/retention reviews remain valid only for their reviewed amendments |
+| Reviewer | Independent CBD13-FINAL-REVIEW-002: approve; CBD13-FINAL-SECURITY-002: clear for specification privacy acceptance |
 | Jira | [CBD-80](https://cobudget.atlassian.net/browse/CBD-80) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
 | Governing conventions | `docs/cbd-13-measurement-conventions.md` — Document version **1.0.1**, approved |
 | Companion | `docs/cbd-80-measurement-source-register.md`, which this report checks |
 | Mechanical audit | `scripts/audit-cbd-80.py` — 431 checks, every guard proven by deliberate violation |
-| Confluence page | **Not published.** Registration follows approval |
+| Confluence page | **Unpublished to Confluence.** No verified target; future registration/publication readiness separately gated |
 | Last updated | September 5, 2026 |
 
 ## 1. Package contents
@@ -153,9 +153,9 @@ CBD-80-AC01/06 corrections support CBD-13-AC02/07 and later CBD-81 source-gate r
 | CBD-77-AC03; CBD13-CATEGORY-001 | CBD-77 §3 Category/Allocation and MT-77-008; CBD-80 MS-80-010/011: current active expense entity, stable identity and exclusions; same qualifying set for target numerator and category denominator, stored zero qualifies, missing fails, approved proration qualifies | CBD-30 feature owner physical predicate/target binding and proof |
 | CBD-77-AC01/02/03; CBD13-USABLE-TIME-001 | MT-77-005 and MS-80-007 explicitly deferred/unavailable; intended first-simultaneous interval and future W4 retained; MT-77-003 remains required with five limbs | Approved operational-source contract proving coexistence after replacement/deletion/period changes; no timestamp/history proxy, baseline credit or timing-success claim |
 | CBD-80-AC01/06; CBD13-RETENTION-001 | MS-80-015/016/017 carry merged CBD-78 MT-78-004/005/006 deferral: permissions are not actions, occurrence times and historical A/B evidence unproven under mutation/deletion | Approved operational-source proof without behavioral events, retained measurement membership or audit-purpose reuse; no zero, baseline credit or measured success |
-| CBD-80-AC03/04/05; CBD81-BASELINE-001 | Existing privacy rules, IDs, consumers, owners and destinations preserved; W4 and R4/R8 remain future applicable baselines for deferred metrics | Independent candidate review and CBD-81 applicability/exit follow-through; unchanged release/privacy gates |
+| CBD-80-AC03/04/05; CBD81-BASELINE-001 | Existing privacy rules, IDs, consumers, owners and destinations preserved; W4 and R4/R8 remain future applicable baselines for deferred metrics | Independent review and CBD-81 applicability/exit follow-through complete; unchanged release/privacy gates |
 
-CBD-81 follow-through must distinguish logical definition completion from physical-source readiness, apply the approved MT-77-005/MT-78-004/005/006 deferrals without successful baseline credit, and retain W4/R4/R8 for future applicability. R4/R8 still require two valid observation pairs with earliest reviews after six/ten weeks. No numerical privacy minimum, target, metric result or beta-success claim is added. This assignment does not edit CBD-81 or certify Jira Done. Structural checks and safe synthetic failure proofs are evidence of documentation integrity only; independent semantic review remains required.
+CBD-81 follow-through must distinguish logical definition completion from physical-source readiness, apply the approved MT-77-005/MT-78-004/005/006 deferrals without successful baseline credit, and retain W4/R4/R8 for future applicability. R4/R8 still require two valid observation pairs with earliest reviews after six/ten weeks. No numerical privacy minimum, target, metric result or beta-success claim is added. This assignment does not edit CBD-81 or certify Jira Done. Structural checks and safe synthetic failure proofs are evidence of documentation integrity only; independent semantic review is recorded in CBD13-FINAL-REVIEW-002.
 
 ## Lifecycle amendment record
 
@@ -176,7 +176,7 @@ CBD-81 follow-through must distinguish logical definition completion from physic
 
 Manager reports fresh Jira read-back verification of the scoped closure exception in CBD-79-AC01/02/03/06, CBD-13-AC02/05/07 and CBD-81-AC01/06. Jira remains authoritative; this report maps the approved semantics and does not stage or apply Jira updates. The exception affects specification closure only, not Private MVP metric applicability. No expansion or successful beta evaluation exit is permitted without required evidence.
 
-CBD-81 integration must distinguish rates needing approved classification bounds from a duration baseline that can proceed after interval/terminal/source/bucket/release gates. Retain all approved metric/source slots, destinations and baseline periods. Do not use restoration grace, export expiry or backup expiry as SLOs. Runtime feasibility, synthetic QA execution, numerical classification/commitment selection and release controls remain future; independent review of this candidate is pending. No whole-package approval or Jira Done certification follows from these amendments.
+CBD-81 integration must distinguish rates needing approved classification bounds from a duration baseline that can proceed after interval/terminal/source/bucket/release gates. Retain all approved metric/source slots, destinations and baseline periods. Do not use restoration grace, export expiry or backup expiry as SLOs. Runtime feasibility, synthetic QA execution, numerical classification/commitment selection and release controls remain future; independent CBD13-FINAL-REVIEW-002 approves the specification, accepted under CBD13-FINAL-ACCEPTANCE-001. Jira workflow closure remains pending authorized merges; no runtime certification follows.
 
 ## Final source-correction amendment record
 
@@ -191,6 +191,20 @@ CBD-81 integration must distinguish rates needing approved classification bounds
 | CBD-78-AC02; CBD13-INVITATION-SENT-001 | CBD-78 Approved invitation sent coverage and CBD-80 MS-80-014: existing sent/pending projection plus defined synthetic validation; terminal-only MT-78-002/003 unchanged; no production send count or trend claim | Existing CBD-73 scenario/implementation/privacy evidence and release gates; synthetic execution is future |
 | CBD-79-AC01; CBD13-AC02; CBD13-SYNC-POPULATIONS-001 | CBD-79 MT-79-001/002/004/005 and Approved synchronization terminal-day populations: exact R(D)/S(D), terminal-day attribution, per-metric cancellations/retries/failures and duration; MT-79-003 snapshot unchanged | Operational run identity, first-attempt/terminal timestamps, retry and outcome mappings, safe buckets and release evidence |
 | CBD-80-AC01/06; CBD13-SYNC-POPULATIONS-001 | MS-80-021 separate consumer counts; MS-80-022 all-R duration; MS-80-024 all-R retry buckets including zero; MS-80-025 failed subset with all-R denominator | Do not share one filtered scalar, infer supersession, count duplicate delivery, or reuse measurement membership for replay identity |
-| CBD-81 source/baseline integration | Both exact decisions resolve the two inherited source-definition gaps identified in CBD13-FINAL-REVIEW-001, subject to independent review of this candidate | CBD-81 must update source-version and criterion traceability after integration; applicable baseline/release/bounds, four prior metric deferrals and executed-QA gates remain |
+| CBD-81 source/baseline integration | Both exact decisions resolve the two inherited source-definition gaps identified in CBD13-FINAL-REVIEW-001, closed by independent CBD13-FINAL-REVIEW-002 | CBD-81 source-version and criterion traceability are integrated and accepted; applicable baseline/release/bounds, four prior metric deferrals and executed-QA gates remain |
 
-The selected meanings are Executive-approved; this candidate is not independently approved by its author. Definitions do not establish observed synchronization, dispatch/delivery, synthetic QA execution, source feasibility, numerical release or successful beta evaluation. All prior lifecycle, profile/category, activation, retention, usable-timing, privacy and bounds decisions remain in force. No new source IDs, metrics, owners, destinations, release labels, tracking or retained measurement history are added.
+The selected meanings and package are Executive-accepted under CBD13-FINAL-ACCEPTANCE-001, following independent CBD13-FINAL-REVIEW-002 approval. Definitions do not establish observed synchronization, dispatch/delivery, synthetic QA execution, source feasibility, numerical release or successful beta evaluation. All prior lifecycle, profile/category, activation, retention, usable-timing, privacy and bounds decisions remain in force. No new source IDs, metrics, owners, destinations, release labels, tracking or retained measurement history are added.
+
+## Final specification acceptance record
+
+CBD13-FINAL-ACCEPTANCE-001 accepts the reviewed package at
+`d4fc13ca47837c9b2faf83f4998aab2147bd5656`, including factual status updates.
+CBD13-FINAL-REVIEW-002 approves source `ff93a9b1ab901b5b88ebc1cca855ab10916fe4af`
+and the integrated package, closing both sent/sync findings. CBD13-FINAL-SECURITY-002 clears
+specification privacy only. Earlier draft/candidate revision entries describe
+history; this record establishes current acceptance without changing versions,
+definitions, approved exceptions or future implementation/release gates.
+Prior PRs #236/#237/#239/#240 are merged. Final source PR #242 merged at `1d1b2a8970f4f5bb5d7f72e98c462de0eb91e996` after required CI and verified GitHub readback. Its transport head 4d8aeaa added only already-merged CI wiring to reviewed source documents. The CBD-81 public PR is pending. Jira specification
+evidence and Executive acceptance are ready; workflow closure awaits authorized
+merges and verification. Confluence remains unpublished with no verified target;
+future target registration/publication readiness is separately gated.
