@@ -1451,8 +1451,8 @@
     {
       "path": "docs/cobudget-future-feature-register.md",
       "disposition": "registered",
-      "rationale": "Registered legacy target is held because its current status does not establish approval for this exact automated publication.",
-      "authority": "Repository status record in docs/cobudget-future-feature-register.md; existing page identity from scripts/sync-confluence.py.",
+      "rationale": "Product Owner approved the current working-register snapshot on 2026-09-06; this does not approve implementation of its feature entries.",
+      "authority": "Product Owner instruction and 2026-09-06 approval record in docs/cobudget-future-feature-register.md; existing page identity from scripts/sync-confluence.py.",
       "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
       "target": "future-feature-register",
       "page_id": "950274",
@@ -1462,8 +1462,8 @@
       "depends_on": [
         "cbd-69-traceability"
       ],
-      "policy": "held",
-      "approved_sha256": null
+      "policy": "approved",
+      "approved_sha256": "8868a1abbf7e464191dc0d2e8680dff0148117a21b69ed0de305891725b2a48c"
     },
     {
       "path": "docs/development.md",
