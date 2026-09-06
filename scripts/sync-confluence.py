@@ -933,6 +933,89 @@ TARGETS: tuple[Target, ...] = (
         ),
         path="docs/cbd-108-acceptance-criteria-traceability.md",
     ),
+    # The CBD-13 measurement family. Registered on September 6, 2026 against
+    # targets created for these documents that day at the Product Owner's
+    # direction. Conventions publish first because CBD-77, CBD-78 and CBD-79
+    # cite them for form; CBD-80 follows the three packages whose proposed
+    # sources it registers, and CBD-81 follows all of them because it assigns
+    # operating rules over the whole metric set.
+    Target(
+        key="cbd-13-conventions",
+        doc_set="cbd-13",
+        page_id="20545539",
+        expected_title="CBD-13 — Measurement and Event Conventions",
+        path="docs/cbd-13-measurement-conventions.md",
+    ),
+    Target(
+        key="cbd-77-metrics",
+        doc_set="cbd-77",
+        page_id="20774913",
+        expected_title="CBD-77 — Activation and Onboarding Metrics",
+        path="docs/cbd-77-activation-and-onboarding-metrics.md",
+    ),
+    Target(
+        key="cbd-77-traceability",
+        doc_set="cbd-77",
+        page_id="20643843",
+        expected_title="CBD-77 — Acceptance Criteria Traceability and Completeness Report",
+        path="docs/cbd-77-acceptance-criteria-traceability.md",
+    ),
+    Target(
+        key="cbd-78-metrics",
+        doc_set="cbd-78",
+        page_id="20643863",
+        expected_title="CBD-78 — Engagement and Retention Metrics",
+        path="docs/cbd-78-engagement-and-retention-metrics.md",
+    ),
+    Target(
+        key="cbd-78-traceability",
+        doc_set="cbd-78",
+        page_id="20807681",
+        expected_title="CBD-78 — Acceptance Criteria Traceability and Completeness Report",
+        path="docs/cbd-78-acceptance-criteria-traceability.md",
+    ),
+    Target(
+        key="cbd-79-metrics",
+        doc_set="cbd-79",
+        page_id="20807701",
+        expected_title="CBD-79 — Reliability and Safety Metrics",
+        path="docs/cbd-79-reliability-and-safety-metrics.md",
+    ),
+    Target(
+        key="cbd-79-traceability",
+        doc_set="cbd-79",
+        page_id="20545560",
+        expected_title="CBD-79 — Acceptance Criteria Traceability and Completeness Report",
+        path="docs/cbd-79-acceptance-criteria-traceability.md",
+    ),
+    Target(
+        key="cbd-80-register",
+        doc_set="cbd-80",
+        page_id="20807721",
+        expected_title="CBD-80 — Measurement Source Register and Privacy Rules",
+        path="docs/cbd-80-measurement-source-register.md",
+    ),
+    Target(
+        key="cbd-80-traceability",
+        doc_set="cbd-80",
+        page_id="20807741",
+        expected_title="CBD-80 — Acceptance Criteria Traceability and Completeness Report",
+        path="docs/cbd-80-acceptance-criteria-traceability.md",
+    ),
+    Target(
+        key="cbd-81-process",
+        doc_set="cbd-81",
+        page_id="20447236",
+        expected_title="CBD-81 — Beta targets and review process",
+        path="docs/cbd-81-beta-targets-and-review-process.md",
+    ),
+    Target(
+        key="cbd-81-traceability",
+        doc_set="cbd-81",
+        page_id="20545580",
+        expected_title="CBD-81 — Acceptance criteria traceability",
+        path="docs/cbd-81-acceptance-criteria-traceability.md",
+    ),
 )
 
 
