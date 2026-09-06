@@ -2,10 +2,10 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved v1.0** — Product Owner approved this exact package on September 5, 2026. Maps each CBD-77 acceptance criterion to the exact section that answers it and states plainly where the answer is *"met"*, *"partially met"*, or *"not met"*. **Five of six criteria are met and one is partially met**, because the suppression rule it depends on has no number until CBD-81 sets one. §4 records where the ticket's own text no longer matches what exists |
-| Document version | 1.0 |
+| Status | **Draft amendment v1.1 to approved v1.0**. Executive approved the exact activation semantics in `CBD13-ACTIVATION-001`; this candidate awaits independent review. Prior approvals and unrelated decisions remain in force; no whole-package approval, computation, release or closure is inferred |
+| Document version | 1.1 |
 | Owner | Alexander Wohlford |
-| Reviewer | Alexander Wohlford — Product Owner. **Approved September 5, 2026** after a review that corrected one citation |
+| Reviewer | Independent review pending for this amendment; prior approved baseline review remains historical |
 | Jira | [CBD-77](https://cobudget.atlassian.net/browse/CBD-77) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
 | Governing conventions | `docs/cbd-13-measurement-conventions.md` — Document version **1.0.1**, approved |
@@ -26,7 +26,7 @@
 
 ### CBD-77-AC01 — numerator, denominator, interval basis, time window
 
-**Status: Met.**
+**Status: Activation population correction drafted; independent review pending.** Metrics §4 and §5 implement Executive decision `CBD13-ACTIVATION-001`: MT-77-001/002/003/006 numerators are restricted to their denominator membership; [O,C) and the strict 24-hour cutoff are explicit. MT-77-001 preserves archived-only success as an exception, MT-77-002/003 exclude old or archived spaces, and MT-77-006 retains older period-holding spaces. MT-77-005 timing proof remains unresolved as recorded below; field presence is not proof of computability.
 
 All eight metrics carry `Numerator`, `Denominator`, `Interval basis` and `Window`, and the audit fails on a missing field rather than trusting the author. **`MT-77-004` and `MT-77-005` record `n/a` with a reason for numerator and denominator**, because a percentile distribution has neither, and the conventions require `n/a` to carry a reason rather than be omitted — which the audit also checks.
 
@@ -45,15 +45,15 @@ They are separate metrics with separate numerators, and §3 of the metrics docum
 
 ### CBD-77-AC03 — time-to-usable-budget defines the minimum profile, period, category, allocation, and account or transaction
 
-**Status: Met.**
+**Status: Partially met; source evidence required.** The five conceptual limbs remain unchanged. Metrics `OQ-77-003/004` require observable profile/category definitions, and the MT-77-005 timing concern requires proof of first simultaneous satisfaction after mutation/deletion/current-period changes. No replacement timing definition was approved by the activation correction.
 
-`UB-77-001` states all five limbs, each citing an approved source, and the audit fails a limb that cites none:
+`UB-77-001` states all five limbs. The audit checks citation presence, not whether a cited source proves an observable predicate:
 
 | Limb | Approved source |
 | --- | --- |
 | Profile | `CA-92-012` |
 | Period | `SD-071-021` |
-| Category | `SD-071-010` |
+| Category | Presupposed by schedule decisions; defining CBD-30 evidence remains open at `OQ-77-004` |
 | Allocation | `SD-071-005`, `SD-071-027` |
 | Account or transaction | `CA-92-004`, `SD-071-035` |
 
@@ -77,7 +77,7 @@ This criterion was amended on September 5, 2026 from *"required events, properti
 
 ### CBD-77-AC06 — abandonment and retry do not inflate completion rates
 
-**Status: Met.**
+**Status: Scoped correction drafted; independent review pending.** Metrics §5 requires distinct subjects/spaces and numerator membership within the same denominator. Multiple periods/accounts or join rows cannot multiply contributors. MT-77-001 counts a subject once even with several spaces; the following space-count rule applies to space-based metrics.
 
 §5 states the rule and §2 states why it holds structurally rather than by deduplication: **every denominator counts spaces or subjects, each of which has exactly one current state.** A person who abandons and restarts within one space contributes one row because the space contributes one row.
 
@@ -128,3 +128,14 @@ Recorded here because the amendment is four hours old and a reader of the ticket
 | --- | --- | --- | --- | --- |
 | 1.0 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **Approved.** The review checked every cited identifier against its approved source rather than trusting the citation, and found one: the `UB-77-001` category limb cited `SD-071-010`, which establishes that spending targets are a distinct state and not that a space holds categories. Four decisions presuppose categories and none defines the entity; the limb is restated as inferential and recorded at `OQ-77-004`. **The audit did not catch it**, because it checks that a limb cites an approved source rather than that the source supports the claim. No metric, denominator, or figure changes | **Approved v1.0** |
 | 0.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Initial package: eight metrics, `UB-77-001`, denominator rules, structural audit, and this report. Records the CBD-76 scope-source correction at `OQ-77-001` and the suppression-threshold dependency at `OQ-77-002` | Superseded by 1.0 |
+
+
+## Activation correction validation and handoff
+
+The focused candidate maps CBD-77-AC01/06 to metrics §4/§5 and the corresponding CBD-80 source derivations. CBD-77-AC03 remains source-dependent, not repaired by population alignment. The existing documentation audit checks structural integrity only; independent semantic review must verify creation at O/C, creation exactly at C minus 24 hours, older success, archived-only subject success, deleted absent spaces, periodless manual accounts, duplicate joins and zero-denominator privacy behavior against the approved decision. No implementation, release-control or production measurement proof is claimed. Prior audit counts below describe the historical baseline.
+
+## Activation amendment record
+
+| Version | Basis | Change | Status |
+| --- | --- | --- | --- |
+| 1.1 | Approved baseline v1.0; Executive decision `CBD13-ACTIVATION-001`, September 5, 2026 | Correct MT-77-001/002/003/006 population intersections, exclusive-close UTC week, grace boundary, archived-space exception, consumer-specific period counts and privacy-gated empty population. Preserve source IDs and all other decisions | Draft amendment; independent review pending |
