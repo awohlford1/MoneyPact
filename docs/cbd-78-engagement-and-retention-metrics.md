@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft v0.2 — not approved.** Defines the eight engagement and retention metrics for the private beta, each as an `AN-92-005` aggregate over operational state. **Retention is computed without a cohort**, because `AN-92-001` names cohorts; §4 states how. §3 defines the activity condition every retention measure turns on, and §6 records the `AB-74-014` decision of September 5, 2026: both alert measures are released, on four conditions including a one-way ratchet that forecloses the rule's broader prohibition structurally |
-| Document version | 0.2 |
+| Status | **Draft v0.3 — package not approved.** Eight metric definitions retained. Executive-approved Private MVP deferral applies to full `MT-78-004` action breadth and historical `MT-78-005`/`MT-78-006` retention. Unavailable, not zero or measured success. The existing alert decision and four release conditions remain settled |
+| Document version | 0.3 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-78](https://cobudget.atlassian.net/browse/CBD-78) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
@@ -35,46 +35,50 @@ So CBD-76 governs the collaboration half of this package and not the transaction
 
 ## 2. What these metrics are not
 
-**No metric observes a person's sequence of actions.** `AN-92-001` disables user journeys. Each metric counts a state reached or an action count held in the system of record, and retention is computed by comparing two window aggregates rather than by following anyone.
+**No behavioral tracking is authorized.** `AN-92-001` disables user journeys and behavioral events. Aggregation permission does not establish operational-source feasibility.
 
-**No retention cohort exists.** §4 states the computation. There is no persisted membership list, no cohort identifier, and no drill-down, which is what makes the measure permitted rather than merely renamed.
-
+**No retained cohorts or measurement membership are authorized.** Avoiding persisted sets alone does not prove historical evidence. Full action breadth and active retention are deferred under §4, with no surviving-state proxy and no audit-purpose reuse (`AN-92-006`).
 **No metric is released segmented.** Conventions decision 2. `CBD-78-AC05` requires cadence segmentation and is deferred by the same decision — §6 records it as a criterion this package deliberately does not satisfy.
 
 ## 3. The activity condition
 
-Every retention measure turns on what "active" means, and `CBD-78-AC04` requires it to be exact.
+The exact activity predicate below is retained for future applicability. Amended `CBD-78-AC04` accepts explicit Private MVP deferral, not computability.
 
 **`AD-78-001` — an account subject is active in a window when at least one holds.**
 
-| Limb | Condition | Approved source |
+| Limb | Future condition | Definition reference; not occurrence evidence |
 | --- | --- | --- |
 | **Collaboration** | The subject performed at least one action in the `collaboration-action` set — `viewing`, `editing`, `acknowledgement`, or `commenting` — in a space it belongs to | CBD-72 permission set; `AB-74-007` for acknowledgement's noninterference |
-| **Transaction** | The subject classified at least one transaction into a period | `SD-071-035` — a reliable date, not transaction time, determines classification |
-| **Budget change** | The subject created, confirmed, or changed a period, category, or target | `SD-071-026`, `SD-071-029` — schedule changes carry an effective date and at most one pending change |
+| **Transaction** | The subject classified at least one transaction into a period | `SD-071-035` — the reliable budget date determines classification but is not the classification action time |
+| **Budget change** | The subject created, confirmed, or changed a period, category, or target | `SD-071-026`, `SD-071-029` — schedule changes carry an effective date, not an action occurrence time, and at most one pending change |
 
-**`viewing` is deliberately included and is the weakest limb.** A subject who only reads is engaged in the sense that matters for a private beta — they came back — and excluding reading would report a Viewer as inactive by construction, which `CBD-72`'s role model makes a category error rather than a measurement choice.
+**All four collaboration action classes remain in the future definition:** `viewing`, `editing`, `acknowledgement`, and `commenting`. Permission is not evidence of action. Authorization tables cannot prove a view or edit occurred. Surviving comments, transactions, and schedule state cannot establish the full historical predicate under mutation/deletion. Budget dates, effective dates, and generic update timestamps cannot substitute for actual action occurrence times.
 
-**`AD-78-001` is evaluated per window, not accumulated.** No per-subject activity history is retained: the derivation asks whether any qualifying state exists with a timestamp inside the window, and returns a boolean.
+**`AD-78-001` is a future per-window predicate, not an implemented derivation.** Source feasibility remains unproven under mutation/deletion. No behavioral tracking, per-subject activity history, retained measurement membership, or measurement reuse of CBD-71 audit provenance is authorized.
 
-## 4. Retention without a cohort
+## 4. Approved Private MVP deferral and future retention definition
 
-`CBD-78-AC04` requires four- and eight-week active retention with exact activity definitions and **two named activity windows**, computed as an aggregate with no persisted membership. `AN-92-001` names cohorts as disabled, so this is how the measure is produced instead.
+**Executive decision `CBD13-RETENTION-001`, September 5, 2026: defer full `MT-78-004` action breadth and historical `MT-78-005`/`MT-78-006` active retention for Private MVP.** Amended `CBD-78-AC03`/`CBD-78-AC04` and `CBD-13-AC04` accept this specification disposition. It is not whole-package approval, release authorization, measured beta success, or successful retention. Deferred means unavailable, not zero; no numeric release or surviving-state proxy is substituted.
 
-**`RT-78-001` — the computation.**
+Reopening requires an approved operational-source contract proving actual actions and occurrence times for the full predicate, including historical A/B evidence under mutation/deletion, without behavioral tracking, retained cohorts or measurement membership, or audit-purpose reuse. Source assignment alone does not satisfy this gate.
 
-1. Name window **A**, a calendar week.
-2. Name window **B**, the calendar week beginning four weeks (or eight) after A begins.
+**`RT-78-001` — future computation, conditional on source proof and release controls.**
+
+1. Name window **A**, a calendar week, UTC.
+2. Name window **B**, the calendar week beginning four weeks (or eight) after A begins, UTC.
 3. Count subjects satisfying `AD-78-001` in A. That is the denominator.
 4. Count subjects satisfying `AD-78-001` in **both** A and B. That is the numerator.
-5. Release the ratio. **Retain neither set.**
+5. Only after reopening and applicable release controls, release the ratio. **Retain neither set.** No computation or release is authorized during the deferral.
 
-**Why this is not a cohort.** A cohort is a persisted membership with an identity that later analysis can re-enter. Step 5 keeps no list, and steps 3 and 4 are two counts over current state evaluated in the same pass. The intersection is computed and discarded; nothing can be drilled back into.
+**Why this is not a cohort authorization.** Discarding transient sets is a necessary privacy constraint, not proof that current operational state preserves historical membership. Both historical windows must be supportable; current surviving records cannot prove the required intersection.
 
-**Four-week and eight-week retention use the same `AD-78-001` and differ only in window B**, which the criterion requires and which makes the two figures comparable to each other rather than to nothing.
+**Four-week and eight-week retention preserve the same `AD-78-001` and differ only in window B.** Definitions and source slots remain reserved for future applicability.
 
-**The honest limitation.** Because no membership is retained, **a retention figure cannot be recomputed later against a corrected activity definition.** Changing `AD-78-001` changes every future figure and no past one, and the series is not comparable across the change. `OI-78-002` records it, and the alternative — retaining the sets — is what `AN-92-005` prohibits.
+**Settled baseline periods are preserved.** `CBD81-BASELINE-001` approved four complete weeks for product metrics, fourteen complete days for reliability, and two valid observation pairs for each retention horizon, with earliest retention reviews after six and ten weeks respectively. Only valid, releasable observations count. These periods do not start or complete a deferred measure; missing evidence requires a dated extension or pause decision, never automatic success. They are operating review periods, not statistical guarantees or numerical privacy minima.
 
+**Destinations and package boundaries are preserved.** All metric/source IDs and existing 19/9 destination assignments remain unchanged. CBD-80 source applicability and CBD-81 baseline/exit applicability require separate scoped follow-through. Cadence segmentation remains separately deferred, and alert acknowledgement/dismissal decisions remain unchanged.
+
+**The additional limitation remains.** No retained window sets are available for recomputation against a corrected activity definition; comparability across definition changes is not established (`OI-78-002`). This does not reduce the historical source-proof requirement.
 ## 5. The metrics
 
 Every metric is `Class: aggregate-state`, `Release form: global`, `Boundary: worker`, and `Owner: product` unless stated. Those four are constant across the package.
@@ -137,6 +141,7 @@ Every metric is `Class: aggregate-state`, `Release form: global`, `Boundary: wor
 
 | Field | Value |
 | --- | --- |
+| Private MVP disposition | **Deferred — unavailable, not zero or measured success.** All formula, source, interval, window, collection and interpretation fields below are future definitions only; §4 reopening gate applies |
 | Purpose | Whether shared spaces are used collaboratively or as single-user budgets with an audience. `CBD-78-AC03` requires the four action classes to be distinguished |
 | Formula | spaces with at least one action in each class ÷ spaces with more than one member |
 | Numerator | Multi-member spaces holding at least one `viewing`, `editing`, `acknowledgement`, and `commenting` action in the window, reported as four separate figures |
@@ -146,8 +151,8 @@ Every metric is `Class: aggregate-state`, `Release form: global`, `Boundary: wor
 | Window | Calendar week, UTC |
 | Suppression | `withheld — population below release threshold`, applied per class |
 | Connectivity | `MANUAL-OK` |
-| Data source | Application database, authorization and comment tables |
-| Collection method | Scheduled aggregate in the Worker. **Counts spaces holding an action, not actions**, so a prolific member does not make a space look collaborative |
+| Data source | Operational-source contract unproven; authorization is permission, not action evidence, and comments alone do not prove all four classes |
+| Collection method | Future aggregate in the Worker, only after §4 reopening. **Counts spaces holding an action, not actions**, so a prolific member does not make a space look collaborative |
 | Review cadence | Weekly *(CBD-81 confirms)* |
 | Unhealthy condition | `viewing` alone is present across multi-member spaces, which means the product is being read rather than used together |
 
@@ -155,7 +160,8 @@ Every metric is `Class: aggregate-state`, `Release form: global`, `Boundary: wor
 
 | Field | Value |
 | --- | --- |
-| Purpose | Whether people come back. The single most informative private-beta measure, and the one most likely to end the beta |
+| Private MVP disposition | **Deferred — unavailable, not zero or measured success.** All formula, source, interval, window, collection and interpretation fields below are future definitions only; §4 reopening gate applies |
+| Purpose | Whether people come back. Future definition only; no Private MVP exit or success claim is available from this deferred measure |
 | Formula | subjects active in both A and B ÷ subjects active in A, per `RT-78-001` |
 | Numerator | Account subjects satisfying `AD-78-001` in window A and in window B |
 | Denominator | Account subjects satisfying `AD-78-001` in window A |
@@ -164,8 +170,8 @@ Every metric is `Class: aggregate-state`, `Release form: global`, `Boundary: wor
 | Window | A is a calendar week; B is the calendar week beginning four weeks after A begins. Both UTC, both named in the released figure |
 | Suppression | `withheld — population below release threshold` |
 | Connectivity | `MANUAL-OK` |
-| Data source | Application database; `AD-78-001` reads authorization, transaction, and schedule state |
-| Collection method | Scheduled aggregate in the Worker. **Both counts are computed in one pass and neither set is retained** — `RT-78-001` step 5 |
+| Data source | Operational-source contract unproven for historical `AD-78-001` under mutation/deletion; current authorization, transaction, and schedule state is insufficient |
+| Collection method | Future aggregate in the Worker, only after §4 reopening. **Both counts are computed in one pass and neither set is retained** — `RT-78-001` step 5 |
 | Review cadence | Weekly *(CBD-81 confirms)* |
 | Unhealthy condition | Retention falls across consecutive window pairs, which no activation metric would show |
 
@@ -173,14 +179,15 @@ Every metric is `Class: aggregate-state`, `Release form: global`, `Boundary: wor
 
 | Field | Value |
 | --- | --- |
-| Purpose | Whether returning survives the first month. Four-week retention can be an artefact of a monthly budget cadence; eight-week is not |
+| Private MVP disposition | **Deferred — unavailable, not zero or measured success.** All formula, source, interval, window, collection and interpretation fields below are future definitions only; §4 reopening gate applies |
+| Purpose | Whether returning survives the first month. Future comparison uses the same definition and a later B window; freedom from cadence effects is not established |
 | Formula | subjects active in both A and B ÷ subjects active in A, per `RT-78-001` |
 | Numerator | Account subjects satisfying `AD-78-001` in window A and in window B |
 | Denominator | Account subjects satisfying `AD-78-001` in window A |
 | Measurement source | `account_subject.window_active_count` *(proposed)*, `account_subject.window_pair_active_count` *(proposed)* |
 | Interval basis | Opens when a subject is active in window A; closes when the same subject is active in window B |
 | Window | A is a calendar week; B is the calendar week beginning eight weeks after A begins. Both UTC, both named |
-| Suppression | `withheld — population below release threshold`. **Reached later than `MT-78-005`**: the first eight-week figure requires nine weeks of beta |
+| Suppression | `withheld — population below release threshold`. Future first pair spans nine weeks; the approved baseline requires two valid pairs and earliest review after ten weeks, conditional on §4 reopening |
 | Connectivity | `MANUAL-OK` |
 | Data source | As `MT-78-005` |
 | Collection method | As `MT-78-005`, differing only in window B |
@@ -259,7 +266,7 @@ None addresses aggregate measurement by the operator, and `AN-92-005` independen
 
 **Both metrics may be released**, on four conditions. The first three bound who sees the figure; **the fourth bounds what may be done with it**, which is what the broader sentence actually requires.
 
-1. **Global only.** No member, space, or alert-category breakdown. `MT-78-004`'s per-class reporting is permitted because a collaboration action class is not a person; these two get no equivalent, because an alert-category breakdown at beta scale approaches a single recipient.
+1. **Global only.** No member, space, or alert-category breakdown. `MT-78-004`'s future per-class definition remains preserved (measurement is deferred under §4); a collaboration action class is not a person; these two get no equivalent, because an alert-category breakdown at beta scale approaches a single recipient.
 2. **Never a member-visible surface.** Not a dashboard, not a space view, not a notification, not an export. Settled in the negative regardless of what `OQ-80-001` decided for other figures.
 3. **No response may name, contact, or differentiate a member.** The `Unhealthy condition` on both is written as a catalog problem for exactly this reason.
 4. **A one-way ratchet.** These figures may justify making alerts **fewer, softer, or less frequent**. They may **never** justify making them more numerous, more frequent, or more insistent.
@@ -284,7 +291,7 @@ Per conventions §6, and in addition to the per-metric rules above.
 
 **Retries count once.** Each denominator counts an entity with one current state — a transaction, an invitation, a space, a subject, an instance.
 
-**A zero denominator is reported as `no eligible population`.** Common in the first windows and not a failure.
+**Deferred metrics remain unavailable, never zero or `no eligible population`. For applicable measures, a zero denominator is reported as `no eligible population`.** Common in the first windows and not a failure.
 
 ## 8. What this package could not settle
 
@@ -293,6 +300,13 @@ Per conventions §6, and in addition to the per-metric rules above.
 | `OQ-78-001` | **The CBD-76 scope-source correction is half right for this package.** `OQ-77-001` says CBD-76 is not the scope source; for the collaboration half — invitations, alerts, comments — it is exactly the right one. The correction to the conventions should say *which half* rather than replacing one wrong pin with another | Recorded against the conventions. No metric changes |
 | ~~`OQ-78-002`~~ | ~~Does an aggregate acknowledgement rate sit inside `AB-74-014`?~~ **Closed September 5, 2026.** Both metrics may be released on four conditions — three bounding who sees the figure and a fourth, the one-way ratchet, bounding what may be done with it. §6 carries the reasoning: the rule's three cited sources are member-facing, and its broader first sentence is answered by the ratchet rather than by intent | Closed. **`MT-78-007` and `MT-78-008` are authorized for release** under §6 |
 | `OQ-78-003` | **`CBD-78-AC05` is deliberately not satisfied.** It requires cadence segmentation of retention; conventions decision 2 releases no segments during the beta, and the criterion was amended on September 5, 2026 to defer it | Recorded so the gap is visible from this document as well as from the ticket. CBD-81 owns the population decision that reopens it |
-| `OI-78-001` | **Eleven measurement sources are proposed and none exists.** CBD-80 assigns the `MS-80-nnn` identifiers | No metric is computable until CBD-80 completes |
-| `OI-78-002` | **A retention figure cannot be recomputed against a corrected `AD-78-001`.** `RT-78-001` retains neither window set, so changing the activity definition changes every future figure and no past one, and the series is not comparable across the change | Accepted, because retaining the sets is what `AN-92-005` prohibits. It means `AD-78-001` should be settled before the beta produces figures worth trusting |
+| `OI-78-001` | **Eleven measurement sources are proposed and none exists.** CBD-80 assigns the `MS-80-nnn` identifiers | Source assignment alone does not prove computability; §4 deferral and source-proof gate apply |
+| `OI-78-002` | **A retention figure cannot be recomputed against a corrected `AD-78-001`.** `RT-78-001` retains neither window set, so changing the activity definition changes every future figure and no past one, and the series is not comparable across the change | Retained sets remain prohibited; historical source proof and definition comparability remain necessary before future applicability |
 | `OI-78-003` | **Nothing here has been measured**, and the product is not built. Every `Data source` names where state will live | The metrics are specifications, not results |
+
+## 9. Revision record
+
+| Version | Date | Author | Change | Status |
+| --- | --- | --- | --- | --- |
+| 0.3 | September 5, 2026 | Codex Specification | Incorporates Executive-approved Private MVP action-breadth and historical-retention deferral; corrects evidence claims; preserves IDs, destinations, baselines, cadence and alert decisions | Deferral approved; remaining package Draft |
+| 0.2 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Existing alert decision and four conditions, preserved in §6 and companion revision history | Superseded by 0.3; alert decision retained |

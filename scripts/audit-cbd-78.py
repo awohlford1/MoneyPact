@@ -190,6 +190,27 @@ def main() -> int:
                     f"AD-78-001: limb {limb!r} cites no approved source",
                 )
 
+    # Approved Private MVP deferral must remain visible on each affected record.
+    # These checks protect specification disposition, not source feasibility.
+    for identifier in ("MT-78-004", "MT-78-005", "MT-78-006"):
+        body = blocks.get(identifier, "")
+        audit.check(
+            bool(re.search(
+                r"^\| Private MVP disposition \| \*\*Deferred — unavailable, "
+                r"not zero or measured success\.\*\*.*future definitions only; "
+                r"§4 reopening gate applies \|$", body, re.M)),
+            f"{identifier}: approved Private MVP deferral and reopening gate missing",
+        )
+    for required in (
+        "Permission is not evidence of action.",
+        "Source feasibility remains unproven under mutation/deletion.",
+        "no numeric release or surviving-state proxy is substituted",
+        "Source assignment alone does not satisfy this gate.",
+        "missing evidence requires a dated extension or pause decision, never automatic success",
+    ):
+        audit.check(required in text,
+                    f"metrics: approved deferral safeguard missing: {required}")
+
     # --- RT-78-001 keeps neither window set ---------------------------------
     # This is the sentence that makes retention permitted rather than a cohort
     # under another name. AN-92-005 prohibits persisting the contributing
@@ -276,8 +297,8 @@ def main() -> int:
     for failure in audit.failures:
         print(f"  - {failure}")
     if not audit.failures:
-        print("Result: PASS (documentation integrity only; no metric is computable "
-              "until CBD-80 assigns its measurement sources, and none has been measured)")
+        print("Result: PASS (documentation integrity only; deferred measures remain "
+              "unavailable; source assignment is not feasibility proof; none measured)")
     return 1 if audit.failures else 0
 
 

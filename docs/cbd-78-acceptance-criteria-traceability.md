@@ -2,14 +2,14 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft v0.2 — not approved.** Maps each CBD-78 acceptance criterion to the section that answers it. **Five of six criteria are met and one is deliberately not satisfied.** §2 states which is which and why, rather than reporting five of six and leaving a reader to find the gap |
-| Document version | 0.2 |
+| Status | **Draft v0.3 — package not approved.** AC01/02/06 retain their definition dispositions. AC03/04 have an Executive-approved Private MVP deferral, not measured fulfillment. AC05 remains separately deferred. No package approval or measured beta success is established |
+| Document version | 0.3 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-78](https://cobudget.atlassian.net/browse/CBD-78) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
 | Governing conventions | `docs/cbd-13-measurement-conventions.md` — Document version **1.0.1**, approved |
 | Companion | `docs/cbd-78-engagement-and-retention-metrics.md`, which this report checks |
-| Mechanical audit | `scripts/audit-cbd-78.py` — 219 checks, every CBD-78-specific guard proven by deliberate violation |
+| Mechanical audit | `scripts/audit-cbd-78.py` — 232 checks; eight deferral checks validated with safe synthetic violations |
 | Confluence page | **Not published.** Registration follows approval |
 | Last updated | September 5, 2026 |
 
@@ -41,24 +41,19 @@ The three failure states are reported separately at `MT-78-003` because they nee
 
 ### CBD-78-AC03 — collaboration usage distinguishes viewing, editing, acknowledgement, commenting
 
-**Status: Met.**
+**Status: Approved deferral for Private MVP; specification disposition only.**
 
-`MT-78-004` reports the four classes separately. Two design points that the criterion does not state and that change what the number means:
+`MT-78-004` preserves `viewing`, `editing`, `acknowledgement`, and `commenting` as four distinct future figures, counting multi-member spaces holding an action rather than total actions. Single-member spaces remain excluded. Full action breadth is unavailable, not zero or measured success. Permission is not evidence of action; authorization and surviving comments cannot prove all four classes and occurrence times under mutation/deletion.
 
-**It counts spaces holding an action, not actions.** One prolific member would otherwise make a space look collaborative.
+Reopening requires the approved operational-source contract in metrics §4. No behavioral tracking, retained measurement membership, audit-purpose reuse, or surviving-state proxy is authorized. Source IDs and destination assignments remain unchanged.
 
-**Single-member spaces leave the denominator.** They cannot collaborate, and including them would report a structural fact as disengagement.
+### CBD-78-AC04 — four- and eight-week historical retention explicitly deferred for Private MVP
 
-### CBD-78-AC04 — four- and eight-week retention, exact activity definitions, two named windows, no persisted membership
+**Status: Approved deferral for Private MVP; specification disposition only.**
 
-**Status: Met.**
+`AD-78-001` preserves the exact future activity predicate and `RT-78-001` preserves named UTC A/B windows, four/eight-week offsets, numerator, denominator and the requirement to retain neither set. These are not source proof or authority to compute. Mutable/deleted records cannot currently establish historical A/B evidence; budget dates and schedule effective dates are not action occurrence times.
 
-`AD-78-001` defines activity across three limbs, each citing an approved source, and the audit fails a limb that cites none. `RT-78-001` states the computation in five steps ending *"Retain neither set"*, and the audit fails if that sentence disappears — it is what makes the measure permitted rather than a cohort renamed.
-
-**`viewing` is included deliberately.** Excluding reading would report a Viewer as inactive by construction, which CBD-72's role model makes a category error rather than a measurement choice.
-
-**The limitation is recorded rather than hidden.** Because neither window set is retained, a retention figure **cannot be recomputed against a corrected `AD-78-001`** — changing the definition changes every future figure and no past one. `OI-78-002`. The alternative is what `AN-92-005` prohibits, so the constraint is accepted rather than solved.
-
+Executive decision `CBD13-RETENTION-001` approves unavailability pending the §4 source-proof gate. This implements amended `CBD-78-AC04` and the relevant `CBD-13-AC04` disposition, without certifying measured retention or beta success. `CBD81-BASELINE-001` remains settled: product four complete weeks, reliability fourteen complete days, retention two valid pairs and earliest reviews after six/ten weeks. Deferred periods do not establish completion; only valid releasable observations count, and missing evidence needs a dated extension or pause. CBD-80 source and CBD-81 applicability/exit follow-through remain outside this package.
 ### CBD-78-AC05 — cadence segmentation of retention
 
 **Status: Deliberately not satisfied.**
@@ -88,10 +83,10 @@ The denominator is exact because `AB-74-002` makes **exactly one mandatory in-ap
 | Deliverable | Status | Where |
 | --- | --- | --- |
 | Engagement and retention metric definitions | **Met** — eight metrics, every conventions §4 field populated | Metrics §5 |
-| Activity condition | **Met** — `AD-78-001`, three limbs, each with an approved citation | Metrics §3 |
-| Retention computation without a cohort | **Met** — `RT-78-001`, five steps, neither set retained | Metrics §4 |
+| Activity condition | **Future definition retained; measurement deferred** — references define semantics, not occurrence evidence | Metrics §3 |
+| Retention computation without a cohort | **Approved Private MVP deferral** — future `RT-78-001`, five conditional steps, neither set retained; historical source proof outstanding | Metrics §4 |
 | Cadence segmentation | **Deferred** — conventions decision 2 | `OQ-78-003` |
-| Structural audit | **Met** — 219 checks; seven CBD-78-specific guards each proven by deliberate violation | `scripts/audit-cbd-78.py` |
+| Structural audit | **Met** — 232 checks; eight added deferral checks validated with safe synthetic violations | `scripts/audit-cbd-78.py` |
 | Targets and thresholds | **Not this package** — CBD-81 owns every number | Conventions §10 |
 
 ## 4. Where the ticket's text no longer matches what exists
@@ -102,15 +97,15 @@ The denominator is exact because `AB-74-002` makes **exactly one mandatory in-ap
 
 `OQ-78-001` records that the correction to the conventions should say *which half*, rather than replacing one wrong pin with another. Neither package changes a metric over it.
 
-### 4.2 Two criteria were amended on September 5, 2026
+### 4.2 Criteria amendments on September 5, 2026
 
-`CBD-78-AC04` replaced cohorts with two named activity windows; `CBD-78-AC05` deferred segmentation. Both were found by the §11 sweep of the conventions, and a reader of the ticket alone would not know why the wording changed — each amendment carries the contract that forced it.
+`CBD-78-AC04` replaced cohorts with two named activity windows; `CBD-78-AC05` deferred segmentation. These decisions remain preserved. Executive-approved `CBD13-RETENTION-001` subsequently amended CBD-78 AC03/04 and CBD-13 AC04 to permit explicit Private MVP deferral pending lawful operational-source proof; this records specification disposition without claiming measurement.
 
 ## 5. What this package does not establish
 
 * **No metric has been measured.** The product is not built.
-* **No metric is computable** — eleven measurement sources proposed, none assigned. CBD-80 owns that.
-* **Two metrics are not authorized for release**, pending `OQ-78-002`.
+* **No metric is computable** — eleven measurement sources proposed, source binding is owned by CBD-80 and does not itself prove historical feasibility. Existing 19/9 destination assignments remain preserved.
+* **Three metrics are deferred:** full `MT-78-004` and historical `MT-78-005`/`MT-78-006`. Existing alert authorization under closed `OQ-78-002` remains subject to all four settled conditions.
 * **No target or threshold is set**, and none may be inferred from an `Unhealthy condition`.
 * **A retention series is not comparable across a change to `AD-78-001`**, and nothing in the package can make it so.
 * **Written and reviewed by the same person**, inheriting that limitation from the conventions.
@@ -119,5 +114,6 @@ The denominator is exact because `AB-74-002` makes **exactly one mandatory in-ap
 
 | Version | Date | Author | Change | Status |
 | --- | --- | --- | --- | --- |
+| 0.3 | September 5, 2026 | Codex Specification | Approved Private MVP action-breadth and historical-retention deferral; corrected evidence claims; preserved IDs, destinations, baselines and alert/cadence decisions | Deferral approved; remaining package Draft |
 | 0.2 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **`OQ-78-002` decided.** Both alert measures are authorized for release on four conditions. The three that bound who sees the figure were already stated; the fourth is new and is what the rule's broader first sentence required — **a one-way ratchet**: these figures may justify making alerts fewer, softer or less frequent and may never justify making them more insistent. The three sources `AB-74-014` cites are all member-facing and do not dispose of that sentence; the ratchet forecloses it structurally rather than by intent. `CBD-78-AC06` moves from met-but-unreleasable to met | Draft; Product Owner approval required |
 | 0.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Initial package: eight metrics, `AD-78-001`, `RT-78-001`, the `AB-74-014` release constraint at metrics §6, structural audit, and this report. Records `OQ-78-001` on the half-right scope source, `OQ-78-002` on the anti-surveillance reading, and `OQ-78-003` on the deferred segmentation | Superseded by 0.2 |
