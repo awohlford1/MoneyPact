@@ -33,8 +33,8 @@ CBD13-FINAL-REVIEW-001 requested changes at
 `8dadd7cecbe9d912d194acda8086358f0d71d72d` for sent coverage and sync population
 alignment. CBD13-INVITATION-SENT-001 and CBD13-SYNC-POPULATIONS-001 now approve
 the exact decisions in sections 6.2/6.3; matching source amendments under
-CBD13-FINAL-SOURCES-SPEC-001 remain in progress, unreviewed and unmerged.
-The decisions are settled; source delivery and independent verification remain.
+CBD13-FINAL-SOURCES-SPEC-001 are fixed at `ff93a9b1ab901b5b88ebc1cca855ab10916fe4af` and locally integrated; independent review and public merge remain pending.
+The decisions are settled and correction candidates are present; final Review has not yet closed the two findings.
 CBD13-FINAL-SECURITY-001 cleared integrated specification privacy only at that
 same fixed candidate, not numerical release, runtime enforcement or final package
 acceptance. No final Review approval is inferred from that Security disposition.
@@ -234,10 +234,10 @@ no performance target is approved.
 | MT-78-006 — Eight-week active retention | product | Future R8; W/R; Private MVP deferred | Same approved deferral and future gates as four-week retention; preserve eight-week separation and future ten-week earliest baseline review. Unavailable never means measured success or successful retention |
 | MT-78-007 — Firm alert acknowledgement rate | product | W4; W/R | Adverse decline: reduce, soften or remove problematic catalog behavior. Global and operator-only; never name/contact/differentiate a member or increase frequency, volume or insistence |
 | MT-78-008 — Firm alert dismissal rate | product | W4; W/R | Adverse increase: make alerts fewer, softer or less frequent. Same no-member-access and no-contact restrictions; never optimize for compliance |
-| MT-79-001 — Synchronization success rate | synchronization | D14; D/R; sync source gate | Approved successful R(D) minus S(D) divided by count(R(D) minus S(D)), per section 6.2. Source correction pending; no computation/baseline credit before mapping and release proof. Thereafter adverse decline: inspect allowed safe outcomes, reproduce defect, reduce scheduled load or roll back affected sync code; retain exact supersession exclusion |
+| MT-79-001 — Synchronization success rate | synchronization | D14; D/R; sync source gate | Approved successful R(D) minus S(D) divided by count(R(D) minus S(D)), per section 6.2. Source correction locally integrated at ff93a9b; independent review/public merge pending; no computation/baseline credit before mapping and release proof. Thereafter adverse decline: inspect allowed safe outcomes, reproduce defect, reduce scheduled load or roll back affected sync code; retain exact supersession exclusion |
 | MT-79-002 — Synchronization latency | synchronization | D14; D/R; sync source gate | Approved all-R(D) terminal-minus-first-Worker-attempt duration, including retry/backoff and cancellations/supersession; not success-only latency. Source/bucket/release proof and version comparability required. Thereafter adverse p90 bucket rise: inspect permitted queue/capacity evidence, tune within approved caps or reduce scheduling frequency |
 | MT-79-003 — Connection freshness | synchronization | D14; D/R; classification/source/release gates | Approved watermark and eligible-connection meaning in section 6.1. Required beta evidence, not deferred: no rate, healthy status, numeric release, baseline start or credit until classification bound and source/release prerequisites are approved and verified. Thereafter deterioration triggers cursor/scheduler investigation alongside independently releasable sync outcomes; repair stale-success behavior |
-| MT-79-004 — Synchronization retry rate | synchronization | D14; D/R; sync source gate | Approved runs in R(D) consuming at least one retry divided by count(R(D)); cancelled/superseded runs included, one contribution per run. Source correction pending. After mapping/release proof and baseline, adverse increase triggers bounded retry/backoff investigation, reduced schedule frequency or provider repair; no retry beyond approved bounds |
+| MT-79-004 — Synchronization retry rate | synchronization | D14; D/R; sync source gate | Approved runs in R(D) consuming at least one retry divided by count(R(D)); cancelled/superseded runs included, one contribution per run. Source correction locally integrated at ff93a9b; independent review/public merge pending. After mapping/release proof and baseline, adverse increase triggers bounded retry/backoff investigation, reduced schedule frequency or provider repair; no retry beyond approved bounds |
 | MT-79-005 — Terminal synchronization failure rate | synchronization | D14; D/R; sync source gate | Approved terminal technical failures in R(D) divided by count(R(D)); valid cancellations remain denominator, not failures; only failed subset supplies safe failure classes. Not the complement of MT-79-001. After valid mapping/release proof, new safe class or adverse growth routes to existing relinking or code-defect response; unresolved CoBudget defect blocks affected release |
 | MT-79-006 — Notification outcome distribution | notifications | D14; D/R | Adverse failed/late growth or unexplained suppressed growth: inspect queue, provider and transport caps; fix configuration or roll back. Correct suppression stays in denominator; no extra transport |
 | MT-79-007 — Alert duplicate rate | notifications | D14; D/R | Adverse rise or unexplained zero: test both trigger and dedup guard; a suppressed duplicate attempt is not a delivered duplicate. Fix attempts or missing instrumentation; confirmed duplicate delivery violates AB-74-001 and pauses affected delivery |
@@ -411,8 +411,9 @@ the approved section 2/DEC-81-003 disposition.
 ## 6.2 Approved sync populations and source-version handoff
 
 CBD13-SYNC-POPULATIONS-001 approves the following exact measurement choices.
-Matching CBD-79/80 changes under CBD13-FINAL-SOURCES-SPEC-001 are in progress,
-unreviewed/unmerged; this decision follow-through does not claim implementation.
+Matching CBD-79/80 corrections are fixed at
+`ff93a9b1ab901b5b88ebc1cca855ab10916fe4af` and locally integrated. Independent
+review and public merge remain pending; no runtime implementation is claimed.
 
 R(D) is the distinct operational sync runs with a first Worker attempt and an
 evidenced terminal transition in UTC day D=[00:00,next 00:00). Bounded retries
@@ -467,10 +468,9 @@ processing/private causes; normalized cancellation/resend predecessor-successor
 behavior; unchanged terminal metric populations/outputs. TR-73-02 durable dispatch
 is the separate atomic Pending transition, not delivery proof. Restricted evidence
 cannot be reused to manufacture a send count. These synthetic checks are required
-delivery evidence, not execution claimed here. CBD-78/80 source corrections remain
-in progress under CBD13-FINAL-SOURCES-SPEC-001 and require independent review
-and integration; this package does not edit CBD-73 or assert those corrections
-have landed.
+delivery evidence, not execution claimed here. CBD-78/80 source corrections are
+fixed at ff93a9b and locally integrated; independent review/public merge remain
+pending. This package does not edit CBD-73 or assert runtime implementation.
 
 ## 7. Synthetic alert correctness assessment
 

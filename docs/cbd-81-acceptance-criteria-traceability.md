@@ -19,10 +19,10 @@ was approved in `CBD13-LIFECYCLE-REVIEW-001` and cleared for the scoped lifecycl
 specification in `CBD13-LIFECYCLE-SECURITY-001`. Both source revisions are
 now merged: usable sources in PR #239 at 8e3cbd7, lifecycle sources in PR #240
 at `0b773c76266aeb462fd4d62f453afea240ddf7a5`; current base is
-`177a9c51e050aabfeeed3567f5e69ecb8edf90b2`. New sent/sync corrections approved
-in CBD13-INVITATION-SENT-001 and CBD13-SYNC-POPULATIONS-001 remain in progress
-under CBD13-FINAL-SOURCES-SPEC-001, unreviewed/unmerged. Source references do
-not imply those new corrections have landed.
+`0f1486c3fc0ef32875b7058b6e997e3fdb744aef`. New sent/sync corrections approved
+in CBD13-INVITATION-SENT-001 and CBD13-SYNC-POPULATIONS-001 are fixed at
+`ff93a9b1ab901b5b88ebc1cca855ab10916fe4af` and locally integrated. Independent
+review and public merge remain pending; source references do not imply either.
 The live amended criteria on [CBD-81](https://cobudget.atlassian.net/browse/CBD-81)
 and [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) were read, including
 status, links, subtasks and comments, on September 5, 2026. Jira remains the
@@ -38,19 +38,19 @@ does not mirror issue administration or claim acceptance.
 | CBD-81-AC03 | Sections 2, 4–5: daily service decisions, weekly product/baseline decisions and relevant release reviews; no shortened or extra measurement windows | Covered by proposal |
 | CBD-81-AC04 | Section 4: action for every unhealthy metric; sections 3 and 5 constrain suppression, access, rollback and communication | Covered by proposal; implementation and authorization of actions remain separate |
 | CBD-81-AC05 | Section 5 continuation/pause/expansion/exit plus sections 2/6.1 current applicability and lifecycle handoff | Four approved metric deferrals preserved. Later-bound specification exception does not waive MT-79-003/008/010 beta evidence or permit expansion/successful exit without applicable evidence. Final process approval and operational evidence remain pending |
-| CBD-81-AC06 | All eight parent criteria below; approved sent/sync decisions in process sections 6.2/6.3 | Not complete. CBD13-FINAL-REVIEW-001 requested changes at 8dadd7c for sync populations and sent coverage. Decisions now settled; corresponding source corrections remain in progress, unreviewed/unmerged. Prior usable/lifecycle sources merged in PR #239/240. Final independent verification and Executive process/package acceptance remain; no final Review approval inferred |
+| CBD-81-AC06 | All eight parent criteria below; approved sent/sync decisions in process sections 6.2/6.3 | Not complete. CBD13-FINAL-REVIEW-001 requested changes at 8dadd7c for sync populations and sent coverage. Decisions now settled; corresponding source corrections at ff93a9b are locally integrated, with independent review/public merge pending. Prior usable/lifecycle sources merged in PR #239/240. Final independent verification and Executive process/package acceptance remain; no final Review approval inferred |
 
 ## 2. Parent criterion review
 
 | Criterion | Existing definition evidence and CBD-81 contribution | Closure assessment |
 | --- | --- | --- |
-| CBD-13-AC01 | CBD-77 activation; CBD-78 engagement; CBD-79 reliability and permitted safety measures; process section 4 includes all 28 IDs | Categories present. Sent is covered by the approved CBD-73 projection and required synthetic checks in process section 6.3, not production sent measurement; corresponding CBD-78/80 source amendments are pending. Denied-access/support signals retain their approved Private MVP exclusion and SRV-94-010 routing |
-| CBD-13-AC02 | Approved definitions and four metric deferrals; CBD81-BOUNDS-001 closure exception; process section 6.2 exact sync populations and terminal-day attribution | Sync decision resolves the choice but source implementation of that correction remains pending under CBD13-FINAL-SOURCES-SPEC-001. Final Review request-changes finding is not yet independently closed. Exact classification bounds retain approved closure exception; applicable metric/source/release proof remains a delivery gate. Prior usable/lifecycle amendments are merged in PR #239/240; no computability claim |
-| CBD-13-AC03 | CBD-79 MT-79-001–005 CONN-REQUIRED; process sections 4/6.2 per-metric R(D)/S(D), durations/retries/failures; MT-79-003 separate snapshot | Approved sync populations and attribution defined in decision follow-through; source amendments, mapping/version proof and independent verification pending. Bank start remains deferred without blocking manual measurement; no bank availability or observed results claimed |
+| CBD-13-AC01 | CBD-77 activation; CBD-78 engagement; CBD-79 reliability and permitted safety measures; process section 4 includes all 28 IDs | Categories present. Sent is covered by the approved CBD-73 projection and required synthetic checks in process section 6.3, not production sent measurement; corresponding CBD-78/80 source corrections at ff93a9b are locally integrated, with independent review/public merge pending. Denied-access/support signals retain their approved Private MVP exclusion and SRV-94-010 routing |
+| CBD-13-AC02 | Approved definitions and four metric deferrals; CBD81-BOUNDS-001 closure exception; process section 6.2 exact sync populations and terminal-day attribution | Sync decision resolves the choice but source correction candidate ff93a9b is locally integrated, with independent review/public merge pending. Final Review request-changes finding is not yet independently closed. Exact classification bounds retain approved closure exception; applicable metric/source/release proof remains a delivery gate. Prior usable/lifecycle amendments are merged in PR #239/240; no computability claim |
+| CBD-13-AC03 | CBD-79 MT-79-001–005 CONN-REQUIRED; process sections 4/6.2 per-metric R(D)/S(D), durations/retries/failures; MT-79-003 separate snapshot | Approved sync populations and attribution defined in decision follow-through; source amendments at ff93a9b locally integrated; independent review/public merge and mapping/version proof pending. Bank start remains deferred without blocking manual measurement; no bank availability or observed results claimed |
 | CBD-13-AC04 | CBD13-RETENTION-001 approved deferral; process sections 2/4/5/6 retain MT-78-005/006 and future R4/R8 periods without current Private MVP retention-evidence requirement | Approved specification disposition; CBD-78 amendment merged in PR #237 at 01ca789. CBD-80 source follow-through from reviewed candidate 7754c5c merged in PR #239. No measured success, zero or successful retention asserted. Historical source proof and release/implementation controls required before future applicability; cadence-segmentation deferral preserved |
 | CBD-13-AC05 | Existing duplicate/late/acknowledged/dismissed measures; approved synthetic correctness QA; process sections 2/4/6.1/7 | Synthetic QA approach settled; execution remains a delivery gate. Alert lateness interval is qualifying durable source revision to authorized in-app availability, including evaluation/fan-out. Classification bound may remain unset at specification closure under CBD81-BOUNDS-001; no lateness rate or baseline credit until verified prerequisites, and required beta evidence is not waived. Unavailable/failed instances excluded; rate cannot prove no dropped alerts |
 | CBD-13-AC06 | CBD-80 register sections 2–6: attributes, prohibited content, retention and separate destinations; process sections 3 and 5 operationalize review and cleanup handoff | Specification coverage exists under amended no-event-catalog criterion. Actual schema binding, release checks, CBD-122 compatibility and CBD-63 cleanup evidence remain dependencies |
-| CBD-13-AC07 | Process sections 2–6.3 baseline dispositions, source-version comparability and dated decisions | Approved profiles/deferrals/later-bound gates preserved. Changed sync populations/terminal-day attribution require a new comparable source version and baseline, never mixed prior credit. Final sent/sync source amendments and Review closure remain pending, as does Executive process/package acceptance; applicable beta evidence is not waived |
+| CBD-13-AC07 | Process sections 2–6.3 baseline dispositions, source-version comparability and dated decisions | Approved profiles/deferrals/later-bound gates preserved. Changed sync populations/terminal-day attribution require a new comparable source version and baseline, never mixed prior credit. Final sent/sync source amendments at ff93a9b are locally integrated; public merge and Review closure remain pending, as does Executive process/package acceptance; applicable beta evidence is not waived |
 | CBD-13-AC08 | Process section 3 controlling Withheld/OP-92-003 restrictions, destinations, alert ratchet and synthetic disclosure expectations | CBD13-FINAL-SECURITY-001 clear for integrated specification privacy acceptance only at 8dadd7cecbe9d912d194acda8086358f0d71d72d. Prior CBD81-PRIVACY-001 remains approved; numerical release requires separate policy approval/verification. New sent/sync reconciliation has no inherited final Review approval, runtime clearance or measured-success claim |
 
 CBD-81 drafting does not mark CBD-13 Done. Specification completion must be
@@ -182,8 +182,8 @@ guard is implemented, scheduled or passing:
     successor normalization. Confirm no sent production count/rate/denominator
     and unchanged terminal MT-78-002/003/MS-80-014 outputs. Sent/pending is not
     dispatch/delivery/receipt/activity proof; no restricted-evidence reuse.
-13. Validate process section 6.2 against the final fixed source candidate once
-    available. R(D)/S(D) mappings must be consumer-specific, with once-per-run
+13. Validate process section 6.2 against fixed source candidate ff93a9b, now
+    locally integrated; independent review/public merge remain pending. R(D)/S(D) mappings must be consumer-specific, with once-per-run
     terminal-day attribution: MT-79-001 excludes S(D); MT-79-002/004/005 retain
     all R(D), including cancelled/superseded runs; cancellation is never success
     or failure. MT-79-004 counts at least one retry once; MT-79-005 uses only
@@ -194,7 +194,7 @@ guard is implemented, scheduled or passing:
     never-attempted queue, duplicate delivery and postterminal replay identity.
     Unknown mappings block computation. Verify no new released reason/ID/per-run
     timing/history and no baseline mixing across changed versions. These are
-    specification expectations, not executed QA or current source implementation.
+    specification expectations, not executed QA or runtime implementation.
 
 CBD81-SECURITY-002 cleared the availability correction and planning boundary;
 CBD81-REVIEW-004 approved the scoped draft at
@@ -204,8 +204,9 @@ reconciliation at `e8bb34cbef98438ddd2ad774d19b95feb787ca6f`. Prior source revie
 CBD13-FINAL-REVIEW-001 requested changes at
 `8dadd7cecbe9d912d194acda8086358f0d71d72d` for sent coverage and sync population
 alignment. The corresponding decisions are approved, but source corrections under
-CBD13-FINAL-SOURCES-SPEC-001 remain in progress, unreviewed/unmerged and need
-fixed-candidate independent verification before those findings can close.
+CBD13-FINAL-SOURCES-SPEC-001 are fixed at ff93a9b and locally integrated. Those
+findings have correction candidates, not reviewer closure; independent review
+and public merge remain pending.
 CBD13-FINAL-SECURITY-001 is clear only for integrated specification privacy at
 that exact prior candidate; it does not grant final Review or package acceptance.
 DEC-81-002 planning disposition is approved under `CBD81-PRIVACY-001`; exact
