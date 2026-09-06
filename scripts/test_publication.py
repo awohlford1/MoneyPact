@@ -287,6 +287,59 @@ class ReconciliationTests(unittest.TestCase):
     def test_only_local_ids_and_interblock_formatting_are_ignored(self):
         self.assertTrue(p.equivalent('<p data-local-id="123">A &amp; B</p>\n', '<p>A &#38; B</p>'))
 
+    def test_storage_named_characters_match_unicode_and_numeric_references(self):
+        # Synthetic reproduction of the character references in the CBD-69 export.
+        named = '<h1>Title &mdash; Rules</h1><p>&ldquo;A&rdquo; &ndash; B&rsquo;s &rarr; &sect; &quot;C&quot;</p>'
+        literal = '<h1>Title \u2014 Rules</h1><p>\u201cA\u201d \u2013 B\u2019s \u2192 \u00a7 "C"</p>'
+        self.assertTrue(p.equivalent(named, literal))
+        self.assertTrue(p.equivalent(named, literal.replace('\u2014', '&#8212;')))
+        self.assertTrue(p.equivalent('<a title="A &quot;B&quot; &amp; C">x</a>',
+                                     '<a title="A &#34;B&#34; &#38; C">x</a>'))
+        self.assertTrue(p.equivalent('<p>&lt;b&gt; &amp;mdash;</p>', '<p>&#60;b&#62; &#38;mdash;</p>'))
+        self.assertFalse(p.equivalent('<p>&amp;mdash;</p>', '<p>&mdash;</p>'))
+
+    def test_named_character_table_agrees_with_semantic_parser(self):
+        for name, value in p.html5.items():
+            if not name.endswith(';'):
+                continue
+            numeric = ''.join(f'&#{ord(char)};' for char in value)
+            with self.subTest(name=name):
+                self.assertTrue(p.equivalent(f'<p>&{name}</p>', f'<p>{numeric}</p>'))
+
+    def test_named_characters_preserve_live_bytes_and_still_detect_conflicts(self):
+        base = BASE.replace('Title', 'Title \u2014 Rules')
+        desired = base.replace('Old', 'New')
+        live = base.replace('\u2014', '&mdash;').replace('Keep', 'Human &ldquo;note&rdquo;')
+        self.assertEqual(p.reconcile(base, live, desired),
+                         desired.replace('Keep', 'Human &ldquo;note&rdquo;'))
+        api = MemoryAPI(live.replace('Old', 'Human &mdash; edit'))
+        with self.assertRaisesRegex(p.PublicationError, 'overlapping-live-edit'):
+            p.execute_plan(api, [(entry(), base, desired)], HEAD, lambda row: None)
+        self.assertEqual(api.puts, [])
+        self.assertFalse(p.equivalent('<p>A&nbsp;B</p>', '<p>A B</p>'))
+
+    def test_named_characters_do_not_relax_malformed_storage_rejection(self):
+        for body in ('<p>&mdash</p>', '<p>&notAnEntity;</p>', '<p>&amp; &bad;</p>',
+                     '<p>&#0;</p>', '<p>&#xD800;</p>', '<p>&#x110000;</p>',
+                     '<p>&mdash; & broken</p>', '<p>&mdash;</div>',
+                     '<!DOCTYPE root [<!ENTITY custom "x">]><p>&custom;</p>',
+                     '<p>&lt;!DOCTYPE root&gt;</p><script>x</script>'):
+            api = MemoryAPI(body)
+            with self.subTest(body=body), self.assertRaises(p.PublicationError):
+                p.execute_plan(api, [(entry(), BASE, DESIRED)], HEAD, lambda row: None)
+            self.assertEqual(api.puts, [])
+
+    def test_named_character_baseline_is_read_only(self):
+        body = '<h1>Title \u2014 Rules</h1><p>Same</p>'
+        api = MemoryAPI(body.replace('\u2014', '&mdash;'))
+        target = dict(entry(), baseline_only=True)
+        p.execute_plan(api, [(target, body, body)], HEAD, lambda row: None)
+        self.assertEqual(api.puts, [])
+        api.body = api.body.replace('Same', 'Changed')
+        with self.assertRaisesRegex(p.PublicationError, 'baseline-not-current'):
+            p.execute_plan(api, [(target, body, body)], HEAD, lambda row: None)
+        self.assertEqual(api.puts, [])
+
     def test_unknown_malformed_duplicate_nested_and_empty_headings(self):
         for body in ('<ac:structured-macro/>', '<p>oops', '<p></div>', '<!--comment-->',
                      '<h1>A</h1><h1>A</h1>', '<div><h2>Nested</h2></div>', '<h1> </h1>',

@@ -10,6 +10,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from html.entities import html5
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -262,8 +263,16 @@ class StorageParser(HTMLParser):
         # interpreted as an apparently safe semantic no-op.
         if "<!" in body or "<?" in body:
             raise PublicationError("unsupported-storage-manual-reconciliation")
+        # Confluence storage can contain XHTML's named character references.
+        # Expand only the finite HTML character table, only with semicolons,
+        # and only in the XML validation copy. Numeric references cannot inject
+        # markup; unknown entities still fail XML validation. Feed the original
+        # body below so reconciliation retains exact source byte ranges.
+        xml_body = re.sub(r"&([A-Za-z][A-Za-z0-9]*);",
+                          lambda match: "".join(f"&#{ord(char)};" for char in html5[match[1] + ";"])
+                          if match[1] + ";" in html5 else match[0], body)
         try:
-            ET.fromstring('<root xmlns:ac="urn:confluence-ac">' + body + '</root>')
+            ET.fromstring('<root xmlns:ac="urn:confluence-ac">' + xml_body + '</root>')
         except ET.ParseError:
             raise PublicationError("malformed-storage-manual-reconciliation") from None
         self.offsets = [0]
