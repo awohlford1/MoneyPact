@@ -469,11 +469,39 @@ class TransportTests(unittest.TestCase):
             with self.subTest(status=status), self.assertRaises(p.PublicationError) as raised:
                 client.request("/page")
             self.assertNotIn("sensitive", str(raised.exception))
+            self.assertEqual(raised.exception.code, "stale-version-conflict" if status == 409 else f"http-status-{status}")
             self.assertEqual(client.opener.open.call_count, 1)
         for client in (self.client(error=TimeoutError("private")), self.client(payload=b"{"),
                        self.client(payload=b"\xff"), self.client(payload=b"x" * (p.MAX_BODY * 3 + 1)), self.client(status=201)):
             with self.assertRaises(p.PublicationError):
                 client.request("/page")
+
+    def test_safe_transport_diagnostics_do_not_echo_remote_data(self):
+        for error, expected in (
+            (TimeoutError("private credential"), "http-timeout"),
+            (urllib.error.URLError(TimeoutError("private credential")), "http-timeout"),
+            (urllib.error.URLError("private credential"), "http-connection-failed"),
+            (OSError("private credential"), "http-connection-failed"),
+            (ValueError("private credential"), "http-invalid-response"),
+        ):
+            client = self.client(error=error)
+            with self.subTest(expected=expected), self.assertRaises(p.PublicationError) as raised:
+                client.request("/page")
+            self.assertEqual(str(raised.exception), expected)
+            self.assertEqual(client.opener.open.call_count, 1)
+        for status in (201, 302, 401, 403, 404, 409, 429, 503, "private credential", None, True, 999):
+            expected = ("stale-version-conflict" if status == 409 else f"http-status-{status}") if type(status) is int and 100 <= status <= 599 else "http-invalid-status"
+            for as_exception in (False, True):
+                body = Mock()
+                error = urllib.error.HTTPError("https://private.invalid", status, "private credential", {}, body)
+                client = self.client(error=error) if as_exception else self.client(status=status)
+                with self.subTest(status=status, as_exception=as_exception), self.assertRaises(p.PublicationError) as raised:
+                    client.request("/page")
+                self.assertEqual(str(raised.exception), expected)
+                self.assertEqual(client.opener.open.call_count, 1)
+                body.read.assert_not_called()
+                if not as_exception:
+                    client.opener.open.return_value.__enter__.return_value.read.assert_not_called()
 
     def test_redirect_handler_refuses_forwarding(self):
         self.assertIsNone(transport.NoRedirect().redirect_request(None, None, 302, "", {}, "https://elsewhere.invalid"))

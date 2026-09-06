@@ -20,6 +20,13 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class JsonClient:
+    @staticmethod
+    def status_error(status):
+        # Only a bounded integer enters evidence; never echo remote error text.
+        if type(status) is not int or not 100 <= status <= 599:
+            return "http-invalid-status"
+        return "stale-version-conflict" if status == 409 else f"http-status-{status}"
+
     def __init__(self, origin, authorization):
         self.origin = origin
         self.authorization = authorization
@@ -36,15 +43,21 @@ class JsonClient:
         try:
             with self.opener.open(request, timeout=30) as response:
                 if response.status != 200:
-                    raise PublicationError("http-request-failed")
+                    raise PublicationError(self.status_error(response.status))
                 body = response.read(MAX_BODY * 3 + 1)
                 if len(body) > MAX_BODY * 3:
                     raise PublicationError("manual-handling-size-limit")
                 return json_object(body.decode("utf-8"))
         except urllib.error.HTTPError as error:
-            raise PublicationError("stale-version-conflict" if error.code == 409 else "http-request-failed") from None
-        except (OSError, ValueError, urllib.error.URLError):
-            raise PublicationError("http-request-failed") from None
+            raise PublicationError(self.status_error(error.code)) from None
+        except TimeoutError:
+            raise PublicationError("http-timeout") from None
+        except urllib.error.URLError as error:
+            raise PublicationError("http-timeout" if isinstance(error.reason, TimeoutError) else "http-connection-failed") from None
+        except OSError:
+            raise PublicationError("http-connection-failed") from None
+        except ValueError:
+            raise PublicationError("http-invalid-response") from None
 
 
 class Confluence:
