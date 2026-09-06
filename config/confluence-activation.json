@@ -3,5 +3,5 @@
   "prerequisites": {"CBD-113": "In Review", "CBD-114": "In Review"},
   "owner_approval": null,
   "exclusive_writer_approval": null,
-  "smoke_target": null
+  "smoke_target": "future-feature-register"
 }

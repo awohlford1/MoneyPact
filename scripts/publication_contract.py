@@ -5,7 +5,7 @@ from importlib.metadata import version
 from publication import ROOT, PublicationError, bootstrap_manifest, json_object, registry, sha256, validate_manifest
 from publication_transport import validate_recovery
 
-WORKFLOW_DIGEST = "53cee9a279d0ab0869328ebe365b4aff8fcaf06331992c80f39f5b3ba3fd9517"
+WORKFLOW_DIGEST = "a0f46f7b48640b4f0f1ed4952b95e31ada24d7782d467f2f6760587bd5dd1751"
 REQUIREMENTS = "Markdown==3.10.3 --hash=sha256:fa6c92a00a4a3c98b22728c64a935ae1928250ae65058a6ded814d2cc29a4cea\n"
 
 
