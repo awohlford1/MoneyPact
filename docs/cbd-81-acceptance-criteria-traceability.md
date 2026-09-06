@@ -10,16 +10,19 @@ review `CBD13-ACTIVATION-REVIEW-001`, merged PR #236 at
 merged in PR #237 at `01ca789cef216b4bc8ab9fa1c0318d37639190bc`. `CBD81-PRIVACY-001` approves the reviewed
 privacy planning boundary. Approved profile/category meanings and MT-77-005
 deferral are implemented in independently approved CBD-77/80 source candidate
-`7754c5cf6efff4cdd7718dd9022fbb34bf75d2e4` (`CBD13-USABLE-REVIEW-001`), now locally integrated with public publication/merge pending. This report uses
+`7754c5cf6efff4cdd7718dd9022fbb34bf75d2e4` (`CBD13-USABLE-REVIEW-001`), merged in PR #239 at `8e3cbd76405d33ccd840e45153a485e5bbbd2b87`. This report uses
 the Manager's decision record for the approved amended criteria and makes no
 fresh Jira workflow or closure assertion. `CBD13-LIFECYCLE-001` approves lifecycle
 meanings, and `CBD81-BOUNDS-001` approves the later-bound specification-closure
 exception. Lifecycle source revision `f7051ada2e73164814a689fdbf684edcf6b5511a`
 was approved in `CBD13-LIFECYCLE-REVIEW-001` and cleared for the scoped lifecycle
 specification in `CBD13-LIFECYCLE-SECURITY-001`. Both source revisions are
-included in fixed local base `69bb28a4bdbed3b033c9944f63e14ed753f9e6e6`;
-public publication/merge remains pending. Source references below resolve to
-that local candidate, not a claim that public main includes these amendments.
+now merged: usable sources in PR #239 at 8e3cbd7, lifecycle sources in PR #240
+at `0b773c76266aeb462fd4d62f453afea240ddf7a5`; current base is
+`177a9c51e050aabfeeed3567f5e69ecb8edf90b2`. New sent/sync corrections approved
+in CBD13-INVITATION-SENT-001 and CBD13-SYNC-POPULATIONS-001 remain in progress
+under CBD13-FINAL-SOURCES-SPEC-001, unreviewed/unmerged. Source references do
+not imply those new corrections have landed.
 The live amended criteria on [CBD-81](https://cobudget.atlassian.net/browse/CBD-81)
 and [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) were read, including
 status, links, subtasks and comments, on September 5, 2026. Jira remains the
@@ -35,20 +38,20 @@ does not mirror issue administration or claim acceptance.
 | CBD-81-AC03 | Sections 2, 4–5: daily service decisions, weekly product/baseline decisions and relevant release reviews; no shortened or extra measurement windows | Covered by proposal |
 | CBD-81-AC04 | Section 4: action for every unhealthy metric; sections 3 and 5 constrain suppression, access, rollback and communication | Covered by proposal; implementation and authorization of actions remain separate |
 | CBD-81-AC05 | Section 5 continuation/pause/expansion/exit plus sections 2/6.1 current applicability and lifecycle handoff | Four approved metric deferrals preserved. Later-bound specification exception does not waive MT-79-003/008/010 beta evidence or permit expansion/successful exit without applicable evidence. Final process approval and operational evidence remain pending |
-| CBD-81-AC06 | Section 2 reviews all eight parent criteria and approved closure-stage exceptions | Not complete. Lifecycle meanings and later-bound disposition now settled alongside prior decisions. CBD81-REVIEW-005 approved cumulative reconciliation at e8bb34c; usable/lifecycle sources are independently reviewed and locally integrated. Final integrated package review, public publication/merge and final process/package acceptance remain; numerical release and implementation evidence are later gates, with no measured-success claim |
+| CBD-81-AC06 | All eight parent criteria below; approved sent/sync decisions in process sections 6.2/6.3 | Not complete. CBD13-FINAL-REVIEW-001 requested changes at 8dadd7c for sync populations and sent coverage. Decisions now settled; corresponding source corrections remain in progress, unreviewed/unmerged. Prior usable/lifecycle sources merged in PR #239/240. Final independent verification and Executive process/package acceptance remain; no final Review approval inferred |
 
 ## 2. Parent criterion review
 
 | Criterion | Existing definition evidence and CBD-81 contribution | Closure assessment |
 | --- | --- | --- |
-| CBD-13-AC01 | CBD-77 activation; CBD-78 engagement; CBD-79 reliability and permitted safety measures; process section 4 includes all 28 IDs | Categories present. Denied-access/support signals retain their approved Private MVP exclusion and SRV-94-010 routing |
-| CBD-13-AC02 | Process sections 2/4/6/6.1 and approved population/profile/category/lifecycle meanings; four Private MVP deferrals; CBD81-BOUNDS-001 explicit closure-stage exception | Exact classification values may remain unset at specification acceptance under approved exception. MT-79-003/008 remain required beta evidence and unavailable without verified bounds/source/release prerequisites. CBD-77/80 candidate 7754c5c and lifecycle source f7051ad independently reviewed and locally integrated; public publication/merge pending. Applicable physical bindings and independent verification remain; no computability claim |
-| CBD-13-AC03 | CBD-79 MT-79-001–005 CONN-REQUIRED; process section 4 explicitly defers bank start without blocking manual measurement | Covered at specification level; no bank availability claimed |
-| CBD-13-AC04 | CBD13-RETENTION-001 approved deferral; process sections 2/4/5/6 retain MT-78-005/006 and future R4/R8 periods without current Private MVP retention-evidence requirement | Approved specification disposition; CBD-78 amendment merged in PR #237 at 01ca789. CBD-80 source follow-through from reviewed candidate 7754c5c is locally integrated; public publication/merge pending. No measured success, zero or successful retention asserted. Historical source proof and release/implementation controls required before future applicability; cadence-segmentation deferral preserved |
+| CBD-13-AC01 | CBD-77 activation; CBD-78 engagement; CBD-79 reliability and permitted safety measures; process section 4 includes all 28 IDs | Categories present. Sent is covered by the approved CBD-73 projection and required synthetic checks in process section 6.3, not production sent measurement; corresponding CBD-78/80 source amendments are pending. Denied-access/support signals retain their approved Private MVP exclusion and SRV-94-010 routing |
+| CBD-13-AC02 | Approved definitions and four metric deferrals; CBD81-BOUNDS-001 closure exception; process section 6.2 exact sync populations and terminal-day attribution | Sync decision resolves the choice but source implementation of that correction remains pending under CBD13-FINAL-SOURCES-SPEC-001. Final Review request-changes finding is not yet independently closed. Exact classification bounds retain approved closure exception; applicable metric/source/release proof remains a delivery gate. Prior usable/lifecycle amendments are merged in PR #239/240; no computability claim |
+| CBD-13-AC03 | CBD-79 MT-79-001–005 CONN-REQUIRED; process sections 4/6.2 per-metric R(D)/S(D), durations/retries/failures; MT-79-003 separate snapshot | Approved sync populations and attribution defined in decision follow-through; source amendments, mapping/version proof and independent verification pending. Bank start remains deferred without blocking manual measurement; no bank availability or observed results claimed |
+| CBD-13-AC04 | CBD13-RETENTION-001 approved deferral; process sections 2/4/5/6 retain MT-78-005/006 and future R4/R8 periods without current Private MVP retention-evidence requirement | Approved specification disposition; CBD-78 amendment merged in PR #237 at 01ca789. CBD-80 source follow-through from reviewed candidate 7754c5c merged in PR #239. No measured success, zero or successful retention asserted. Historical source proof and release/implementation controls required before future applicability; cadence-segmentation deferral preserved |
 | CBD-13-AC05 | Existing duplicate/late/acknowledged/dismissed measures; approved synthetic correctness QA; process sections 2/4/6.1/7 | Synthetic QA approach settled; execution remains a delivery gate. Alert lateness interval is qualifying durable source revision to authorized in-app availability, including evaluation/fan-out. Classification bound may remain unset at specification closure under CBD81-BOUNDS-001; no lateness rate or baseline credit until verified prerequisites, and required beta evidence is not waived. Unavailable/failed instances excluded; rate cannot prove no dropped alerts |
 | CBD-13-AC06 | CBD-80 register sections 2–6: attributes, prohibited content, retention and separate destinations; process sections 3 and 5 operationalize review and cleanup handoff | Specification coverage exists under amended no-event-catalog criterion. Actual schema binding, release checks, CBD-122 compatibility and CBD-63 cleanup evidence remain dependencies |
-| CBD-13-AC07 | Process sections 2–6.1: baseline dispositions, approved meanings, actions, dated missing-evidence decisions and closure-versus-beta distinction | DEC-81-001/002/003 dispositions and four metric deferrals approved. MT-79-003/008 have no rate, healthy state, baseline start or credit before verified classification/source/release prerequisites. MT-79-010 duration baseline requires interval/terminal/source/bucket/release proof; compliance/near-breach needs approved commitment and approach rules. Final integrated review, process/package acceptance and public publication/merge remain; beta evidence is not waived |
-| CBD-13-AC08 | Conventions; CBD-91; CBD-92 AN-92-001–007 and OP-92-*; CBD-80; process section 3 and section 4 alert ratchet; synthetic expectations below | CBD81-PRIVACY-001 accepts DEC-81-002 planning boundary after scoped Security clearance CBD81-SECURITY-002 and Review CBD81-REVIEW-004 on a5a25fc6d8740483ee484f839ac271c75dc6b354. Numerical release policy still needs separate Security review, Executive approval and implementation verification. CBD81-REVIEW-005 approved cumulative reconciliation at e8bb34c; final integrated review still required. Process section 3 explicitly controls inherited suppression/investigation prose; no runtime, final package or measured-success claim |
+| CBD-13-AC07 | Process sections 2–6.3 baseline dispositions, source-version comparability and dated decisions | Approved profiles/deferrals/later-bound gates preserved. Changed sync populations/terminal-day attribution require a new comparable source version and baseline, never mixed prior credit. Final sent/sync source amendments and Review closure remain pending, as does Executive process/package acceptance; applicable beta evidence is not waived |
+| CBD-13-AC08 | Process section 3 controlling Withheld/OP-92-003 restrictions, destinations, alert ratchet and synthetic disclosure expectations | CBD13-FINAL-SECURITY-001 clear for integrated specification privacy acceptance only at 8dadd7cecbe9d912d194acda8086358f0d71d72d. Prior CBD81-PRIVACY-001 remains approved; numerical release requires separate policy approval/verification. New sent/sync reconciliation has no inherited final Review approval, runtime clearance or measured-success claim |
 
 CBD-81 drafting does not mark CBD-13 Done. Specification completion must be
 distinguished from later measured beta success: the former needs approved,
@@ -66,6 +69,8 @@ actual evidence under this process. Neither has been asserted here.
 | 5 — records and beta decisions | CBD-81-AC03/AC04/AC05; CBD-13-AC06/AC07/AC08 |
 | 6 — decision briefs and blockers | CBD-81-AC01/AC06; CBD-13-AC02/AC04/AC05/AC07/AC08 |
 | 6.1 — approved lifecycle meanings and source handoff | CBD-13-AC02/AC05/AC06/AC07/AC08; CBD-81-AC01/AC04/AC05/AC06 |
+| 6.2 — sync populations and version handoff | CBD-13-AC02/AC03/AC06/AC07; CBD-81-AC01/AC04/AC06 |
+| 6.3 — invitation sent projection/synthetic coverage | CBD-13-AC01/AC02/AC08; CBD-81-AC04/AC06 |
 | 7 — synthetic correctness assessment | CBD-13-AC05; CBD-81-AC04/AC06 |
 | Companion section 5 — SYN-81-001–004 disclosure expectations for process section 3 | CBD-13-AC08; CBD-81-AC01/AC04/AC05/AC06 |
 
@@ -105,7 +110,7 @@ guard is implemented, scheduled or passing:
    frequency, volume or insistence, contacts an inferred member or reveals alert
    behavior. Valid fewer/softer/less-frequent fixture must pass. Use isolated
    test artifacts; never corrupt authoritative sources.
-6. Preserve the approved DEF-81-001 deferral and merged CBD-78 amendment; preserve the independently reviewed, locally integrated CBD-80 source follow-through without
+6. Preserve the approved DEF-81-001 deferral and merged CBD-78 amendment; preserve the independently reviewed CBD-80 source follow-through merged in PR #239 without
    reopening the Executive scope decision. Future reopening needs approved
    evidence of actual actions/occurrence times, including viewing, mutated/deleted
    state and both historical windows. No cohort/event history or audit-purpose
@@ -140,7 +145,7 @@ guard is implemented, scheduled or passing:
 
 9. Preserve reviewed lifecycle source f7051ad against approved process section 6.1.
    CBD13-LIFECYCLE-REVIEW-001 and CBD13-LIFECYCLE-SECURITY-001 establish scoped
-   review/clearance, and the source is locally integrated. Public integration,
+   review/clearance, and the source is merged in PR #240. Exact
    physical bindings and runtime evidence remain separate. Synthetic checks must
    cover eligible never-synced
    connections retained in the denominator with missing age and not fresh;
@@ -170,13 +175,39 @@ guard is implemented, scheduled or passing:
     expansion/successful exit and invoke the dated continuation/pause process.
     Grace, export expiry and backup expiry must never supply an invented SLO.
 
+12. Validate the approved sent-projection requirements in process section 6.3
+    using synthetic records only: equivalent projections/controls/timing for
+    ordinary Pending, delivered, failed, privately terminal and synthetic requests;
+    fixed expiry despite delays/private causes; cancellation/resend predecessor-
+    successor normalization. Confirm no sent production count/rate/denominator
+    and unchanged terminal MT-78-002/003/MS-80-014 outputs. Sent/pending is not
+    dispatch/delivery/receipt/activity proof; no restricted-evidence reuse.
+13. Validate process section 6.2 against the final fixed source candidate once
+    available. R(D)/S(D) mappings must be consumer-specific, with once-per-run
+    terminal-day attribution: MT-79-001 excludes S(D); MT-79-002/004/005 retain
+    all R(D), including cancelled/superseded runs; cancellation is never success
+    or failure. MT-79-004 counts at least one retry once; MT-79-005 uses only
+    technical failures and is not the complement of MT-79-001. MS-80-021 cannot
+    reuse one filtered scalar for all consumers; buckets/classes retain their
+    exact populations. Exercise Monday 23:58 start/Tuesday 00:02 retry/00:05
+    terminal as one Tuesday run and seven minutes; exact midnight, pending,
+    never-attempted queue, duplicate delivery and postterminal replay identity.
+    Unknown mappings block computation. Verify no new released reason/ID/per-run
+    timing/history and no baseline mixing across changed versions. These are
+    specification expectations, not executed QA or current source implementation.
+
 CBD81-SECURITY-002 cleared the availability correction and planning boundary;
 CBD81-REVIEW-004 approved the scoped draft at
 `a5a25fc6d8740483ee484f839ac271c75dc6b354`. These dispositions are limited to
 that candidate and scope. CBD81-REVIEW-005 independently approved cumulative
-reconciliation at `e8bb34cbef98438ddd2ad774d19b95feb787ca6f`. Source review and
-local integration are now complete as recorded above; final integrated package
-review/acceptance remains pending for this status reconciliation.
+reconciliation at `e8bb34cbef98438ddd2ad774d19b95feb787ca6f`. Prior source review and public merges are complete as recorded above.
+CBD13-FINAL-REVIEW-001 requested changes at
+`8dadd7cecbe9d912d194acda8086358f0d71d72d` for sent coverage and sync population
+alignment. The corresponding decisions are approved, but source corrections under
+CBD13-FINAL-SOURCES-SPEC-001 remain in progress, unreviewed/unmerged and need
+fixed-candidate independent verification before those findings can close.
+CBD13-FINAL-SECURITY-001 is clear only for integrated specification privacy at
+that exact prior candidate; it does not grant final Review or package acceptance.
 DEC-81-002 planning disposition is approved under `CBD81-PRIVACY-001`; exact
 numerical release policy requires separate Security review, Executive approval
 and implementation verification. DEC-81-003 specification-closure disposition
@@ -186,25 +217,24 @@ process/package approval are pending; no numerical value is selected here.
 DEC-81-001 baseline timing and DEC-81-004 synthetic-QA approach remain settled.
 
 DEF-81-001 retention/breadth deferral is approved, with CBD-78 merged in PR #237;
-CBD-80 follow-through from reviewed source candidate 7754c5c is locally integrated, with public publication/merge pending. DEF-81-002 population correction remains merged.
+CBD-80 follow-through from reviewed source candidate 7754c5c merged in PR #239. DEF-81-002 population correction remains merged.
 `CBD13-PROFILE-001` and `CBD13-CATEGORY-001` settle OQ-77-003/004 measurement
 meanings; authorized physical bindings and verification remain with the feature
 and source owners. `CBD13-USABLE-TIME-001` explicitly defers MT-77-005, preserving
 MS-80-007, intended interval, destination and future W4; historical timestamp
 proof is a reopening gate, not current timing-success evidence. These source
 amendments were independently approved in `CBD13-USABLE-REVIEW-001` at
-`7754c5cf6efff4cdd7718dd9022fbb34bf75d2e4` and are locally integrated, with public publication/merge pending.
+`7754c5cf6efff4cdd7718dd9022fbb34bf75d2e4` and merged in PR #239.
 Lifecycle source `f7051ada2e73164814a689fdbf684edcf6b5511a` separately received
 CBD13-LIFECYCLE-REVIEW-001 approval and CBD13-LIFECYCLE-SECURITY-001 scoped
-clearance and is locally integrated, with public publication/merge pending.
+clearance and merged in PR #240.
 Inherited source headers/revision records still saying candidate review is pending
 are historical status prose; the exact independent results above establish the
 reviewed scope. Their out-of-scope source wording remains unchanged here.
 Inherited population-specific suppression and individual-request investigation
 prose is not independently cleared: process section 3 states the controlling
 CBD81-PRIVACY-001 generic-Withheld and OP-92-003 restrictions. No hidden-value
-flag, routine individual inspection or access escalation is authorized. Final
-integrated review must assess that precedence; this report does not waive it.
+flag, routine individual inspection or access escalation is authorized. CBD13-FINAL-SECURITY-001 assessed that precedence on its exact candidate; this report preserves it without asserting runtime enforcement or waiving final Review findings.
 DEP-81-001 and OQ-80-007 remain implementation/operational handoffs. No outside
 document is changed by this reconciliation; no runtime enforcement, successful
 measurement, final package approval or Jira Done is asserted.

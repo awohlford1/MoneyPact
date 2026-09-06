@@ -22,19 +22,23 @@ in `CBD13-ACTIVATION-REVIEW-001`, and merged in PR #236 at
 amendment was independently reviewed and merged in PR #237 at `01ca789cef216b4bc8ab9fa1c0318d37639190bc`.
 `CBD81-PRIVACY-001` approves the reviewed generic-Withheld planning boundary.
 `CBD13-PROFILE-001`, `CBD13-CATEGORY-001` and `CBD13-USABLE-TIME-001` approve
-the meanings and timing deferral below. Their CBD-77/80 source candidate
-`7754c5cf6efff4cdd7718dd9022fbb34bf75d2e4` was independently approved in
-`CBD13-USABLE-REVIEW-001` and is included in this local candidate. Public publication and merge remain pending; approved meanings are not reopened by that dependency.
-`CBD13-LIFECYCLE-001` approves lifecycle meanings in section 6.1, and
-`CBD81-BOUNDS-001` approves the DEC-81-003 specification-closure disposition.
-Lifecycle source revision `f7051ada2e73164814a689fdbf684edcf6b5511a` was
-independently approved in `CBD13-LIFECYCLE-REVIEW-001` and cleared for its scoped
-specification in `CBD13-LIFECYCLE-SECURITY-001`. Both source revisions are
-included locally at base `69bb28a4bdbed3b033c9944f63e14ed753f9e6e6`; neither is
-published or merged to public main. `CBD81-REVIEW-005` approved the cumulative
-CBD-81 reconciliation at `e8bb34cbef98438ddd2ad774d19b95feb787ca6f` before local
-integration. Final integrated package review and acceptance remain pending;
-local integration is not publication, runtime proof or final approval.
+the usable-budget meanings and timing deferral. Their source candidate
+`7754c5cf6efff4cdd7718dd9022fbb34bf75d2e4` passed CBD13-USABLE-REVIEW-001 and
+merged in PR #239 at `8e3cbd76405d33ccd840e45153a485e5bbbd2b87`.
+Lifecycle source `f7051ada2e73164814a689fdbf684edcf6b5511a` passed scoped Review
+and Security and merged in PR #240 at `0b773c76266aeb462fd4d62f453afea240ddf7a5`.
+CBD13-LIFECYCLE-001 and CBD81-BOUNDS-001 remain approved authorities.
+
+CBD13-FINAL-REVIEW-001 requested changes at
+`8dadd7cecbe9d912d194acda8086358f0d71d72d` for sent coverage and sync population
+alignment. CBD13-INVITATION-SENT-001 and CBD13-SYNC-POPULATIONS-001 now approve
+the exact decisions in sections 6.2/6.3; matching source amendments under
+CBD13-FINAL-SOURCES-SPEC-001 remain in progress, unreviewed and unmerged.
+The decisions are settled; source delivery and independent verification remain.
+CBD13-FINAL-SECURITY-001 cleared integrated specification privacy only at that
+same fixed candidate, not numerical release, runtime enforcement or final package
+acceptance. No final Review approval is inferred from that Security disposition.
+
 Live Jira criteria, including `customfield_10066`, links and comments, were read
 on September 5, 2026. Jira owns issue fields; this document is the specification,
 not a staging copy of those fields. Parent completion is assessed in the
@@ -59,6 +63,12 @@ beta and the relevant source, release controls and approved policy are ready.
 Each metric records its actual start date in the authorized operational record;
 an unavailable metric has no fictitious start. A definition or material source
 change starts a new version and baseline; do not splice incompatible windows.
+For the approved sync correction (section 6.2), pin the per-metric population,
+terminal-day attribution, operational run identity, source mapping and bucket/bound
+version before comparable D14 evidence starts. Do not mix supersession-filtered
+and all-run populations or start-day and terminal-day records across versions;
+unknown mappings block computation. New source semantics do not authorize
+backfilling from unauthorized history or reusing invalid prior baseline credit.
 
 | Profile | Start and duration | Minimum evidence and scheduled review | Next decision |
 | --- | --- | --- | --- |
@@ -210,7 +220,7 @@ no performance target is approved.
 | --- | --- | --- | --- |
 | MT-77-001 — Space creation rate | product | W4; W/R | Adverse decline after valid source binding and release controls: reproduce account-to-space onboarding using synthetic data; fix creation or copy failures; roll back the responsible change if reproducible |
 | MT-77-002 — First budget period rate | product | W4; W/R | Adverse decline after valid source binding and release controls: check period materialization and schedule validation; repair or roll back the failing setup path |
-| MT-77-003 — Usable-budget completion rate | product | W4; W/R; publication/binding gates | Current-state completion and all five limbs remain applicable. Profile/category meanings approved; CBD-77/80 sources independently reviewed and locally integrated; public publication/merge, exact physical bindings and release controls remain required before computation/baseline credit. Thereafter adverse decline: validate all five UB-77-001 limbs in synthetic fixtures; fix the failing manual setup path without redefining usable |
+| MT-77-003 — Usable-budget completion rate | product | W4; W/R; binding/release gates | Current-state completion and all five limbs remain applicable. Profile/category meanings approved; CBD-77/80 sources independently reviewed and merged in PR #239; exact physical bindings and release controls remain required before computation/baseline credit. Thereafter adverse decline: validate all five UB-77-001 limbs in synthetic fixtures; fix the failing manual setup path without redefining usable |
 | MT-77-004 — Time to first budget period | product | W4; W/R | Adverse increase: reproduce setup delays and period scheduling; simplify or fix the affected step; preserve higher percentile release protection |
 | MT-77-005 — Time to usable budget | product | Future W4; W/R; Private MVP deferred | Deferred/unavailable under CBD13-USABLE-TIME-001; not current Private MVP success evidence. No computation, numerical release, baseline credit or successful timing claim. Preserve MS-80-007 and intended first-simultaneous interval; future source-proof gate in section 2. After reopening and baseline, reproduce completion friction and repair the responsible step |
 | MT-77-006 — Manual-account activation rate | product | W4; W/R | Adverse decline after valid source binding and release controls: check account creation and linking to the period; fix the manual flow without requiring a bank connection |
@@ -224,11 +234,11 @@ no performance target is approved.
 | MT-78-006 — Eight-week active retention | product | Future R8; W/R; Private MVP deferred | Same approved deferral and future gates as four-week retention; preserve eight-week separation and future ten-week earliest baseline review. Unavailable never means measured success or successful retention |
 | MT-78-007 — Firm alert acknowledgement rate | product | W4; W/R | Adverse decline: reduce, soften or remove problematic catalog behavior. Global and operator-only; never name/contact/differentiate a member or increase frequency, volume or insistence |
 | MT-78-008 — Firm alert dismissal rate | product | W4; W/R | Adverse increase: make alerts fewer, softer or less frequent. Same no-member-access and no-contact restrictions; never optimize for compliance |
-| MT-79-001 — Synchronization success rate | synchronization | D14; D/R | Adverse decline: inspect allowed safe outcome classes, reproduce the defect, reduce scheduled load or roll back affected sync code; retain valid structural exclusions |
-| MT-79-002 — Synchronization latency | synchronization | D14; D/R | p90 moves adversely to a higher approved bucket: check allowed queue/capacity evidence and bounded delivery controls; tune only within approved caps or reduce scheduling frequency |
+| MT-79-001 — Synchronization success rate | synchronization | D14; D/R; sync source gate | Approved successful R(D) minus S(D) divided by count(R(D) minus S(D)), per section 6.2. Source correction pending; no computation/baseline credit before mapping and release proof. Thereafter adverse decline: inspect allowed safe outcomes, reproduce defect, reduce scheduled load or roll back affected sync code; retain exact supersession exclusion |
+| MT-79-002 — Synchronization latency | synchronization | D14; D/R; sync source gate | Approved all-R(D) terminal-minus-first-Worker-attempt duration, including retry/backoff and cancellations/supersession; not success-only latency. Source/bucket/release proof and version comparability required. Thereafter adverse p90 bucket rise: inspect permitted queue/capacity evidence, tune within approved caps or reduce scheduling frequency |
 | MT-79-003 — Connection freshness | synchronization | D14; D/R; classification/source/release gates | Approved watermark and eligible-connection meaning in section 6.1. Required beta evidence, not deferred: no rate, healthy status, numeric release, baseline start or credit until classification bound and source/release prerequisites are approved and verified. Thereafter deterioration triggers cursor/scheduler investigation alongside independently releasable sync outcomes; repair stale-success behavior |
-| MT-79-004 — Synchronization retry rate | synchronization | D14; D/R | Adverse increase even with stable success: check bounded retry exhaustion/backoff, reduce schedule frequency or repair provider handling; never retry beyond approved bounds |
-| MT-79-005 — Terminal synchronization failure rate | synchronization | D14; D/R | New safe failure class or adverse growth: map approved taxonomy to relinking or code defect; use the existing authorized relinking flow; an unresolved CoBudget defect blocks the affected release |
+| MT-79-004 — Synchronization retry rate | synchronization | D14; D/R; sync source gate | Approved runs in R(D) consuming at least one retry divided by count(R(D)); cancelled/superseded runs included, one contribution per run. Source correction pending. After mapping/release proof and baseline, adverse increase triggers bounded retry/backoff investigation, reduced schedule frequency or provider repair; no retry beyond approved bounds |
+| MT-79-005 — Terminal synchronization failure rate | synchronization | D14; D/R; sync source gate | Approved terminal technical failures in R(D) divided by count(R(D)); valid cancellations remain denominator, not failures; only failed subset supplies safe failure classes. Not the complement of MT-79-001. After valid mapping/release proof, new safe class or adverse growth routes to existing relinking or code-defect response; unresolved CoBudget defect blocks affected release |
 | MT-79-006 — Notification outcome distribution | notifications | D14; D/R | Adverse failed/late growth or unexplained suppressed growth: inspect queue, provider and transport caps; fix configuration or roll back. Correct suppression stays in denominator; no extra transport |
 | MT-79-007 — Alert duplicate rate | notifications | D14; D/R | Adverse rise or unexplained zero: test both trigger and dedup guard; a suppressed duplicate attempt is not a delivered duplicate. Fix attempts or missing instrumentation; confirmed duplicate delivery violates AB-74-001 and pauses affected delivery |
 | MT-79-008 — Alert lateness rate | notifications | D14; D/R; classification/source/release gates | Approved qualifying-source-to-in-app-availability interval in section 6.1. Required beta evidence, not deferred: no rate, healthy status, numeric release, baseline start or credit until classification bound and source/release prerequisites are approved and verified. Thereafter adverse rise triggers evaluation/fan-out/scheduler/Worker diagnosis and repair or rollback; excluded unavailable instances mean this rate cannot prove absence of dropped alerts |
@@ -288,10 +298,10 @@ runbook exists and is verified. This document authorizes no destructive action.
 | --- | --- | --- |
 | DEC-81-001 — approved | Executive accepted W4/D14/R4/R8 and their bounded review process: four complete product weeks, fourteen complete reliability days, two valid retention A/B pairs with earliest reviews at six/ten weeks; only valid releasable records count, and missing evidence requires a dated extension or pause decision | Decision source CBD81-BASELINE-001, explicit Executive selection communicated through Manager September 5, 2026. This approves operating review periods, not statistical/privacy guarantees, arbitrary performance targets, numerical privacy minima, source repairs, whole-package approval or CBD-13 closure. No automatic success |
 | DEC-81-002 — approved planning disposition | Executive accepted the reviewed generic-Withheld specification boundary, including process records, under CBD81-PRIVACY-001. All population-dependent withheld conditions have identical status, without hidden reasons, transition details, value-derived actions or baseline credit | CBD81-SECURITY-002 and CBD81-REVIEW-004 assessed candidate a5a25fc6d8740483ee484f839ac271c75dc6b354 within their stated scope. Exact numerical release policy still requires separate Security review, Executive approval and implementation verification: exact outputs/windows, populations, contribution checks, related outputs, repeat/revision rules, access, bindings, retention and synthetic inference tests. No numerical release, runtime enforcement, measurement waiver or final package/process approval. Review singling-out, complementary counts, repeated-window differencing, distributions, low-volume operations and higher percentile protection; volume alone is insufficient and later segmentation needs separate review |
-| DEC-81-003 — approved specification-closure disposition | CBD81-BOUNDS-001 permits specification acceptance with exact freshness/lateness classification bounds unset pending evidence-based selection and Executive approval. This is a closure-stage exception, not a beta applicability deferral. CBD13-LIFECYCLE-001 approves the lifecycle meanings in section 6.1 | MT-79-003/008 require verified classification bounds plus source/release prerequisites before any rate, healthy status, numeric release, D14 start or credit. MT-79-010 duration baseline requires interval, terminal-state, source, bucket and release proof; compliance/near-breach claims require approved lifecycle-specific commitments and actionable approach rules. Applicable beta evidence is still required for expansion/successful exit. No numerical value approved; 30-day grace, 24-hour export expiry and backup expiry are not SLOs. Source amendments independently reviewed at f7051ad and locally integrated; public publication/merge and final process/package approval remain pending |
+| DEC-81-003 — approved specification-closure disposition | CBD81-BOUNDS-001 permits specification acceptance with exact freshness/lateness classification bounds unset pending evidence-based selection and Executive approval. This is a closure-stage exception, not a beta applicability deferral. CBD13-LIFECYCLE-001 approves the lifecycle meanings in section 6.1 | MT-79-003/008 require verified classification bounds plus source/release prerequisites before any rate, healthy status, numeric release, D14 start or credit. MT-79-010 duration baseline requires interval, terminal-state, source, bucket and release proof; compliance/near-breach claims require approved lifecycle-specific commitments and actionable approach rules. Applicable beta evidence is still required for expansion/successful exit. No numerical value approved; 30-day grace, 24-hour export expiry and backup expiry are not SLOs. Source amendments independently reviewed at f7051ad and merged in PR #240; final process/package approval remains pending |
 | DEC-81-004 — settled | Executive approved technical correctness assessment through defined synthetic QA against approved alert rules, separate from production metrics, customer data and support data. CBD-13-AC05 and CBD-79-AC03 were clarified in live Jira; the other four alert measures remain unchanged | Manager communicated the explicit decision September 5, 2026. OQ-79-002 is resolved by this clarification; no new production metric, behavioral tracking or human reading of customer alerts. Defined synthetic QA and its execution evidence remain delivery requirements |
-| DEF-81-001 — approved deferral; future source gate | Permission does not prove action or viewing; budget/effective dates do not prove occurrence times; mutation/deletion can erase historical A/B evidence. Executive approved full MT-78-004 and MT-78-005/006 Private MVP deferral in CBD13-RETENTION-001 | Approved criterion disposition, not a current retention/breadth success requirement or evidence of computability. CBD-78 amendment merged in PR #237 at 01ca789; CBD-80 deferred-source follow-through is included in reviewed candidate 7754c5c, locally integrated with public publication/merge pending. Future reopening requires an approved operational-source contract proving actual actions, occurrence times and historical A/B evidence under mutation/deletion, without behavioral events, activity history, retained membership or audit-purpose reuse; implementation and release gates remain |
-| DEF-81-002 — resolved population correction | CBD13-ACTIVATION-001 approved distinct populations, state immediately before exclusive UTC close, final-24-hour subject grace, matching rate membership and consumer-specific source intersections; broad shared MS-80-004 preserved | Independently approved in CBD13-ACTIVATION-REVIEW-001 and merged in PR #236 at c757f24. Prior MT-77-001/002/003/006 population inconsistency is resolved, not a remaining baseline blocker. This establishes source semantics only: profile/category meanings and MT-77-005 deferral are now approved separately; their source amendments are independently reviewed and locally integrated; public publication/merge, actual bindings and release verification remain gates, with first-simultaneous timestamp proof required before future timing applicability |
+| DEF-81-001 — approved deferral; future source gate | Permission does not prove action or viewing; budget/effective dates do not prove occurrence times; mutation/deletion can erase historical A/B evidence. Executive approved full MT-78-004 and MT-78-005/006 Private MVP deferral in CBD13-RETENTION-001 | Approved criterion disposition, not a current retention/breadth success requirement or evidence of computability. CBD-78 amendment merged in PR #237 at 01ca789; CBD-80 deferred-source follow-through is included in reviewed candidate 7754c5c, merged in PR #239. Future reopening requires an approved operational-source contract proving actual actions, occurrence times and historical A/B evidence under mutation/deletion, without behavioral events, activity history, retained membership or audit-purpose reuse; implementation and release gates remain |
+| DEF-81-002 — resolved population correction | CBD13-ACTIVATION-001 approved distinct populations, state immediately before exclusive UTC close, final-24-hour subject grace, matching rate membership and consumer-specific source intersections; broad shared MS-80-004 preserved | Independently approved in CBD13-ACTIVATION-REVIEW-001 and merged in PR #236 at c757f24. Prior MT-77-001/002/003/006 population inconsistency is resolved, not a remaining baseline blocker. This establishes source semantics only: profile/category meanings and MT-77-005 deferral are now approved separately; their source amendments are independently reviewed and merged in PR #239; actual bindings and release verification remain gates, with first-simultaneous timestamp proof required before future timing applicability |
 | DEP-81-001 | CBD-122 must bind all nine reliability metrics to its closed attribute universe; CBD-80 must bind operational sources to actual schemas without changing meaning | Owning implementation packages and independent review; unavailable until binding and release-control verification. Source registration is not implementation evidence |
 
 The measurement meanings in `OQ-77-003/004` are settled by
@@ -322,7 +332,7 @@ and the account OR transaction choice. The decisions do not approve full CBD-82
 or CBD-30 designs, physical schemas, permissions, lifecycle mechanics or retention
 changes. Source candidate `7754c5cf6efff4cdd7718dd9022fbb34bf75d2e4` implements
 these meanings and the MT-77-005 deferral; `CBD13-USABLE-REVIEW-001` independently
-approved it. It is locally integrated, with public publication/merge pending. CBD-82/CBD-30 and CBD-77/CBD-80
+approved it. It is merged in PR #239. CBD-82/CBD-30 and CBD-77/CBD-80
 owners still owe authorized bindings and verification of exact association,
 lifecycle, category identity and current-target predicates. These are integration
 and implementation dependencies, not undecided measurement meanings. MT-77-005
@@ -342,8 +352,7 @@ document is silently amended by this proposal.
 
 `CBD13-LIFECYCLE-001` approves these meanings for CBD-79 and matching CBD-80
 MS-80-023/028/029/030. Source revision
-`f7051ada2e73164814a689fdbf684edcf6b5511a` is independently reviewed and locally
-integrated; public publication/merge remains pending. The fixed local CBD-79
+`f7051ada2e73164814a689fdbf684edcf6b5511a` is independently reviewed and merged in PR #240. The fixed local CBD-79
 approved lifecycle contract and CBD-80 approved lifecycle derivation contract
 carry these meanings. Scoped review/clearance is distinct from final integrated
 package acceptance, physical binding and runtime proof.
@@ -398,6 +407,70 @@ purpose reuse is authorized. Grace, export expiry and backup expiry are not
 performance SLOs; archival has no invented countdown. Exact numerical thresholds,
 commitments, bindings and release verification remain future requirements under
 the approved section 2/DEC-81-003 disposition.
+
+## 6.2 Approved sync populations and source-version handoff
+
+CBD13-SYNC-POPULATIONS-001 approves the following exact measurement choices.
+Matching CBD-79/80 changes under CBD13-FINAL-SOURCES-SPEC-001 are in progress,
+unreviewed/unmerged; this decision follow-through does not claim implementation.
+
+R(D) is the distinct operational sync runs with a first Worker attempt and an
+evidenced terminal transition in UTC day D=[00:00,next 00:00). Bounded retries
+belong to one run; never-attempted queued work is excluded. S(D) is the subset
+terminally cancelled because superseded, evidenced by the operational contract,
+never inferred merely from a later run. MT-79-001 uses successful runs in
+R(D) minus S(D) over count(R(D) minus S(D)). MT-79-002 uses durations for all R(D),
+terminal timestamp minus first Worker-attempt timestamp including retry/backoff.
+MT-79-004 uses runs in R(D) consuming at least one retry over count(R(D)), once
+per run even with multiple retries. MT-79-005 uses terminal technical failures
+in R(D) over count(R(D)); safe failure classes come only from the failed subset.
+
+MT-79-002/004/005 include cancelled/superseded work. Valid cancellation is never
+success or relabeled technical failure; other approved cancellations stay unless
+an explicit exclusion applies. MT-79-001/005 are not complements. Unknown outcome
+or identity mappings block computation, not inferred success/failure. MT-79-003
+remains the separately approved authorized-active-connection snapshot.
+
+MS-80-021 needs consumer-specific Worker counts: supersession-excluded for
+MT-79-001, all-R(D) denominators for MT-79-004/005; a single filtered scalar
+cannot serve all three. MS-80-022 duration buckets cover all R(D); MS-80-024 retry
+buckets cover all R(D), including zero; MS-80-025 safe classes cover only failed
+runs. CBD-103 TD-103-007/008/010 and CBD-92 SA-92-001/AN-92-003/005/006 establish
+operational lifecycle/privacy authority; the explicit Executive decision supplies
+these measurement choices. No blanket schedule citation substitutes for them.
+
+Monday 23:58 first attempt, Tuesday 00:02 retry and Tuesday 00:05 terminal
+transition contribute once Tuesday with seven-minute duration, nothing Monday.
+Exact midnight belongs to the new day. Pending work has no terminal credit and
+cannot imply success. Duplicate delivery adds no contribution; postterminal replay
+needs an operational identity rule, never retained measurement membership. These
+are specification expectations, not executed tests. Preserve the existing closed
+release schema: no cancellation-reason/ID disclosure, per-run timings, tracking,
+retained measurement history or new source/metric/destination.
+
+## 6.3 Approved invitation sent coverage
+
+CBD13-INVITATION-SENT-001 covers sent through CBD-73's existing privacy-preserving
+sent/pending customer projection and defined synthetic lifecycle checks, not a
+production sent measure. Projection is not proof of dispatch, delivery, receipt
+or recipient activity. MT-78-002/003 and MS-80-014 retain their terminal-only
+populations and outputs; sent is excluded. No sent count, rate, breakdown,
+tracking or retained measurement history is added. Falling acceptance can prompt
+synthetic flow investigation but cannot establish a production sending trend.
+
+The defined synthetic requirements reference INV-73-05/13/19, VER-73-11 and
+CBD-73 section 4.5: ordinary Pending, internally Delivered/restricted Failed,
+privately terminal real records until projection_inactive_at, and synthetic
+non-delivering requests may share equivalent sent/pending projections. Verify
+equivalent projections, controls and timing; fixed expiry despite delayed
+processing/private causes; normalized cancellation/resend predecessor-successor
+behavior; unchanged terminal metric populations/outputs. TR-73-02 durable dispatch
+is the separate atomic Pending transition, not delivery proof. Restricted evidence
+cannot be reused to manufacture a send count. These synthetic checks are required
+delivery evidence, not execution claimed here. CBD-78/80 source corrections remain
+in progress under CBD13-FINAL-SOURCES-SPEC-001 and require independent review
+and integration; this package does not edit CBD-73 or assert those corrections
+have landed.
 
 ## 7. Synthetic alert correctness assessment
 
