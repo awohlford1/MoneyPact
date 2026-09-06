@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft v0.3 — package not approved.** AC01/02/06 retain their definition dispositions. AC03/04 have an Executive-approved Private MVP deferral, not measured fulfillment. AC05 remains separately deferred. No package approval or measured beta success is established |
-| Document version | 0.3 |
+| Status | **Candidate amendment v0.4**. Exact sent-projection and synchronization-population corrections approved by `CBD13-INVITATION-SENT-001` / `CBD13-SYNC-POPULATIONS-001` within the affected package scope. Prior decisions and merged lifecycle amendment remain intact. This candidate awaits independent review; no whole-package approval, runtime evidence, numerical release or Done claim |
+| Document version | 0.4 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-78](https://cobudget.atlassian.net/browse/CBD-78) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
@@ -31,13 +31,13 @@
 
 **The exclusion is the substance of the criterion.** A transaction dated before the space's first period is not classifiable, and counting it would report a data-entry choice as a product failure. Naming the eligible set is what stops that.
 
-### CBD-78-AC02 — invitation states are measurable
+### CBD-78-AC02 — invitation terminal measures and sent projection coverage
 
-**Status: Met.**
+**Status: Approved criterion clarification incorporated; independent candidate review pending.** `CBD13-INVITATION-SENT-001` preserves MT-78-002/003 and MS-80-014 as terminal-only metrics across `accepted`, `expired`, `revoked`, `declined`; `sent` is excluded from terminal denominators and outputs.
 
-`MT-78-002` measures acceptance and `MT-78-003` the terminal-state distribution across `accepted`, `expired`, `revoked` and `declined`. **`sent` is excluded from both denominators**, because an invitation still open has not been refused and counting elapsed time as refusal would make the rate a function of when it was measured.
+Sent coverage is the existing CBD-73 §2/§4.5 sent/pending projection and defined synthetic lifecycle validation, not a production sent measure or proof of dispatch, delivery, receipt or recipient activity. Metrics' Approved invitation sent coverage section names the equivalent ordinary/Delivered/Failed/privately-terminal/synthetic projections, fixed deadline and normalized cancellation/resend rules. It references INV-73-05/13/19, VER-73-11 and the existing §4.5 equivalence suite; no executed QA is claimed.
 
-The three failure states are reported separately at `MT-78-003` because they need opposite responses — `expired` is an attention problem, `declined` a framing one — and a single acceptance rate hides which is happening.
+The unsupported production sending-trend condition is removed from MT-78-002. Falling terminal acceptance may prompt synthetic flow investigation within privacy limits. Existing terminal population/output and retention/alert dispositions remain unchanged. Manager reports fresh CBD-78-AC02 and matching-description read-back verified after this exact clarification; this report maps it and does not change Jira.
 
 ### CBD-78-AC03 — collaboration usage distinguishes viewing, editing, acknowledgement, commenting
 
@@ -117,3 +117,20 @@ The denominator is exact because `AB-74-002` makes **exactly one mandatory in-ap
 | 0.3 | September 5, 2026 | Codex Specification | Approved Private MVP action-breadth and historical-retention deferral; corrected evidence claims; preserved IDs, destinations, baselines and alert/cadence decisions | Deferral approved; remaining package Draft |
 | 0.2 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **`OQ-78-002` decided.** Both alert measures are authorized for release on four conditions. The three that bound who sees the figure were already stated; the fourth is new and is what the rule's broader first sentence required — **a one-way ratchet**: these figures may justify making alerts fewer, softer or less frequent and may never justify making them more insistent. The three sources `AB-74-014` cites are all member-facing and do not dispose of that sentence; the ratchet forecloses it structurally rather than by intent. `CBD-78-AC06` moves from met-but-unreleasable to met | Draft; Product Owner approval required |
 | 0.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Initial package: eight metrics, `AD-78-001`, `RT-78-001`, the `AB-74-014` release constraint at metrics §6, structural audit, and this report. Records `OQ-78-001` on the half-right scope source, `OQ-78-002` on the anti-surveillance reading, and `OQ-78-003` on the deferred segmentation | Superseded by 0.2 |
+
+## Final source-correction amendment record
+
+| Version | Authority | Change | Status |
+| --- | --- | --- | --- |
+| 0.4 | `CBD13-INVITATION-SENT-001`; `CBD13-SYNC-POPULATIONS-001` | Sent projection/synthetic-validation clarification and metric-specific terminal-day synchronization populations, with corresponding shared source derivations; all unrelated decisions preserved | Candidate; independent review pending; no runtime or executed-QA claim |
+
+## Final source-correction traceability and CBD-81 handoff
+
+| Criterion / decision | Scoped evidence | Remaining gate |
+| --- | --- | --- |
+| CBD-78-AC02; CBD13-INVITATION-SENT-001 | CBD-78 Approved invitation sent coverage and CBD-80 MS-80-014: existing sent/pending projection plus defined synthetic validation; terminal-only MT-78-002/003 unchanged; no production send count or trend claim | Existing CBD-73 scenario/implementation/privacy evidence and release gates; synthetic execution is future |
+| CBD-79-AC01; CBD13-AC02; CBD13-SYNC-POPULATIONS-001 | CBD-79 MT-79-001/002/004/005 and Approved synchronization terminal-day populations: exact R(D)/S(D), terminal-day attribution, per-metric cancellations/retries/failures and duration; MT-79-003 snapshot unchanged | Operational run identity, first-attempt/terminal timestamps, retry and outcome mappings, safe buckets and release evidence |
+| CBD-80-AC01/06; CBD13-SYNC-POPULATIONS-001 | MS-80-021 separate consumer counts; MS-80-022 all-R duration; MS-80-024 all-R retry buckets including zero; MS-80-025 failed subset with all-R denominator | Do not share one filtered scalar, infer supersession, count duplicate delivery, or reuse measurement membership for replay identity |
+| CBD-81 source/baseline integration | Both exact decisions resolve the two inherited source-definition gaps identified in CBD13-FINAL-REVIEW-001, subject to independent review of this candidate | CBD-81 must update source-version and criterion traceability after integration; applicable baseline/release/bounds, four prior metric deferrals and executed-QA gates remain |
+
+The selected meanings are Executive-approved; this candidate is not independently approved by its author. Definitions do not establish observed synchronization, dispatch/delivery, synthetic QA execution, source feasibility, numerical release or successful beta evaluation. All prior lifecycle, profile/category, activation, retention, usable-timing, privacy and bounds decisions remain in force. No new source IDs, metrics, owners, destinations, release labels, tracking or retained measurement history are added.

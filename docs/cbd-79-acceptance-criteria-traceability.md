@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Candidate amendment v0.4**. Exact lifecycle semantics, later-bound specification-closure disposition and synthetic incorrect-alert QA route approved in `CBD13-LIFECYCLE-001`, `CBD81-BOUNDS-001` and `CBD13-CORRECTNESS-001`. This candidate awaits independent review; no whole-package approval, runtime proof, numerical release or Done claim. Prior decisions remain in force. |
-| Document version | 0.4 |
+| Status | **Candidate amendment v0.5**. Exact sent-projection and synchronization-population corrections approved by `CBD13-INVITATION-SENT-001` / `CBD13-SYNC-POPULATIONS-001` within the affected package scope. Prior decisions and merged lifecycle amendment remain intact. This candidate awaits independent review; no whole-package approval, runtime evidence, numerical release or Done claim |
+| Document version | 0.5 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-79](https://cobudget.atlassian.net/browse/CBD-79) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
@@ -152,3 +152,20 @@ The conventions record shape has no response field, so metrics §5 adds one, and
 Manager reports fresh Jira read-back verification of the scoped closure exception in CBD-79-AC01/02/03/06, CBD-13-AC02/05/07 and CBD-81-AC01/06. Jira remains authoritative; this report maps the approved semantics and does not stage or apply Jira updates. The exception affects specification closure only, not Private MVP metric applicability. No expansion or successful beta evaluation exit is permitted without required evidence.
 
 CBD-81 integration must distinguish rates needing approved classification bounds from a duration baseline that can proceed after interval/terminal/source/bucket/release gates. Retain all approved metric/source slots, destinations and baseline periods. Do not use restoration grace, export expiry or backup expiry as SLOs. Runtime feasibility, synthetic QA execution, numerical classification/commitment selection and release controls remain future; independent review of this candidate is pending. No whole-package approval or Jira Done certification follows from these amendments.
+
+## Final source-correction amendment record
+
+| Version | Authority | Change | Status |
+| --- | --- | --- | --- |
+| 0.5 | `CBD13-INVITATION-SENT-001`; `CBD13-SYNC-POPULATIONS-001` | Sent projection/synthetic-validation clarification and metric-specific terminal-day synchronization populations, with corresponding shared source derivations; all unrelated decisions preserved | Candidate; independent review pending; no runtime or executed-QA claim |
+
+## Final source-correction traceability and CBD-81 handoff
+
+| Criterion / decision | Scoped evidence | Remaining gate |
+| --- | --- | --- |
+| CBD-78-AC02; CBD13-INVITATION-SENT-001 | CBD-78 Approved invitation sent coverage and CBD-80 MS-80-014: existing sent/pending projection plus defined synthetic validation; terminal-only MT-78-002/003 unchanged; no production send count or trend claim | Existing CBD-73 scenario/implementation/privacy evidence and release gates; synthetic execution is future |
+| CBD-79-AC01; CBD13-AC02; CBD13-SYNC-POPULATIONS-001 | CBD-79 MT-79-001/002/004/005 and Approved synchronization terminal-day populations: exact R(D)/S(D), terminal-day attribution, per-metric cancellations/retries/failures and duration; MT-79-003 snapshot unchanged | Operational run identity, first-attempt/terminal timestamps, retry and outcome mappings, safe buckets and release evidence |
+| CBD-80-AC01/06; CBD13-SYNC-POPULATIONS-001 | MS-80-021 separate consumer counts; MS-80-022 all-R duration; MS-80-024 all-R retry buckets including zero; MS-80-025 failed subset with all-R denominator | Do not share one filtered scalar, infer supersession, count duplicate delivery, or reuse measurement membership for replay identity |
+| CBD-81 source/baseline integration | Both exact decisions resolve the two inherited source-definition gaps identified in CBD13-FINAL-REVIEW-001, subject to independent review of this candidate | CBD-81 must update source-version and criterion traceability after integration; applicable baseline/release/bounds, four prior metric deferrals and executed-QA gates remain |
+
+The selected meanings are Executive-approved; this candidate is not independently approved by its author. Definitions do not establish observed synchronization, dispatch/delivery, synthetic QA execution, source feasibility, numerical release or successful beta evaluation. All prior lifecycle, profile/category, activation, retention, usable-timing, privacy and bounds decisions remain in force. No new source IDs, metrics, owners, destinations, release labels, tracking or retained measurement history are added.

@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft v0.3 — package not approved.** Eight metric definitions retained. Executive-approved Private MVP deferral applies to full `MT-78-004` action breadth and historical `MT-78-005`/`MT-78-006` retention. Unavailable, not zero or measured success. The existing alert decision and four release conditions remain settled |
-| Document version | 0.3 |
+| Status | **Candidate amendment v0.4**. Exact sent-projection and synchronization-population corrections approved by `CBD13-INVITATION-SENT-001` / `CBD13-SYNC-POPULATIONS-001` within the affected package scope. Prior decisions and merged lifecycle amendment remain intact. This candidate awaits independent review; no whole-package approval, runtime evidence, numerical release or Done claim |
+| Document version | 0.4 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-78](https://cobudget.atlassian.net/browse/CBD-78) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
@@ -110,14 +110,14 @@ Every metric is `Class: aggregate-state`, `Release form: global`, `Boundary: wor
 | Numerator | Invitations in the `accepted` state |
 | Denominator | Invitations in any terminal state — `accepted`, `expired`, `revoked`, or `declined`. **`sent` is excluded**, because an invitation still open has not failed and counting it as unaccepted would report elapsed time as refusal |
 | Measurement source | `invitation.terminal_state_count` *(proposed)* |
-| Interval basis | Opens when an invitation is sent; closes when it reaches any terminal state |
+| Interval basis | Opening reference is the existing CBD-73 sent/pending projection, not dispatch/delivery proof; this metric counts only authoritative terminal invitation state and adds no production sent count |
 | Window | Calendar week, UTC, on invitations reaching a terminal state within the window |
 | Suppression | `withheld — population below release threshold` |
 | Connectivity | `MANUAL-OK` |
 | Data source | Application database, invitation table |
 | Collection method | Scheduled aggregate in the Worker |
 | Review cadence | Weekly *(CBD-81 confirms)* |
-| Unhealthy condition | Acceptance falls while invitations continue to be sent, which points at the invitation surface rather than at willingness |
+| Unhealthy condition | Falling terminal acceptance may prompt synthetic invitation-flow investigation against CBD-73 within existing privacy limits; no production sending trend or recipient activity is inferred |
 
 ### MT-78-003 — Invitation terminal-state distribution
 
@@ -128,7 +128,7 @@ Every metric is `Class: aggregate-state`, `Release form: global`, `Boundary: wor
 | Numerator | Invitations in each of `accepted`, `expired`, `revoked`, `declined`, reported as four figures |
 | Denominator | Invitations reaching any terminal state, as `MT-78-002`. **`sent` is excluded on the same reasoning**: it is not a terminal state, and an invitation still open has not failed |
 | Measurement source | `invitation.terminal_state_count` *(proposed)* |
-| Interval basis | Opens when an invitation is sent; closes at its terminal state |
+| Interval basis | Opening reference is the existing CBD-73 sent/pending projection, not dispatch/delivery proof; this metric counts only authoritative terminal invitation state and adds no production sent count |
 | Window | Calendar week, UTC |
 | Suppression | `withheld — population below release threshold`. **This metric withholds as a whole, not per state** — releasing three of four figures would let the fourth be derived from `MT-78-002` |
 | Connectivity | `MANUAL-OK` |
@@ -310,3 +310,16 @@ Per conventions §6, and in addition to the per-metric rules above.
 | --- | --- | --- | --- | --- |
 | 0.3 | September 5, 2026 | Codex Specification | Incorporates Executive-approved Private MVP action-breadth and historical-retention deferral; corrects evidence claims; preserves IDs, destinations, baselines, cadence and alert decisions | Deferral approved; remaining package Draft |
 | 0.2 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Existing alert decision and four conditions, preserved in §6 and companion revision history | Superseded by 0.3; alert decision retained |
+## Approved invitation sent coverage
+
+`CBD13-INVITATION-SENT-001` clarifies sent coverage as the existing CBD-73 §2/§4.5 privacy-preserving sent/pending customer projection plus defined synthetic lifecycle validation. It is not proof of dispatch, delivery, receipt or recipient activity. Ordinary Pending, internally Delivered, restricted Failed, privately terminal real records until `projection_inactive_at`, and synthetic non-delivering requests can share the same projection. `TR-73-02` durable real dispatch is a separate atomic Pending transition, not delivery proof; restricted delivery/security evidence cannot be reused to invent a send count.
+
+MT-78-002/003 retain their authoritative terminal-only population and outputs: `accepted`, `expired`, `revoked`, `declined`. `sent` is excluded from terminal denominators. The projection does not create terminal measurement membership or add a sent count, rate, breakdown, tracking or retained measurement history. A falling acceptance rate may prompt synthetic invitation-flow investigation; it does not establish a production sending trend.
+
+Synthetic validation must reference the existing CBD-73 negative/recovery inventory `INV-73-05`, `INV-73-13`, `INV-73-19` and `VER-73-11`, plus the §4.5 equivalence suite: `DCL-73-02` / `DCL-73-06` / `DCL-73-08` / `DCL-73-10` through `DCL-73-12` and `VT-94-009` through `VT-94-017`. Verify equivalent projections, controls and timing across ordinary, delivered, failed, privately terminal and synthetic requests; fixed expiry despite delayed processing or private causes; normalized cancellation/resend with one predecessor and one independently evaluated successor; and unchanged terminal metric populations/outputs. No customer/support or restricted evidence is repurposed. These are defined validation requirements, not executed tests or runtime proof; CBD-73 implementation/privacy and release gates remain.
+
+## Final source-correction amendment record
+
+| Version | Authority | Change | Status |
+| --- | --- | --- | --- |
+| 0.4 | `CBD13-INVITATION-SENT-001`; `CBD13-SYNC-POPULATIONS-001` | Sent projection/synthetic-validation clarification and metric-specific terminal-day synchronization populations, with corresponding shared source derivations; all unrelated decisions preserved | Candidate; independent review pending; no runtime or executed-QA claim |

@@ -92,10 +92,55 @@ def metric_blocks(text: str) -> dict[str, str]:
     return blocks
 
 
+# Focused approved sent/synchronization requirement groups. Documentation only.
+FINAL_SOURCE_RULES = {'Sent projection': ('## Approved invitation sent coverage',
+                     ('CBD13-INVITATION-SENT-001',
+                      'not proof of dispatch, delivery, receipt or recipient activity',
+                      'synthetic non-delivering requests',
+                      '`sent` is excluded from terminal denominators',
+                      'does not create terminal measurement membership')),
+ 'Synthetic evidence': ('## Approved invitation sent coverage',
+                        ('INV-73-05',
+                         'INV-73-13',
+                         'INV-73-19',
+                         'VER-73-11',
+                         'fixed expiry despite delayed processing or private causes',
+                         'one predecessor and one independently evaluated successor',
+                         'unchanged terminal metric populations/outputs',
+                         'not executed tests or runtime proof')),
+ 'Acceptance boundary': ('### MT-78-002',
+                         ('**`sent` is excluded**',
+                          'synthetic invitation-flow investigation',
+                          'no production sending trend',
+                          'not dispatch/delivery proof')),
+ 'Terminal boundary': ('### MT-78-003',
+                       ('**`sent` is excluded',
+                        'only authoritative terminal invitation state',
+                        'adds no production sent count'))}
+
+
+def final_source_checks(text: str, audit: Audit) -> None:
+    for label, (marker, required) in FINAL_SOURCE_RULES.items():
+        start = text.find(marker)
+        if start < 0:
+            body = ""
+        elif marker.startswith("|"):
+            body = text[start:].splitlines()[0]
+        else:
+            end = re.search(r"\n#{2,3} ", text[start + len(marker):])
+            stop = start + len(marker) + end.start() if end else len(text)
+            body = text[start:stop]
+        missing = [phrase for phrase in required if phrase not in body]
+        audit.check(not missing,
+                    f"docs/cbd-78-engagement-and-retention-metrics.md: {label} missing approved invariant(s): {missing}")
+
+
+
 def main() -> int:
     audit = Audit()
     text = METRICS.read_text(encoding="utf-8")
     conventions = CONVENTIONS.read_text(encoding="utf-8")
+    final_source_checks(text, audit)
 
     # --- the package pins the conventions version it was written against ----
     version = re.search(r"\| Document version \| ([\d.]+) \|", conventions)

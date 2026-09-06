@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Candidate amendment v0.4**. Exact lifecycle semantics, later-bound specification-closure disposition and synthetic incorrect-alert QA route approved in `CBD13-LIFECYCLE-001`, `CBD81-BOUNDS-001` and `CBD13-CORRECTNESS-001`. This candidate awaits independent review; no whole-package approval, runtime proof, numerical release or Done claim. Prior decisions remain in force. |
-| Document version | 0.4 |
+| Status | **Candidate amendment v0.5**. Exact sent-projection and synchronization-population corrections approved by `CBD13-INVITATION-SENT-001` / `CBD13-SYNC-POPULATIONS-001` within the affected package scope. Prior decisions and merged lifecycle amendment remain intact. This candidate awaits independent review; no whole-package approval, runtime evidence, numerical release or Done claim |
+| Document version | 0.5 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-79](https://cobudget.atlassian.net/browse/CBD-79) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
@@ -95,12 +95,12 @@ Every metric is `Release form: global` and `Boundary: worker`. `Class` and `Owne
 | Class | `reliability-telemetry` |
 | Owner | `synchronization` |
 | Purpose | Whether provider synchronization completes. The first measure that would show CBD-52's work failing in production |
-| Formula | successful_sync_runs ÷ attempted_sync_runs |
-| Numerator | Sync runs reaching a success outcome class |
-| Denominator | Sync runs attempted in the window, excluding runs cancelled by a superseding run — `SD-071-*` makes a stale run's cancellation correct behaviour, not a failure |
+| Formula | successful runs in R(D) minus S(D) / count(R(D) minus S(D)) |
+| Numerator | Successful runs in the same R(D) minus S(D) population; cancellation is never success or relabeled failure |
+| Denominator | Distinct attempted runs terminal in D, excluding evidenced terminal supersession cancellations S(D); other approved cancellations remain unless explicitly excluded. R(D)/S(D) are defined below under CBD13-SYNC-POPULATIONS-001 and TD-103-007/008/010 |
 | Measurement source | `sync_run.outcome_class_count` *(proposed)* |
-| Interval basis | Opens when a sync run starts; closes when it reaches a terminal outcome class |
-| Window | Calendar day, UTC |
+| Interval basis | First Worker attempt to evidenced terminal outcome; bounded retries remain part of one operational run |
+| Window | UTC terminal day D = [00:00, next 00:00); attribute each distinct attempted run once by its evidenced terminal transition, not first-attempt day |
 | Suppression | `withheld — population below release threshold`. **Runs, not people**, so this reaches releasable volume before any `aggregate-state` metric |
 | Connectivity | `CONN-REQUIRED` — there is no synchronization without a provider connection |
 | Data source | Worker job telemetry, on the `AN-92-003` S1 allowlist. **No connection, account, or space identifier** |
@@ -116,12 +116,12 @@ Every metric is `Release form: global` and `Boundary: worker`. `Class` and `Owne
 | Class | `reliability-telemetry` |
 | Owner | `synchronization` |
 | Purpose | Whether synchronization is slow before it is failing. Latency degrades first |
-| Formula | p50 and p90 of sync run duration, in seconds |
+| Formula | p50 and p90 of (terminal timestamp - first Worker-attempt timestamp), in seconds, over all R(D) |
 | Numerator | `n/a` — a distribution, not a rate |
-| Denominator | `n/a` — the measured population is the numerator population |
+| Denominator | `n/a` — distribution over all R(D), including cancellations and supersession; not a success-only population |
 | Measurement source | `sync_run.duration_bucket_count` *(proposed)* |
-| Interval basis | Opens when a sync run starts; closes at its terminal outcome |
-| Window | Calendar day, UTC |
+| Interval basis | First Worker attempt to terminal outcome, including retries and backoff; time to terminal outcome, not success-only latency |
+| Window | UTC terminal day D = [00:00, next 00:00); attribute each distinct attempted run once by its evidenced terminal transition, not first-attempt day |
 | Suppression | `withheld — population below release threshold` |
 | Connectivity | `CONN-REQUIRED` |
 | Data source | Worker job telemetry. **Duration buckets, per `AN-92-003`, not per-run timings** |
@@ -158,12 +158,12 @@ Every metric is `Release form: global` and `Boundary: worker`. `Class` and `Owne
 | Class | `reliability-telemetry` |
 | Owner | `synchronization` |
 | Purpose | Whether the system is working harder for the same result. Retries are invisible in a success rate and expensive in provider cost |
-| Formula | retried_sync_runs ÷ attempted_sync_runs |
-| Numerator | Sync runs that consumed at least one retry attempt |
-| Denominator | Sync runs attempted in the window |
+| Formula | runs in R(D) consuming at least one retry / count(R(D)) |
+| Numerator | Distinct runs in R(D) consuming at least one retry; one count per run even with multiple retries, including subsequently cancelled/superseded work |
+| Denominator | All R(D), including valid cancellations and supersession; never-attempted queued and pending nonterminal work excluded |
 | Measurement source | `sync_run.retry_bucket_count` *(proposed)* |
-| Interval basis | Opens when a sync run starts; closes at its terminal outcome, with retry count as a bucket |
-| Window | Calendar day, UTC |
+| Interval basis | First Worker attempt to terminal outcome; retry count covers all bounded retries in that one operational run, including zero |
+| Window | UTC terminal day D = [00:00, next 00:00); attribute each distinct attempted run once by its evidenced terminal transition, not first-attempt day |
 | Suppression | `withheld — population below release threshold` |
 | Connectivity | `CONN-REQUIRED` |
 | Data source | Worker job telemetry |
@@ -179,12 +179,12 @@ Every metric is `Release form: global` and `Boundary: worker`. `Class` and `Owne
 | Class | `reliability-telemetry` |
 | Owner | `synchronization` |
 | Purpose | Whether failures are being surfaced rather than silently dropped, which `HG-102-019` requires of every background path |
-| Formula | terminal_failures ÷ attempted_sync_runs, and the distribution across safe error classes |
-| Numerator | Sync runs reaching a terminal failure state, by safe error class |
-| Denominator | Sync runs attempted in the window |
+| Formula | terminal technical failures in R(D) / count(R(D)); safe failure-class distribution over only the failed subset |
+| Numerator | Terminal technical failures in R(D), by approved safe failure class; cancellation is not failure |
+| Denominator | All R(D), including valid cancellations and supersession; MT-79-001/005 are not complements |
 | Measurement source | `sync_run.terminal_failure_class_count` *(proposed)* |
-| Interval basis | Opens when a sync run starts; closes when it reaches a terminal failure state |
-| Window | Calendar day, UTC |
+| Interval basis | First Worker attempt to evidenced terminal outcome; failure-class membership requires an approved terminal technical failure mapping |
+| Window | UTC terminal day D = [00:00, next 00:00); attribute each distinct attempted run once by its evidenced terminal transition, not first-attempt day |
 | Suppression | `withheld — population below release threshold`, applied to the whole distribution rather than per class |
 | Connectivity | `CONN-REQUIRED` |
 | Data source | Worker job telemetry. **Safe error classes only**, per the `AN-92-003` allowlist — no provider message, no payload, no identifier |
@@ -346,7 +346,7 @@ Per conventions §6.
 
 **Runs and requests, not people.** Most denominators here count operations, which reach releasable volume faster than any population metric and are why reliability can be reviewed daily while engagement cannot.
 
-**Correct behaviour stays in the denominator.** `suppressed` notifications and cancelled superseded sync runs are correct outcomes; removing them would flatter every rate and hide a misconfiguration.
+**Cancellation rules are metric-specific.** MT-79-001 excludes only evidenced supersession S(D); MT-79-002/004/005 use all R(D), including valid cancellations. Cancellations are never successes or technical failures. The Approved synchronization terminal-day populations contract governs these distinctions under CBD13-SYNC-POPULATIONS-001 and TD-103-007/008/010. Suppressed notifications remain in MT-79-006 as already defined.
 
 **Structural exclusions are metric-specific.** MT-79-003 uses the authorized active snapshot population and retains never-synced eligible connections. MT-79-008 counts available recipient instances only. MT-79-009/010 share completed-plus-failed accepted requests and exclude verification attempts, pending work and valid cancellations/restorations; the Approved lifecycle measurement contract defines the exact boundaries.
 
@@ -412,3 +412,28 @@ MT-79-010 may establish its duration baseline only after interval, terminal-stat
 | Version | Authority | Change | Status |
 | --- | --- | --- | --- |
 | 0.4 | `CBD13-LIFECYCLE-001`; `CBD81-BOUNDS-001`; `CBD13-CORRECTNESS-001` | Freshness snapshot; end-to-end alert lateness; accepted lifecycle start, both deletion scopes and source-specific application-controlled endpoints; matching completed-plus-failed rate/elapsed populations; synthetic correctness QA and explicit later-bound closure exception | Candidate; independent review pending. Existing approvals preserved; no measurement or executed QA claimed |
+
+## Approved synchronization terminal-day populations
+
+`CBD13-SYNC-POPULATIONS-001` supplies the measurement choices below. `TD-103-007` supplies current-state execution authority and duplicate/reordered-effect convergence; `TD-103-008` bounded attempts, backoff and terminal outcomes; `TD-103-010` committed watermark and recovery behavior. Those operational contracts do not independently authorize a new metric population. `SA-92-001` and `AN-92-003` / `AN-92-005` / `AN-92-006` preserve authority and purpose/privacy boundaries.
+
+R(D) is the set of distinct operational sync runs with a first Worker attempt and an evidenced terminal transition in UTC day D = [00:00, next 00:00). Bounded retries belong to one run. Never-attempted queued work is excluded. S(D) is the subset of R(D) terminally cancelled because superseded, evidenced by the operational contract, never inferred from a later run.
+
+| Metric | Population and derivation |
+| --- | --- |
+| MT-79-001 | Successful runs in R(D) minus S(D), divided by count(R(D) minus S(D)); the explicit supersession exclusion applies only here |
+| MT-79-002 | Duration distribution over all R(D), including cancellations/supersession: terminal timestamp minus first Worker-attempt timestamp, including retry/backoff; time to terminal outcome, not success-only latency |
+| MT-79-004 | Runs in R(D) consuming at least one retry divided by count(R(D)); one count per run even with multiple retries, including subsequently cancelled/superseded work |
+| MT-79-005 | Terminal technical failures in R(D) divided by count(R(D)); safe failure-class distribution covers only the failed subset; valid cancellations remain in the denominator and are not failures |
+
+Cancellation is never success or relabeled failure. Other approved cancellations remain unless an explicit metric exclusion exists. MT-79-001/005 are not complements. Unknown outcome or operational-identity mappings block computation, never imply success/failure. MT-79-003 remains the separately approved authorized active-connection snapshot and is unchanged.
+
+A run first attempted Monday 23:58, retried Tuesday 00:02 and terminal Tuesday 00:05 contributes once on Tuesday with seven-minute duration, and nothing on Monday. Exact midnight belongs to the new day. Pending work receives no terminal credit and cannot imply success. Duplicate delivery adds no contribution. Postterminal replay requires an approved operational identity rule; no retained measurement membership is introduced to resolve it.
+
+Physical run identity, first-attempt/terminal timestamps, retry count, terminal and supersession mappings, approved safe buckets and release controls require implementation evidence. Preserve closed release schemas: no new cancellation-reason labels, identifiers, per-run timing releases, tracking or retained measurement history. Existing owners, source consumers, destinations and baseline periods remain; no numerical release or runtime feasibility is claimed.
+
+## Final source-correction amendment record
+
+| Version | Authority | Change | Status |
+| --- | --- | --- | --- |
+| 0.5 | `CBD13-INVITATION-SENT-001`; `CBD13-SYNC-POPULATIONS-001` | Sent projection/synthetic-validation clarification and metric-specific terminal-day synchronization populations, with corresponding shared source derivations; all unrelated decisions preserved | Candidate; independent review pending; no runtime or executed-QA claim |
