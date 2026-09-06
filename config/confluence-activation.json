@@ -3,5 +3,5 @@
   "prerequisites": {"CBD-113": "Done", "CBD-114": "Done"},
   "owner_approval": null,
   "exclusive_writer_approval": null,
-  "smoke_target": null
+  "smoke_target": "future-feature-register"
 }

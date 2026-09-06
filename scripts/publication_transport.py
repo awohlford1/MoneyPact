@@ -8,6 +8,11 @@ import urllib.request
 from publication import MAX_BODY, SHA, PublicationError, json_object
 from tool_config import load_tool_config
 
+# Fixed tenant binding for scoped user API tokens; never discover or follow a
+# credential-bearing URL supplied by configuration or a response.
+CONFLUENCE_GATEWAY = "https://api.atlassian.com"
+CONFLUENCE_PREFIX = "/ex/confluence/868470c5-c51e-465d-85ad-13b3cc8bb40e/wiki/api/v2/pages/"
+
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -50,13 +55,19 @@ class Confluence:
         if values["CONFLUENCE_BASE_URL"] != "https://cobudget.atlassian.net":
             raise PublicationError("unapproved-confluence-origin")
         encoded = base64.b64encode((values["CONFLUENCE_EMAIL"] + ":" + values["CONFLUENCE_API_TOKEN"]).encode()).decode()
-        self.client = JsonClient(values["CONFLUENCE_BASE_URL"], "Basic " + encoded)
+        self.client = JsonClient(CONFLUENCE_GATEWAY, "Basic " + encoded)
+
+    @staticmethod
+    def page_path(page_id):
+        if not isinstance(page_id, str) or not page_id.isascii() or not page_id.isdecimal() or not page_id.strip("0"):
+            raise PublicationError("invalid-page-id")
+        return CONFLUENCE_PREFIX + page_id
 
     def get(self, page_id):
-        return self.client.request("/wiki/api/v2/pages/" + page_id + "?body-format=storage")
+        return self.client.request(self.page_path(page_id) + "?body-format=storage")
 
     def put(self, entry, body, version, head):
-        response = self.client.request("/wiki/api/v2/pages/" + entry["page_id"], "PUT", {
+        response = self.client.request(self.page_path(entry["page_id"]), "PUT", {
             "id": entry["page_id"], "status": "current", "title": entry["expected_title"],
             "body": {"representation": "storage", "value": body},
             "version": {"number": version, "message": "CBD-115 repository merge " + head},

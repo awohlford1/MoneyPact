@@ -1,5 +1,6 @@
 """Synthetic API fixtures and isolated Git repositories; never load real secrets."""
 
+import base64
 import copy
 import io
 import json
@@ -486,16 +487,32 @@ class TransportTests(unittest.TestCase):
         values["CONFLUENCE_BASE_URL"] = "https://cobudget.atlassian.net"
         with patch("publication_transport.load_tool_config", return_value=values), patch("publication_transport.JsonClient") as client:
             api = transport.Confluence()
+            authorization = base64.b64encode(b"fixture@example.invalid:synthetic").decode()
+            client.assert_called_once_with("https://api.atlassian.com", "Basic " + authorization)
+            prefix = "/ex/confluence/868470c5-c51e-465d-85ad-13b3cc8bb40e/wiki/api/v2/pages/"
+            api.get("100")
+            client.return_value.request.assert_called_once_with(prefix + "100?body-format=storage")
             client.return_value.request.return_value = page(DESIRED, 8)
             api.put(entry(), DESIRED, 8, HEAD)
             args = client.return_value.request.call_args.args
-            self.assertEqual(args[0:2], ("/wiki/api/v2/pages/100", "PUT"))
+            self.assertEqual(args[0:2], (prefix + "100", "PUT"))
             self.assertEqual(args[2]["version"]["number"], 8)
             self.assertEqual(args[2]["body"]["value"], DESIRED)
             for response in ({}, [], None, page(DESIRED, 9), dict(page(DESIRED, 8), id="200")):
                 client.return_value.request.return_value = response
                 with self.subTest(response=response), self.assertRaisesRegex(p.PublicationError, "invalid-update-acknowledgement"):
                     api.put(entry(), DESIRED, 8, HEAD)
+
+    def test_scoped_token_rejects_path_injection_before_requests(self):
+        api = object.__new__(transport.Confluence)
+        api.client = Mock()
+        for identity in ("../spaces", "100?get-draft=true", "100/../../pages/200", "https://elsewhere.invalid", "", "0", "-1", "１２", None, 100):
+            with self.subTest(identity=identity):
+                with self.assertRaisesRegex(p.PublicationError, "invalid-page-id"):
+                    api.get(identity)
+                with self.assertRaisesRegex(p.PublicationError, "invalid-page-id"):
+                    api.put(dict(entry(), page_id=identity), DESIRED, 8, HEAD)
+        api.client.request.assert_not_called()
 
     def test_history_validates_run_provenance_and_pagination(self):
         run = workflow_run()
@@ -919,7 +936,10 @@ class GitAndContractTests(unittest.TestCase):
                          ("      - name: Publish", "      - if: false\n        name: Publish"),
                          ("  push:", "  workflow_dispatch:\n  push:"), ("  push:", "  push:\n    paths: ['docs/**']"),
                          ("--run-id", "--wrong-run-id"), ("--run-attempt", "--wrong-run-attempt"),
-                         ("env:", "environment:"), ("prepare '", "publish '")):
+                         ("env:", "environment:"), ("prepare '", "publish '"),
+                         ("vars.CONFLUENCE_BASE_URL", "secrets.CONFLUENCE_BASE_URL"),
+                         ("vars.CONFLUENCE_EMAIL", "secrets.CONFLUENCE_EMAIL"),
+                         ("secrets.", "vars.")):
             with self.subTest(old=old), self.assertRaises(p.PublicationError):
                 validate_workflow(workflow.replace(old, new))
 
