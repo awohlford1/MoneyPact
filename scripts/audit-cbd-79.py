@@ -24,11 +24,8 @@ What it checks, and why each guard exists:
   the conventions record shape does not have. A response of "investigate" is
   an intention rather than an action and fails.
 
-* The two unsatisfied criteria stay visible. CBD-79-AC04 is blocked on
-  OQ-13-007 and no safety metric is defined; `incorrect` has no measurable
-  referent, so CBD-79-AC03 is met for four of its five states. Both are gaps in
-  approved criteria rather than omissions here, and both are the kind of
-  admission a later edit tidies away, so the audit keeps them present.
+* Safety exclusions stay visible, and the approved synthetic incorrect-alert
+  QA disposition is protected separately from production measurement.
 
 * acknowledged and dismissed are answered by reference to CBD-78's MT-78-007
   and MT-78-008, never redefined. Two metrics for one quantity is what the
@@ -103,10 +100,136 @@ def metric_blocks(text: str) -> dict[str, str]:
     return blocks
 
 
+# Approved lifecycle/closure invariants. Logical documentation checks only;
+# source availability, synthetic QA execution and release safety remain gates.
+LIFECYCLE_RULES = {'Synthetic QA': ('## 3. Synthetic incorrect-alert QA',
+                  ('CBD13-CORRECTNESS-001',
+                   'synthetic QA against approved alert rules',
+                   'separate from production metrics and customer/support data',
+                   'No new production metric',
+                   'no executed QA or pass is claimed')),
+ 'Correctness disposition': ('| ~~`OQ-79-002`~~ |',
+                             ('CBD13-CORRECTNESS-001',
+                              'synthetic QA',
+                              'No new metric or executed QA is claimed')),
+ 'Freshness metric': ('### MT-79-003',
+                      ('fresh_eligible_connections / eligible_connections',
+                       'T minus last committed successful sync watermark',
+                       'Never-synced eligible connections remain included',
+                       'missing, never zero',
+                       'D14 cannot start or earn credit')),
+ 'Lateness metric': ('### MT-79-008',
+                     ('Those same delivered recipient instances',
+                      'durable source revision first satisfying',
+                      'still-unavailable and failed instances excluded',
+                      'no baseline start or credit')),
+ 'Completion metric': ('### MT-79-009',
+                       ('completed_requests / (completed_requests + failed_requests)',
+                        'Accepted eligible authorized request after required '
+                        'verification/confirmation',
+                        'valid cancellation/restoration are excluded',
+                        'processor/backup obligations separately tracked')),
+ 'Elapsed metric': ('### MT-79-010',
+                    ('same completed-plus-failed terminal population as MT-79-009',
+                     'queue delay included',
+                     'regardless of acceptance week',
+                     'interval, terminal-state, source, bucket and release prerequisites',
+                     'No SLA/compliance or near-breach claim')),
+ 'Freshness snapshot': ('### Freshness snapshot',
+                        ('currently authorized and active',
+                         'orphaned, revoked, disconnected and lifecycle-stopped',
+                         'T minus that watermark',
+                         'Failed or superseded runs do not advance',
+                         'never-synced eligible connection remains in the denominator',
+                         'missing age, never zero')),
+ 'Alert interval': ('### End-to-end alert interval',
+                    ('durable source revision first satisfying',
+                     'settlement is required only where that rule requires',
+                     'evaluation and fan-out delay',
+                     'Viewing, acknowledgement, external sends and quiet-hour expiry are not '
+                     'endpoints',
+                     'Still-unavailable and failed instances are excluded',
+                     'cannot prove absence of dropped alerts')),
+ 'Accepted request': ('### Accepted request and success predicates',
+                      ('budget-space deletion and personal-account deletion',
+                       'accepted eligible authorized request after required '
+                       'verification/confirmation',
+                       'queue delay after acceptance is included',
+                       'after the approved objection conditions',
+                       'not at proposal time')),
+ 'Export endpoint': ('| Export |',
+                     ('correctly scoped, recipient-bound protected package',
+                      'ready for authorized retrieval',
+                      'download and expiry are not completion endpoints',
+                      'FU-95-016')),
+ 'Archival endpoint': ('| Archival |',
+                       ('archived state and its restrictions are atomically committed',
+                        'archival erases nothing')),
+ 'Budget deletion endpoint': ('| Budget-space deletion |',
+                              ('After the restoration window',
+                               'irreversibly purged',
+                               'minimal nonfinancial tombstone',
+                               'FU-95-014',
+                               'archived-without-pending-deletion')),
+ 'Personal deletion endpoint': ('| Personal-account deletion |',
+                                ('After the restoration window, irreversible account/profile termination',
+                                 'private-data/shared-history dispositions',
+                                 'pseudonymized',
+                                 'minimal non-resurrection ledger',
+                                 'FU-95-022',
+                                 'Immediate authority shutdown is not completion',
+                                 'restoration does not resurrect authority')),
+ 'Application boundary': ('### Accepted request and success predicates',
+                          ('evidenced application-controlled terminal disposition',
+                           'approved per-class/custodian schedule',
+                           'Merely scheduling cleanup is insufficient',
+                           'Processor and backup obligations remain separately tracked',
+                           'does not certify their expiry or erasure of recipient-held copies')),
+ 'Outcome alignment': ('### Outcome and population alignment',
+                       ('completed / (completed + failed)',
+                        'same completed-plus-failed terminal population',
+                        'acceptance to terminal outcome, not success-only time',
+                        'once at its terminal transition',
+                        'regardless of acceptance week',
+                        'do not invent cancellation',
+                        'unfinished requests are excluded',
+                        'cannot imply success or absence of failures')),
+ 'Bounds and applicability': ('### Later-bound specification disposition',
+                              ('closure-stage exception, not a Private MVP applicability deferral',
+                               'no rate, healthy status, numerical release, baseline start or '
+                               'credit',
+                               'D14 starts only when valid comparable releasable rates',
+                               'interval, terminal-state, source, bucket and release prerequisites',
+                               'No SLA/compliance or near-breach claim',
+                               'restoration grace, export expiry and backup expiry are not '
+                               'performance SLOs',
+                               'no expansion or successful evaluation exit without required '
+                               'evidence',
+                               'dated continuation/pause process'))}
+
+
+def lifecycle_checks(text: str, audit: Audit) -> None:
+    for label, (marker, required) in LIFECYCLE_RULES.items():
+        start = text.find(marker)
+        if start < 0:
+            body = ""
+        elif marker.startswith("|"):
+            body = text[start:].splitlines()[0]
+        else:
+            end = re.search(r"\n#{2,3} ", text[start + len(marker):])
+            stop = start + len(marker) + end.start() if end else len(text)
+            body = text[start:stop]
+        missing = [phrase for phrase in required if phrase not in body]
+        audit.check(not missing,
+                    f"docs/cbd-79-reliability-and-safety-metrics.md: {label} missing approved invariant(s): {missing}")
+
+
+
 def main() -> int:
     audit = Audit()
     text = METRICS.read_text(encoding="utf-8")
     conventions = CONVENTIONS.read_text(encoding="utf-8")
+    lifecycle_checks(text, audit)
 
     # --- the package pins the conventions version it was written against ----
     version = re.search(r"\| Document version \| ([\d.]+) \|", conventions)
@@ -212,7 +335,7 @@ def main() -> int:
                 f"{identifier}: uses the withdrawn event model ({name}) -- AN-92-001",
             )
 
-    # --- the two criteria this package does not satisfy stay visible --------
+    # --- the unchanged barred safety signals stay visible ------------------
     # Both are gaps in approved criteria rather than omissions here, and both
     # are the kind of thing a later edit tidies away because it reads like an
     # admission. Each must keep its section and its open question.
@@ -243,21 +366,7 @@ def main() -> int:
         re.search(r"AN-92-006", text) is not None,
         "metrics: must cite AN-92-006, which is what bars the support-incident signal",
     )
-    # The claim must head its own section, where the three rejected routes are
-    # argued, and not survive only as an open-item row. A finding reduced to a
-    # table row loses the reasoning that makes it defensible.
-    audit.check(
-        re.search(r"^## \d+\. `incorrect` has no measurable referent$", text, re.M)
-        is not None,
-        "metrics: `incorrect` has no measurable referent must head its own "
-        "section -- CBD-79-AC03 is met for four of five states, and the "
-        "reasoning is what makes that defensible",
-    )
-    audit.check(
-        text.lower().count("no measurable referent") >= 2,
-        "metrics: the unmeasurable finding must appear in its section and in "
-        "the open-items table, so neither can be dropped silently",
-    )
+    # Synthetic correctness disposition is protected by lifecycle_checks.
     # Each must hold a row in the section 8 table, not merely be mentioned in
     # prose. Searching the whole document passes while the row is deleted,
     # which is how an open question stops being tracked without anyone

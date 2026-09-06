@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Candidate amendment v1.5**. Specific meanings approved in `CBD13-PROFILE-001`, `CBD13-CATEGORY-001` and `CBD13-USABLE-TIME-001`; CBD-80 also applies `CBD13-RETENTION-001`. Prior activation amendment independently reviewed and merged in PR #236; retention source amendment independently reviewed and merged in PR #237. This new candidate awaits independent review. Prior approvals remain in force; no whole-package approval, computation, release or closure is inferred |
-| Document version | 1.5 |
+| Status | **Candidate amendment v1.6**. Exact lifecycle semantics, later-bound specification-closure disposition and synthetic incorrect-alert QA route approved in `CBD13-LIFECYCLE-001`, `CBD81-BOUNDS-001` and `CBD13-CORRECTNESS-001`. This candidate awaits independent review; no whole-package approval, runtime proof, numerical release or Done claim. Prior decisions remain in force. Base usable-definition candidate 7754c5c was independently reviewed but is not yet published or merged; prior activation/retention integration history is unchanged. |
+| Document version | 1.6 |
 | Owner | Alexander Wohlford |
 | Reviewer | Independent review pending for this candidate; prior activation/retention reviews remain valid only for their reviewed amendments |
 | Jira | [CBD-80](https://cobudget.atlassian.net/browse/CBD-80) |
@@ -124,14 +124,14 @@ Every source has `Boundary: worker`. Class is `aggregate-state` unless marked `r
 | `MS-80-020` | `alert_instance.firm_dismissed_count` | Recipient instances | Count of firm instances in the archived or dismissed state. **Release constrained by `AB-74-014`** — §6 | Weekly | `MT-78-008` |
 | `MS-80-021` | `sync_run.outcome_class_count` — `reliability-telemetry` | Worker job telemetry | Count per safe outcome class, excluding runs cancelled by a superseding run | Daily | `MT-79-001`, `MT-79-004`, `MT-79-005` |
 | `MS-80-022` | `sync_run.duration_bucket_count` — `reliability-telemetry` | Worker job telemetry | Count per duration bucket. **Buckets, not per-run timings**, per `AN-92-003` | Daily | `MT-79-002` |
-| `MS-80-023` | `connection.freshness_bucket_count` — `reliability-telemetry` | Worker job telemetry | Count per freshness bucket for active connections, excluding orphaned connections per `INC-76-011` | Daily | `MT-79-003` |
+| `MS-80-023` | `connection.freshness_bucket_count` — `reliability-telemetry` | Authorized active-connection state and committed successful sync watermark; safe Worker telemetry binding remains future | Snapshot at T: count eligible connections currently authorized and active for sync, excluding orphaned, revoked, disconnected and lifecycle-stopped. Age = T minus last committed successful sync watermark; failed/superseded runs do not advance it. Never-synced eligible connections stay in denominator, cannot be fresh, missing age never zero. Classification bound/source/bucket/release gates required; no extra released label, rate, healthy claim or baseline start/credit before approval | Daily | `MT-79-003` |
 | `MS-80-024` | `sync_run.retry_bucket_count` — `reliability-telemetry` | Worker job telemetry | Count per retry-count bucket | Daily | `MT-79-004` |
 | `MS-80-025` | `sync_run.terminal_failure_class_count` — `reliability-telemetry` | Worker job telemetry | Count per safe error class. **No provider message, payload, or identifier** | Daily | `MT-79-005` |
 | `MS-80-026` | `notification.outcome_class_count` — `reliability-telemetry` | Worker delivery telemetry | Count per outcome class — `enqueued`, `delivered`, `failed`, `suppressed`, `duplicate`, `late`. **`suppressed` stays in the base** per `AB-74-004` | Daily | `MT-79-006` |
 | `MS-80-027` | `alert_instance.dedup_outcome_count` — `reliability-telemetry` | Worker alert telemetry | Count of instance creation attempts per deduplication outcome | Daily | `MT-79-007` |
-| `MS-80-028` | `alert_instance.delivery_latency_bucket_count` — `reliability-telemetry` | Worker alert telemetry | Count per latency bucket of (instance available − source fact settled) | Daily | `MT-79-008` |
-| `MS-80-029` | `data_request.terminal_state_count` | Export, deletion and archival requests | Count per terminal state. **Requests in verification are excluded**: the customer holds that step | Weekly | `MT-79-009` |
-| `MS-80-030` | `data_request.elapsed_bucket_count` | Export, deletion and archival requests | Count per elapsed-duration bucket, request created to terminal state | Weekly | `MT-79-010` |
+| `MS-80-028` | `alert_instance.delivery_latency_bucket_count` — `reliability-telemetry` | Durable source revision satisfying the applicable approved alert rule and mandatory recipient-instance authorized in-app availability; future approved Worker telemetry binding | End-to-end duration buckets from first rule satisfaction to authorized in-app availability; settlement only where the rule requires it, including evaluation/fan-out delay. Count each available instance once in the window; still-unavailable/failed excluded. Viewing, acknowledgement, external sends and quiet-hour expiry are not endpoints. Delivered-only rate cannot prove absence of dropped alerts. Bound/source/bucket/release gates required; no rate, healthy claim or baseline start/credit before approval | Daily | `MT-79-008` |
+| `MS-80-029` | `data_request.terminal_state_count` | Accepted authorized verified export, archival, budget-space deletion and personal-account deletion requests; source-specific operational outcome bindings remain future | Count each accepted request once at its evidenced application-controlled terminal transition in the window: completed / (completed + failed), per the lifecycle contract below. Completed uses source-specific success; failed is an approved terminal unsuccessful outcome. Exclude rejected/verification attempts, pending/retrying/grace/cleanup and valid cancellation/restoration; do not invent cancellation. Processor/backup obligations separately tracked; no new released subtype/outcome labels | Weekly | `MT-79-009` |
+| `MS-80-030` | `data_request.elapsed_bucket_count` | Same accepted lifecycle requests and completed-plus-failed terminal population as MS-80-029; authorized acceptance/terminal timestamps and safe bucket bindings remain future | Duration buckets from accepted eligible authorized request after verification/confirmation to evidenced source-specific completed or failed terminal outcome; queue delay included. Count once at the same terminal transition as MS-80-029, regardless of acceptance week; exclude pending and valid cancellation/restoration. Baseline only after interval/terminal/source/bucket/release gates; no SLA/compliance or near-breach claim without approved commitments and actionable approach rules | Weekly | `MT-79-010` |
 
 | `MS-80-031` | `consent_record.subject_change_count` | Consent, disclosure and revocation evidence — `DI-91-007` | Count of account subjects whose consent record shows at least one version change in the window. **Version changes only; no disclosure text, scope or role** | Weekly | `MT-79-011` |
 | `MS-80-032` | `consent_record.subject_active_count` | Consent, disclosure and revocation evidence — `DI-91-007` | Count of account subjects holding at least one active consent record at window close | Weekly | `MT-79-011` |
@@ -231,3 +231,53 @@ CBD-82 and CBD-30 feature owners must provide authorized physical bindings and p
 | Version | Authority | Change | Status |
 | --- | --- | --- | --- |
 | 1.5 | `CBD13-PROFILE-001`; `CBD13-CATEGORY-001`; `CBD13-USABLE-TIME-001`; shared `CBD13-RETENTION-001` follow-through; `CBD81-BASELINE-001` | Exact profile/category/target predicates; MT-77-008 matching set; MT-77-005 deferred with future slot/interval/W4; CBD-80 retention-source feasibility restrictions. Prior approved activation populations, IDs, owners, destinations, account OR transaction choice and privacy gates preserved | Candidate; independent review pending; no measured result or Done claim |
+
+## Approved lifecycle measurement contract
+
+The exact semantics below are approved by `CBD13-LIFECYCLE-001`. They define logical operational predicates, not new runtime collection, retention, released dimensions or customer access. Physical bindings, authorized timestamp availability, safe buckets and runtime evidence remain future. No historical feasibility follows from naming a source; no audit-purpose reuse or measurement history is authorized.
+
+### Freshness snapshot
+
+At observation T (daily window close), eligibility means currently authorized and active for synchronization. Exclude orphaned, revoked, disconnected and lifecycle-stopped connections. For an eligible connection with a last committed successful sync watermark, freshness age is T minus that watermark. Failed or superseded runs do not advance it. A never-synced eligible connection remains in the denominator, cannot be fresh, and has missing age, never zero. Do not silently drop it from the rate because it cannot enter an elapsed-age bucket. The classification bound and its comparison rule must be approved before classifying fresh; no numeric value or extra released missing-age label is established here. Sources: `TD-103-010`; `SA-92-001`; CBD-72 §6.5.
+
+### End-to-end alert interval
+
+Start at the durable source revision first satisfying the applicable approved alert rule; settlement is required only where that rule requires it. End when the mandatory recipient instance becomes available through the authorized in-app surface. The interval includes rule evaluation and fan-out delay. Viewing, acknowledgement, external sends and quiet-hour expiry are not endpoints. Count each recipient instance once when it becomes available in the window; the numerator uses those same delivered instances. Still-unavailable and failed instances are excluded, so this rate cannot prove absence of dropped alerts. Sources: CBD-74 §4.1 and §5.3; `AB-74-002` / `AB-74-003` / `AB-74-012`.
+
+### Accepted request and success predicates
+
+The lifecycle population covers export, archival, budget-space deletion and personal-account deletion without adding a released breakdown. Start at the accepted eligible authorized request after required verification/confirmation. Rejected requests and verification attempts are excluded; queue delay after acceptance is included. For inactivity archival, bind acceptance only after the approved objection conditions are satisfied, not at proposal time. Exact acceptance/terminal-state bindings require source-owner proof.
+
+| Operation | Completed only when evidenced | Authority and remaining binding |
+| --- | --- | --- |
+| Export | The correctly scoped, recipient-bound protected package is ready for authorized retrieval; download and expiry are not completion endpoints | CBD-72 permissions 20a/20b/21 and §5.7/§5.8; `INC-76-005` / `INC-76-009`; `FU-95-016` remains an execution gate |
+| Archival | The archived state and its restrictions are atomically committed; archival erases nothing | CBD-72 §6.5; `INC-76-010`; inactivity archival follows §6.3 objection conditions |
+| Budget-space deletion | After the restoration window, the defined financial payload, planning/reconciliation history, interactions and imports are irreversibly purged to the minimal nonfinancial tombstone | CBD-72 §6.4; `INC-76-010`; approved per-class/custodian schedule and `FU-95-014` proof required. Valid cancellation restores archived-without-pending-deletion |
+| Personal-account deletion | After the restoration window, irreversible account/profile termination and approved private-data/shared-history dispositions are applied; necessary shared facts are pseudonymized and the minimal non-resurrection ledger remains | `PA-92-003` through `PA-92-008`; `INC-76-013`; approved per-class/custodian schedule and `FU-95-022` proof required. Immediate authority shutdown is not completion; restoration does not resurrect authority |
+
+Deletion completion is the evidenced application-controlled terminal disposition against the approved per-class/custodian schedule. Merely scheduling cleanup is insufficient. Processor and backup obligations remain separately tracked under their approved operational contracts; this metric endpoint does not certify their expiry or erasure of recipient-held copies. No new tracking, retention or remote-deletion promise is introduced. `FU-95-014` / `FU-95-022` execution and claim gates remain open.
+
+### Outcome and population alignment
+
+These are logical distinctions for derivation, not a new released outcome-label catalog:
+
+| Outcome | Treatment |
+| --- | --- |
+| Completed | Evidenced applicable success predicate above; included in numerator and denominator |
+| Failed | Approved terminal unsuccessful outcome; included only in denominator |
+| Cancelled/restored | Valid source-authorized cancellation/restoration is neither success nor failure and is excluded from both metrics; do not invent cancellation where the source contract provides none |
+| Pending | Retrying, restoration grace and pending cleanup are not terminal outcomes; unfinished requests are excluded, never treated as completed or failed |
+
+Completion rate is completed / (completed + failed). The elapsed distribution uses the same completed-plus-failed terminal population and measures acceptance to terminal outcome, not success-only time. Count each accepted request once at its terminal transition in the window, regardless of acceptance week. Repeated attempts and joined records do not multiply it. Unfinished requests are excluded and cannot imply success or absence of failures. Excluded populations and lifecycle subtypes are not separately released; existing suppression and purpose-separation rules continue to govern.
+
+### Later-bound specification disposition
+
+`CBD81-BOUNDS-001` permits specification closure with freshness/lateness classification bounds explicitly unset pending evidence-based selection and Executive approval. This is a closure-stage exception, not a Private MVP applicability deferral. MT-79-003/008 remain applicable beta evidence requirements but unavailable until classification bounds and source/release prerequisites are approved and verified: no rate, healthy status, numerical release, baseline start or credit. D14 starts only when valid comparable releasable rates can be observed.
+
+MT-79-010 may establish its duration baseline only after interval, terminal-state, source, bucket and release prerequisites pass. No SLA/compliance or near-breach claim is permitted without approved lifecycle-specific commitments and actionable approach rules. No numeric value is chosen; restoration grace, export expiry and backup expiry are not performance SLOs. Metric/source IDs, owners, destinations and approved baseline periods remain unchanged. Applicable beta evaluation still requires these metrics; no expansion or successful evaluation exit without required evidence. Missing evidence follows the approved dated continuation/pause process in CBD-81.
+
+## Lifecycle amendment record
+
+| Version | Authority | Change | Status |
+| --- | --- | --- | --- |
+| 1.6 | `CBD13-LIFECYCLE-001`; `CBD81-BOUNDS-001`; `CBD13-CORRECTNESS-001` | Freshness snapshot; end-to-end alert lateness; accepted lifecycle start, both deletion scopes and source-specific application-controlled endpoints; matching completed-plus-failed rate/elapsed populations; synthetic correctness QA and explicit later-bound closure exception | Candidate; independent review pending. Existing approvals preserved; no measurement or executed QA claimed |
