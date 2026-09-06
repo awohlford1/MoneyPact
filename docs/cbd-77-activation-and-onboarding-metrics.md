@@ -2,10 +2,10 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved v1.0** — Product Owner approved this exact package on September 5, 2026. Defines the eight activation and onboarding metrics for the private beta, each as an `AN-92-005` aggregate over operational state. **No analytics event is proposed, because `AN-92-001` disables the behavioural event pipeline for Private MVP.** Every metric is `global` release form under decision 2, computed inside the Worker boundary. §3 states the usable-budget condition the criteria turn on; §6 records the two places this package could not rest on an approved source |
-| Document version | 1.0 |
+| Status | **Draft amendment v1.1 to approved v1.0**. Executive approved the exact activation semantics in `CBD13-ACTIVATION-001`; this candidate awaits independent review. Prior approvals and unrelated decisions remain in force; no whole-package approval, computation, release or closure is inferred |
+| Document version | 1.1 |
 | Owner | Alexander Wohlford |
-| Reviewer | Alexander Wohlford — Product Owner. **Approved September 5, 2026** after a review that corrected one citation |
+| Reviewer | Independent review pending for this amendment; prior approved baseline review remains historical |
 | Jira | [CBD-77](https://cobudget.atlassian.net/browse/CBD-77) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
 | Governing conventions | `docs/cbd-13-measurement-conventions.md` — Document version **1.0.1**, approved |
@@ -78,11 +78,11 @@ Every metric below is `Class: aggregate-state`, `Release form: global`, `Boundar
 | --- | --- |
 | Purpose | Whether accounts that reach the product create a budget space at all. Supports the decision to change onboarding before, or instead of, changing the budget builder |
 | Formula | spaces_created_subjects ÷ eligible_subjects |
-| Numerator | Account subjects with at least one budget space in any state |
-| Denominator | Account subjects whose account exists at window close, excluding subjects created after the window opened minus the grace interval (§5) |
+| Numerator | Those same eligible subjects holding at least one extant associated budget space in any state immediately before C; archived-only success counts under the explicit subject-milestone exception in §5 |
+| Denominator | Distinct account subjects existing immediately before C with creation time strictly before C minus 24 hours; creation exactly at the cutoff is excluded (§5) |
 | Measurement source | `budget_space.subject_has_space_count` *(proposed)*, `account_subject.active_count` *(proposed)* |
 | Interval basis | Opens when an account subject exists; closes when that subject has one budget space |
-| Window | Calendar week, UTC, both bounds inclusive of the window's own days |
+| Window | UTC calendar week [O,C), Monday boundaries; evaluate state immediately before exclusive close C (§5) |
 | Suppression | `withheld — population below release threshold` |
 | Connectivity | `MANUAL-OK` |
 | Data source | Application database, budget-space and account-subject tables |
@@ -96,8 +96,8 @@ Every metric below is `Class: aggregate-state`, `Release form: global`, `Boundar
 | --- | --- |
 | Purpose | Whether a created space reaches a materialized period. Separates *"made a space"* from *"has a budget"*, which `CBD-77-AC02` requires |
 | Formula | spaces_with_period ÷ spaces_created |
-| Numerator | Budget spaces holding at least one materialized period |
-| Denominator | Budget spaces created in the window and not archived at window close (§5) |
+| Numerator | Those same eligible spaces holding at least one materialized period immediately before C |
+| Denominator | Distinct extant budget spaces created O <= creation < C and not archived immediately before C (§5) |
 | Measurement source | `budget_period.space_has_period_count` *(proposed)*, `budget_space.created_count` *(proposed)* |
 | Interval basis | Opens when a budget space exists; closes when that space holds one materialized period per `SD-071-021` |
 | Window | Calendar week, UTC |
@@ -114,8 +114,8 @@ Every metric below is `Class: aggregate-state`, `Release form: global`, `Boundar
 | --- | --- |
 | Purpose | The headline activation measure. Whether a space reaches the state from which the product is usable at all — `UB-77-001` |
 | Formula | spaces_meeting_UB_77_001 ÷ spaces_created |
-| Numerator | Budget spaces satisfying all five `UB-77-001` limbs at window close |
-| Denominator | Budget spaces created in the window and not archived at window close (§5) |
+| Numerator | Those same eligible spaces satisfying all five `UB-77-001` limbs simultaneously immediately before C; profile/category evidence dependencies remain open |
+| Denominator | Distinct extant budget spaces created O <= creation < C and not archived immediately before C (§5) |
 | Measurement source | `budget_space.usable_state_count` *(proposed)*, `budget_space.created_count` *(proposed)* |
 | Interval basis | Opens when a budget space exists; closes when all five `UB-77-001` limbs hold simultaneously |
 | Window | Calendar week, UTC |
@@ -168,8 +168,8 @@ Every metric below is `Class: aggregate-state`, `Release form: global`, `Boundar
 | --- | --- |
 | Purpose | Whether the manual product works without bank connectivity, which `CBD-77-AC04` requires to be measurable now rather than after CBD-47 |
 | Formula | spaces_with_manual_account ÷ spaces_with_period |
-| Numerator | Budget spaces holding at least one manual account |
-| Denominator | Budget spaces holding at least one materialized period at window close. **Not all created spaces** — a space with no period has no context in which an account is meaningful |
+| Numerator | Those same eligible spaces holding at least one currently linked manual account immediately before C; periodless account-bearing spaces do not count |
+| Denominator | Distinct extant nonarchived budget spaces holding at least one materialized period immediately before C, regardless of creation week (§5) |
 | Measurement source | `financial_account.space_manual_count` *(proposed)*, `budget_period.space_has_period_count` *(proposed)* |
 | Interval basis | Opens when a space holds a period; closes when that space holds one manual account |
 | Window | Calendar week, UTC |
@@ -218,17 +218,19 @@ Every metric below is `Class: aggregate-state`, `Release form: global`, `Boundar
 
 ## 5. Denominator rules
 
-Stated once and applied by every metric above, per conventions §6.
+Stated once and applied by every metric above, per conventions §6. The activation correction in `CBD13-ACTIVATION-001` was approved by the Executive; this draft amendment awaits independent review and does not approve the whole package.
 
-**Eligibility is evaluated at window close, not at window open.** A budget space created on the last day of a window is in that window's denominator. This is a choice, and the alternative — a grace interval excluding late entrants — is rejected because it would make the denominator depend on a per-space age, which is a per-subject property the release form does not carry.
+**Windows are UTC calendar weeks [O,C), with Monday 00:00 boundaries.** Evaluate operational state immediately before C. Creation exactly at C belongs to the next window. For MT-77-001/002/003/006, completion means qualifying state at close, not a separately tracked completion during the week. A late-created space is eligible for MT-77-002/003 if it exists and is not archived at close; there is no space grace period.
 
-**`MT-77-001` is the exception and states its grace interval explicitly.** An account subject that exists for minutes before window close has not declined to create a space. Its denominator excludes subjects created within the final 24 hours of the window, and the excluded count is not released separately.
+**`MT-77-001` alone has a grace interval.** Its denominator contains subjects existing immediately before C whose creation time is strictly before C minus 24 hours. The final 24-hour interval includes its opening cutoff, so a subject created exactly at C minus 24 hours is excluded. Its numerator is restricted to those same subjects. Older successful subjects count: this is a standing subject population, not a newly-created-subject population. No excluded count is separately released.
 
-**Archived spaces leave the denominator.** A space archived per `INC-76-010` before window close is excluded from both numerator and denominator. Retaining it would report the archival as an activation failure, which it is not.
+**Archived spaces leave space-based populations.** A space archived per `INC-76-010` before close is excluded from both numerator and denominator. MT-77-001 is explicitly excepted: an extant associated space in any state, including archived-only success, still proves the subject's space-creation milestone. A deleted, absent space does not prove success. MT-77-002/003 exclude older successful spaces and newly archived spaces from both sides; MT-77-006 includes older nonarchived period-holding spaces and excludes periodless spaces from both sides.
 
-**Retries and abandonment count once.** Each denominator counts **spaces or subjects**, both of which have one current state, so a person who abandons and restarts within one space contributes one row. A person who creates a second space contributes two, and that is correct: two spaces were created and the second is genuinely a further activation opportunity.
+**Every rate numerator is a subset of its denominator.** Count distinct subjects for MT-77-001 and distinct spaces for space rates; multiple periods, accounts or joins never multiply membership. Compute the MT-77-002 creation-window intersection separately from the broad period-holding population MT-77-006/007 consume. Neither population membership nor contributing rows are persisted. A zero denominator uses the existing privacy-gated `no eligible population` disposition, never zero or 100 percent; where that disposition cannot safely be released, withhold it under the governing release policy.
 
-**A zero denominator is reported as `no eligible population`, not as zero percent.** During the first windows of the beta this will be common and must not read as a failure.
+**Retries and abandonment count once.** Each denominator counts distinct spaces or subjects. Abandoning and restarting within one space does not add membership. In space-based metrics a person creating two eligible spaces contributes two spaces, not retry records; MT-77-001 still counts that subject once.
+
+**A zero denominator never becomes a percentage.** Release `no eligible population` only when permitted by the governing privacy policy; otherwise withhold the disposition as stated above.
 
 ## 6. What this package could not settle
 
@@ -240,3 +242,12 @@ Stated once and applied by every metric above, per conventions §6.
 | `OQ-77-004` | **The `UB-77-001` category limb has no defining approved source.** `SD-071-005`, `SD-071-014`, `SD-071-027` and `SD-071-041` presuppose categories; none defines the entity, and `SD-071-010` establishes only that spending targets are a distinct state. CBD-30 is the defining specification and is in Planning | The limb stands — the product cannot prorate a target for a category that does not exist — but it is inferential where the other four are definitional. **Found by the approval review, not by the audit**, which checks that a limb cites a source rather than that the source supports it |
 | `OI-77-001` | **Eight metrics propose nine measurement sources and none exists.** Every source is marked `proposed` per conventions §3, and CBD-80 assigns the `MS-80-nnn` identifiers and may rename | Expected, not a defect: the conventions define the proposal-then-assign flow precisely so these two packages do not edit each other. It does mean **no metric here is computable until CBD-80 completes** |
 | `OI-77-002` | **Nothing in this package has been measured.** The product is not built: budget spaces, periods, categories and manual transactions are approved designs, not running tables. Every `Data source` names where the state *will* live | The metrics are specifications, not results. A later reader should not mistake a defined metric for an observed one |
+
+
+**Unresolved timing evidence for MT-77-005:** the maximum of the five current limb timestamps does not by itself prove the first time all limbs held simultaneously after replacement, deletion or current-period changes. The source owner must establish timestamp meanings and historical coexistence from already authorized operational state. Do not substitute `updated_at`, accumulate progress, retain measurement history, or claim this interval computable before that proof. No replacement timing semantics are approved by the activation correction. `OQ-77-003` and `OQ-77-004` also remain open.
+
+## Activation amendment record
+
+| Version | Basis | Change | Status |
+| --- | --- | --- | --- |
+| 1.1 | Approved baseline v1.0; Executive decision `CBD13-ACTIVATION-001`, September 5, 2026 | Correct MT-77-001/002/003/006 population intersections, exclusive-close UTC week, grace boundary, archived-space exception, consumer-specific period counts and privacy-gated empty population. Preserve source IDs and all other decisions | Draft amendment; independent review pending |

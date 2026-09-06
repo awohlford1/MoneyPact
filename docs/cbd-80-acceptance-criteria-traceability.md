@@ -2,10 +2,10 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved v1.3** — Product Owner approved v1.0 on September 5, 2026, and three amendments the same day. All six acceptance criteria are met. **The release decision is taken** — §6, September 5, 2026: the nine `reliability-telemetry` metrics route to the S1 sink CBD-122 establishes, and the nineteen `aggregate-state` figures become a periodic written record. What remains is `OQ-80-005`, **where that record lives**, because §3.4 requires deletion and this repository cannot delete |
-| Document version | 1.3 |
+| Status | **Draft amendment v1.4 to approved v1.3**. Executive approved the exact activation semantics in `CBD13-ACTIVATION-001`; this candidate awaits independent review. Prior approvals and unrelated decisions remain in force; no whole-package approval, computation, release or closure is inferred |
+| Document version | 1.4 |
 | Owner | Alexander Wohlford |
-| Reviewer | Alexander Wohlford — Product Owner. **Approved September 5, 2026** after a review that corrected one citation |
+| Reviewer | Independent review pending for this amendment; prior approved baseline review remains historical |
 | Jira | [CBD-80](https://cobudget.atlassian.net/browse/CBD-80) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
 | Governing conventions | `docs/cbd-13-measurement-conventions.md` — Document version **1.0.1**, approved |
@@ -26,7 +26,7 @@
 
 ### CBD-80-AC01 — each source has a stable name, state of record, derivation, refresh basis, boundary, and owning metric
 
-**Status: Met.**
+**Status: Scoped activation correction drafted; independent review pending.** Register MS-80-001/002/003/004/005/008 and its Activation population contract implement `CBD13-ACTIVATION-001`. MS-80-002 intersects subject eligibility; MS-80-005 intersects created-space eligibility; MS-80-008 intersects period-holding eligibility. MS-80-004 preserves broad MT-77-006/007 counts and a separate MT-77-002 creation-window intersection. Source IDs and consumers are unchanged. Profile/category and first-simultaneous-timestamp evidence remain open; a registered derivation is not an implemented source.
 
 All thirty-three rows carry all six, and the audit fails a row with a missing column or an empty cell rather than trusting the table to look complete.
 
@@ -64,7 +64,7 @@ The criterion asks for minimization or pseudonymity. **The register gives neithe
 
 ### CBD-80-AC06 — duplicate counting prevented by the derivation
 
-**Status: Met.**
+**Status: Scoped activation correction drafted; independent review pending.** The Activation population contract counts distinct eligible subjects/spaces rather than joined rows, forbids persisting contributing membership, and keeps each numerator within its owning denominator. The broad MS-80-004 count is not interchangeable with its MT-77-002 intersection.
 
 Every derivation counts an **outcome reached in the state of record**, not an attempt observed. A space has one state, an invitation has one terminal state, an instance has one acknowledgement state — so a repeated action contributes one row because the entity contributes one row.
 
@@ -127,3 +127,14 @@ Register §6 worked through the surfaces the product has and found that approved
 | 1.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **Reopened and amended the day it closed.** The `OQ-13-007` decision gave CBD-79 two safety metrics — consent changes and revocation failures — and three sources needed registering: `MS-80-031`, `MS-80-032` and `MS-80-033`, all accepted as proposed. **The cross-package audit found them, not a person**: it failed on three unregistered proposals and two metrics no source served. The v1.0 closure comment predicted this and named the route, so it is the register working rather than the register breaking. No rule, naming decision, or existing source changes | **Approved v1.1** |
 | 1.0 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | **Approved.** The review checked every cited identifier against its source and found that this register had restated `AN-92-004` faithfully and inherited its error: `AN-92-004` groups `DI-91-071` with S3 restricted security evidence, and the approved CBD-91 inventory classifies it **S1** non-secret key-lifecycle metadata. §3.3 now names only `DI-91-053` and `DI-91-062`, and `OQ-80-004` records the discrepancy against the two documents that own it. It narrows `OQ-13-007` rather than widening it. No source, derivation, or rule changes | **Approved v1.0** |
 | 0.1 | September 5, 2026 | Claude with Alexander Wohlford as Product Owner | Initial package: thirty registered sources, the naming decisions at §4, the privacy and retention rules at §3, the release-surface proposal at §6, a cross-package structural audit, and this report | Superseded by 1.0 |
+
+
+## Activation correction validation and handoff
+
+CBD-80-AC01/06 corrections support CBD-13-AC02/07 and later CBD-81 source-gate review. The existing cross-package audit checks source registration, fields and structural consistency; it cannot prove population semantics or authorized timestamp availability. Independent review must compare the six amended source rows and the Activation population contract with CBD-77 §4/§5 and the exact Executive decision. No new release policy, source, metric, destination, schema, retention or baseline period is introduced. Prior audit counts elsewhere in this report describe the historical baseline. Whole-package approval and source implementation remain separate gates.
+
+## Activation amendment record
+
+| Version | Basis | Change | Status |
+| --- | --- | --- | --- |
+| 1.4 | Approved baseline v1.3; Executive decision `CBD13-ACTIVATION-001`, September 5, 2026 | Correct MT-77-001/002/003/006 population intersections, exclusive-close UTC week, grace boundary, archived-space exception, consumer-specific period counts and privacy-gated empty population. Preserve source IDs and all other decisions | Draft amendment; independent review pending |

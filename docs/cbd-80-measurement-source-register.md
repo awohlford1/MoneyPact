@@ -2,10 +2,10 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved v1.3** — Product Owner approved v1.0 on September 5, 2026, and three amendments the same day. Assigns `MS-80-nnn` identifiers to the **34** sources CBD-77, CBD-78 and CBD-79 proposed, and states the privacy, retention and release rules that govern them. **§6 records the release decision of September 5, 2026**: two destinations rather than one, and the aggregate half is a written record rather than a surface. **No source is implemented and none has been read** |
-| Document version | 1.3 |
+| Status | **Draft amendment v1.4 to approved v1.3**. Executive approved the exact activation semantics in `CBD13-ACTIVATION-001`; this candidate awaits independent review. Prior approvals and unrelated decisions remain in force; no whole-package approval, computation, release or closure is inferred |
+| Document version | 1.4 |
 | Owner | Alexander Wohlford |
-| Reviewer | Alexander Wohlford — Product Owner. **Approved September 5, 2026** after a review that corrected one citation |
+| Reviewer | Independent review pending for this amendment; prior approved baseline review remains historical |
 | Jira | [CBD-80](https://cobudget.atlassian.net/browse/CBD-80) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
 | Governing conventions | `docs/cbd-13-measurement-conventions.md` — Document version **1.0.1**, approved |
@@ -102,14 +102,14 @@ Every source has `Boundary: worker`. Class is `aggregate-state` unless marked `r
 
 | ID | Name | State of record | Derivation | Refresh | Owning metric |
 | --- | --- | --- | --- | --- | --- |
-| `MS-80-001` | `account_subject.active_count` | Account subjects | Count of subjects whose account exists at window close, less those created inside the final 24 hours | Weekly | `MT-77-001` |
-| `MS-80-002` | `budget_space.subject_has_space_count` | Budget spaces, account subjects | Count of subjects holding at least one budget space in any state | Weekly | `MT-77-001` |
-| `MS-80-003` | `budget_space.created_count` | Budget spaces | Count of spaces created in the window and not archived at window close | Weekly | `MT-77-002`, `MT-77-003` |
-| `MS-80-004` | `budget_period.space_has_period_count` | Budget periods | Count of spaces holding at least one materialized period per `SD-071-021` | Weekly | `MT-77-002`, `MT-77-006`, `MT-77-007` |
-| `MS-80-005` | `budget_space.usable_state_count` | Five `UB-77-001` limbs | Count of spaces where all five limbs hold **simultaneously at window close**, evaluated together rather than accumulated | Weekly | `MT-77-003` |
+| `MS-80-001` | `account_subject.active_count` | Account subjects | Count distinct subjects existing immediately before C with creation strictly before C minus 24 hours; exactly at the cutoff is excluded | Weekly | `MT-77-001` |
+| `MS-80-002` | `budget_space.subject_has_space_count` | Budget spaces, account subjects | Count only subjects eligible under MS-80-001 that hold an extant associated space in any state immediately before C; archived-only success counts, deleted absent spaces do not | Weekly | `MT-77-001` |
+| `MS-80-003` | `budget_space.created_count` | Budget spaces | Count distinct extant spaces created O <= creation < C and not archived immediately before C | Weekly | `MT-77-002`, `MT-77-003` |
+| `MS-80-004` | `budget_period.space_has_period_count` | Budget periods, budget spaces | Broad derivation: count distinct extant nonarchived spaces holding a materialized period per `SD-071-021` immediately before C, regardless of creation week, for MT-77-006/007. MT-77-002 instead counts only the intersection of that population with MS-80-003 eligibility; these are separate consumer-specific counts, not one interchangeable scalar | Weekly | `MT-77-002`, `MT-77-006`, `MT-77-007` |
+| `MS-80-005` | `budget_space.usable_state_count` | Five `UB-77-001` limbs | Count only spaces eligible under MS-80-003 where all five limbs hold **simultaneously immediately before C**, evaluated together rather than accumulated; profile/category dependencies remain open | Weekly | `MT-77-003` |
 | `MS-80-006` | `budget_period.first_materialized_interval` | Budget periods, budget spaces | Duration buckets of (first period materialized − space created), for spaces reaching a period in the window | Weekly | `MT-77-004` |
 | `MS-80-007` | `budget_space.usable_interval` | Five `UB-77-001` limbs | Duration buckets of (**maximum of the five limb timestamps** − space created), for spaces becoming usable in the window | Weekly | `MT-77-005` |
-| `MS-80-008` | `financial_account.space_manual_count` | Financial accounts | Count of spaces holding at least one manually created account | Weekly | `MT-77-006` |
+| `MS-80-008` | `financial_account.space_manual_count` | Financial accounts, budget periods, budget spaces | Count only spaces in the broad MS-80-004 period-holding population that hold at least one currently linked manual account immediately before C; periodless account-bearing spaces do not count | Weekly | `MT-77-006` |
 | `MS-80-009` | `transaction.space_manual_classified_count` | Transactions | Count of spaces holding at least one **manually entered** transaction classified into a period | Weekly | `MT-77-007` |
 | `MS-80-010` | `category.space_has_category_count` | Categories | Count of spaces holding at least one spending category | Weekly | `MT-77-008` |
 | `MS-80-011` | `category_target.space_has_target_count` | Category targets | Count of spaces where at least one category carries a **current-period** target, including a transition-prorated one per `SD-071-027` | Weekly | `MT-77-008` |
@@ -200,3 +200,18 @@ Nineteen figures reviewed weekly is a document, not a dashboard. The reasoning i
 | `OI-80-003` | **This register was reopened the day it closed.** `OQ-13-007` was decided after v1.0 merged, CBD-79 gained two safety metrics, and three sources needed registering. | **Recorded because it was predicted rather than discovered.** The v1.0 closure comment named the CBD-71 reopen-amend-re-close route and said closing was correct for the metrics that existed and not correct forever. It remains true: any further CBD-79 or CBD-81 work that defines a metric reopens this register again, and that is the cost of a register that is complete by construction rather than by assertion. |
 | `OI-80-001` | **`MS-80-017` merges two proposed sources**, and the merge is a decision this register made rather than a name it accepted. Both retention metrics now read one derivation | If `MT-78-005` and `MT-78-006` ever need different activity definitions, this merge is the thing that must be undone first. `RT-78-001` currently requires they do not |
 | `OI-80-002` | **Nothing here has been implemented or read.** Thirty sources are named against state that does not yet exist | The register is a specification. A later reader should not mistake a registered source for an available one |
+
+
+## Activation population contract
+
+For MS-80-001/002/003/004/005/008, use CBD-77 §5: UTC calendar week [O,C), Monday 00:00 boundaries, and operational state immediately before exclusive close C. Numerators count only members of the owning metric's denominator. Completion is qualifying state at close, not a separately observed in-week completion. Grace applies only to MT-77-001. Count distinct subjects or spaces, never joined rows; retain no contributing membership and release no excluded count. A zero denominator uses the existing privacy-gated `no eligible population` disposition, never zero or 100 percent; withhold that disposition when release is unsafe.
+
+MS-80-004 is a shared derivation contract with separate consumer-specific counts: its broad population serves MT-77-006/007, while MT-77-002 intersects that population with MS-80-003 eligibility in the same authorized computation. Do not globally narrow it to creation-week spaces or reuse a broad scalar as the MT-77-002 numerator. No new source or retained intermediate set is introduced.
+
+MS-80-005/007 still require approval of the observable financial-profile and category predicates identified by CBD-77 `OQ-77-003/004`. MS-80-007 also needs source-owner proof that current limb timestamps establish first simultaneous satisfaction despite replacement, deletion and current-period changes. The activation correction approves no replacement timestamp or progress history; affected computation remains unavailable until the required source evidence exists.
+
+## Activation amendment record
+
+| Version | Basis | Change | Status |
+| --- | --- | --- | --- |
+| 1.4 | Approved baseline v1.3; Executive decision `CBD13-ACTIVATION-001`, September 5, 2026 | Correct MT-77-001/002/003/006 population intersections, exclusive-close UTC week, grace boundary, archived-space exception, consumer-specific period counts and privacy-gated empty population. Preserve source IDs and all other decisions | Draft amendment; independent review pending |
