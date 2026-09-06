@@ -14,6 +14,13 @@
       "head_sha": "69654850f99303f08686cdfe6b144ba35f758216",
       "checkpoint_sha": "210e408716a5f6bc85617ac2cdb6e3c9057580ea",
       "authority": "CBD-115 diagnostics and retest approval, 2026-09-06: run 34049133648 attempt 1 failed on the first baseline GET (page 3538946) before any PUT or subsequent target, despite the corrected email. Owner requested fixing diagnostics and retesting. Preserve the original checkpoint and all fresh baseline/conflict/version/readback gates; no assertion that Live equals Desired. Manual environment approval must reconfirm draft clearance and the editing pause. This record covers only the exact failed attempt."
+    },
+    {
+      "run_id": 34049719530,
+      "attempt": 1,
+      "head_sha": "17c9dbe8b2a2813964b665fb4dcc8d985749411a",
+      "checkpoint_sha": "210e408716a5f6bc85617ac2cdb6e3c9057580ea",
+      "authority": "CBD-115 updated-permissions retry approval, 2026-09-06: run 34049719530 attempt 1 returned HTTP 401 on the first baseline GET (page 3538946), before any PUT or subsequent target. Owner updated permissions and requested another test; protected-environment token metadata confirms a later update. Preserve the original checkpoint and all fresh baseline/conflict/version/readback gates, without asserting Live equals Desired. Manual environment approval must reconfirm draft clearance and the editing pause. This covers only the exact failed attempt."
     }
   ]
 }
