@@ -82,10 +82,101 @@ class Audit:
             self.failures.append(message)
 
 
+# Focused documentation guards for the approved logical predicates/deferrals.
+# These check the governing row/block, not runtime data or source feasibility.
+APPROVED_RULES = {'Usable source': ('| `MS-80-005` |',
+                   ('eligible under MS-80-003',
+                    'simultaneously immediately before C',
+                    'CBD13-PROFILE-001',
+                    'CBD13-CATEGORY-001',
+                    'physical binding and verification remain future')),
+ 'Timing source': ('| `MS-80-007` |',
+                   ('Deferred/unavailable for Private MVP',
+                    'CBD13-USABLE-TIME-001',
+                    'first simultaneous',
+                    'replacement/deletion/period changes',
+                    'No maximum current timestamps',
+                    'updated_at',
+                    'budget date',
+                    'newly retained measurement history',
+                    'no baseline credit or successful timing claim')),
+ 'Category source': ('| `MS-80-010` |',
+                     ('distinct extant nonarchived spaces',
+                      'qualifying Category-limb entity',
+                      'CBD13-CATEGORY-001',
+                      'without requiring spending or a target')),
+ 'Target source': ('| `MS-80-011` |',
+                   ('only MS-80-010-eligible spaces',
+                    'same qualifying set',
+                    'Explicitly stored zero',
+                    'missing target does not')),
+ 'Breadth denominator': ('| `MS-80-015` |',
+                         ('Deferred/unavailable for MT-78-004',
+                          'CBD13-RETENTION-001',
+                          'does not prove historical eligibility')),
+ 'Breadth actions': ('| `MS-80-016` |',
+                     ('Deferred/unavailable for Private MVP',
+                      'CBD13-RETENTION-001',
+                      'actual',
+                      'occurrence times',
+                      'viewing',
+                      'editing',
+                      'acknowledgement',
+                      'commenting',
+                      'permission, not action',
+                      'mutation/deletion',
+                      'No proxy substitution')),
+ 'Retention pair': ('| `MS-80-017` |',
+                    ('Deferred/unavailable for Private MVP',
+                     'CBD13-RETENTION-001',
+                     'windows A and B',
+                     'A-active count and A-and-B-active count',
+                     'not historical feasibility proof',
+                     'mutation/deletion',
+                     'No behavioral events, retained measurement membership, audit-purpose '
+                     'reuse or proxy substitution',
+                     'no zero or successful retention claim')),
+ 'Shared predicate': ('## Approved usable predicates',
+                      ('current active Primary Owner',
+                       'exactly one extant active person-level',
+                       'An existing empty profile counts; no profile fails',
+                       'Multiple active profiles or ambiguous association invalidate the '
+                       'source',
+                       'Deletion-pending, terminated and retained-history-only',
+                       'extant stable-identity entity owned by the measured budget space',
+                       'currently usable for expense classification and category-target '
+                       'planning',
+                       'income/transfer classifications, uncategorized placeholders, display '
+                       'groups, historical-only references and '
+                       'archived/deleted/replaced-only/inactive categories',
+                       'explicitly stored zero qualifies; a missing target does not',
+                       'W4',
+                       'R4/R8',
+                       'no baseline credit'))}
+
+
+def approved_amendment_checks(text: str, audit: Audit) -> None:
+    for label, (marker, required) in APPROVED_RULES.items():
+        start = text.find(marker)
+        if start < 0:
+            body = ""
+        elif marker.startswith("|"):
+            body = text[start:].splitlines()[0]
+        else:
+            end = re.search(r"\n#{2,3} ", text[start + len(marker):])
+            stop = start + len(marker) + end.start() if end else len(text)
+            body = text[start:stop]
+        for phrase in required:
+            audit.check(phrase in body,
+                        f"docs/cbd-80-measurement-source-register.md: {label} must retain {phrase!r}")
+
+
+
 def main() -> int:
     audit = Audit()
     text = REGISTER.read_text(encoding="utf-8")
     conventions = CONVENTIONS.read_text(encoding="utf-8")
+    approved_amendment_checks(text, audit)
 
     version = re.search(r"\| Document version \| ([\d.]+) \|", conventions)
     audit.check(version is not None, "conventions: no document version found")

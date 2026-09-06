@@ -2,10 +2,10 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft amendment v1.1 to approved v1.0**. Executive approved the exact activation semantics in `CBD13-ACTIVATION-001`; this candidate awaits independent review. Prior approvals and unrelated decisions remain in force; no whole-package approval, computation, release or closure is inferred |
-| Document version | 1.1 |
+| Status | **Candidate amendment v1.2**. Specific meanings approved in `CBD13-PROFILE-001`, `CBD13-CATEGORY-001` and `CBD13-USABLE-TIME-001`; CBD-80 also applies `CBD13-RETENTION-001`. Prior activation amendment independently reviewed and merged in PR #236; retention source amendment independently reviewed and merged in PR #237. This new candidate awaits independent review. Prior approvals remain in force; no whole-package approval, computation, release or closure is inferred |
+| Document version | 1.2 |
 | Owner | Alexander Wohlford |
-| Reviewer | Independent review pending for this amendment; prior approved baseline review remains historical |
+| Reviewer | Independent review pending for this candidate; prior activation/retention reviews remain valid only for their reviewed amendments |
 | Jira | [CBD-77](https://cobudget.atlassian.net/browse/CBD-77) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
 | Governing conventions | `docs/cbd-13-measurement-conventions.md` — Document version **1.0.1**, approved |
@@ -56,17 +56,17 @@ Three statements, because activation is the metric family most likely to be buil
 
 | Limb | Condition | Approved source |
 | --- | --- | --- |
-| **Profile** | The account subject has one financial profile | `CA-92-012` — one financial profile per account subject for Private MVP |
+| **Profile** | At window close, the measured space's current active Primary Owner (PM-72-008) has exactly one extant active person-level financial-profile authority domain (CA-92-012). An existing empty profile counts; no profile fails. Multiple active profiles or ambiguous association invalidate the source, not normal onboarding failure. Deletion-pending, terminated and retained-history-only profiles do not qualify | `CBD13-PROFILE-001`; `PM-72-008`; `CA-92-012` |
 | **Period** | The space has at least one materialized period whose boundaries are settled by its cadence | `SD-071-021` — initial weekly or monthly setup opens the complete current anchored period |
-| **Category** | The space has at least one spending category | **Presupposed, not defined.** `SD-071-005`, `SD-071-014`, `SD-071-027` and `SD-071-041` all operate on categories — prorating their targets, recording their provisional impact — and none defines the entity. `SD-071-010` establishes that spending targets are a state distinct from actual spending. See `OQ-77-004` |
-| **Allocation** | At least one category carries a target for the current period | `SD-071-005` / `SD-071-027` — category targets exist per period and prorate on transition |
+| **Category** | The space has at least one qualifying category: an extant stable-identity entity owned by the measured budget space, designated expense budgeting, currently usable for expense classification and category-target planning. Exclude income/transfer classifications, uncategorized placeholders, display groups, historical-only references and archived/deleted/replaced-only/inactive categories. Rename/reorder preserve identity; recreation creates a different identity. Neither actual spending nor a target is required | `CBD13-CATEGORY-001` defines the logical predicate; `SD-071-005` / `SD-071-027` support targets, not the complete category predicate |
+| **Allocation** | At least one qualifying category from the Category limb carries a current-period target. An explicitly stored zero qualifies; a missing target does not. Approved transition-prorated targets count | `CBD13-CATEGORY-001`; `SD-071-005` / `SD-071-027` |
 | **Account or transaction** | At least one manual account exists, **or** at least one transaction is classified into a period | `CA-92-004` explicit budget-space link; `SD-071-035` — a reliable date, not transaction time, determines period classification |
 
 **The disjunction in the fifth limb is deliberate.** `CBD-77-AC04` requires activation to be measurable before bank connectivity, and `SD-071-035` classifies a transaction on a reliable date rather than on a connection. A space with a manual account and no transaction is usable; so is a space with a classified transaction and no account record. Requiring both would make the metric unmeasurable during the manual-product beta, which is the failure `AC04` exists to prevent.
 
 **`UB-77-001` is a state condition, not a sequence.** It does not say the limbs were satisfied in an order, and no metric here asserts one.
 
-**One limb rests on a presupposition, and the approval review found it.** Four approved decisions operate on categories and none defines one; the defining specification is CBD-30, which is in Planning. The limb is sound — a category either exists in a space or does not, and the product cannot prorate a target for an entity it lacks — but it is the only limb of the five whose citation is inferential rather than definitional. `OQ-77-004` records it, and the audit did not catch it because it checks that a limb **cites** an approved source, not that the source **says** what the limb claims.
+**Logical meanings are settled; physical bindings remain future.** `CBD13-PROFILE-001` and `CBD13-CATEGORY-001` settle `OQ-77-003/004` only at the measurement-definition level. The profile limb requires no account, balance, connection, transaction, preference completion or positive value. Zero profiles before first use differs from an existing empty profile. No member gains private-profile access. CBD-82/CBD-30 feature owners must supply authorized schema bindings and proof of the exact association, lifecycle, category identity and current-target predicates; CBD-80 records those dependencies. No full feature design, permission, collection or retention change is approved.
 
 ## 4. The metrics
 
@@ -114,14 +114,14 @@ Every metric below is `Class: aggregate-state`, `Release form: global`, `Boundar
 | --- | --- |
 | Purpose | The headline activation measure. Whether a space reaches the state from which the product is usable at all — `UB-77-001` |
 | Formula | spaces_meeting_UB_77_001 ÷ spaces_created |
-| Numerator | Those same eligible spaces satisfying all five `UB-77-001` limbs simultaneously immediately before C; profile/category evidence dependencies remain open |
+| Numerator | Those same eligible spaces satisfying all five `UB-77-001` limbs simultaneously immediately before C; approved profile/category logical predicates apply; physical binding and verification dependencies remain open |
 | Denominator | Distinct extant budget spaces created O <= creation < C and not archived immediately before C (§5) |
 | Measurement source | `budget_space.usable_state_count` *(proposed)*, `budget_space.created_count` *(proposed)* |
 | Interval basis | Opens when a budget space exists; closes when all five `UB-77-001` limbs hold simultaneously |
 | Window | Calendar week, UTC |
 | Suppression | `withheld — population below release threshold` |
 | Connectivity | `MANUAL-OK` — the fifth limb's disjunction is what makes this true (§3) |
-| Data source | Application database; the derivation reads five tables and returns one boolean per space |
+| Data source | Authorized operational state for the five limbs; physical schema bindings remain future, and the derivation returns one boolean per space |
 | Collection method | Scheduled aggregate in the Worker. **The five limbs are evaluated together at window close, not accumulated as they are met**, so no per-space progress record exists |
 | Review cadence | Weekly *(CBD-81 confirms)* |
 | Unhealthy condition | Spaces reach a period but not usability, which isolates the category or allocation step |
@@ -149,17 +149,17 @@ Every metric below is `Class: aggregate-state`, `Release form: global`, `Boundar
 | Field | Value |
 | --- | --- |
 | Purpose | The elapsed cost of reaching `UB-77-001`. The measure most likely to justify changing the budget builder |
-| Formula | p50 and p90 of (fifth `UB-77-001` limb satisfied at − space created at), in hours |
+| Formula | p50 and p90 of (first simultaneous `UB-77-001` satisfaction at − space created at), in hours |
 | Numerator | `n/a` — a distribution, not a rate |
 | Denominator | `n/a` — the measured population is the numerator population |
 | Measurement source | `budget_space.usable_interval` *(proposed)* |
-| Interval basis | Opens when a budget space exists; closes when the last of the five `UB-77-001` limbs is satisfied |
+| Interval basis | Opens when a budget space exists; closes at first simultaneous satisfaction of all five `UB-77-001` limbs; preserved for future applicability |
 | Window | Calendar week, UTC, on spaces that became usable within the window |
 | Suppression | `withheld — population below release threshold`, at the same higher population as `MT-77-004` |
 | Connectivity | `MANUAL-OK` |
-| Data source | Application database |
-| Collection method | Scheduled aggregate in the Worker. **The closing timestamp is the maximum of the five limb timestamps**, which is a computation over current state and not a progress log |
-| Review cadence | Weekly *(CBD-81 confirms)* |
+| Data source | Future approved operational-source contract proving first simultaneous satisfaction under replacement, deletion and period changes; unavailable during Private MVP |
+| Collection method | **Deferred/unavailable for Private MVP** under `CBD13-USABLE-TIME-001`. No maximum of current timestamps, `updated_at`, budget date or newly retained measurement history may substitute for first simultaneous satisfaction. Source-owner proof and an approved operational-source contract are required before future computation |
+| Review cadence | Weekly and W4 baseline preserved for future applicability; no baseline credit or successful timing claim while deferred |
 | Unhealthy condition | p90 materially exceeds `MT-77-004`'s, isolating the cost to the steps after the period |
 
 ### MT-77-006 — Manual-account activation rate
@@ -204,10 +204,10 @@ Every metric below is `Class: aggregate-state`, `Release form: global`, `Boundar
 | --- | --- |
 | Purpose | Isolates the allocation limb of `UB-77-001`. `MT-77-003` reports whether the whole condition is met; this reports whether the step most likely to be skipped is |
 | Formula | spaces_with_category_target ÷ spaces_with_category |
-| Numerator | Budget spaces where at least one category carries a target for the current period |
-| Denominator | Budget spaces holding at least one spending category at window close |
+| Numerator | Those same denominator-eligible spaces where at least one category in the same qualifying set carries a current-period target; explicitly stored zero and approved transition-prorated targets qualify, missing target does not |
+| Denominator | Distinct extant nonarchived budget spaces holding at least one qualifying Category-limb entity from `UB-77-001` immediately before C |
 | Measurement source | `category_target.space_has_target_count` *(proposed)*, `category.space_has_category_count` *(proposed)* |
-| Interval basis | Opens when a space holds a category; closes when one category carries a current-period target |
+| Interval basis | Opens when a space holds a qualifying category; closes when a category in that same qualifying set carries a current-period target |
 | Window | Calendar week, UTC |
 | Suppression | `withheld — population below release threshold` |
 | Connectivity | `MANUAL-OK` |
@@ -218,7 +218,7 @@ Every metric below is `Class: aggregate-state`, `Release form: global`, `Boundar
 
 ## 5. Denominator rules
 
-Stated once and applied by every metric above, per conventions §6. The activation correction in `CBD13-ACTIVATION-001` was approved by the Executive; this draft amendment awaits independent review and does not approve the whole package.
+Stated once and applied by every metric above, per conventions §6. The activation correction in `CBD13-ACTIVATION-001` was approved by the Executive; the prior activation amendment was independently reviewed and merged in PR #236; this new predicate/timing candidate awaits independent review and does not approve the whole package.
 
 **Windows are UTC calendar weeks [O,C), with Monday 00:00 boundaries.** Evaluate operational state immediately before C. Creation exactly at C belongs to the next window. For MT-77-001/002/003/006, completion means qualifying state at close, not a separately tracked completion during the week. A late-created space is eligible for MT-77-002/003 if it exists and is not archived at close; there is no space grace period.
 
@@ -238,16 +238,22 @@ Stated once and applied by every metric above, per conventions §6. The activati
 | --- | --- | --- |
 | `OQ-77-001` | **The conventions pin CBD-76 as the governing scope source, and it is not the scope source for activation.** CBD-76's thirty rows are the CBD-12 oversight boundary; none is a period, category, allocation, account or transaction. §1.1 records the sources actually used | Recorded against the conventions, which own the pin. **No metric here changes** — this package used `SD-071-*` and `CA-92-*`, which do define the states. It matters for CBD-78 and CBD-79 as much as for this package |
 | `OQ-77-002` | **The suppression population is not a number.** Conventions §8 sets the rule and declines to set a minimum, because decision 2 releases no cells. Every `Suppression` field above therefore names the condition without a threshold, and `MT-77-004` and `MT-77-005` say only that theirs is *higher* | CBD-81 owns the number. Until it exists, no metric here can state when it releases rather than withholds, which makes the suppression rule unenforceable in practice |
-| `OQ-77-003` | **`CBD-82` is the elaboration of the financial-profile model and is Draft v0.1.** The profile limb of `UB-77-001` rests on `CA-92-012`, which is approved, so the limb stands. What is not settled is the *observable* form of a profile — whether "has one financial profile" is a row, a completeness state, or a set of required fields | `MT-77-003` and `MT-77-005` depend on the answer through `UB-77-001`. Recorded rather than guessed; CBD-80 records the state of record per source and will need it |
-| `OQ-77-004` | **The `UB-77-001` category limb has no defining approved source.** `SD-071-005`, `SD-071-014`, `SD-071-027` and `SD-071-041` presuppose categories; none defines the entity, and `SD-071-010` establishes only that spending targets are a distinct state. CBD-30 is the defining specification and is in Planning | The limb stands — the product cannot prorate a target for a category that does not exist — but it is inferential where the other four are definitional. **Found by the approval review, not by the audit**, which checks that a limb cites a source rather than that the source supports it |
+| `OQ-77-003` | **Logical meaning settled by `CBD13-PROFILE-001`.** Current active Primary Owner association and exactly one extant active profile; empty differs from absent (§3) | CBD-82 feature owner must bind and verify authorized physical state, association and lifecycle evidence. No completeness fields or private-profile access are added. MT-77-003 remains applicable; MT-77-005 is deferred |
+| `OQ-77-004` | **Logical meaning settled by `CBD13-CATEGORY-001`.** Active expense-category identity and separate current-target/zero-target predicates are explicit in §3 | CBD-30 feature owner must bind and verify the predicate and target association in authorized operational state. Schedule sources alone did not establish the full definition. MT-77-008 uses the same qualifying set on both sides |
 | `OI-77-001` | **Eight metrics propose nine measurement sources and none exists.** Every source is marked `proposed` per conventions §3, and CBD-80 assigns the `MS-80-nnn` identifiers and may rename | Expected, not a defect: the conventions define the proposal-then-assign flow precisely so these two packages do not edit each other. It does mean **no metric here is computable until CBD-80 completes** |
 | `OI-77-002` | **Nothing in this package has been measured.** The product is not built: budget spaces, periods, categories and manual transactions are approved designs, not running tables. Every `Data source` names where the state *will* live | The metrics are specifications, not results. A later reader should not mistake a defined metric for an observed one |
 
 
-**Unresolved timing evidence for MT-77-005:** the maximum of the five current limb timestamps does not by itself prove the first time all limbs held simultaneously after replacement, deletion or current-period changes. The source owner must establish timestamp meanings and historical coexistence from already authorized operational state. Do not substitute `updated_at`, accumulate progress, retain measurement history, or claim this interval computable before that proof. No replacement timing semantics are approved by the activation correction. `OQ-77-003` and `OQ-77-004` also remain open.
+**Approved timing scope disposition:** `CBD13-USABLE-TIME-001` defers MT-77-005 until an approved operational-source contract proves first simultaneous satisfaction under replacement/deletion/period changes. The metric, proposed source, intended interval, existing destination and future W4 baseline are preserved. Deferred/unavailable means no baseline credit or successful timing claim. Never substitute maximum current timestamps, `updated_at`, budget date or newly retained measurement history. Current-state MT-77-003 and all five limbs remain required/applicable; the profile/category logical questions are settled while physical binding and verification remain future.
 
 ## Activation amendment record
 
 | Version | Basis | Change | Status |
 | --- | --- | --- | --- |
-| 1.1 | Approved baseline v1.0; Executive decision `CBD13-ACTIVATION-001`, September 5, 2026 | Correct MT-77-001/002/003/006 population intersections, exclusive-close UTC week, grace boundary, archived-space exception, consumer-specific period counts and privacy-gated empty population. Preserve source IDs and all other decisions | Draft amendment; independent review pending |
+| 1.1 | Approved baseline v1.0; Executive decision `CBD13-ACTIVATION-001`, September 5, 2026 | Correct MT-77-001/002/003/006 population intersections, exclusive-close UTC week, grace boundary, archived-space exception, consumer-specific period counts and privacy-gated empty population. Preserve source IDs and all other decisions | Independently reviewed and merged in PR #236; current candidate review remains pending |
+
+## Usable-definition amendment record
+
+| Version | Authority | Change | Status |
+| --- | --- | --- | --- |
+| 1.2 | `CBD13-PROFILE-001`; `CBD13-CATEGORY-001`; `CBD13-USABLE-TIME-001`; shared `CBD13-RETENTION-001` follow-through; `CBD81-BASELINE-001` | Exact profile/category/target predicates; MT-77-008 matching set; MT-77-005 deferred with future slot/interval/W4; CBD-80 retention-source feasibility restrictions. Prior approved activation populations, IDs, owners, destinations, account OR transaction choice and privacy gates preserved | Candidate; independent review pending; no measured result or Done claim |

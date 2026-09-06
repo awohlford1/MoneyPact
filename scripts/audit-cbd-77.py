@@ -87,10 +87,76 @@ def metric_blocks(text: str) -> dict[str, str]:
     return blocks
 
 
+# Focused documentation guards for the approved logical predicates/deferrals.
+# These check the governing row/block, not runtime data or source feasibility.
+APPROVED_RULES = {'Profile': ('| **Profile** |',
+             ('current active Primary Owner',
+              'exactly one extant active person-level',
+              'An existing empty profile counts; no profile fails',
+              'Multiple active profiles or ambiguous association invalidate the source',
+              'Deletion-pending, terminated and retained-history-only')),
+ 'Category': ('| **Category** |',
+              ('extant stable-identity entity owned by the measured budget space',
+               'designated expense budgeting',
+               'currently usable for expense classification and category-target planning',
+               'income/transfer classifications, uncategorized placeholders, display groups, '
+               'historical-only references and archived/deleted/replaced-only/inactive '
+               'categories',
+               'Rename/reorder preserve identity; recreation creates a different identity',
+               'Neither actual spending nor a target is required')),
+ 'Allocation': ('| **Allocation** |',
+                ('qualifying category from the Category limb',
+                 'current-period target',
+                 'explicitly stored zero qualifies; a missing target does not',
+                 'Approved transition-prorated targets count')),
+ 'Timing': ('### MT-77-005',
+            ('first simultaneous',
+             'Deferred/unavailable for Private MVP',
+             'CBD13-USABLE-TIME-001',
+             'replacement, deletion and period changes',
+             'No maximum of current timestamps',
+             'updated_at',
+             'budget date',
+             'newly retained measurement history',
+             'W4 baseline preserved for future applicability',
+             'no baseline credit or successful timing claim')),
+ 'Target population': ('### MT-77-008',
+                       ('Those same denominator-eligible spaces',
+                        'same qualifying set',
+                        'explicitly stored zero',
+                        'missing target does not',
+                        'Distinct extant nonarchived budget spaces',
+                        'qualifying Category-limb entity')),
+ 'Profile disposition': ('| `OQ-77-003` |',
+                         ('Logical meaning settled', 'CBD13-PROFILE-001', 'bind and verify')),
+ 'Category disposition': ('| `OQ-77-004` |',
+                          ('Logical meaning settled',
+                           'CBD13-CATEGORY-001',
+                           'bind and verify'))}
+
+
+def approved_amendment_checks(text: str, audit: Audit) -> None:
+    for label, (marker, required) in APPROVED_RULES.items():
+        start = text.find(marker)
+        if start < 0:
+            body = ""
+        elif marker.startswith("|"):
+            body = text[start:].splitlines()[0]
+        else:
+            end = re.search(r"\n#{2,3} ", text[start + len(marker):])
+            stop = start + len(marker) + end.start() if end else len(text)
+            body = text[start:stop]
+        for phrase in required:
+            audit.check(phrase in body,
+                        f"docs/cbd-77-activation-and-onboarding-metrics.md: {label} must retain {phrase!r}")
+
+
+
 def main() -> int:
     audit = Audit()
     text = METRICS.read_text(encoding="utf-8")
     conventions = CONVENTIONS.read_text(encoding="utf-8")
+    approved_amendment_checks(text, audit)
 
     # --- the package pins the conventions version it was written against ----
     version = re.search(r"\| Document version \| ([\d.]+) \|", conventions)
