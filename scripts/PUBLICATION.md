@@ -16,13 +16,28 @@ offline tests do not establish live readiness. Before enabling publication:
    Do not use a governing baseline as an arbitrary test page. A non-governing
    test target needs its own owner-approved registration; this tool cannot create it.
 3. Configure the GitHub `confluence-publication` environment to allow only the
-   protected `main` branch, require an independent owner review and prohibit
-   self-approval/bypass where supported. Review repository branch protections.
-4. Use a dedicated Confluence identity with access only to the required pages
-   and the minimal read/update API permissions. Store only `CONFLUENCE_BASE_URL`,
-   `CONFLUENCE_EMAIL`, and `CONFLUENCE_API_TOKEN` in that protected environment.
-   The allowed origin is `https://cobudget.atlassian.net`. Never place credentials
-   in a repository file, a command argument, output, or an untrusted PR job.
+   protected `main` branch (not tags), require manual review by `awohlford1`,
+   allow self-review, and prohibit administrator bypass. The Product Owner
+   approved this solo-owner exception on 2026-09-06 in CBD-115: it retains a
+   manual checkpoint but provides no independent oversight. The owner may
+   initiate and approve the same run; automation must not approve a deployment
+   on the owner's behalf. Review repository branch protections.
+4. A dedicated Confluence identity remains preferred, but the owner-approved
+   single-account model may use the owner's existing Atlassian account with a
+   separate, expiring API token used only by this publisher. Select only
+   `read:page:confluence` and `write:page:confluence`. Write scope alone cannot
+   satisfy pre-write comparison and post-write verification. Record the token's
+   owner, scope names, expiry and rotation responsibility privately; never its
+   value. Revoke/replace it on expiry, compromise or discontinued publication.
+   Store `CONFLUENCE_API_TOKEN` as a secret in the protected environment;
+   `CONFLUENCE_BASE_URL` and `CONFLUENCE_EMAIL` are environment variables, not
+   secrets. BASE_URL must remain the site origin `https://cobudget.atlassian.net`
+   (not a space URL or API gateway URL). The publisher sends Basic email/token
+   authentication only to `https://api.atlassian.com`, using the fixed tenant
+   path `/ex/confluence/868470c5-c51e-465d-85ad-13b3cc8bb40e/wiki/api/v2/pages/`.
+   No dynamic tenant discovery, redirects, or legacy-token fallback is allowed.
+   Never place credentials in a repository file, command argument, output, or
+   untrusted PR job.
 5. In a reviewed repository change, record Done prerequisites, an approval
    reference, `exclusive_writer_approval` evidence, the registered approved smoke
    target key, and `enabled: true`. Before granting exclusive-writer approval,
@@ -32,6 +47,18 @@ offline tests do not establish live readiness. Before enabling publication:
    approval; do not rely on a stale one-time assertion. The automation does not
    grant or change those restrictions. If exclusivity cannot be enforced, do not
    activate this publisher.
+   With a shared human/automation account, permissions cannot distinguish a
+   human session from its token: the owner must stop all interactive edits and
+   other integrations using that account for the entire approved run. This is
+   an operational control, not technically enforced isolation. The account's
+   effective access (including groups/admin rights) still determines accessible
+   pages; scopes do not restrict the token to the manifest's page allowlist.
+   The page-write scope also permits page creation at the API level, although
+   this publisher never creates pages. Automated edits carry the owner's
+   identity, so workflow run ID, merge SHA and version evidence provide the
+   additional audit trail. These residual risks are accepted for the
+   single-account model; manual solo-owner GitHub approval, draft clearance,
+   page restrictions for other writers, and all reconciliation gates remain.
    Merge with the owner-approved document change. The activation commit is
    itself the push trigger; there is no manual-dispatch or scheduled shortcut.
 6. Approve the protected environment run and verify the exact merge SHA, run URL,
