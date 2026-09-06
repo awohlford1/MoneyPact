@@ -1,6 +1,6 @@
 {
   "enabled": false,
-  "prerequisites": {"CBD-113": "In Review", "CBD-114": "In Review"},
+  "prerequisites": {"CBD-113": "Done", "CBD-114": "Done"},
   "owner_approval": null,
   "exclusive_writer_approval": null,
   "smoke_target": "future-feature-register"

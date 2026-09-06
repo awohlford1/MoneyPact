@@ -125,6 +125,13 @@ jobs:
       - name: Check CBD-80 documentation package
         run: python3 scripts/audit-cbd-80.py
 
+      # Cross-package for the same reason, from the other direction: CBD-81
+      # assigns operating rules to metrics defined in CBD-77, CBD-78 and CBD-79
+      # and restates their counts, classes and deferral status, so it fails when
+      # a restatement drifts from the package it restates.
+      - name: Check CBD-81 documentation package
+        run: python3 scripts/audit-cbd-81.py
+
       # Each package audit checks that a claim carries a citation. None checks
       # that the citation resolves, so an invented identifier passed all four.
       # The CBD-77 approval review found this by following citations by hand.
