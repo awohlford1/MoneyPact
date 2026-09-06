@@ -58,8 +58,14 @@ document stays one step rather than two.
 
 ## Current activation gate
 
-`config/confluence-activation.json` is deliberately disabled. Implementation and
-offline tests do not establish live readiness. Before enabling publication:
+`config/confluence-activation.json` is enabled. It was activated on
+September 6, 2026 under CBD-115, recording CBD-113 and CBD-114 Done, the owner
+and exclusive-writer approvals, and `future-feature-register` as the smoke
+target. Implementation and offline tests still do not establish live readiness.
+
+The numbered requirements below are what activation had to satisfy. They are not
+spent: several are standing per-run obligations, called out where they apply, and
+must be reconfirmed at each environment approval rather than treated as settled.
 
 1. Fetch current Jira state and confirm CBD-113 and CBD-114 are both Done.
 2. Have the Product Owner review the manifest, its held dispositions, dependency
@@ -120,8 +126,10 @@ offline tests do not establish live readiness. Before enabling publication:
    Do not call the ticket complete on offline tests alone.
 
 This checkout does not configure credentials, approve a target, or assert that
-those external controls already exist. With activation disabled, the workflow
-fails visibly before reading a GitHub token or constructing a Confluence client.
+those external controls already exist. Every run holds at the protected
+environment gate before any step runs, so a push nobody approves reads no GitHub
+token, constructs no Confluence client and publishes nothing. Were activation
+disabled again, the workflow would fail visibly at the same point.
 
 ## Manifest changes
 
