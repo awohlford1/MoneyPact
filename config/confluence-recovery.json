@@ -1,4 +1,12 @@
 {
   "schema": 1,
-  "reconciled_attempts": []
+  "reconciled_attempts": [
+    {
+      "run_id": 34048420004,
+      "attempt": 1,
+      "head_sha": "3a14b1c599ad35c8eae092e52ee6bef5b3e2ca7a",
+      "checkpoint_sha": "210e408716a5f6bc85617ac2cdb6e3c9057580ea",
+      "authority": "CBD-115 comment 10231, owner-approved first-read recovery, 2026-09-06: run 34048420004 attempt 1 failed on the first baseline GET (page 3538946), before any PUT or subsequent target. Owner approved preserving the original checkpoint after correcting the environment email, with draft clearance and editing pause reconfirmed. This does not assert Live equals Desired or waive fresh baseline/conflict/version/readback checks; only this exact failed attempt is reconciled."
+    }
+  ]
 }
