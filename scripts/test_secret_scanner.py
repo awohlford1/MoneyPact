@@ -163,6 +163,85 @@ class SecretScannerTests(unittest.TestCase):
         self.assertTrue(hits)
         self.assertTrue(all(hit[2] == 16001 for hit in hits))
 
+    def test_foreign_object_keywords_do_not_activate_broad_token_rules(self):
+        # Public action pin, not a credential. The pinned Sourcegraph rule also
+        # accepts bare SHA-shaped values, but only with a Sourcegraph keyword.
+        pin = b"pin: " + b"3d3c42e5aac5ba805825" + b"da76410c181273ba90b1" + b"\n"
+        keyword = b"Sourcegraph documentation\n"
+        self.assertEqual(self.scan(pin), [])
+        for names in (("pin.txt", "reference.txt"), ("same.txt", "same.txt")):
+            for reverse in (False, True):
+                for padding in (0, 8192, 100000):
+                    objects = [([names[0]], pin), ([names[1]], keyword)]
+                    if reverse:
+                        objects.reverse()
+                    objects.insert(0, (["padding.txt"], b"ordinary\n" * padding))
+                    with self.subTest(names=names, reverse=reverse, padding=padding):
+                        self.assertEqual(scanner.scan_contents(self.binary, objects, []), [])
+        positive = self.scan(keyword + pin)
+        self.assertIn("sourcegraph-access-token", [hit[0] for hit in positive])
+        self.assertEqual(self.scan(b"ordinary documentation\n" + pin), [])
+
+    def test_origin_keyword_check_preserves_unicode_aliases_and_exact_exceptions(self):
+        # Split synthetic token construction so this test source is not itself
+        # an operational token fixture. Uppercase keywords remain eligible.
+        token = b"sgp_" + b"0123456789abcdef" * 2 + b"01234567"
+        body = b"SGP_" + token[4:] + b"\n"
+        hits = self.scan(body)
+        self.assertIn("sourcegraph-access-token", [hit[0] for hit in hits])
+        for encoding in ("utf-8-sig", "utf-16", "utf-32-be"):
+            self.assertEqual(self.scan(body.decode().encode(encoding)), hits)
+        aliases = ["one.txt", "two.txt"]
+        multi = scanner.scan_contents(self.binary, [(aliases, body)], [])
+        self.assertEqual({hit[1] for hit in multi}, set(aliases))
+        entries = [dict(rule=rule, path=path, fingerprint=fp, rationale="Synthetic only", owner="Test owner",
+                        created=date.today().isoformat(), expires=(date.today() + timedelta(days=1)).isoformat())
+                   for rule, path, _, fp in hits]
+        self.assertEqual(self.scan(body, entries=entries), [])
+        self.assertTrue(self.scan(body, path="moved.txt", entries=entries))
+        self.assertIn("cobudget-postgresql-credential", [hit[0] for hit in self.scan(fixtures()[1][2])])
+
+    def test_keyword_parser_uses_verified_pin_and_fails_closed(self):
+        keywords = scanner.detection_keywords()
+        self.assertEqual(len(keywords), 224)
+        self.assertEqual(keywords["sourcegraph-access-token"], ("sgp_", "sourcegraph"))
+        self.assertEqual(keywords["cobudget-postgresql-credential"], ())
+        self.assertEqual(keywords["cobudget-secret-assignment"], ())
+        with tempfile.TemporaryDirectory(prefix="cbd114-keywords-") as directory:
+            root = Path(directory)
+            (root / "config").mkdir()
+            target = root / "config/gitleaks.toml"
+            for array in ('["one", "two",]', '[\n "one",\n "two",\n]'):
+                source = ('[[rules]]\nid = "fixture"\nkeywords = ' + array + '\n').encode()
+                target.write_bytes(source)
+                with patch.object(scanner, "RULES_SHA256", scanner.digest(source)):
+                    self.assertEqual(scanner.detection_keywords(root), {"fixture": ("one", "two")})
+            for array in ('[unquoted]', '[1]', '[""]', '["\\u212a"]', '"one"'):
+                source = ('[[rules]]\nid = "fixture"\nkeywords = ' + array + '\n').encode()
+                target.write_bytes(source)
+                with patch.object(scanner, "RULES_SHA256", scanner.digest(source)):
+                    with self.assertRaisesRegex(scanner.ScanError, "unsupported pinned keyword"):
+                        scanner.detection_keywords(root)
+            with self.assertRaisesRegex(scanner.ScanError, "unreviewed detection"):
+                scanner.detection_keywords(root)
+
+    def test_keyword_context_matches_simple_unicode_lowercase(self):
+        self.assertEqual(scanner.keyword_context("To\u212aEN \u0130D Stra\u00dfe".encode()), "token id stra\u00dfe")
+        self.assertEqual(scanner.keyword_context(b"TOKEN\xffID"), "token\ufffdid")
+
+    def test_rejected_foreign_keyword_findings_still_redact_and_check_bounds(self):
+        marker = "SYNTHETIC-PATH-VALUE"
+        objects = [(["reference.txt"], b"ordinary\n"), ([marker + "/other.txt"], b"ordinary\n")]
+        raw = [{"RuleID": "sourcegraph-access-token", "Secret": marker, "StartLine": 3, "EndLine": 3},
+               {"RuleID": "cobudget-secret-assignment", "Secret": marker, "StartLine": 6, "EndLine": 6}]
+        with patch.object(scanner, "scan_input", return_value=raw):
+            hits = scanner.scan_contents(self.binary, objects, [])
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0][1], "[REDACTED]/other.txt")
+        with patch.object(scanner, "scan_input", return_value=[dict(raw[0], EndLine=5)]):
+            with self.assertRaisesRegex(scanner.ScanError, "crosses object boundary"):
+                scanner.scan_contents(self.binary, objects, [])
+
     def test_scanner_errors_never_echo_child_output(self):
         sentinel = b"SENSITIVE-CHILD-DIAGNOSTIC"
         for status, out in ((2, sentinel), (0, sentinel), (0, b"{}"), (1, b"[]")):

@@ -341,8 +341,47 @@ def diagnostic_secrets(findings):
     return values - {""}
 
 
+def detection_keywords(root=ROOT):
+    """Read keyword prerequisites from the verified pin, including Python 3.10.
+
+    This is deliberately the pin's narrow JSON-string-array syntax, not a TOML
+    parser. A changed pin or unsupported keyword syntax fails closed.
+    """
+    rules = (root / "config/gitleaks.toml").read_bytes().replace(b"\r\n", b"\n")
+    if digest(rules) != RULES_SHA256:
+        raise ScanError("unreviewed detection configuration")
+    result = {}
+    try:
+        for section in re.split(r"(?m)^\[\[rules\]\]\s*$", rules.decode("utf-8"))[1:]:
+            rule = re.search(r'^id = "([a-z0-9-]+)"$', section, re.MULTILINE).group(1)
+            match = re.search(r"(?m)^keywords = (\[[^\]]*\])\s*$", section)
+            if match is None:
+                if re.search(r"(?m)^keywords\b", section):
+                    raise ValueError()
+                result[rule] = ()
+                continue
+            keywords = json.loads(re.sub(r",\s*\]$", "]", match[1]))
+            if (not isinstance(keywords, list)
+                    or any(not isinstance(word, str) or not word or not word.isascii() for word in keywords)):
+                raise ValueError()
+            result[rule] = tuple(word.lower() for word in keywords)
+        if not result:
+            raise ValueError()
+        return result
+    except (ValueError, AttributeError, UnicodeError):
+        raise ScanError("unsupported pinned keyword configuration") from None
+
+
+def keyword_context(body):
+    # Gitleaks uses Go strings.ToLower (simple Unicode lowercase), not casefold.
+    # Python's only expanding lowercase is U+0130 -> i + combining dot; Go
+    # lowers that rune to plain i. Invalid UTF-8 cannot supply an ASCII keyword.
+    return body.decode("utf-8", errors="replace").replace("\u0130", "I").lower()
+
+
 def scan_contents(binary, contents, entries, root=ROOT):
     allowed = validate_allowlist(entries)
+    keywords = detection_keywords(root)
     pieces = [PREAMBLE]
     starts, records = [], []
     line = 3
@@ -390,11 +429,21 @@ def scan_contents(binary, contents, entries, root=ROOT):
     # occurrences of a finding's value in another finding's filename.
     secrets = diagnostic_secrets(finding for finding, *_ in located)
     output = set()
+    contexts = {}
     for finding, paths, body, row, end_row in located:
         lines = body.split(b"\n")
         if row < 1 or end_row > len(lines):
             raise ScanError("scanner match crosses object boundary")
         rule = finding["RuleID"]
+        # The stdin reader's fragment may contain several unrelated objects.
+        # Its keyword prefilter must not promote a broad token regex in one
+        # object because a different file/version/view contains the keyword.
+        # Keep original findings above for redaction and validate bounds first.
+        if keywords[rule]:
+            if id(body) not in contexts:
+                contexts[id(body)] = keyword_context(body)
+            if not any(word in contexts[id(body)] for word in keywords[rule]):
+                continue
         # The entire source line is hashed, never printed or saved in the allowlist.
         fingerprint = digest(rule.encode() + b"\0" + b"\n".join(lines[row - 1:end_row]))
         for path in paths:
