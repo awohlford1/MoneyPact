@@ -2,10 +2,10 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft amendment v1.1 to approved v1.0**. Executive approved the exact activation semantics in `CBD13-ACTIVATION-001`; this candidate awaits independent review. Prior approvals and unrelated decisions remain in force; no whole-package approval, computation, release or closure is inferred |
-| Document version | 1.1 |
+| Status | **Candidate amendment v1.2**. Specific meanings approved in `CBD13-PROFILE-001`, `CBD13-CATEGORY-001` and `CBD13-USABLE-TIME-001`; CBD-80 also applies `CBD13-RETENTION-001`. Prior activation amendment independently reviewed and merged in PR #236; retention source amendment independently reviewed and merged in PR #237. This new candidate awaits independent review. Prior approvals remain in force; no whole-package approval, computation, release or closure is inferred |
+| Document version | 1.2 |
 | Owner | Alexander Wohlford |
-| Reviewer | Independent review pending for this amendment; prior approved baseline review remains historical |
+| Reviewer | Independent review pending for this candidate; prior activation/retention reviews remain valid only for their reviewed amendments |
 | Jira | [CBD-77](https://cobudget.atlassian.net/browse/CBD-77) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
 | Governing conventions | `docs/cbd-13-measurement-conventions.md` — Document version **1.0.1**, approved |
@@ -26,7 +26,7 @@
 
 ### CBD-77-AC01 — numerator, denominator, interval basis, time window
 
-**Status: Activation population correction drafted; independent review pending.** Metrics §4 and §5 implement Executive decision `CBD13-ACTIVATION-001`: MT-77-001/002/003/006 numerators are restricted to their denominator membership; [O,C) and the strict 24-hour cutoff are explicit. MT-77-001 preserves archived-only success as an exception, MT-77-002/003 exclude old or archived spaces, and MT-77-006 retains older period-holding spaces. MT-77-005 timing proof remains unresolved as recorded below; field presence is not proof of computability.
+**Status: Prior activation correction independently reviewed and merged; current predicate/timing candidate review pending.** Metrics §4 and §5 implement Executive decision `CBD13-ACTIVATION-001`: MT-77-001/002/003/006 numerators are restricted to their denominator membership; [O,C) and the strict 24-hour cutoff are explicit. MT-77-001 preserves archived-only success as an exception, MT-77-002/003 exclude old or archived spaces, and MT-77-006 retains older period-holding spaces. MT-77-005 is explicitly deferred/unavailable under `CBD13-USABLE-TIME-001` as recorded below; field presence is not proof of computability.
 
 All eight metrics carry `Numerator`, `Denominator`, `Interval basis` and `Window`, and the audit fails on a missing field rather than trusting the author. **`MT-77-004` and `MT-77-005` record `n/a` with a reason for numerator and denominator**, because a percentile distribution has neither, and the conventions require `n/a` to carry a reason rather than be omitted — which the audit also checks.
 
@@ -41,20 +41,20 @@ All eight metrics carry `Numerator`, `Denominator`, `Interval basis` and `Window
 | First budget period creation | `MT-77-002` | Whether a space reaches a materialized period at all |
 | Usable-budget completion | `MT-77-003` | Whether a space reaches all five `UB-77-001` limbs |
 
-They are separate metrics with separate numerators, and §3 of the metrics document defines usability independently of period creation. `MT-77-004` and `MT-77-005` carry the same separation into the elapsed-time measures, which is what makes *"slow"* distinguishable from *"rare"*.
+They are separate metrics with separate numerators, and §3 of the metrics document defines usability independently of period creation. `MT-77-004` and `MT-77-005` carry the same separation into the elapsed-time measures, preserving the intended distinction between slow and rare; MT-77-005 timing is deferred/unavailable and earns no baseline credit or successful timing claim.
 
-### CBD-77-AC03 — time-to-usable-budget defines the minimum profile, period, category, allocation, and account or transaction
+### CBD-77-AC03 — usable-budget minimum limbs and explicit timing deferral
 
-**Status: Partially met; source evidence required.** The five conceptual limbs remain unchanged. Metrics `OQ-77-003/004` require observable profile/category definitions, and the MT-77-005 timing concern requires proof of first simultaneous satisfaction after mutation/deletion/current-period changes. No replacement timing definition was approved by the activation correction.
+**Status: Approved logical meanings and timing scope disposition incorporated; candidate review pending.** Metrics §3 specifies the current active Primary Owner profile-existence test, active expense-category predicate and separate current-target/zero-target rule under `CBD13-PROFILE-001` / `CBD13-CATEGORY-001`. `OQ-77-003/004` retain physical binding and verification dependencies. `CBD13-USABLE-TIME-001` explicitly defers MT-77-005; MT-77-003 and all five limbs remain required/applicable. Future timing needs approved source proof under replacement/deletion/period changes; no current timestamp maximum, updated_at, budget date or newly retained measurement history substitutes.
 
 `UB-77-001` states all five limbs. The audit checks citation presence, not whether a cited source proves an observable predicate:
 
 | Limb | Approved source |
 | --- | --- |
-| Profile | `CA-92-012` |
+| Profile | `CBD13-PROFILE-001`; `PM-72-008`; `CA-92-012`; exact current-owner association, empty vs absent, invalid ambiguous/multiple state in metrics §3 |
 | Period | `SD-071-021` |
-| Category | Presupposed by schedule decisions; defining CBD-30 evidence remains open at `OQ-77-004` |
-| Allocation | `SD-071-005`, `SD-071-027` |
+| Category | `CBD13-CATEGORY-001`; active expense-category identity and exclusions in metrics §3; CBD-30 physical binding/proof remains future |
+| Allocation | `CBD13-CATEGORY-001`; `SD-071-005` / `SD-071-027`; target on the same qualifying category set, stored zero qualifies and missing fails |
 | Account or transaction | `CA-92-004`, `SD-071-035` |
 
 **The fifth limb is a disjunction, and that is a decision this package made.** An account *or* a transaction satisfies it. Requiring both would make the condition unmeasurable during the manual-product beta, which is the outcome `CBD-77-AC04` exists to prevent — so the two criteria are read together rather than separately.
@@ -77,7 +77,7 @@ This criterion was amended on September 5, 2026 from *"required events, properti
 
 ### CBD-77-AC06 — abandonment and retry do not inflate completion rates
 
-**Status: Scoped correction drafted; independent review pending.** Metrics §5 requires distinct subjects/spaces and numerator membership within the same denominator. Multiple periods/accounts or join rows cannot multiply contributors. MT-77-001 counts a subject once even with several spaces; the following space-count rule applies to space-based metrics.
+**Status: Prior activation correction independently reviewed and merged; current candidate review pending.** Metrics §5 requires distinct subjects/spaces and numerator membership within the same denominator. Multiple periods/accounts or join rows cannot multiply contributors. MT-77-001 counts a subject once even with several spaces; the following space-count rule applies to space-based metrics.
 
 §5 states the rule and §2 states why it holds structurally rather than by deduplication: **every denominator counts spaces or subjects, each of which has exactly one current state.** A person who abandons and restarts within one space contributes one row because the space contributes one row.
 
@@ -132,10 +132,28 @@ Recorded here because the amendment is four hours old and a reader of the ticket
 
 ## Activation correction validation and handoff
 
-The focused candidate maps CBD-77-AC01/06 to metrics §4/§5 and the corresponding CBD-80 source derivations. CBD-77-AC03 remains source-dependent, not repaired by population alignment. The existing documentation audit checks structural integrity only; independent semantic review must verify creation at O/C, creation exactly at C minus 24 hours, older success, archived-only subject success, deleted absent spaces, periodless manual accounts, duplicate joins and zero-denominator privacy behavior against the approved decision. No implementation, release-control or production measurement proof is claimed. Prior audit counts below describe the historical baseline.
+The focused candidate maps CBD-77-AC01/06 to metrics §4/§5 and the corresponding CBD-80 source derivations. CBD-77-AC03 now incorporates the approved logical meanings and explicit timing deferral; physical binding and verification remain future. The existing documentation audit checks structural integrity only; independent semantic review must verify creation at O/C, creation exactly at C minus 24 hours, older success, archived-only subject success, deleted absent spaces, periodless manual accounts, duplicate joins and zero-denominator privacy behavior against the approved decision. No implementation, release-control or production measurement proof is claimed. Prior audit counts below describe the historical baseline.
 
 ## Activation amendment record
 
 | Version | Basis | Change | Status |
 | --- | --- | --- | --- |
-| 1.1 | Approved baseline v1.0; Executive decision `CBD13-ACTIVATION-001`, September 5, 2026 | Correct MT-77-001/002/003/006 population intersections, exclusive-close UTC week, grace boundary, archived-space exception, consumer-specific period counts and privacy-gated empty population. Preserve source IDs and all other decisions | Draft amendment; independent review pending |
+| 1.1 | Approved baseline v1.0; Executive decision `CBD13-ACTIVATION-001`, September 5, 2026 | Correct MT-77-001/002/003/006 population intersections, exclusive-close UTC week, grace boundary, archived-space exception, consumer-specific period counts and privacy-gated empty population. Preserve source IDs and all other decisions | Independently reviewed and merged in PR #236; current candidate review remains pending |
+
+## Usable-definition amendment record
+
+| Version | Authority | Change | Status |
+| --- | --- | --- | --- |
+| 1.2 | `CBD13-PROFILE-001`; `CBD13-CATEGORY-001`; `CBD13-USABLE-TIME-001`; shared `CBD13-RETENTION-001` follow-through; `CBD81-BASELINE-001` | Exact profile/category/target predicates; MT-77-008 matching set; MT-77-005 deferred with future slot/interval/W4; CBD-80 retention-source feasibility restrictions. Prior approved activation populations, IDs, owners, destinations, account OR transaction choice and privacy gates preserved | Candidate; independent review pending; no measured result or Done claim |
+
+## Current amendment criterion evidence and CBD-81 handoff
+
+| Criterion / decision | Definition and source evidence | Remaining gate |
+| --- | --- | --- |
+| CBD-77-AC03; CBD13-PROFILE-001 | CBD-77 §3 Profile; CBD-80 MS-80-005 and Approved usable predicates section: current active Primary Owner, exactly one extant active person-level profile; empty qualifies, absent fails, ambiguous/multiple invalidates source; excluded lifecycle states and no completeness requirement | CBD-82 feature owner physical association/lifecycle binding and proof; no new private access |
+| CBD-77-AC03; CBD13-CATEGORY-001 | CBD-77 §3 Category/Allocation and MT-77-008; CBD-80 MS-80-010/011: current active expense entity, stable identity and exclusions; same qualifying set for target numerator and category denominator, stored zero qualifies, missing fails, approved proration qualifies | CBD-30 feature owner physical predicate/target binding and proof |
+| CBD-77-AC01/02/03; CBD13-USABLE-TIME-001 | MT-77-005 and MS-80-007 explicitly deferred/unavailable; intended first-simultaneous interval and future W4 retained; MT-77-003 remains required with five limbs | Approved operational-source contract proving coexistence after replacement/deletion/period changes; no timestamp/history proxy, baseline credit or timing-success claim |
+| CBD-80-AC01/06; CBD13-RETENTION-001 | MS-80-015/016/017 carry merged CBD-78 MT-78-004/005/006 deferral: permissions are not actions, occurrence times and historical A/B evidence unproven under mutation/deletion | Approved operational-source proof without behavioral events, retained measurement membership or audit-purpose reuse; no zero, baseline credit or measured success |
+| CBD-80-AC03/04/05; CBD81-BASELINE-001 | Existing privacy rules, IDs, consumers, owners and destinations preserved; W4 and R4/R8 remain future applicable baselines for deferred metrics | Independent candidate review and CBD-81 applicability/exit follow-through; unchanged release/privacy gates |
+
+CBD-81 follow-through must distinguish logical definition completion from physical-source readiness, apply the approved MT-77-005/MT-78-004/005/006 deferrals without successful baseline credit, and retain W4/R4/R8 for future applicability. R4/R8 still require two valid observation pairs with earliest reviews after six/ten weeks. No numerical privacy minimum, target, metric result or beta-success claim is added. This assignment does not edit CBD-81 or certify Jira Done. Structural checks and safe synthetic failure proofs are evidence of documentation integrity only; independent semantic review remains required.

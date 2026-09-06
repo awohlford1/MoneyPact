@@ -2,10 +2,10 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft amendment v1.4 to approved v1.3**. Executive approved the exact activation semantics in `CBD13-ACTIVATION-001`; this candidate awaits independent review. Prior approvals and unrelated decisions remain in force; no whole-package approval, computation, release or closure is inferred |
-| Document version | 1.4 |
+| Status | **Candidate amendment v1.5**. Specific meanings approved in `CBD13-PROFILE-001`, `CBD13-CATEGORY-001` and `CBD13-USABLE-TIME-001`; CBD-80 also applies `CBD13-RETENTION-001`. Prior activation amendment independently reviewed and merged in PR #236; retention source amendment independently reviewed and merged in PR #237. This new candidate awaits independent review. Prior approvals remain in force; no whole-package approval, computation, release or closure is inferred |
+| Document version | 1.5 |
 | Owner | Alexander Wohlford |
-| Reviewer | Independent review pending for this amendment; prior approved baseline review remains historical |
+| Reviewer | Independent review pending for this candidate; prior activation/retention reviews remain valid only for their reviewed amendments |
 | Jira | [CBD-80](https://cobudget.atlassian.net/browse/CBD-80) |
 | Parent story | [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) |
 | Governing conventions | `docs/cbd-13-measurement-conventions.md` — Document version **1.0.1**, approved |
@@ -26,7 +26,7 @@
 
 ### CBD-80-AC01 — each source has a stable name, state of record, derivation, refresh basis, boundary, and owning metric
 
-**Status: Scoped activation correction drafted; independent review pending.** Register MS-80-001/002/003/004/005/008 and its Activation population contract implement `CBD13-ACTIVATION-001`. MS-80-002 intersects subject eligibility; MS-80-005 intersects created-space eligibility; MS-80-008 intersects period-holding eligibility. MS-80-004 preserves broad MT-77-006/007 counts and a separate MT-77-002 creation-window intersection. Source IDs and consumers are unchanged. Profile/category and first-simultaneous-timestamp evidence remain open; a registered derivation is not an implemented source.
+**Status: Prior activation correction independently reviewed and merged; current source candidate review pending.** Register MS-80-001/002/003/004/005/008 and its Activation population contract implement `CBD13-ACTIVATION-001`. MS-80-002 intersects subject eligibility; MS-80-005 intersects created-space eligibility; MS-80-008 intersects period-holding eligibility. MS-80-004 preserves broad MT-77-006/007 counts and a separate MT-77-002 creation-window intersection. Source IDs and consumers are unchanged. Profile/category logical meanings are now approved; physical binding and verification remain open. MS-80-007 timing is explicitly deferred, and MS-80-015/016/017 carry the merged retention deferral. A registered derivation is not an implemented source.
 
 All thirty-three rows carry all six, and the audit fails a row with a missing column or an empty cell rather than trusting the table to look complete.
 
@@ -64,7 +64,7 @@ The criterion asks for minimization or pseudonymity. **The register gives neithe
 
 ### CBD-80-AC06 — duplicate counting prevented by the derivation
 
-**Status: Scoped activation correction drafted; independent review pending.** The Activation population contract counts distinct eligible subjects/spaces rather than joined rows, forbids persisting contributing membership, and keeps each numerator within its owning denominator. The broad MS-80-004 count is not interchangeable with its MT-77-002 intersection.
+**Status: Prior activation correction independently reviewed and merged; current source candidate review pending.** The Activation population contract counts distinct eligible subjects/spaces rather than joined rows, forbids persisting contributing membership, and keeps each numerator within its owning denominator. The broad MS-80-004 count is not interchangeable with its MT-77-002 intersection.
 
 Every derivation counts an **outcome reached in the state of record**, not an attempt observed. A space has one state, an invitation has one terminal state, an instance has one acknowledgement state — so a repeated action contributes one row because the entity contributes one row.
 
@@ -131,10 +131,28 @@ Register §6 worked through the surfaces the product has and found that approved
 
 ## Activation correction validation and handoff
 
-CBD-80-AC01/06 corrections support CBD-13-AC02/07 and later CBD-81 source-gate review. The existing cross-package audit checks source registration, fields and structural consistency; it cannot prove population semantics or authorized timestamp availability. Independent review must compare the six amended source rows and the Activation population contract with CBD-77 §4/§5 and the exact Executive decision. No new release policy, source, metric, destination, schema, retention or baseline period is introduced. Prior audit counts elsewhere in this report describe the historical baseline. Whole-package approval and source implementation remain separate gates.
+CBD-80-AC01/06 corrections support CBD-13-AC02/07 and later CBD-81 source-gate review. The existing cross-package audit checks source registration, fields and structural consistency; it cannot prove population semantics or authorized timestamp availability. The prior independent activation review compared the six amended source rows and the Activation population contract with CBD-77 §4/§5 and the exact Executive decision. No new release policy, source, metric, destination, schema, retention or baseline period is introduced. Prior audit counts elsewhere in this report describe the historical baseline. Whole-package approval and source implementation remain separate gates.
 
 ## Activation amendment record
 
 | Version | Basis | Change | Status |
 | --- | --- | --- | --- |
-| 1.4 | Approved baseline v1.3; Executive decision `CBD13-ACTIVATION-001`, September 5, 2026 | Correct MT-77-001/002/003/006 population intersections, exclusive-close UTC week, grace boundary, archived-space exception, consumer-specific period counts and privacy-gated empty population. Preserve source IDs and all other decisions | Draft amendment; independent review pending |
+| 1.4 | Approved baseline v1.3; Executive decision `CBD13-ACTIVATION-001`, September 5, 2026 | Correct MT-77-001/002/003/006 population intersections, exclusive-close UTC week, grace boundary, archived-space exception, consumer-specific period counts and privacy-gated empty population. Preserve source IDs and all other decisions | Independently reviewed and merged in PR #236; current candidate review remains pending |
+
+## Usable-definition amendment record
+
+| Version | Authority | Change | Status |
+| --- | --- | --- | --- |
+| 1.5 | `CBD13-PROFILE-001`; `CBD13-CATEGORY-001`; `CBD13-USABLE-TIME-001`; shared `CBD13-RETENTION-001` follow-through; `CBD81-BASELINE-001` | Exact profile/category/target predicates; MT-77-008 matching set; MT-77-005 deferred with future slot/interval/W4; CBD-80 retention-source feasibility restrictions. Prior approved activation populations, IDs, owners, destinations, account OR transaction choice and privacy gates preserved | Candidate; independent review pending; no measured result or Done claim |
+
+## Current amendment criterion evidence and CBD-81 handoff
+
+| Criterion / decision | Definition and source evidence | Remaining gate |
+| --- | --- | --- |
+| CBD-77-AC03; CBD13-PROFILE-001 | CBD-77 §3 Profile; CBD-80 MS-80-005 and Approved usable predicates section: current active Primary Owner, exactly one extant active person-level profile; empty qualifies, absent fails, ambiguous/multiple invalidates source; excluded lifecycle states and no completeness requirement | CBD-82 feature owner physical association/lifecycle binding and proof; no new private access |
+| CBD-77-AC03; CBD13-CATEGORY-001 | CBD-77 §3 Category/Allocation and MT-77-008; CBD-80 MS-80-010/011: current active expense entity, stable identity and exclusions; same qualifying set for target numerator and category denominator, stored zero qualifies, missing fails, approved proration qualifies | CBD-30 feature owner physical predicate/target binding and proof |
+| CBD-77-AC01/02/03; CBD13-USABLE-TIME-001 | MT-77-005 and MS-80-007 explicitly deferred/unavailable; intended first-simultaneous interval and future W4 retained; MT-77-003 remains required with five limbs | Approved operational-source contract proving coexistence after replacement/deletion/period changes; no timestamp/history proxy, baseline credit or timing-success claim |
+| CBD-80-AC01/06; CBD13-RETENTION-001 | MS-80-015/016/017 carry merged CBD-78 MT-78-004/005/006 deferral: permissions are not actions, occurrence times and historical A/B evidence unproven under mutation/deletion | Approved operational-source proof without behavioral events, retained measurement membership or audit-purpose reuse; no zero, baseline credit or measured success |
+| CBD-80-AC03/04/05; CBD81-BASELINE-001 | Existing privacy rules, IDs, consumers, owners and destinations preserved; W4 and R4/R8 remain future applicable baselines for deferred metrics | Independent candidate review and CBD-81 applicability/exit follow-through; unchanged release/privacy gates |
+
+CBD-81 follow-through must distinguish logical definition completion from physical-source readiness, apply the approved MT-77-005/MT-78-004/005/006 deferrals without successful baseline credit, and retain W4/R4/R8 for future applicability. R4/R8 still require two valid observation pairs with earliest reviews after six/ten weeks. No numerical privacy minimum, target, metric result or beta-success claim is added. This assignment does not edit CBD-81 or certify Jira Done. Structural checks and safe synthetic failure proofs are evidence of documentation integrity only; independent semantic review remains required.
