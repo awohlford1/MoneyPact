@@ -34,6 +34,28 @@ behaviour offline, including that the created body is empty by the publisher's
 own definition of empty.
 
 
+## Why the TARGETS table is duplicated
+
+`scripts/sync-confluence.py` holds a `TARGETS` row for every registered
+document, repeating what `config/confluence-publication.json` already says.
+That looks like redundancy to collapse. It is not, and deriving one from the
+other removes a control.
+
+`config/confluence-bootstrap.json` snapshots the manifest at the bootstrap
+commit, and it is a file in the working tree, so it can be edited. The
+`TARGETS` table *at a past revision* is git history, so it cannot.
+`publication.registry()` reads the table out of that past revision and checks
+the snapshot against it, which is how a snapshot edited to claim a document was
+registered earlier than it really was fails with `registry-manifest-drift`. The
+test `test_bootstrap_new_registration_is_not_an_assumed_historical_target`
+pins that behaviour; its fixture revision holds `TARGETS = ()`.
+
+Derive the table from the manifest and that check compares the manifest with
+itself. The forgery it exists to catch would pass, and nothing would fail
+loudly to say so. Keep both surfaces and let the drift error keep them honest.
+`scripts/create-confluence-target.py` prints both rows so registering a
+document stays one step rather than two.
+
 ## Current activation gate
 
 `config/confluence-activation.json` is deliberately disabled. Implementation and
