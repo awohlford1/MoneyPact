@@ -13,24 +13,24 @@ does not mirror issue administration or claim acceptance.
 
 | Criterion | Package evidence | Disposition |
 | --- | --- | --- |
-| CBD-81-AC01 | Process sections 2–4: exact 28-row inventory; W4/D14/R4/R8 timing, start triggers, minimum windows, review dates and bounded next decisions; pending-bound and zero-failure guardrails | Proposed coverage, pending DEC-81-001/002/003. No measurement or target approval claimed |
+| CBD-81-AC01 | Process sections 2–4: exact 28-row inventory; W4/D14/R4/R8 timing, start triggers, minimum windows, review dates and bounded next decisions; pending-bound and zero-failure guardrails | DEC-81-001 baseline timing/process approved by Executive under CBD81-BASELINE-001. Package coverage remains proposed with DEC-81-002/003 and source gates pending. No measurement or performance-target approval claimed |
 | CBD-81-AC02 | Section 4: every metric assigned exactly one product, synchronization, notifications or security owner; solo Product Owner carries responsibilities without expanding access | Covered by proposal |
 | CBD-81-AC03 | Sections 2, 4–5: daily service decisions, weekly product/baseline decisions and relevant release reviews; no shortened or extra measurement windows | Covered by proposal |
 | CBD-81-AC04 | Section 4: action for every unhealthy metric; sections 3 and 5 constrain suppression, access, rollback and communication | Covered by proposal; implementation and authorization of actions remain separate |
 | CBD-81-AC05 | Section 5: continuation, affected/full pause, expansion, successful evaluation exit and incomplete beta end; deletion handoff | Covered by proposal; approvals and operational evidence pending |
-| CBD-81-AC06 | Section 2 below reviews all eight parent criteria | **Not complete.** DEF-81-001 and pending proposal/privacy/bound decisions prevent confirmation |
+| CBD-81-AC06 | Section 2 below reviews all eight parent criteria | **Not complete.** DEF-81-001, DEF-81-002 and pending proposal/privacy/bound decisions prevent confirmation |
 
 ## 2. Parent criterion review
 
 | Criterion | Existing definition evidence and CBD-81 contribution | Closure assessment |
 | --- | --- | --- |
 | CBD-13-AC01 | CBD-77 activation; CBD-78 engagement; CBD-79 reliability and permitted safety measures; process section 4 includes all 28 IDs | Categories present. Denied-access/support signals retain their approved Private MVP exclusion and SRV-94-010 routing |
-| CBD-13-AC02 | CBD-77/78/79 metric records supply name, purpose, formula, denominator, source and collection method; process section 4 fixes proposed ownership/cadence | **Blocked:** formal fields exist, but DEF-81-001 leaves action/history predicates unproven. Source binding and independent verification remain required; fields alone are not evidence of computability |
+| CBD-13-AC02 | CBD-77/78/79 metric records supply name, purpose, formula, denominator, source and collection method; process section 4 fixes proposed ownership/cadence | **Blocked:** DEF-81-001 leaves action/history predicates unproven; DEF-81-002 leaves MT-77-001 grace/eligibility and MT-77-002/003 population alignment inconsistent. OQ-77-003/004 retain observable-profile/category definition dependencies. Source binding and independent verification remain required; fields alone are not evidence of computability |
 | CBD-13-AC03 | CBD-79 MT-79-001–005 CONN-REQUIRED; process section 4 explicitly defers bank start without blocking manual measurement | Covered at specification level; no bank availability claimed |
 | CBD-13-AC04 | CBD-78 AD-78-001/RT-78-001 and MT-78-005/006; process section 2 names R4/R8 evidence maturity and section 6 carries DEF-81-001 | **Blocked:** historical predicates and viewing evidence need approved resolution. Amended criterion defers cadence segmentation; no requirement to produce beta segments is reinstated |
 | CBD-13-AC05 | CBD-79 MT-79-007/008 duplicate/late; CBD-78 MT-78-007/008 acknowledged/dismissed; process sections 4, 6 and 7 | Executive clarification accepted: technical correctness uses defined synthetic QA against approved alert rules, separate from production/customer/support data. No new production metric. Synthetic specification is present; actual QA execution remains a delivery gate |
 | CBD-13-AC06 | CBD-80 register sections 2–6: attributes, prohibited content, retention and separate destinations; process sections 3 and 5 operationalize review and cleanup handoff | Specification coverage exists under amended no-event-catalog criterion. Actual schema binding, release checks, CBD-122 compatibility and CBD-63 cleanup evidence remain dependencies |
-| CBD-13-AC07 | Process sections 2–6: all 28 baseline/guardrail dispositions, response actions, deadlines and decisions | Proposed coverage; DEC-81-001/003 acceptance pending. A missing bound is explicitly unavailable, never silently healthy |
+| CBD-13-AC07 | Process sections 2–6: all 28 baseline/guardrail dispositions, response actions, deadlines and decisions | DEC-81-001 baseline timing/process approved; remaining package coverage proposed and DEC-81-003 acceptance pending. DEF-81-002 blocks activation baseline computation/credit until source correction; OQ-77-003/004 predicates must also be resolved where required. A missing bound or invalid population is unavailable, never silently healthy |
 | CBD-13-AC08 | Conventions; CBD-91 inventory; CBD-92 AN-92-001–007 and OP-92-*; CBD-80 privacy rules; process section 3 and alert ratchet in section 4 | Design constraints preserved. DEC-81-002, source-predicate resolution and independent Security/Risk assessment required before release/closure claims |
 
 CBD-81 drafting does not mark CBD-13 Done. Specification completion must be
@@ -89,12 +89,24 @@ guard is implemented, scheduled or passing:
    claim. Verify the Executive correctness decision actually exists and does
    not imply ordinary customer-content access. Verify approved restrictions
    remain effective despite stale prose in a source package.
+8. Resolve DEF-81-002 against approved CBD-77/CBD-80 corrections. Exercise
+   final-24-hour and window-open-minus-grace boundaries, successful spaces
+   created before the window, archived spaces and eligible subject membership;
+   verify numerator membership is compatible with the approved denominator.
+   Confirm MT-77-001/002/003 receive no computation or baseline credit while
+   unresolved. Carry OQ-77-003/004 to the source owners and verify approved
+   observable profile/category predicates before affected computation. These
+   fixtures verify the chosen approved definition; they do not choose it.
 
 Independent Review and Security/Risk dispositions are pending; this author
 cannot approve their own material proposal. Product Owner decisions
-DEC-81-001 through DEC-81-003 are pending. DEC-81-004 is settled by the Executive
-synthetic-QA clarification. DEF-81-001 is a substantive source
-definition blocker, not merely a future table-binding task. DEP-81-001 and
+DEC-81-002 and DEC-81-003 are pending. DEC-81-001 is approved under
+CBD81-BASELINE-001; this does not approve the whole package or remove source or
+release gates. DEC-81-004 is settled by the Executive
+synthetic-QA clarification. DEF-81-001 and DEF-81-002 are substantive source
+definition blockers, not merely future table-binding tasks. OQ-77-003/004 remain
+source-definition handoffs to CBD-82/CBD-30 and the CBD-77/CBD-80 owners.
+DEP-81-001 and
 OQ-80-007 are implementation/operational handoffs. No outside document was
 changed to resolve these dependencies, and no Jira or Confluence write is
 authorized by this draft.

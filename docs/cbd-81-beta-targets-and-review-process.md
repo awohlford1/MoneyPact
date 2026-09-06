@@ -1,6 +1,6 @@
 # CBD-81 — Beta targets and review process
 
-Version 0.1, proposed for Product Owner review; September 5, 2026. No approval,
+Version 0.1, Draft for Product Owner review; September 5, 2026. No package approval,
 measurement, implementation, beta launch or Jira completion is asserted.
 Owner: Alexander Wohlford, Product Owner. Task: [CBD-81](https://cobudget.atlassian.net/browse/CBD-81).
 Parent: [CBD-13](https://cobudget.atlassian.net/browse/CBD-13).
@@ -21,12 +21,18 @@ not a staging copy of those fields. Parent completion is assessed in the
 [traceability report](cbd-81-acceptance-criteria-traceability.md).
 
 All rules below are proposals unless explicitly identified as an existing
-contract. The approved global-only release, Worker computation, alert response
+contract or an Executive-approved decision. The approved global-only release, Worker computation, alert response
 restrictions and two storage destinations remain settled. No behavioral events,
 customer-level measurement records, cohorts, segmentation, new metric or new
 permission is introduced. A baseline is not permission to read an invalid source.
 
-## 2. Proposed baseline protocol
+## 2. Approved baseline protocol
+
+The Executive approved W4/D14/R4/R8 and their bounded review process in
+`CBD81-BASELINE-001`, communicated through Manager on September 5, 2026.
+This settles DEC-81-001 only; the package remains Draft. Source validity,
+privacy release policy, operating bounds and all other unresolved gates remain
+pending. No observed comparison range or performance target is approved.
 
 `B0` is the first Monday 00:00 UTC after the Product Owner authorizes the manual
 beta and the relevant source, release controls and approved policy are ready.
@@ -41,7 +47,7 @@ change starts a new version and baseline; do not splice incompatible windows.
 | R4 | First valid A week at/after B0; B starts four weeks after A starts | Two successive releasable named A/B pairs, requiring at least six complete weeks; review first Monday after the second B closes | Product Owner accepts a provisional comparison baseline or defers with reason and next review in four weeks |
 | R8 | First valid A week at/after B0; B starts eight weeks after A starts | Two successive releasable named A/B pairs, requiring at least ten complete weeks; review first Monday after the second B closes | Product Owner accepts a provisional comparison baseline or defers with reason and next review in four weeks |
 
-The counts above are proposed minimum *windows*, not a statistical power claim
+The counts above are approved minimum *windows*, not a statistical power claim
 or a population privacy threshold. Every constituent record must independently
 pass the release policy in section 3. If evidence is insufficient at the scheduled
 review, record `insufficient evidence`, decide the extension or pause, and record
@@ -73,7 +79,7 @@ does not grant a human access to intermediate results or contributing records.
 | Withheld — release policy pending | Record policy dependency and next decision date; no numeric release or baseline credit |
 | No eligible population | Distinguish from measured zero; no rate or percentile and no baseline credit; publish this state only if the release policy permits it, otherwise withhold |
 | Unavailable — capability/source not ready | Record the dependency and owner; do not compute or backfill from unauthorized sources; no baseline credit |
-| Unavailable — source definition unresolved | Record `DEF-81-001` or affected definition issue; no computation until corrected source is approved |
+| Unavailable — source definition unresolved | Record `DEF-81-001`, `DEF-81-002` or affected definition issue; no computation or baseline credit until corrected source is approved |
 | Insufficient evidence | A scheduled review occurred without the profile's required records; invoke the bounded next decision in section 2 |
 
 No denominator manipulation, longer overlapping window, arithmetic subtraction,
@@ -113,14 +119,15 @@ The solo Product Owner performs the categorized responsibilities below.
 `MT-79-001` through `MT-79-005` are `CONN-REQUIRED`: pending bank availability,
 their source readiness and D14 start are deferred without blocking manual beta.
 All other rows are `MANUAL-OK`; this does not assert implementation readiness.
-Profile and trigger cells are proposed baseline/guardrail dispositions, not
-approved performance targets.
+W4/D14/R4/R8 profile timing and bounded review rules are approved under
+DEC-81-001. Trigger and guardrail proposals remain subject to their stated gates;
+no performance target is approved.
 
 | Exact metric ID and name | Owner | Profile; cadence | Trigger and actionable response |
 | --- | --- | --- | --- |
-| MT-77-001 — Space creation rate | product | W4; W/R | Adverse decline: reproduce account-to-space onboarding using synthetic data; fix creation or copy failures; roll back the responsible change if reproducible |
-| MT-77-002 — First budget period rate | product | W4; W/R | Adverse decline: check period materialization and schedule validation; repair or roll back the failing setup path |
-| MT-77-003 — Usable-budget completion rate | product | W4; W/R | Adverse decline: validate all five UB-77-001 limbs in synthetic fixtures; fix the failing manual setup path without redefining usable |
+| MT-77-001 — Space creation rate | product | W4; W/R; DEF-81-002 gate | No computation or baseline credit until grace and numerator eligibility are reconciled. Thereafter adverse decline: reproduce account-to-space onboarding using synthetic data; fix creation or copy failures; roll back the responsible change if reproducible |
+| MT-77-002 — First budget period rate | product | W4; W/R; DEF-81-002 gate | No computation or baseline credit until numerator/denominator populations are reconciled. Thereafter adverse decline: check period materialization and schedule validation; repair or roll back the failing setup path |
+| MT-77-003 — Usable-budget completion rate | product | W4; W/R; DEF-81-002 gate | No computation or baseline credit until numerator/denominator populations and required source predicates are resolved. Thereafter adverse decline: validate all five UB-77-001 limbs in synthetic fixtures; fix the failing manual setup path without redefining usable |
 | MT-77-004 — Time to first budget period | product | W4; W/R | Adverse increase: reproduce setup delays and period scheduling; simplify or fix the affected step; preserve higher percentile release protection |
 | MT-77-005 — Time to usable budget | product | W4; W/R | Adverse increase: validate maximum-of-limb timestamp logic and reproduce completion friction; repair the responsible step |
 | MT-77-006 — Manual-account activation rate | product | W4; W/R | Adverse decline: check account creation and linking to the period; fix the manual flow without requiring a bank connection |
@@ -195,12 +202,22 @@ runbook exists and is verified. This document authorizes no destructive action.
 
 | ID | Decision brief and options | Evidence / owner / gate |
 | --- | --- | --- |
-| DEC-81-001 | Accept the W4/D14/R4/R8 proposal and bounded extensions, or revise durations/minimum windows before the beta start. Recommended: baseline first, then explicitly approve justified comparison ranges rather than arbitrary conversion targets | Product Owner; evidence is the small private-beta scope and absence of observed figures. These durations provide a repeatable process, not statistical assurance. Decide before B0; until then no baseline is declared approved |
+| DEC-81-001 — approved | Executive accepted W4/D14/R4/R8 and their bounded review process: four complete product weeks, fourteen complete reliability days, two valid retention A/B pairs with earliest reviews at six/ten weeks; only valid releasable records count, and missing evidence requires a dated extension or pause decision | Decision source CBD81-BASELINE-001, explicit Executive selection communicated through Manager September 5, 2026. This approves operating review periods, not statistical/privacy guarantees, arbitrary performance targets, numerical privacy minima, source repairs, whole-package approval or CBD-13 closure. No automatic success |
 | DEC-81-002 | Approve a privacy-reviewed population/concentration and joint-release policy, or continue without numerical metric release. Recommended: keep releases withheld pending that review; no numeric candidate is asserted safe | Security/Risk evaluates singling-out, repeated-window differencing, complementary counts, distributions, low-volume security operations and higher percentile protection; Product Owner decides exact policy before release. Number of operations alone is insufficient; post-beta segmentation requires its own later review |
 | DEC-81-003 | Establish freshness, alert-lateness and request-completion bounds from their product commitments, or keep bound-dependent judgments unavailable. Recommended: approve lifecycle-specific definitions before numbers, then select bounds using scheduler/retry/delivery and lifecycle evidence | synchronization, notifications and security prepare evidence; Product Owner decides before dependent computation/health claim. MT-79-008 source prose differs on source-fact-settled versus creation start: reconcile that interval first. The 30-day restoration grace is not a generic export/deletion completion SLO; archival has no countdown. Do not reinterpret either |
 | DEC-81-004 — settled | Executive approved technical correctness assessment through defined synthetic QA against approved alert rules, separate from production metrics, customer data and support data. CBD-13-AC05 and CBD-79-AC03 were clarified in live Jira; the other four alert measures remain unchanged | Manager communicated the explicit decision September 5, 2026. OQ-79-002 is resolved by this clarification; no new production metric, behavioral tracking or human reading of customer alerts. Defined synthetic QA and its execution evidence remain delivery requirements |
 | DEF-81-001 | AD-78-001 includes viewing and assumes qualifying historical timestamps; permission records do not prove viewing. RT-78-001 requires A and B predicates from current state, but mutation/deletion can erase evidence of A. MT-78-004 has the same action-versus-permission concern | Product/Architecture must identify valid already-authorized operational predicates, including timestamp meaning and mutation/deletion semantics, or propose source/criterion correction for approval. MT-78-004 affected classes and MT-78-005/006 remain non-computable; no new activity history, event capture or cohort is invented. Blocks parent AC02/AC04 closure |
+| DEF-81-002 | Activation eligibility is internally inconsistent. MT-77-001 excludes subjects created after window-open minus grace, while CBD-77 section 5 and MS-80-001 exclude the final 24 hours; its numerator/MS-80-002 does not state the matching eligibility restriction. MT-77-002/003 and MS-80-004/005 count successful spaces without the creation-window/non-archived restriction imposed on their denominator by MS-80-003, so numerator membership is not demonstrably a subset of denominator membership | Product/Architecture and the CBD-77/CBD-80 source owners must reconcile grace, population membership and lifecycle exclusions through an approved source correction; CBD-81 selects no replacement formula or filter. MT-77-001/002/003 remain unavailable for computation and receive no baseline credit until that correction is approved and independently verified. Blocks parent AC02/AC07 and CBD-81-AC06 confirmation |
 | DEP-81-001 | CBD-122 must bind all nine reliability metrics to its closed attribute universe; CBD-80 must bind operational sources to actual schemas without changing meaning | Owning implementation packages and independent review; unavailable until binding and release-control verification. Source registration is not implementation evidence |
+
+Activation source handoff also preserves `OQ-77-003`: CBD-82 must define the
+observable financial-profile predicate used by UB-77-001 and MT-77-003/005.
+`OQ-77-004` requires the CBD-30 category definition supporting that same usable
+budget condition. These dependencies are not settled by fixing population
+membership or by specifying a baseline. Affected computations remain unavailable
+where these required predicates lack an approved, verifiable definition. Source
+owners retain responsibility; this package neither invents the missing state
+nor amends the approved source contracts.
 
 Denied cross-space access and related support-incident signals remain barred for
 Private MVP and routed to `SRV-94-010`; this settled disposition is not reopened
