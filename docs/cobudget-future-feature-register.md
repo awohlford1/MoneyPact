@@ -2,14 +2,19 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Active |
+| Status | Approved snapshot — Product Owner approved the current register on 2026-09-06; remains an active working document |
 | Owner | Alexander Wohlford |
 | Purpose | Maintain a reviewable list of potentially valuable capabilities that are intentionally outside the current MVP or task scope. |
-| Last reviewed | 2026-09-03 |
+| Last reviewed | 2026-09-06 |
 
 ## How to use this register
 
 Add a feature when a useful idea is identified but should not become an undocumented assumption or expand the active task. An entry is not an approved commitment. During product planning, review each entry and decide whether to reject it, retain it for later review, research it, or create linked Jira work.
+
+Snapshot approval confirms this register accurately records the current working
+list and its existing dispositions; it does not approve implementation, expand
+MVP scope, or resolve any entry's open questions. Later edits remain working
+changes until their exact revised snapshot is approved for publication.
 
 ## Status definitions
 
@@ -45,6 +50,7 @@ Note on FF-011 against FF-003 and FF-006: these three touch unspent money but as
 
 | Date | Reviewer | Entries reviewed | Decisions | Follow-up |
 | --- | --- | --- | --- | --- |
+| 2026-09-06 | Alexander Wohlford, Product Owner | Current register snapshot, FF-001–FF-011 | Approved the latest register as an active working document. Feature text, individual dispositions, priorities, deferrals, and open questions are unchanged; snapshot approval is not an implementation commitment. | Obtain approval for the exact revised snapshot before publishing later edits. |
 | 2026-08-15 | Claude with Alexander Wohlford as Product Owner | FF-011 | Added the disambiguation note separating FF-011 from FF-003 and FF-006. FF-011 concerns the horizon a target is expressed in; FF-003 concerns carry-forward of an unspent remainder; FF-006 concerns whether cash is allocated to categories at all. FF-011 reopens neither approved MVP position, which remain fixed by CBD-71 SD-071-028 and SD-071-031. | None. The note follows the existing convention used for FF-004, FF-006, and FF-007. |
 | 2026-09-03 | Claude with Alexander Wohlford as Product Owner | FF-008 | Corrected the export-permission open question, which cited CBD-12 as prohibiting unrestricted export for Viewers and Collaborators. CBD-72 later permitted a protected allowlisted Collaborator export under formal change control, so the question was asking against a superseded boundary. CBD-91 `CR-91-007` recorded the staleness and required separate consent, which was given. The deferral itself is unchanged: format and scheduled delivery remain out of scope, and no permission was reopened. | Confirm the export allowlist against CBD-72 §5.7 and §5.8 before scoping FF-008. |
 | 2026-08-15 | Codex with Alexander Wohlford as Product Owner | FF-011 | Captured category-specific budget horizons with a unified funding view, including the distinction between period-reset spending budgets and accumulating savings funds. This is a future product concept, not a roadmap commitment. | Validate the framing with representative weekly, monthly, quarterly, and yearly category scenarios before prioritization. |
