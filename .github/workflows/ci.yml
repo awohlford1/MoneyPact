@@ -31,6 +31,12 @@ jobs:
       - name: Scan introduced commits and reachable history
         run: python3 scripts/secret_scanner.py ci '${{ github.event_name }}' '${{ github.event.pull_request.base.sha }}' '${{ github.event.pull_request.head.sha }}' '${{ github.sha }}'
 
+      # Must precede the vocabulary check: that scanner decodes every document
+      # as UTF-8 with no error handling, so one mis-encoded file aborts the run
+      # with a byte offset and no filename. Ordered first, the path is named.
+      - name: Check documentation file encoding
+        run: python3 scripts/check-doc-encoding.py
+
       # Runs before the Node setup so a documentation-only change fails fast
       # without installing dependencies. Uses the standard library only, so it
       # needs no pip install on the runner.

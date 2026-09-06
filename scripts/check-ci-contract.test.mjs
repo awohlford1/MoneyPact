@@ -41,6 +41,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: package-lock.json
+      - run: python3 scripts/check-doc-encoding.py
       - run: python3 scripts/check-doc-vocabulary.py
       - run: python3 scripts/check-jira-freshness.py --offline
       - run: python3 scripts/check-an92-criteria.py --offline
