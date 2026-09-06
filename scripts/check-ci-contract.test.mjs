@@ -63,6 +63,7 @@ jobs:
       - run: python3 scripts/audit-cbd-78.py
       - run: python3 scripts/audit-cbd-79.py
       - run: python3 scripts/audit-cbd-80.py
+      - run: python3 scripts/audit-cbd-81.py
       - run: python3 scripts/check-citations.py
       - run: 'python3 -m pip install --require-hashes --only-binary=:all: -r config/publication-requirements.txt'
       - run: npm ci
