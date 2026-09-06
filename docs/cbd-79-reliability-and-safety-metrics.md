@@ -12,7 +12,7 @@
 | Governing alert model | `docs/cbd-74-accountability-alert-boundary-specification.md` — Document version **1.0.1**, approved |
 | Governing schedule decisions | `docs/cbd-71-mvp-schedule-decision-register.md` — Document version **1.1**, approved |
 | Consuming packages | CBD-80 (measurement-source register); CBD-81 (targets and review) |
-| Confluence page | **Unpublished to Confluence.** No verified target; future registration/publication readiness separately gated |
+| Confluence page | [CBD-79 — Reliability and Safety Metrics](https://cobudget.atlassian.net/wiki/spaces/CBD/pages/20807701) |
 | Last updated | September 5, 2026 |
 
 ## 1. Purpose and authority
@@ -449,5 +449,6 @@ history; this record establishes current acceptance without changing versions,
 definitions, approved exceptions or future implementation/release gates.
 Prior PRs #236/#237/#239/#240 are merged. Final source PR #242 merged at `1d1b2a8970f4f5bb5d7f72e98c462de0eb91e996` after required CI and verified GitHub readback. Its transport head 4d8aeaa added only already-merged CI wiring to reviewed source documents. The CBD-81 public PR is pending. Jira specification
 evidence and Executive acceptance are ready; workflow closure awaits authorized
-merges and verification. Confluence remains unpublished with no verified target;
-future target registration/publication readiness is separately gated.
+merges and verification. This document is published to Confluence from the
+repository after merge under CBD-115; each run requires manual environment
+approval and the repository remains the source.

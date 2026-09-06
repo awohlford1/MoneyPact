@@ -13,7 +13,7 @@
 | Consuming packages | CBD-77, CBD-78, CBD-79 (metric definitions); CBD-80 (measurement-source register and privacy rules); CBD-81 (targets and review process) |
 | Reviewer | Alexander Wohlford — Product Owner. **Approved September 5, 2026** |
 | Review date | September 5, 2026 |
-| Confluence page | **Not published.** Registration follows approval and has not been requested |
+| Confluence page | [CBD-13 — Measurement and Event Conventions](https://cobudget.atlassian.net/wiki/spaces/CBD/pages/20545539) |
 
 > **Convention boundary:** This document settles form, not content. A convention here never authorizes a metric, a measurement source, a threshold, or a data collection. Where it appears to decide a measurement question, the owning subtask's acceptance criteria control and this document is wrong — **except where those criteria conflict with an approved contract, which §11 records and which no subtask may override.**
 

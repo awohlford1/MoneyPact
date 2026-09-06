@@ -39,8 +39,9 @@ acceptance of that exact package and these factual status updates, under all
 recorded decisions and exceptions; no runtime or numerical-release gate is waived.
 Final source PR #242 merged at `1d1b2a8970f4f5bb5d7f72e98c462de0eb91e996` after required CI and verified GitHub readback. Transport head 4d8aeaa added only already-merged CI wiring and left reviewed source documents unchanged.
 The CBD-81 public PR is pending. Jira workflow closure awaits authorized merges
-and verification. Confluence remains unpublished: no verified target, and future
-registration/publication readiness separately gated; no publisher activation.
+and verification. This document is published to Confluence from the repository
+after merge under CBD-115; each run requires manual environment approval and
+the repository remains the source.
 Live Jira criteria, including `customfield_10066`, links and comments, were read
 on September 5, 2026. Jira owns issue fields; this document is the specification,
 not a staging copy of those fields. Parent completion is assessed in the

@@ -206,8 +206,9 @@ CBD13-FINAL-SECURITY-002 clears specification privacy on that integrated candida
 CBD13-FINAL-ACCEPTANCE-001 records Executive acceptance under the explicit
 exceptions and authorizes factual status updates. Final source PR #242 merged at `1d1b2a8970f4f5bb5d7f72e98c462de0eb91e996` after required CI and verified GitHub readback; transport head 4d8aeaa added only already-merged CI wiring, with reviewed source documents unchanged. CBD-81 public PR is pending.
 Jira specification evidence and acceptance are ready; workflow closure awaits
-merges and verification. Confluence remains unpublished, without verified targets;
-registration/publication readiness and publisher activation are separately gated.
+merges and verification. These documents are published to Confluence from the
+repository after merge under CBD-115; each run requires manual environment
+approval and the repository remains the source.
 DEC-81-002 planning disposition is approved under `CBD81-PRIVACY-001`; exact
 numerical release policy requires separate Security review, Executive approval
 and implementation verification. DEC-81-003 specification-closure disposition

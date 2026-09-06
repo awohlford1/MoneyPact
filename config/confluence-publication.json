@@ -15,7 +15,7 @@
       "order": 79,
       "depends_on": [],
       "policy": "approved",
-      "approved_sha256": "09786e375f80ec1e86d575927b7a9747fb776c76ab397a36eaa3485dc4f1fbd0"
+      "approved_sha256": "ec4def2367647c085270324e7eec2fd422998ed6323f17263121381427a207dd"
     },
     {
       "path": "docs/cbd-77-acceptance-criteria-traceability.md",
@@ -32,7 +32,7 @@
         "cbd-77-metrics"
       ],
       "policy": "approved",
-      "approved_sha256": "6c0aee77d5c16b52b83f99eccd2627683eb7896e44ea4e47a8a05c0e5ec45a5c"
+      "approved_sha256": "0b18f741aac4dffbdc3ed5cdc5087eab30aafa997a9df5c177aa48d3873eb454"
     },
     {
       "path": "docs/cbd-77-activation-and-onboarding-metrics.md",
@@ -49,7 +49,7 @@
         "cbd-13-conventions"
       ],
       "policy": "approved",
-      "approved_sha256": "1f54aca4107f8e263c4597a35de23cae478eddd3e7c1db6c9ba2afd7dd4a743d"
+      "approved_sha256": "55b803bcfe9f412dfbd683e7c1f11554d6fd7a5596aba73b36a3823e2ea9202d"
     },
     {
       "path": "docs/cbd-78-acceptance-criteria-traceability.md",
@@ -66,7 +66,7 @@
         "cbd-78-metrics"
       ],
       "policy": "approved",
-      "approved_sha256": "9b2a8b97435da5f569295fa7859b4920324615f966d34ea4df8a3b951299558d"
+      "approved_sha256": "958172cde9ec94befd7e746de01098322c84424e52617a996135b63a956e00d0"
     },
     {
       "path": "docs/cbd-78-engagement-and-retention-metrics.md",
@@ -83,7 +83,7 @@
         "cbd-13-conventions"
       ],
       "policy": "approved",
-      "approved_sha256": "664c1c4e7415c317edc0f9f9ee139a6119c97923fd6d7da78144809ca19fb1c9"
+      "approved_sha256": "f2d583552e142d6978adec56ef5135b944f26edeb8cee6a53bfb83c2f6c5adb6"
     },
     {
       "path": "docs/cbd-79-acceptance-criteria-traceability.md",
@@ -100,7 +100,7 @@
         "cbd-79-metrics"
       ],
       "policy": "approved",
-      "approved_sha256": "243e5176a42f7dce48069f56101b1c26ee450427717a4e59588ea782b390b4a5"
+      "approved_sha256": "5295a51ec77eeeb130e322b9c95ce44b9def34c73ebe733af32f8fe253e60327"
     },
     {
       "path": "docs/cbd-79-reliability-and-safety-metrics.md",
@@ -117,7 +117,7 @@
         "cbd-13-conventions"
       ],
       "policy": "approved",
-      "approved_sha256": "cbb8f7c0176bff29eab8cbfd4c94ff9ed718e76065089c30b9237486b4caa7f2"
+      "approved_sha256": "c55fbcffc4bfb27be2521f60c53409c0b3a608b45e2163b2c32d27c454668ed7"
     },
     {
       "path": "docs/cbd-80-acceptance-criteria-traceability.md",
@@ -134,7 +134,7 @@
         "cbd-80-register"
       ],
       "policy": "approved",
-      "approved_sha256": "da1f3630b97e97b005dde3e91b1c816cd59be181aadd1063b91df180cfad4209"
+      "approved_sha256": "c8dda9fd263985b5459abec792ded30363a797d104d3a329d672ee187316ba2d"
     },
     {
       "path": "docs/cbd-80-measurement-source-register.md",
@@ -153,7 +153,7 @@
         "cbd-79-metrics"
       ],
       "policy": "approved",
-      "approved_sha256": "abd442cf48d4922268e6ee78f6b5c3eba6cfd4a33c23cdd6aec905549c355126"
+      "approved_sha256": "74090b54474c01da983b909c0bcc5a5e0daceb182798e9239d453e9c9a4c8882"
     },
     {
       "path": "docs/cbd-81-acceptance-criteria-traceability.md",
@@ -170,7 +170,7 @@
         "cbd-81-process"
       ],
       "policy": "approved",
-      "approved_sha256": "4e06f22b6acd4a2b87875b8c922b100945f39a7ef7f3a19a0e18530e6585d506"
+      "approved_sha256": "c98fc5676ac5972f7c6125c9d6d79a60dacca671178a43e74cb991b9e4a5bfaa"
     },
     {
       "path": "docs/cbd-81-beta-targets-and-review-process.md",
@@ -190,7 +190,7 @@
         "cbd-80-register"
       ],
       "policy": "approved",
-      "approved_sha256": "611e3436634c79032ea3496a5eb8c1922a1f6e2cf0e95f079e16291347ceb239"
+      "approved_sha256": "9993270f65a3c9af3e09a1f482d75666c7ba6b201a739c7ecb419623e199e450"
     },
     {
       "path": "docs/architecture.md",
