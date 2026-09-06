@@ -42,6 +42,7 @@ const REQUIRED_EXTERNAL_ACTIONS = new Map([
 
 const REQUIRED_WORKFLOW_COMMANDS = [
   "python3 scripts/secret_scanner.py ci '${{ github.event_name }}' '${{ github.event.pull_request.base.sha }}' '${{ github.event.pull_request.head.sha }}' '${{ github.sha }}'",
+  "python3 scripts/check-doc-encoding.py",
   "python3 scripts/check-doc-vocabulary.py",
   // --offline only: the freshness check's Jira half needs credentials the
   // runner does not have. The offline half compares pinned source versions
