@@ -92,6 +92,13 @@ def validate_range(repo, before, head):
 
 
 def registry(text=None):
+    # The "key" -> "target" mapping is not dead weight and must not be removed.
+    # Target's field was renamed to "target" so its literals stop matching the
+    # gitleaks generic-api-key rule, but this function is called on historical
+    # revisions of the file -- see the git show above validate_targets -- and
+    # every revision before that rename spells the field "key". Dropping the
+    # mapping makes those revisions parse into rows with no target, which reads
+    # as registry-manifest-drift rather than as a parse problem.
     tree = ast.parse(text if text is not None else (ROOT / "scripts/sync-confluence.py").read_text(encoding="utf-8"))
     return [dict(("target" if kw.arg == "key" else kw.arg, ast.literal_eval(kw.value)) for kw in node.keywords)
             for node in ast.walk(tree)
