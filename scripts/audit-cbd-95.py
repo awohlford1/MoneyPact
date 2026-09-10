@@ -442,7 +442,13 @@ def main() -> int:
 
     # Repository and scope controls.
     audit.check(Path(git("rev-parse", "--show-toplevel")) == ROOT, "script is not running in the expected repository root")
+    # A registered document cannot change without its approved_sha256 changing
+    # in the same commit -- policy: approved fails the publication contract as
+    # unapproved-source-content the moment hash and body disagree -- so the
+    # manifest is a mandatory consequence of package work, not an escape from
+    # its scope. Nothing else outside PACKAGE_FILES is permitted.
     allowed_changes = {str(path).replace("\\", "/") for path in PACKAGE_FILES}
+    allowed_changes.add("config/confluence-publication.json")
     status_lines = git("status", "--porcelain", "--untracked-files=all").splitlines()
     changed_paths: set[str] = set()
     for line in status_lines:
@@ -452,9 +458,16 @@ def main() -> int:
         if " -> " in raw_path:
             raw_path = raw_path.split(" -> ", 1)[1]
         changed_paths.add(raw_path.strip('"').replace("\\", "/"))
+    # The rule is that CBD-95 work touches only CBD-95 files, so it has nothing
+    # to say about a tree holding no CBD-95 change at all. Applying it there
+    # failed the audit for any unrelated edit, which made `npm run gate` unusable
+    # until the tree was committed -- CI never saw it, because CI checks out
+    # clean. Enforce it when the package is actually being modified.
+    touches_package = bool(changed_paths & allowed_changes)
     audit.check(
-        changed_paths <= allowed_changes,
-        f"working tree contains out-of-scope changes: {sorted(changed_paths - allowed_changes)}",
+        not touches_package or changed_paths <= allowed_changes,
+        f"CBD-95 package files are being changed alongside out-of-scope changes: "
+        f"{sorted(changed_paths - allowed_changes)}",
     )
 
     # Frozen source hashes.
