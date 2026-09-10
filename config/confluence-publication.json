@@ -170,7 +170,7 @@
         "cbd-81-process"
       ],
       "policy": "approved",
-      "approved_sha256": "c98fc5676ac5972f7c6125c9d6d79a60dacca671178a43e74cb991b9e4a5bfaa"
+      "approved_sha256": "153b9b8604e24d1e8a90e62c104d8b45f31fff7b2f1001ec95cf193c84d3dd06"
     },
     {
       "path": "docs/cbd-81-beta-targets-and-review-process.md",
@@ -190,7 +190,7 @@
         "cbd-80-register"
       ],
       "policy": "approved",
-      "approved_sha256": "9993270f65a3c9af3e09a1f482d75666c7ba6b201a739c7ecb419623e199e450"
+      "approved_sha256": "7cf147049813a38ae4f65eaa1a2d5e19a4a4b0595854c78b77563851e2d6d70b"
     },
     {
       "path": "docs/architecture.md",

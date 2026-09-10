@@ -95,6 +95,17 @@ matched value or moving it to another path invalidates its exception. No global
 rule/path regex, inline `gitleaks:allow`, local ignore file, or warning-only mode
 is supported. Expired exceptions fail the guard.
 
+The seventy-eight publication-script exceptions cannot be retired, only renewed.
+The `generic-api-key` rule matched a field named `key`, which the `Target` rows
+in `scripts/sync-confluence.py` used until it was renamed to `target`; rows
+added since do not match, so the set stops growing. It does not shrink. The old
+spelling survives in every revision that carried it, and `history` mode -- the
+local equivalent of the CI reachable-history scan -- reaches all of them.
+Removing the entries leaves `local` at zero findings, because the current HEAD
+tree no longer contains the old spelling, and takes `history` from zero to 421.
+A green `local` scan is therefore not evidence that an entry is spent. Renew the
+dates at review; do not remove the entries.
+
 The initial 43 exceptions are verified non-secrets: 42 document target
 identifiers in the Confluence publication script and one pre-existing synthetic
 configuration-error test sentinel. No credential value is in exception metadata.

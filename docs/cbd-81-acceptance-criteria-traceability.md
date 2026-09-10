@@ -21,7 +21,7 @@ now merged: usable sources in PR #239 at 8e3cbd7, lifecycle sources in PR #240
 at `0b773c76266aeb462fd4d62f453afea240ddf7a5`; current base is
 `0f1486c3fc0ef32875b7058b6e997e3fdb744aef`. New sent/sync corrections approved
 in CBD13-INVITATION-SENT-001 and CBD13-SYNC-POPULATIONS-001 are fixed at
-`ff93a9b1ab901b5b88ebc1cca855ab10916fe4af` and independently approved in CBD13-FINAL-REVIEW-002; Executive accepted the integrated d4fc13c package under CBD13-FINAL-ACCEPTANCE-001. Source PR #242 merged at 1d1b2a8; CBD-81 public PR pending. Jira workflow closure awaits authorized merges and verification.
+`ff93a9b1ab901b5b88ebc1cca855ab10916fe4af` and independently approved in CBD13-FINAL-REVIEW-002; Executive accepted the integrated d4fc13c package under CBD13-FINAL-ACCEPTANCE-001. Source PR #242 merged at 1d1b2a8; the CBD-81 package is merged. Jira closed CBD-81 on September 6, 2026.
 The live amended criteria on [CBD-81](https://cobudget.atlassian.net/browse/CBD-81)
 and [CBD-13](https://cobudget.atlassian.net/browse/CBD-13) were read, including
 status, links, subtasks and comments, on September 5, 2026. Jira remains the
@@ -37,7 +37,7 @@ does not mirror issue administration or claim Jira workflow closure. Specificati
 | CBD-81-AC03 | Sections 2, 4–5: daily service decisions, weekly product/baseline decisions and relevant release reviews; no shortened or extra measurement windows | Accepted at specification level |
 | CBD-81-AC04 | Section 4: action for every unhealthy metric; sections 3 and 5 constrain suppression, access, rollback and communication | Accepted at specification level; implementation and authorization of actions remain separate |
 | CBD-81-AC05 | Section 5 continuation/pause/expansion/exit plus sections 2/6.1 current applicability and lifecycle handoff | Four approved metric deferrals preserved. Later-bound specification exception does not waive MT-79-003/008/010 beta evidence or permit expansion/successful exit without applicable evidence. Final process accepted under CBD13-FINAL-ACCEPTANCE-001; operational evidence remains pending |
-| CBD-81-AC06 | All eight parent criteria below; approved sent/sync decisions in process sections 6.2/6.3 | Specification confirmation accepted under CBD13-FINAL-ACCEPTANCE-001. CBD13-FINAL-REVIEW-002 approves ff93a9b/integrated d4fc13c and closes both prior findings; CBD13-FINAL-SECURITY-002 clears specification privacy. PR #242 merged at 1d1b2a8; CBD-81 PR pending. Jira workflow closure awaits authorized merges and verification; implementation/numerical-release/beta-evidence gates remain |
+| CBD-81-AC06 | All eight parent criteria below; approved sent/sync decisions in process sections 6.2/6.3 | Specification confirmation accepted under CBD13-FINAL-ACCEPTANCE-001. CBD13-FINAL-REVIEW-002 approves ff93a9b/integrated d4fc13c and closes both prior findings; CBD13-FINAL-SECURITY-002 clears specification privacy. PR #242 merged at 1d1b2a8; the CBD-81 package is merged and Jira closed CBD-81 on September 6, 2026; implementation/numerical-release/beta-evidence gates remain |
 
 ## 2. Parent criterion review
 
@@ -204,9 +204,9 @@ CBD13-FINAL-REVIEW-002 approves source ff93a9b and integrated
 `d4fc13ca47837c9b2faf83f4998aab2147bd5656`, closing both prior sent/sync findings.
 CBD13-FINAL-SECURITY-002 clears specification privacy on that integrated candidate.
 CBD13-FINAL-ACCEPTANCE-001 records Executive acceptance under the explicit
-exceptions and authorizes factual status updates. Final source PR #242 merged at `1d1b2a8970f4f5bb5d7f72e98c462de0eb91e996` after required CI and verified GitHub readback; transport head 4d8aeaa added only already-merged CI wiring, with reviewed source documents unchanged. CBD-81 public PR is pending.
-Jira specification evidence and acceptance are ready; workflow closure awaits
-merges and verification. These documents are published to Confluence from the
+exceptions and authorizes factual status updates. Final source PR #242 merged at `1d1b2a8970f4f5bb5d7f72e98c462de0eb91e996` after required CI and verified GitHub readback; transport head 4d8aeaa added only already-merged CI wiring, with reviewed source documents unchanged. The CBD-81 package is merged.
+Jira specification evidence and acceptance are recorded, and Jira closed CBD-81
+on September 6, 2026. These documents are published to Confluence from the
 repository after merge under CBD-115; each run requires manual environment
 approval and the repository remains the source.
 DEC-81-002 planning disposition is approved under `CBD81-PRIVACY-001`; exact
