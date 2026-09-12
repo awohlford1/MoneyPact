@@ -64,3 +64,14 @@ __pycache__/
 
 # Confluence sync previews (scripts/sync-confluence.py --dry-run)
 .confluence-preview/
+
+# Manager Operating Ledger, operating contracts, approvals, decisions, task
+# packets and specialist results (docs/agent-operations/). Deliberately not
+# tracked: these are internal orchestration records for this working copy, and
+# this repository is public. Ignoring rather than merely leaving untracked is
+# the point -- `git clean -fd` deletes untracked files but skips ignored ones,
+# so the ledger survives a routine clean. Only `-x` reaches it.
+#
+# Nesting also keeps the tree out of the Confluence publication inventory,
+# which collects docs/*.md at depth 1 only (scripts/publication.py inventory()).
+docs/agent-operations/
