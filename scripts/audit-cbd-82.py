@@ -29,7 +29,8 @@ PACKAGE_FILES = (MODEL, SCENARIOS, TRACE)
 
 SOURCE = Path("docs/cbd-92-system-flow-technical-threat-model.md")
 
-DOCUMENT_VERSION = "0.2"
+DOCUMENT_VERSION = "0.2.1"
+DOCUMENT_STATUS = "Approved — Product Owner, September 12, 2026 (CBD82-APPROVAL-CONDITION-001)"
 
 EXPECTED = {
     "EN": {f"EN-82-{n:02d}" for n in range(1, 13)},
@@ -54,14 +55,14 @@ SCENARIO_COUNTS = {
     "LNK": 7,
     "AUTH": 6,
     "CANON": 6,
-    "JOINT": 8,
+    "JOINT": 9,
     "LIFE": 8,
     "ISO": 7,
     "DEL": 4,
     "CORR": 7,
     "DERIV": 6,
 }
-SCENARIO_TOTAL = 59
+SCENARIO_TOTAL = 60
 
 # A count alone is satisfied by a renumbered family of the same size, so the
 # scenario identifiers are pinned as a closed set the same way the registers are.
@@ -203,8 +204,8 @@ def main() -> int:
             f"{path}: version is not {DOCUMENT_VERSION}",
         )
         audit.check(
-            f"| Status | **Draft v{DOCUMENT_VERSION}" in text,
-            f"{path}: status line is not Draft v{DOCUMENT_VERSION}",
+            f"| Status | **{DOCUMENT_STATUS}** |" in text,
+            f"{path}: status line is not {DOCUMENT_STATUS}",
         )
         for heading in REQUIRED_HEADINGS[path]:
             audit.check(heading in text, f"{path}: missing heading {heading!r}")
