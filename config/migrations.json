@@ -46,8 +46,8 @@
       },
       {
         "id": "psql-meta-command",
-        "pattern": "^[ \\t]*\\\\[a-zA-Z]",
-        "why": "A psql meta-command is not SQL, is not sent to the server, and would not be portable to any other way of applying the file.",
+        "pattern": "\\\\[A-Za-z?!.\\\\]",
+        "why": "A psql meta-command is not SQL, is not sent to the server, and would not be portable to any other way of applying the file. Not anchored to the start of a line, for the same reason transaction control is not: psql dispatches an unquoted backslash wherever it appears, which is what makes SELECT 1 \\g and SELECT 1; \\gexec work. The one that matters is \\c, which reconnects mid-script -- the runner's open transaction is discarded with the first connection, the remaining migrations and their ledger rows commit against a second database, ON_ERROR_STOP never fires, and apply reports success for a database that received nothing. \\i, \\o, \\! and \\set ON_ERROR_STOP 0 are lesser versions of the same thing. Dropping the anchor is safe because the rule reads stripped code, where a backslash inside a literal, a dollar-quoted body or a comment is already blanked, and because an unquoted backslash is not legal SQL anywhere else: it is not one of PostgreSQL's operator characters.",
         "instead": "plain SQL"
       }
     ]

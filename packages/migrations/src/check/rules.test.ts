@@ -63,6 +63,7 @@ const NEGATIVE: Readonly<Record<string, readonly string[]>> = {
   "cbd-116-fx-24-abbreviated-drop-if-exists": ["contract-step"],
   "cbd-116-fx-25-abbreviated-rename-column": ["contract-step"],
   "cbd-116-fx-26-inline-transaction-control": ["transaction-control"],
+  "cbd-116-fx-28-inline-psql-meta-command": ["psql-meta-command"],
 };
 
 /**
@@ -138,6 +139,52 @@ test("END closing a CASE expression is not transaction control", () => {
   const source = "ALTER TABLE t ADD CONSTRAINT c CHECK (\n    CASE WHEN a < 0 THEN false\n"
     + "    ELSE true\n    END\n);\n";
   assert.deepEqual(statementFindings({ fileName: "x.sql", source, bytes: Buffer.from("") }, policy), []);
+});
+
+/**
+ * The same defect as the line-anchored transaction-control rule, and the same
+ * fix. psql dispatches an unquoted backslash wherever it appears -- that is
+ * what makes `SELECT 1 \g` and `SELECT 1; \gexec` work -- so an anchored rule
+ * catches only the tidy spelling.
+ *
+ * `\c` is the one that justifies calling this a blocker rather than a nit: it
+ * reconnects, discarding the runner's open transaction with the first
+ * connection, after which the remaining migrations and their ledger rows
+ * commit somewhere else while apply reports success here.
+ */
+test("a psql meta-command is caught wherever it sits on the line", () => {
+  for (const source of [
+    "\\c cobudget_prod\n",
+    "ALTER TABLE t ADD COLUMN x text; \\c cobudget_prod\n",
+    "SELECT 1; \\gexec\n",
+    "SELECT 1 \\g\n",
+    "CREATE TABLE t (id uuid); \\i other.sql\n",
+    "SELECT 1; \\set ON_ERROR_STOP 0\n",
+    "SELECT 1; \\! rm -rf /\n",
+  ]) {
+    const findings = statementFindings({ fileName: "x.sql", source, bytes: Buffer.from("") }, policy);
+    assert.ok(findings.some((item) => item.rule === "psql-meta-command"), JSON.stringify(source));
+  }
+});
+
+test("a backslash that is not a meta-command cannot false-positive", () => {
+  // The rule reads stripped code, so every one of these is already blanked.
+  // An unquoted backslash is not legal SQL anywhere else -- it is not one of
+  // PostgreSQL's operator characters -- so there is nothing left to catch.
+  for (const source of [
+    "INSERT INTO t VALUES (E'\\n');\n",
+    "INSERT INTO t VALUES ('c:\\\\path\\\\file');\n",
+    "-- see \\c in the runbook\n SELECT 1;\n",
+    "/* \\i bootstrap.sql */\nSELECT 1;\n",
+    "DO $body$ BEGIN PERFORM 1; END $body$;\n",
+  ]) {
+    assert.deepEqual(
+      statementFindings({ fileName: "x.sql", source, bytes: Buffer.from("") }, policy)
+        .filter((item) => item.rule === "psql-meta-command"),
+      [],
+      JSON.stringify(source),
+    );
+  }
 });
 
 test("BEGIN inside a plpgsql body is not transaction control", () => {

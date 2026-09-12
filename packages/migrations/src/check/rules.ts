@@ -138,13 +138,23 @@ export function forwardOnlyFindings(file: MigrationSource, policy: Policy): read
 
 /**
  * The runner applies the whole pending set inside one transaction holding one
- * advisory lock. That is what makes a half-finished run leave nothing behind
- * and two concurrent runners impossible. A migration that commits, rolls back,
- * or runs a psql meta-command silently removes that guarantee for every
- * migration after it in the same run, so it is rejected rather than trusted.
+ * advisory lock. That is what makes a half-finished run leave nothing behind,
+ * and what stops two concurrent runners from interleaving. (It does not make
+ * the second one a no-op -- see plan.ts for what the lock does and does not
+ * buy.) A migration that commits, rolls back, or runs a psql meta-command
+ * silently removes that guarantee for every migration after it in the same
+ * run, so it is rejected rather than trusted.
  *
- * Statements inside a dollar-quoted body are invisible here, which is correct:
- * `END` inside a plpgsql function is not transaction control.
+ * Neither rule is anchored to the start of a line, and that is the point of
+ * both. `CREATE TABLE t (...); COMMIT;` ends the transaction; psql dispatches
+ * an unquoted backslash wherever it appears, which is what makes `SELECT 1 \g`
+ * work and what lets a mid-line `\c` reconnect out from under the whole run.
+ * Anchored versions of these rules caught the tidy spelling and nothing else.
+ *
+ * Matching over stripped code is what makes the unanchored form safe: a
+ * backslash or a `COMMIT` inside a literal, a comment or a dollar-quoted body
+ * is already blanked. `END` inside a plpgsql function is invisible for the
+ * same reason, and is not in the pattern anyway.
  */
 export function statementFindings(file: MigrationSource, policy: Policy): readonly Finding[] {
   const { code } = strip(file.source);

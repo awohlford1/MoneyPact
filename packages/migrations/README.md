@@ -97,7 +97,7 @@ carries the approved decision it comes from, and has a fixture that breaks it.
 | `file-name` | AC07 | A name that is not `<UTC ordinal>__<slug>.sql` |
 | `duplicate-ordinal` | AC07 | Two migrations stamped the same second |
 | `forward-only` | AC03 | A `.down.sql` file, or another tool's reversion directive |
-| `transaction-control`, `psql-meta-command` | AC01 | `COMMIT`, `ROLLBACK`, or a `\` command inside a migration |
+| `transaction-control`, `psql-meta-command` | AC01 | `COMMIT`, `ROLLBACK`, or a `\` command inside a migration, anywhere on the line |
 | `contract-step` | AC04 | A removal or rename with no header naming its expand migration and the deployed version that removed the last reader |
 | `forbidden-type` | AC05 | `money`, binary floating point, `timestamp`/`time` without time zone |
 | `monetary-type` | AC05 | A monetary column that is not integer minor units |
@@ -201,6 +201,7 @@ reason proves nothing. `fixtures/positive/` must produce no findings at all.
 | `cbd-116-fx-24-abbreviated-drop-if-exists` | AC04 — `DROP IF EXISTS c` with `COLUMN` omitted |
 | `cbd-116-fx-25-abbreviated-rename-column` | AC04 — `RENAME a TO b` with `COLUMN` omitted |
 | `cbd-116-fx-26-inline-transaction-control` | AC01 — `COMMIT` mid-line |
+| `cbd-116-fx-28-inline-psql-meta-command` | AC01 — `\c` mid-line, reconnecting away from the open transaction |
 | `cbd-116-fx-16`, `17`, `27` | positive: compliant expand and contract, and every non-destructive `ALTER TABLE` action that must not be swept in |
 | `cbd-116-fx-18` … `cbd-116-fx-21` | AC02 — byte order mark, no trailing newline, invalid UTF-8, mixed line endings (built in the test, not committed) |
 | `cbd-116-fx-22` | AC06 — a schema-owning ORM in the manifest (built in the test) |
