@@ -449,7 +449,13 @@ class ConditionTests(unittest.TestCase):
         self.assertEqual(findings_for("FX-250-13"), [])
 
     def test_verified_on_moves_with_the_bounds_is_silent_without_a_baseline(self):
-        """No prior revision to compare against means no finding, not a guess."""
+        """No prior revision to compare against means no finding, not a guess.
+
+        This is the condition function in isolation. Whether an owner actually
+        sees that this run could not look -- the skip line -- is proved
+        end to end in CommandLineTests, because that line is printed by
+        main(), not by this function.
+        """
         self.assertEqual(
             guard.evaluate(guard.subject_for(FIXTURES["FX-250-12"], NOW, "no-baseline")),
             [])
@@ -548,29 +554,39 @@ class CommandLineTests(unittest.TestCase):
 
     def run_git(self, *args, cwd: Path):
         return subprocess.run(
-            ["git", *args], cwd=cwd, capture_output=True, text=True,
+            ["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8",
             timeout=30, check=True)
 
-    def test_a_raised_bound_without_reverification_is_caught_end_to_end(self):
-        """Finding 6, through the real git-history path `main()` uses.
+    def make_baseline_repo(self, directory: str) -> tuple[Path, Path, str]:
+        """A one-commit throwaway repository holding the real calendar.
+
+        Returns the repo root, the tracked file's path, and the baseline
+        commit's SHA -- the ref every push-path test below diffs against.
+        """
+        repo = Path(directory)
+        self.run_git("init", "--quiet", cwd=repo)
+        self.run_git("config", "user.email", "guard@example.invalid", cwd=repo)
+        self.run_git("config", "user.name", "Guard Test", cwd=repo)
+
+        source_path = repo / "business-day.ts"
+        source_path.write_text(REAL_SOURCE, encoding="utf-8")
+        self.run_git("add", "business-day.ts", cwd=repo)
+        self.run_git("commit", "--quiet", "-m", "baseline", cwd=repo)
+        base_sha = self.run_git("rev-parse", "HEAD", cwd=repo).stdout.strip()
+        return repo, source_path, base_sha
+
+    def test_a_raised_bound_without_reverification_is_caught_by_the_local_convenience(self):
+        """Finding 6, through the previous-commit convenience `main()` falls
+        back to with neither --base-ref nor --no-baseline-check.
 
         `verified_on_moves_with_the_bounds` only has something to compare
         against inside a git working tree, so this is the one condition that
         cannot be proved with a bare --source file the way every other
-        fixture is. Building a two-commit throwaway repository is what
-        actually exercises `previous_calendar`, not just the condition
-        function in isolation.
+        fixture is. Building a throwaway repository is what actually exercises
+        `previous_calendar`, not just the condition function in isolation.
         """
         with tempfile.TemporaryDirectory(prefix="holiday-coverage-git-") as directory:
-            repo = Path(directory)
-            self.run_git("init", "--quiet", cwd=repo)
-            self.run_git("config", "user.email", "guard@example.invalid", cwd=repo)
-            self.run_git("config", "user.name", "Guard Test", cwd=repo)
-
-            source_path = repo / "business-day.ts"
-            source_path.write_text(REAL_SOURCE, encoding="utf-8")
-            self.run_git("add", "business-day.ts", cwd=repo)
-            self.run_git("commit", "--quiet", "-m", "baseline", cwd=repo)
+            repo, source_path, _base_sha = self.make_baseline_repo(directory)
 
             # Deliberate violation: bound and dataset version raised together,
             # verifiedOn left untouched -- uncommitted, exactly like a working
@@ -587,14 +603,108 @@ class CommandLineTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("Holiday coverage clear", result.stdout)
 
+    def test_a_raised_bound_without_reverification_is_caught_on_the_push_path(self):
+        """Finding 6 and F3, through the explicit --base-ref path a real push
+        run takes -- comparing against the base of the change, not merely the
+        previous commit touching the file.
+
+        Two commits after the baseline: the first repeats F3's failure mode
+        (bound and dataset raised together, verifiedOn stale) committed on its
+        own, and the second is the fix. Both are compared against the same
+        base ref, exactly as a push workflow diffs the whole range of pushed
+        commits against the state before the push -- not each commit against
+        its own immediate parent, which is what let a push land a raised bound
+        in one commit and an unrelated comment edit in the next and pass.
+        """
+        with tempfile.TemporaryDirectory(prefix="holiday-coverage-git-") as directory:
+            repo, source_path, base_sha = self.make_baseline_repo(directory)
+
+            source_path.write_text(FIXTURES["FX-250-12"], encoding="utf-8")
+            self.run_git("commit", "-aqm", "raise bound without reverifying", cwd=repo)
+            result = self.run_guard("--source", str(source_path), "--year", str(NOW),
+                                    "--base-ref", base_sha)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn(f"baseline: {base_sha}", result.stdout)
+            self.assertIn("verified_on_moves_with_the_bounds", result.stdout)
+            self.assertIn("verifiedThrough moved", result.stdout)
+
+            source_path.write_text(FIXTURES["FX-250-13"], encoding="utf-8")
+            self.run_git("commit", "-aqm", "reverify and record it", cwd=repo)
+            result = self.run_guard("--source", str(source_path), "--year", str(NOW),
+                                    "--base-ref", base_sha)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn(f"baseline: {base_sha}", result.stdout)
+            self.assertIn("Holiday coverage clear", result.stdout)
+
+    def test_an_unreadable_base_ref_on_the_push_path_is_a_finding_not_a_skip(self):
+        """F1/(4): a push run declares a comparison is possible; failing to
+        produce one must fail the run, not pass it quietly."""
+        with tempfile.TemporaryDirectory(prefix="holiday-coverage-git-") as directory:
+            _repo, source_path, _base_sha = self.make_baseline_repo(directory)
+            bogus_ref = "0123456789abcdef0123456789abcdef01234567"
+            result = self.run_guard("--source", str(source_path), "--year", str(NOW),
+                                    "--base-ref", bogus_ref)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("base_ref_is_readable", result.stdout)
+            self.assertIn("skipped: no baseline", result.stdout)
+            self.assertIn(bogus_ref, result.stdout)
+
+    def test_schedule_and_dispatch_runs_declare_the_baseline_not_applicable(self):
+        """(2): no push event means nothing to diff, stated up front rather
+        than silently treated as clean."""
+        with tempfile.TemporaryDirectory(prefix="holiday-coverage-git-") as directory:
+            _repo, source_path, _base_sha = self.make_baseline_repo(directory)
+            result = self.run_guard("--source", str(source_path), "--year", str(NOW),
+                                    "--no-baseline-check")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("not applicable", result.stdout)
+            self.assertIn("verified_on_moves_with_the_bounds", result.stdout)
+            self.assertIn("Holiday coverage clear", result.stdout)
+            self.assertNotIn("skipped: no baseline", result.stdout)
+
+    def test_verified_on_moves_with_the_bounds_prints_a_skip_line_without_a_baseline(self):
+        """(3), replacing the silent assertion this fixture used to be proved
+        by: with no --base-ref and no --no-baseline-check, a --source outside
+        any git working tree cannot look, and must say so distinctly rather
+        than printing the same thing a checked-and-clean run would."""
+        with tempfile.TemporaryDirectory(prefix="holiday-coverage-") as directory:
+            path = self.write_fixture(directory, "FX-250-12")
+            result = self.run_guard("--source", str(path), "--year", str(NOW))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("skipped: no baseline", result.stdout)
+            self.assertNotIn("verified_on_moves_with_the_bounds", result.stdout)
+
+        # Contrast with a genuinely checked-and-clean run of the very same
+        # defect, baseline present: that run must neither say "skipped" nor
+        # stay silent about the condition -- it reports the finding.
+        with tempfile.TemporaryDirectory(prefix="holiday-coverage-git-") as directory:
+            repo, source_path, base_sha = self.make_baseline_repo(directory)
+            source_path.write_text(FIXTURES["FX-250-12"], encoding="utf-8")
+            self.run_git("commit", "-aqm", "raise bound without reverifying", cwd=repo)
+            checked_result = self.run_guard("--source", str(source_path), "--year", str(NOW),
+                                            "--base-ref", base_sha)
+            self.assertEqual(checked_result.returncode, 1,
+                             checked_result.stdout + checked_result.stderr)
+            self.assertNotIn("skipped: no baseline", checked_result.stdout)
+            self.assertIn("verified_on_moves_with_the_bounds", checked_result.stdout)
+            self.assertNotEqual(result.stdout, checked_result.stdout,
+                               "a could-not-check run must not read identically to a "
+                               "checked run of the same defect")
+
     def test_the_default_source_is_the_domain_calendar(self):
         """No --source: the guard reads the file the workflow cares about.
 
         Pinned to a year before the horizon so the assertion is about which
-        file was read, not about how much coverage is left.
+        file was read, not about how much coverage is left. Finding F6:
+        --no-baseline-check makes this independent of the ambient
+        checkout's git history and clone depth -- without it, this test's
+        outcome depended on whatever commit history happened to be present
+        for business-day.ts in whichever tree it ran from, which is not what
+        it is testing.
         """
         calendar, _ = guard.parse_calendar(REAL_SOURCE)
-        result = self.run_guard("--year", str(calendar.first_uncovered_year - LEAD - 1))
+        result = self.run_guard("--year", str(calendar.first_uncovered_year - LEAD - 1),
+                                "--no-baseline-check")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(guard.DEFAULT_SOURCE.as_posix(), result.stdout)
         self.assertIn("Holiday coverage clear", result.stdout)

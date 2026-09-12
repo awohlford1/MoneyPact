@@ -27,16 +27,40 @@ It also refuses four ways the warning itself could be lost:
 * a bound advanced without the dataset version that records which published
   schedule was checked, which is a bound nobody verified;
 * a bound or dataset version advanced without `verifiedOn` moving too, which
-  is the same unverified bound wearing a consistent-looking pair of numbers;
+  is the same unverified bound wearing a consistent-looking pair of numbers --
+  *when there is a prior revision to compare against*; see below;
 * the uncovered-year refusal deleted from the domain package, which would turn
   the loud cliff into exactly the quiet wrong answer PD-68-05 forbids.
 
 A guard that only knows how to read one shape of file must fail, not pass, when
 the file stops having that shape.
 
-No runtime and no external dependency: this reads the TypeScript as text with
-the standard library only, so it runs on a bare runner with no install step and
-cannot be broken by a build.
+The third bullet is the one condition that needs two revisions, not one, so it
+behaves differently depending on how this script was invoked:
+
+* on a `push` run, the workflow passes `--base-ref` (the commit before the
+  push, or the merge-base with the default branch when there is none) and the
+  condition compares the working copy against that ref's blob. A base ref that
+  cannot be read is itself a finding here, not silence -- a push run declares
+  that a comparison is possible, and failing to produce one is exactly the
+  "cannot look" state this guard exists to make loud.
+* on a `schedule` or `workflow_dispatch` run, the workflow passes
+  `--no-baseline-check`: there is no push event and therefore nothing to diff,
+  and the guard prints a distinct "not applicable" line and treats the
+  condition as satisfied on that basis rather than guessing.
+* run locally with neither flag, the previous file-touching commit is used as
+  a convenience, and every path where that lookup fails prints a distinct
+  "skipped: no baseline" line -- never the silent, unlabelled pass a checked
+  and clean run produces.
+
+No runtime and no external Python dependency: this reads the TypeScript as
+text with the standard library only. One condition, `verified_on_moves_with_the_bounds`,
+additionally shells out to a read-only local `git` for the base-ref and
+previous-commit lookups described above; every other condition never touches
+git and keeps working verbatim on a runner with no git binary, a bare
+`--source` file, or a shallow, historyless checkout -- that one condition
+simply reports "not applicable" or "skipped" instead in those cases, rather
+than a pass it cannot back up.
 
 Usage
 -----
@@ -44,11 +68,24 @@ Usage
     python scripts/check-holiday-coverage.py --verbose    # also print the range read
     python scripts/check-holiday-coverage.py --source <path>   # diagnostic only
     python scripts/check-holiday-coverage.py --year 2029       # diagnostic only
+    python scripts/check-holiday-coverage.py --base-ref <ref>        # push runs
+    python scripts/check-holiday-coverage.py --no-baseline-check     # schedule/dispatch runs
 
 `--source` and `--year` exist so a fixture can be checked and so an owner can
 ask "when does this start failing" without waiting for the calendar to roll.
 Both print a DIAGNOSTIC banner and neither belongs in a scheduled run: a CI
 invocation carrying `--year` is a guard that has been quietly silenced.
+
+`--base-ref` and `--no-baseline-check` are mutually exclusive and both are
+about `verified_on_moves_with_the_bounds` only -- the one condition that needs
+a prior revision. `--base-ref <ref>` compares the working copy against that
+ref's blob (the workflow's push run passes the pre-push commit or a
+merge-base); an unreadable ref is then a finding, because a push run asserts a
+comparison is possible. `--no-baseline-check` declares up front that no such
+comparison exists for this run (the workflow's schedule and workflow_dispatch
+runs, which have no change to diff); the condition prints "not applicable" and
+is satisfied on that basis. Neither flag falls back to the previous-commit
+convenience described in `previous_calendar`.
 
 Scope and limits
 ----------------
@@ -326,10 +363,27 @@ def verified_on_moves_with_the_bounds(subject: Subject) -> list[Finding]:
     before activation; a verification that happened would have a new date
     behind it.
 
-    Silent, not passing, whenever there is nothing honest to compare against:
-    a first calendar, or a source read outside git history. `subject.baseline`
-    is None in exactly those cases, and this condition reports nothing rather
-    than guessing what changed.
+    This condition alone needs two revisions, so it can only judge what
+    `subject.baseline` was actually given -- it never goes looking for one
+    itself. `subject.baseline` is None, and this condition reports nothing,
+    in three different situations that main() distinguishes out loud on
+    stdout even though they land the same way here:
+
+    * `--base-ref` named a ref this run could not read. That case is raised
+      as a separate finding before evaluation ever reaches this condition --
+      see `resolve_baseline` -- so by the time this function runs, a None
+      baseline here means the ref genuinely had no readable calendar to
+      compare (a shape this file predates, say), not that reading it failed.
+    * `--no-baseline-check` was given: a schedule or workflow_dispatch run
+      declaring there is no push to diff, printed as "not applicable".
+    * neither flag was given and the previous-commit convenience found
+      nothing (first revision, no git, no history for this path, or a
+      diagnostic `--source` outside any repository), printed as "skipped:
+      no baseline".
+
+    None of those three is "the calendar is wrong", so none of them is a
+    finding; they are also never silent, because a checked-and-clean run and
+    a could-not-check run must never print the same thing.
     """
     calendar = subject.calendar
     baseline = subject.baseline
@@ -369,6 +423,15 @@ def uncovered_years_are_still_refused(subject: Subject) -> list[Finding]:
     plausible wrong payday -- the exact outcome CBD-98 is tracking, arriving
     without even the warning this script gives. A lead-time warning about a
     cliff that has been quietly paved over is worse than no warning.
+
+    The "commented out" check this condition does is narrow and is not a
+    comment parser: a line is excluded only when its stripped text starts
+    with `//`. A `/* ... */` block comment around the throw, or a trailing
+    `// disabled` after live code on the same line, is not detected by this
+    condition and still counts as a live refusal. That is a real gap, not a
+    hidden one: this guard reads TypeScript as text with no external
+    dependency (see the module docstring), and a full comment grammar is out
+    of scope for that trade.
     """
     source = subject.source
     findings = []
@@ -483,7 +546,8 @@ def _read_git_blob(ref: str, relative_path: str, repo_root: Path) -> str | None:
     try:
         result = subprocess.run(
             ["git", "show", f"{ref}:{relative_path}"],
-            cwd=repo_root, capture_output=True, text=True, timeout=10, check=False)
+            cwd=repo_root, capture_output=True, text=True, encoding="utf-8",
+            timeout=10, check=False)
     except (OSError, ValueError):
         return None
     if result.returncode != 0:
@@ -491,58 +555,160 @@ def _read_git_blob(ref: str, relative_path: str, repo_root: Path) -> str | None:
     return result.stdout
 
 
-def previous_calendar(source_path: Path, current_source: str) -> Calendar | None:
+def _git_repo_root(source_path: Path) -> tuple[Path | None, str | None]:
+    """The repository containing `source_path`, and its path relative to it.
+
+    Returns `(None, None)` when there is no repository to find -- no `git`
+    binary, or the path is not inside a working tree -- which is a caller's
+    signal to treat that as "nothing to compare against" rather than raise.
+    """
+    try:
+        toplevel = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=source_path.parent, capture_output=True, text=True, encoding="utf-8",
+            timeout=10, check=False)
+    except (OSError, ValueError):
+        return None, None
+    if toplevel.returncode != 0:
+        return None, None
+    repo_root = Path(toplevel.stdout.strip())
+    try:
+        relative = source_path.resolve().relative_to(repo_root.resolve()).as_posix()
+    except (OSError, ValueError):
+        return None, None
+    return repo_root, relative
+
+
+def read_base_ref_calendar(base_ref: str, source_path: Path) -> tuple[Calendar | None, str | None]:
+    """The calendar as declared at `base_ref`, for an explicit `--base-ref` run.
+
+    Returns `(calendar, None)` on success. Returns `(None, reason)` in two
+    different shapes the caller must not confuse:
+
+    * the blob itself could not be read (no repository here, the ref does not
+      exist, or `git show` failed for any other reason) -- `reason` is set and
+      non-empty, and this is a finding on a push run: `--base-ref` was given
+      because a comparison was supposed to be possible.
+    * the blob was read but does not parse as a calendar (the file predates
+      this literal at that revision, say) -- `reason` is also set, but this is
+      reported as a skip, not a finding: the ref was readable, there is simply
+      nothing of this shape in it yet.
+    """
+    repo_root, relative = _git_repo_root(source_path)
+    if repo_root is None:
+        return None, f"base ref {base_ref!r} could not be read: not inside a git working tree"
+
+    blob = _read_git_blob(base_ref, relative, repo_root)
+    if blob is None:
+        return None, f"base ref {base_ref!r} could not be read for {relative}"
+
+    calendar, problem = parse_calendar(blob)
+    if problem is not None:
+        return None, f"base ref {base_ref!r} does not have a readable calendar at {relative}: {problem}"
+    return calendar, None
+
+
+def previous_calendar(source_path: Path, current_source: str) -> tuple[Calendar | None, str | None]:
     """The calendar as it stood before this change, read from git history.
 
-    Best effort only, and silence rather than a finding on any failure: no
+    Best effort only, and a reason rather than a finding on any failure: no
     `git` binary, the path is not inside a git working tree, the file has no
     commit history, or git could not be run for any other reason. Those are
     all "nothing to compare against", not "the calendar is wrong" -- a
     fixture written to a bare temp directory hits this path every time and
-    that must not read as a defect.
+    that must not read as a defect. Returns `(calendar, None)` on success and
+    `(None, reason)` when there is nothing honest to compare against.
 
     Compares the *file*, not the commit graph: if the working copy already
     matches its most recent commit, there is no pending edit to judge, so this
     steps back one commit further and treats that as the baseline instead.
     """
-    try:
-        toplevel = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=source_path.parent, capture_output=True, text=True, timeout=10, check=False)
-    except (OSError, ValueError):
-        return None
-    if toplevel.returncode != 0:
-        return None
-    repo_root = Path(toplevel.stdout.strip())
-    try:
-        relative = source_path.resolve().relative_to(repo_root.resolve()).as_posix()
-    except (OSError, ValueError):
-        return None
+    repo_root, relative = _git_repo_root(source_path)
+    if repo_root is None:
+        return None, "not inside a git working tree"
 
     try:
         log = subprocess.run(
             ["git", "log", "--format=%H", "-2", "--", relative],
-            cwd=repo_root, capture_output=True, text=True, timeout=10, check=False)
+            cwd=repo_root, capture_output=True, text=True, encoding="utf-8",
+            timeout=10, check=False)
     except (OSError, ValueError):
-        return None
+        return None, "git could not be run"
     if log.returncode != 0:
-        return None
+        return None, "git log failed"
     commits = [line.strip() for line in log.stdout.splitlines() if line.strip()]
     if not commits:
-        return None
+        return None, f"no commit history for {relative}"
 
     newest = _read_git_blob(commits[0], relative, repo_root)
     if newest is not None and newest == current_source:
         if len(commits) < 2:
-            return None
+            return None, f"only one commit touches {relative} and it matches the working copy"
         candidate = _read_git_blob(commits[1], relative, repo_root)
     else:
         candidate = newest
     if candidate is None:
-        return None
+        return None, f"the prior commit touching {relative} could not be read"
 
     calendar, problem = parse_calendar(candidate)
-    return calendar if problem is None else None
+    if problem is not None:
+        return None, f"the prior revision of {relative} does not have a readable calendar: {problem}"
+    return calendar, None
+
+
+@dataclass(frozen=True)
+class Baseline:
+    """What `verified_on_moves_with_the_bounds` may compare against, plus the
+    line that must be printed to say how this run decided that."""
+
+    calendar: Calendar | None
+    note: str
+    finding: Finding | None = None
+
+
+def resolve_baseline(base_ref: str | None, no_baseline_check: bool,
+                     source_path: Path, current_source: str) -> Baseline:
+    """Decide how (or whether) this run can judge `verified_on_moves_with_the_bounds`.
+
+    Exactly one of three modes, chosen by the caller's flags:
+
+    * `base_ref` given (a push run): read that ref's blob. An unreadable ref
+      is a finding -- a push run asserts a comparison is possible -- carried
+      on `Baseline.finding` so `main()` can fold it into the run's exit code.
+      A readable ref with nothing calendar-shaped in it is a skip, not a
+      finding: see `read_base_ref_calendar`.
+    * `no_baseline_check` set (a schedule or workflow_dispatch run): there is
+      no push to diff, so the condition is declared not applicable and
+      exits 0 on that basis.
+    * neither given (local convenience): fall back to the previous
+      file-touching commit, and report a skip line when that finds nothing.
+    """
+    if base_ref is not None:
+        calendar, reason = read_base_ref_calendar(base_ref, source_path)
+        if calendar is not None:
+            return Baseline(calendar, note=f"baseline: {base_ref} ({source_path.name})")
+        assert reason is not None
+        if "could not be read" in reason:
+            finding = Finding(
+                condition="base_ref_is_readable",
+                problem=f"verified_on_moves_with_the_bounds cannot run: {reason}",
+                fix="a push run must be able to read its base ref's blob; check that "
+                    "the workflow checked out full history (fetch-depth: 0) and passed "
+                    "a real commit or the zero-SHA merge-base fallback",
+            )
+            return Baseline(None, note=f"skipped: no baseline ({reason})", finding=finding)
+        return Baseline(None, note=f"skipped: no baseline ({reason})")
+
+    if no_baseline_check:
+        return Baseline(None, note="not applicable: no baseline comparison on this trigger "
+                                    "(schedule or workflow_dispatch has no push to diff "
+                                    "against) -- verified_on_moves_with_the_bounds is not "
+                                    "evaluated on this run")
+
+    calendar, reason = previous_calendar(source_path, current_source)
+    if calendar is not None:
+        return Baseline(calendar, note="")
+    return Baseline(None, note=f"skipped: no baseline ({reason})")
 
 
 def evaluate(subject: Subject) -> list[Finding]:
@@ -576,6 +742,15 @@ def main(argv: list[str] | None = None) -> int:
                         help="evaluate as of this year (diagnostic; default: today)")
     parser.add_argument("--verbose", action="store_true",
                         help="print the range that was read even when it is clear")
+    baseline_mode = parser.add_mutually_exclusive_group()
+    baseline_mode.add_argument("--base-ref", default=None,
+                        help="compare against this git ref's blob for "
+                             "verified_on_moves_with_the_bounds (push runs); an "
+                             "unreadable ref is a finding")
+    baseline_mode.add_argument("--no-baseline-check", action="store_true",
+                        help="declare that no baseline comparison exists for this run "
+                             "(schedule/workflow_dispatch); prints 'not applicable' "
+                             "instead of attempting the previous-commit convenience")
     args = parser.parse_args(argv)
 
     candidate = Path(args.source)
@@ -613,9 +788,13 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     year = args.year if args.year is not None else _datetime.date.today().year
-    baseline = previous_calendar(source_path, source)
-    subject = subject_for(source, year, display, baseline=baseline)
+    baseline = resolve_baseline(args.base_ref, args.no_baseline_check, source_path, source)
+    if baseline.note:
+        print(baseline.note)
+    subject = subject_for(source, year, display, baseline=baseline.calendar)
     findings = evaluate(subject)
+    if baseline.finding is not None:
+        findings = [baseline.finding, *findings]
 
     if findings:
         for finding in findings:

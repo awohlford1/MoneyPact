@@ -36,10 +36,11 @@ on:
   # next to the alarm.
   workflow_dispatch:
 
-# Read-only, and no secrets anywhere in this file. The check reads one
-# TypeScript file out of the checkout with the Python standard library: it has
-# nothing to authenticate to and nothing to write. A workflow that holds no
-# credential cannot leak one (CBD-250-AC03).
+# Read-only, and no secrets anywhere in this file. The check reads the
+# calendar out of the checkout and, for one condition, a base commit's blob
+# via local, read-only git -- no network credential, nothing to authenticate
+# to, and nothing written. A workflow that holds no credential cannot leak one
+# (CBD-250-AC03).
 permissions:
   contents: read
 
@@ -57,6 +58,30 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # Full history, not the default depth-1 shallow clone. Depth 1 has
+          # nothing before HEAD to diff against, which is exactly what made
+          # verified_on_moves_with_the_bounds a silent no-op on push before
+          # CBD250-CORRECTION-003: no history in, "clean" out, regardless of
+          # what actually changed.
+          fetch-depth: 0
+
+      # Only meaningful on push: the ref to compare against is the commit the
+      # push moved from, or -- when there is none (a brand-new branch, so
+      # github.event.before is the all-zero SHA) -- the merge-base with the
+      # default branch. Named here rather than resolved inside the guard so
+      # the guard itself stays testable with a plain --base-ref string.
+      - name: Determine the base ref for this push
+        if: github.event_name == 'push'
+        id: base
+        run: |
+          set -euo pipefail
+          zero="0000000000000000000000000000000000000000"
+          if [ "${{ github.event.before }}" = "$zero" ]; then
+            base="$(git merge-base HEAD "origin/${{ github.event.repository.default_branch }}")"
+          else
+            base="${{ github.event.before }}"
+          fi
+          echo "ref=$base" >> "$GITHUB_OUTPUT"
 
       # The guard before the thing it guards. These tests break the calendar
       # deliberately in a temp directory and prove each condition is the only
@@ -70,5 +95,17 @@ jobs:
       # recorded lead time. A red run here is the notification: GitHub emails
       # the repository owner on a failed scheduled run, and the failure is
       # visible on the Actions tab and in the commit status for a push.
+      #
+      # A push run passes the base ref resolved above, so
+      # verified_on_moves_with_the_bounds compares against the state before
+      # this push and an unreadable base ref is a finding. A schedule or
+      # workflow_dispatch run has no push to diff, so it declares that up
+      # front with --no-baseline-check instead of guessing at a baseline.
       - name: Check the coverage horizon
-        run: python3 scripts/check-holiday-coverage.py --verbose
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            python3 scripts/check-holiday-coverage.py --verbose --base-ref "${{ steps.base.outputs.ref }}"
+          else
+            python3 scripts/check-holiday-coverage.py --verbose --no-baseline-check
+          fi
