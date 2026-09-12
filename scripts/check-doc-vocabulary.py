@@ -174,6 +174,18 @@ VOCABULARIES: tuple[Vocabulary, ...] = (
         canonical="docs/cbd-13-measurement-conventions.md §9",
         applies_to=("cbd-13-*.md", "cbd-78-*.md"),
     ),
+    Vocabulary(
+        name="platform-safety-case-outcome",
+        members=("Actioned", "No action", "Out of scope", "Escalated", "Withdrawn"),
+        canonical="docs/cbd-270-platform-safety-operating-model.md §11, PS-270-052",
+        applies_to=("cbd-270-*.md",),
+    ),
+    Vocabulary(
+        name="platform-safety-appeal-outcome",
+        members=("Upheld", "Reversed", "Modified", "Out of scope"),
+        canonical="docs/cbd-270-platform-safety-operating-model.md §13, PS-270-062",
+        applies_to=("cbd-270-*.md",),
+    ),
 )
 
 # Glue that makes a sequence of members a list rather than prose. A comma or a
