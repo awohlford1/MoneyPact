@@ -1416,7 +1416,7 @@
         "cbd-92-threat-model"
       ],
       "policy": "approved",
-      "approved_sha256": "b3102493ee3e40cdbcee580ca24b178399c9064e320f60a1bd683dd01bdc37a6"
+      "approved_sha256": "3bfee67ebc8dccc5706ec9956b0b2d32f5b3b30ef30e840c926d92b62b2bd311"
     },
     {
       "path": "docs/cbd-94-acceptance-criteria-traceability.md",
