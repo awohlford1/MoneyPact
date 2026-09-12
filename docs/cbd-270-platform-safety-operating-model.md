@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | **Draft** — not approved. Written to close the `EG-93-009` element list. Approval authority is the Product Owner, with the qualified safety and privacy review CBD-273 obtains and the abuse-case exercise CBD-272 runs. Neither is complete, so `EG-93-009` and `RG-94-011` remain open and shared comments remain unshippable. |
-| Document version | 0.1 |
+| Document version | 0.2 |
 | Owner | Alexander Wohlford |
 | Reviewer | Pending — Product Owner, plus the qualified reviewer CBD-273 engages |
 | Jira | [CBD-270](https://cobudget.atlassian.net/browse/CBD-270) |
@@ -12,6 +12,12 @@
 | Confluence page | Not registered. `config/confluence-publication.json` needs the entry recorded in §17.1 before publication. |
 | Repository baseline | `ba1c1d3` |
 | Last updated | September 12, 2026 |
+
+**Conditional decisions.** Several decisions in §9 through §13 depend on a
+platform content-removal power that no approved source grants. Each is marked
+**Conditional on `OQ-270-006`** at its head. A decision so marked specifies how
+a capability would be bounded if it is granted; it does not assert that the
+capability exists.
 
 ## 1. Purpose and authority
 
@@ -32,7 +38,9 @@ serious abuse to a platform safety process. This is that process.
 Every decision carries a stable `PS-270-*` key and cites the approved source
 that forces it, following the convention CBD-103 established with `TD-103-*` and
 CBD-130 continued with `PN-130-*`. `PS-270-*` numbers are never reused or
-renumbered.
+renumbered. A revision that adds a decision therefore appends the next free
+number and places it in the section it belongs to, so a section's decisions are
+a set rather than a contiguous range. §18.1 lists each section's set.
 
 ### 1.1 Authoritative inputs and pinned versions
 
@@ -46,9 +54,14 @@ renumbered.
 | `docs/cbd-95-architecture-roadmap-follow-up-register.md` | Document version **1.0.11** | `FU-95-025`, which routes this work and states the boundary: no role gains global moderation authority, and detachment cannot edit, delete, or alter authored content or financial state |
 | `docs/cbd-76-mvp-boundary-and-readiness-record.md` | Document version **1.0.1** | `DL-76-020` and `INC-76-012` — the approved non-moderation rule this model must not weaken |
 
-CBD-72 §5.6 items 4 and 9, §5.7 item 3, §6.3, and permissions 11a, 11b, and 11c
-are cited from the approved collaboration permission model at document version
-**0.1.54**.
+CBD-72 §5.6 items 4 and 9, §5.7 item 3, §6.3, and permissions 11a, 11b, 11c,
+and **11d** are cited from the approved collaboration permission model at
+document version **0.1.54**. Permission 11d is the most on-point approved row
+in the corpus and states both halves of this document's problem at once:
+*"Budget-space ownership grants no editorial or moderation authority over
+another person's contribution. Serious abuse, unlawful content, or accidental
+disclosure uses a separate platform safety/support process outside budget-space
+role permissions."*
 
 ## 2. What this document does not decide
 
@@ -58,9 +71,15 @@ are cited from the approved collaboration permission model at document version
   what intake must deliver to the process.
 * It runs no abuse-case exercise. CBD-272 owns that, and `EG-93-009` is not
   closed by a written model alone.
-* It obtains no qualified safety or privacy review. CBD-273 owns that, and
-  CBD-94 §3.6 makes it mandatory for coercion, surveillance, and
-  survivor-safety residuals.
+* It obtains no qualified safety or privacy review. CBD-273 owns that one-time
+  chartered review, and CBD-94 §3.6 makes it mandatory for coercion,
+  surveillance, and survivor-safety residuals. **This document does not widen
+  CBD-273's scope.** The continuous per-case reviewer that §8, §10, and §13
+  require is a separate, unfilled function defined at `PS-270-077` and routed
+  at `OQ-270-003`.
+* It grants itself no power over content. `PS-270-075` records that two
+  approved rows prohibit staff moderation today, and every decision that
+  presupposes a content power is marked conditional.
 * It amends no approved source. §16 records where this model is in tension with
   an approved contract and proposes amendments that remain pending.
 * It sets no retention period, no jurisdiction list, and no exact
@@ -158,6 +177,57 @@ from the reporter's own submission escalates; it is never self-served.
 
 **Source:** `OP-92-003`; `SG-93-083`.
 
+`PS-270-075` — **No approved source grants this process the power to remove or
+withhold another author's content, and two approved sources currently prohibit
+staff moderation. The power is proposed under `OQ-270-006`; it is not held.**
+
+v0.1 recorded this as a silence in the sources. It is not a silence. Two
+approved rows prohibit it in terms:
+
+* `EG-91-009`'s recorded interim position, in the very gap §18.5 says this
+  document reports into: *"No silent support access, reassignment, or
+  cross-author moderation; refuse support-mediated ownership transfer until an
+  identity-verified procedure is approved and security-reviewed."*
+* `SR-94-067`: *"Routine staff support MUST be technically limited to the
+  `OP-92-002` content-free allowlist and an opaque customer-provided correlation
+  value; staff MUST NOT browse content, impersonate, moderate, or infer resource
+  existence."*
+
+The delegation that would justify the power is equally specific, and stronger
+than v0.1 argued. Permission **11d** denies moderation to every role and routes
+serious abuse, unlawful content, and accidental disclosure to *"a separate
+platform safety/support process outside budget-space role permissions"* — this
+process, named as the destination. `RI-93-008` then delegates the platform
+response here explicitly: *"Exact audience behavior, copy, evidence access,
+retaliation/failure cases, and platform response remain gated by
+`EG-93-009`/`RG-94-011`."*
+
+So the sources route the problem to a process and simultaneously prohibit the
+process from acting on content. That is a contradiction to be resolved by an
+approval, not by a specification. Two rules follow:
+
+1. **Until `OQ-270-006` closes, this process holds no removal or withholding
+   power.** `SR-94-067`'s prohibition binds routine staff support and
+   `EG-91-009`'s interim position binds cross-author moderation generally. An
+   unlawful-content or Critical case that requires content action therefore
+   escalates under `PS-270-057` and has **no terminal action available inside
+   the product**. That is the honest current state, and the reporter is told so
+   under `SG-93-086`.
+2. **Every decision that presupposes the power is marked Conditional on
+   `OQ-270-006`.** Those are `PS-270-010`, `PS-270-049`, `PS-270-053`,
+   `PS-270-060`, `PS-270-062`, `PS-270-063`, the revised `PS-270-033`, and the
+   `Actioned` member of the `platform-safety-case-outcome` vocabulary in §17.2.
+   They specify how the capability would be bounded if granted. They do not
+   assert it exists.
+
+The decisions are retained rather than deleted deliberately. Removing them
+would leave a document that cannot satisfy `SR-94-074`, which requires the full
+operating model including *"tool boundaries"* and *"escalation/appeal rules"*,
+and would leave CBD-272 with no enforcement behaviour to exercise.
+
+**Source:** `EG-91-009`; `SR-94-067`; permission 11d; `RI-93-008`;
+`SR-94-074`; `OQ-270-006`.
+
 `PS-270-008` — **No budget-space role acquires any power from this process.**
 
 Primary Owner, Co-owner, Collaborator, Accountability Partner, and Viewer are
@@ -182,8 +252,8 @@ verification does not create any of these powers.
 
 **Source:** `OP-92-005`; `SG-93-084`; `SR-94-071`.
 
-`PS-270-010` — **No rewriting. Enforcement removes or withholds; it never
-edits.**
+`PS-270-010` — **Conditional on `OQ-270-006`. No rewriting. Where an
+enforcement power exists at all, it removes or withholds; it never edits.**
 
 Where an enforcement action affects content, the only permitted effects are
 withholding it from display and removing it, each recorded. No one may alter the
@@ -191,7 +261,10 @@ text of another person's comment, author content in a person's name, or change
 an attribution. A rewritten comment is indistinguishable from a forged one, and
 attribution is what makes the record honest.
 
-**Source:** permission 11b; `SG-93-040`; `SR-94-064`.
+Note that this decision constrains a power `PS-270-075` records as unheld. It
+bounds the shape of a capability under consideration; it does not grant one.
+
+**Source:** permission 11b; `SG-93-040`; `SR-94-064`; `PS-270-075`.
 
 `PS-270-011` — **No mediation, no introduction, no contact between members.**
 
@@ -358,7 +431,15 @@ fails closed — and the same discipline applies to triage. Where the submission
 supports two readings, the higher severity is assigned and the case is escalated
 rather than resolved on a favourable interpretation.
 
-**Source:** `OP-92-003`; CBD-94 §3.8.
+**This rule is safe only because `PS-270-033` bounds what a Critical assignment
+can do.** Raising severity on ambiguity, combined with an unbounded and
+unappealable Critical response, would hand an abuser a one-submission route to
+silencing the person they are targeting — faster and more reliably than
+harassment achieves it, and with the platform as the instrument. A severity
+that fails upward must not be wired to a consequence that fails broad. The two
+decisions are read together, and neither may be revised without the other.
+
+**Source:** `OP-92-003`; CBD-94 §3.8; `PS-270-033`.
 
 `PS-270-026` — **Severity is assigned from the submission alone, and the
 assignment is recorded with its reason.**
@@ -437,18 +518,61 @@ performance is one of the readiness inputs `RG-94-011` needs.
 
 **Source:** `SR-94-063`; `RG-94-011`; CBD-94 §3.8.
 
-`PS-270-033` — **A Critical case stops the affected surface first and decides
-afterwards.**
+`PS-270-033` — **Conditional on `OQ-270-006` for its content half. A Critical
+*case* takes the narrowest interim measure, time-boxed and appealable. Only a
+Critical *finding* stops a release surface, and the two are not the same
+trigger.**
 
-CBD-94 §3.8 requires, for a new or failed Critical finding, that the affected
-release surface stop immediately, safe evidence be preserved, and the accountable
-owner, Security, and Product Owner be notified. For this process the affected
-surface is the comment surface, and stopping it may mean suspending commenting
-on the affected target, or across the product, for as long as triage needs.
-Suspension is not an enforcement action against any person and is not appealable
-under §13.
+v0.1 mapped an individual abuse case onto CBD-94 §3.8's Critical stop-ship rule
+in one sentence. That was a category shift and it is withdrawn. §3.8's trigger
+is *"New or failed **Critical** finding"* — a defect in the product's own
+controls — and its remedy is stopping a **release surface**. An abuse case is
+not a finding about a control, and a report is not evidence that the comment
+surface is defective.
 
-**Source:** CBD-94 §3.8; `RG-94-011`.
+The two are separated:
+
+| Trigger | What it is | Response |
+| --- | --- | --- |
+| Critical **case** | One report meeting the `PS-270-024` Critical definition | The narrowest interim measure below. Never a target-wide or product-wide suspension. |
+| Critical **finding** | A defect in this process's controls — a prohibited power exercised, the tool boundary bypassed, evidence altered | CBD-94 §3.8 applies unchanged: stop the affected release surface, preserve evidence, notify the accountable owner, Security, and the Product Owner same business day. Routed as a security incident under `PS-270-057`. |
+
+**The interim measure on a Critical case** is bounded on five axes, each one
+closing a way the measure could be turned into the abuser's tool:
+
+1. **Scope.** It withholds from display only the specific reported comment. It
+   never suspends the reported author's ability to comment, never affects the
+   author's other content, never affects the target's other comments, and never
+   suspends the comment surface for a target, a space, or the product.
+2. **Duration.** It expires automatically at the `PS-270-029` Critical terminal
+   milestone — two business days — unless a terminal decision has replaced it.
+   It does not renew by default, and an expiry is an audited event.
+3. **Appeal.** It is appealable by the reported author under §13 from the
+   moment it takes effect, and the appeal is heard on the interim measure
+   itself rather than deferred to the terminal decision. `PS-270-062`'s rule
+   that an appeal does not suspend a Critical enforcement action applies to a
+   terminal action, not to this measure.
+4. **Voice.** The `PS-270-053` notice is sent when the measure takes effect,
+   not when the case closes, so the author learns of it in time to appeal
+   within its two-day life.
+5. **Counter-abuse.** Repeated Critical-severity reports against one author
+   that do not survive triage are themselves an abuse signal, are recorded as
+   such, and are reviewed under `PS-270-071`. `PS-270-020`'s rate ceiling does
+   not bound this pattern, because one submission suffices to trigger a
+   measure; the review is what bounds it.
+
+**The divergence from CBD-94 §3.8 is recorded, not hidden.** This document
+declines to apply the release-surface stop-ship rule to case handling, and
+states why. If the Product Owner and Security prefer the §3.8 mapping, that is
+a decision to take knowingly, against the coercion analysis in §15 and
+CBD-93 §5.3.
+
+Where `OQ-270-006` leaves the withholding power unheld, the interim measure is
+unavailable and a Critical case escalates under `PS-270-057` with no in-product
+measure at all.
+
+**Source:** CBD-94 §3.8; `PS-270-024`, `PS-270-025`, `PS-270-029`; `AB-93-034`;
+CBD-93 §5.3; `PS-270-075`.
 
 `PS-270-034` — **The product claims no monitoring and no protection.**
 
@@ -483,16 +607,42 @@ acceptance *"after written accountable-security recommendation"* for Critical
 risk, and qualified advocacy or privacy input for the coercion and
 survivor-safety class. None of those is satisfiable by one person acting alone.
 
-Two consequences bind:
+Two consequences bind, and both fall on the **standing independent reviewer**
+that `PS-270-077` defines — not on CBD-273:
 
 * A Critical case, an account-level action, and any case in the `PS-270-028`
   class may not be closed on the operational owner's judgement alone. Each
-  routes to the qualified reviewer CBD-273 engages, and the reviewer's
-  disposition is part of the case record.
+  requires the standing independent reviewer's disposition in the case record.
 * An appeal against a decision the operational owner made is decided by someone
-  else, which in Private MVP means the same external route (§13).
+  else, which in Private MVP means the same standing function (§13).
 
-**Source:** `OP-92-004`; CBD-94 §3.6; `SR-94-069`; CBD-273.
+**Source:** `OP-92-004`; CBD-94 §3.6; `SR-94-069`; `PS-270-077`.
+
+`PS-270-077` — **The standing independent reviewer is a continuous operational
+function. It is not CBD-273, it is unfilled, and naming who holds it is an open
+staffing question.**
+
+v0.1 conflated two different things under the name CBD-273, and the conflation
+would have redefined a sibling subtask's scope without its knowledge. They are
+separated here:
+
+| | CBD-273 qualified safety and privacy review | Standing independent reviewer |
+| --- | --- | --- |
+| Shape | One-time chartered review of this operating model and its package | Continuous per-case function |
+| Volume | Bounded, one engagement | Unbounded; scales with case volume |
+| What it produces | A disposition on the model, feeding `EG-93-009` and `RG-94-011` | A per-case disposition, a post-use review of every case access and enforcement execution (`PS-270-050`), and appeal decisions (`PS-270-061`) |
+| Status | Chartered, and CBD-273 can begin against this document | **Unfilled.** No person or function is named |
+
+CBD-273's charter is unchanged by this document and its scope is not widened
+by it. The standing function is what `OP-92-004`, `OP-92-007`, and `SR-94-069`
+actually require of day-to-day operation, and with one named individual (§8)
+nobody holds it. Who does — a second employee, a retained external reviewer, or
+an explicit Product Owner acceptance of the gap — is recorded at `OQ-270-003`
+and is a `RG-94-011` readiness input. Nothing in §8, §10, or §13 is operable
+until it is answered.
+
+**Source:** `OP-92-004`, `OP-92-007`; `SR-94-069`; CBD-94 §3.6; `RG-94-011`;
+`OQ-270-003`.
 
 `PS-270-037` — **On-call is the operational owner, in business hours, with no
 named deputy.**
@@ -607,13 +757,60 @@ prohibit cross-space correlation generally.
 
 **Source:** `SR-94-072`; `RK-94-018`; `SR-94-065`.
 
-`PS-270-047` — **The reporter's submission is the complete content boundary of
-an ordinary case.**
+`PS-270-047` — **The reporter's submission is the complete *content* boundary
+of an ordinary case. It is not the complete data boundary, and `PS-270-076`
+states the difference.**
 
-Nothing else is read. This follows from `PS-270-007` and `PS-270-017` and is
-restated here because it is the access rule, not merely the intake rule.
+v0.1 said "nothing else is read", which its own decisions contradict:
+`PS-270-053` delivers a notice to the reported author, `PS-270-021` recognizes
+reciprocal parties, and `PS-270-046` prohibits searching cases by counterparty,
+which presupposes a counterparty field exists. Each requires resolving an
+opaque comment reference to an author identity and a delivery destination —
+exactly two of the classes `OP-92-001` denies by name. The claim is corrected
+rather than repeated.
 
-**Source:** `OP-92-001`, `OP-92-003`; `PS-270-017`.
+**Source:** `OP-92-001`, `OP-92-003`; `PS-270-017`; `PS-270-076`.
+
+`PS-270-076` — **A minimum non-content resolution step exists, is
+machine-mediated, and returns no content to any person.**
+
+Identity and routing are not content, but that distinction has to be stated and
+bounded rather than assumed. The step resolves the opaque comment reference the
+reporter supplied, and only that reference:
+
+| Resolved | Class | Who sees it |
+| --- | --- | --- |
+| Comment author's internal subject identifier | `DI-91-001` account subject reference | **Nobody.** Held by the service; never rendered to a case handler |
+| Author's notification destination | `DI-91-029` destination, S3 | **Nobody.** Consumed by the notification service to address the `PS-270-053` notice; never rendered, exported, or written into the case record |
+| A stable opaque counterparty token for `PS-270-021` and `PS-270-046` | `DI-91-063`-class opaque correlation, S2 | The case handler, as an opaque token that supports "same party" and nothing else |
+| Whether the reference resolves at all | Boolean, internal | **Nobody.** A non-resolving reference produces the same uniform outcome as any other, per `PS-270-013` |
+
+Four constraints bind the step:
+
+1. **Machine-mediated, never staff-visible.** No person in this process sees a
+   name, an email address, a phone number, a membership graph, or a space. The
+   resolution is a service call whose outputs address a notice and mint a
+   token.
+2. **Reference-scoped.** It resolves the one comment reference in the
+   submission. It enumerates nothing, walks no membership graph, and answers no
+   question that was not asked by that reference.
+3. **No content.** It never returns comment bodies, financial data, role or
+   lifecycle state, or any other person's data.
+4. **Audited as an access.** Each resolution is an audited event under
+   `PS-270-066` with the case, the reference, and the outputs' classes — never
+   their values.
+
+**This is a narrowing of `OP-92-001`, not an exception the sources grant.**
+`OP-92-001` names notification destinations and membership graphs among the
+classes routine staff receive no path to, and it does not distinguish
+machine-mediated resolution from staff access. The construction above is
+designed to honour the rule's purpose — no person learns anything — but it is
+**not authorized by any approved row**, and this document does not claim it is.
+It is routed as a further open question at `OQ-270-009` alongside `OQ-270-001`,
+because the same amendment conversation settles both.
+
+**Source:** `OP-92-001`; `DI-91-001`, `DI-91-029`, `DI-91-063`; `PS-270-013`,
+`PS-270-021`, `PS-270-046`, `PS-270-053`; `OQ-270-009`.
 
 `PS-270-048` — **A case that cannot be decided from the submission escalates and
 is not decided.**
@@ -628,8 +825,9 @@ under `SG-93-086`.
 
 **Source:** `OP-92-003`; `SG-93-086`; `OQ-270-001`.
 
-`PS-270-049` — **Enforcement execution is mediated, narrow, and preserves every
-ordinary invariant.**
+`PS-270-049` — **Conditional on `OQ-270-006`. Enforcement execution, where a
+power to execute exists, is mediated, narrow, and preserves every ordinary
+invariant.**
 
 Where an approved enforcement action affects stored content, it runs through a
 narrow service workflow on the `OP-92-005` pattern: no general database access,
@@ -637,17 +835,18 @@ no bulk operation, no impersonation, and preservation of ordinary authorization,
 lifecycle, integrity, and audit invariants. The workflow performs the specific
 action and returns; it is not a content-browsing tool with an action attached.
 
-**Source:** `OP-92-005`; `SR-94-068`.
+**Source:** `OP-92-005`; `SR-94-068`; `PS-270-075`.
 
 `PS-270-050` — **Every access to a case and every enforcement execution is
 attributable, time-bound, and independently reviewed.**
 
 Attribution follows `OP-92-007`: strong authentication, the decision, the
 approved scope, the actions taken, the result, and an independent post-use
-review. With one operator, the independent reviewer is the external route in
-`PS-270-036`.
+review. With one operator, the reviewer is the standing independent function in
+`PS-270-077`, which is unfilled — so this decision states a requirement that is
+not currently satisfiable, and `RG-94-009` stays open on it.
 
-**Source:** `OP-92-007`; `SR-94-070`; `PS-270-036`.
+**Source:** `OP-92-007`; `SR-94-070`; `PS-270-077`; `RG-94-009`.
 
 ## 11. User communication
 
@@ -673,19 +872,29 @@ outcome class, and nothing about another person.**
 | The appeal route against a no-action outcome (§13) | Confirmation of any space, membership, or resource they could not already see |
 
 The terminal outcome class is one of the closed set in §17.2: `Actioned`,
-`No action`, `Out of scope`, `Escalated`, `Withdrawn`.
+`No action`, `Out of scope`, `Escalated`, `Withdrawn`. `Actioned` is reachable
+only if `OQ-270-006` grants the content power; until then every case that would
+have been `Actioned` terminates as `Escalated`.
 
 **Source:** `PS-270-013`; `SR-94-065`; `RL-92-003`.
 
-`PS-270-053` — **What the reported author receives: notice at the point an
-action lands, stating the action and the appeal route.**
+`PS-270-053` — **Conditional on `OQ-270-006`. What the reported author
+receives: notice at the point an action or an interim measure lands, stating it
+and the appeal route.**
 
 The notice states which content is affected, what changed, when it took effect,
-and how to appeal. It never names or characterizes the reporter, never quotes
-the reporter's submission, never states how many reports were made, and never
-describes any person's circumstances.
+when an interim measure expires, and how to appeal. It never names or
+characterizes the reporter, never quotes the reporter's submission, never
+states how many reports were made, and never describes any person's
+circumstances. For a `PS-270-033` interim measure the notice is sent when the
+measure takes effect, so that the author can appeal inside its two-business-day
+life.
 
-**Source:** `PS-270-012`; `SG-93-092`; the `RI-93-015` notice-field pattern.
+Addressing this notice requires the `PS-270-076` resolution step, which is
+itself unrouted under `OQ-270-009`.
+
+**Source:** `PS-270-012`; `SG-93-092`; the `RI-93-015` notice-field pattern;
+`PS-270-033`, `PS-270-076`.
 
 `PS-270-054` — **A third party whose visible state changes receives only what
 the ordinary rules already allow.**
@@ -760,47 +969,62 @@ permanent evidence.
 
 ## 13. Appeals
 
-`PS-270-060` — **Three parties may appeal, and each appeals one thing.**
+`PS-270-060` — **Conditional on `OQ-270-006` for its first two rows. Three
+parties may appeal, and each appeals one thing.**
 
 | Appellant | May appeal |
 | --- | --- |
-| The author whose content was removed or withheld | The enforcement action against their content |
+| The author whose content was removed or withheld | The enforcement action against their content, **and separately the `PS-270-033` interim measure, from the moment it takes effect** |
 | The account holder subject to an account-level action | That action |
 | The reporter | A terminal no-action outcome on their case |
 
+The interim measure is appealable in its own right rather than folded into the
+terminal decision, because a two-business-day silencing that can only be
+contested after it has expired is not appealable in any sense that matters.
+
 **Source:** `SG-93-050`, which requires that a person may contest a shared record
-that describes them; `RI-93-008`; CBD-94 §3.6.
+that describes them; `RI-93-008`; CBD-94 §3.6; `PS-270-033`; `PS-270-075`.
 
 `PS-270-061` — **An appeal is decided by someone other than the original
 decider, which in Private MVP means the external route.**
 
 `OP-92-007` requires post-use review *"by a person independent of the
 requester"*. With one operational owner, internal independence does not exist
-(`PS-270-036`), so an appeal against a Critical or account-level decision is
-decided through the CBD-273 qualified route. An appeal against a Medium or Low
-content decision may be decided by the operational owner only where it raises a
-fact the original decision did not consider; otherwise it escalates. This is a
-limitation, stated as one.
+(`PS-270-036`), so an appeal against a Critical decision, an account-level
+decision, or a `PS-270-033` interim measure is decided by the standing
+independent reviewer in `PS-270-077` — **not** by CBD-273, whose charter is a
+one-time review of this model. An appeal against a Medium or Low content
+decision may be decided by the operational owner only where it raises a fact
+the original decision did not consider; otherwise it escalates.
 
-**Source:** `OP-92-007`; `SR-94-069`; `PS-270-036`.
+The standing function is unfilled, so this appeal route does not currently
+exist. That is the limitation, stated as one, and it is why `OQ-270-003` is a
+`RG-94-011` readiness input rather than a note.
 
-`PS-270-062` — **One appeal per decision, within a stated window, with a closed
-outcome set.**
+**Source:** `OP-92-007`; `SR-94-069`; `PS-270-036`, `PS-270-077`; `OQ-270-003`.
+
+`PS-270-062` — **Conditional on `OQ-270-006`. One appeal per decision, within a
+stated window, with a closed outcome set.**
 
 The outcome set is `Upheld`, `Reversed`, `Modified`, `Out of scope`. The window
 is 30 days from the notice of the decision, and a late appeal is recorded and
-refused rather than silently dropped. An appeal does not suspend a Critical
-enforcement action.
+refused rather than silently dropped.
 
-**Source:** `SR-94-063`; CBD-94 §3.8.
+An appeal does not suspend a terminal Critical enforcement action. It **does**
+apply to a `PS-270-033` interim measure, which is not a terminal action: an
+appeal against the measure is heard inside the measure's two-business-day life,
+and where it cannot be, the measure expires on schedule rather than being
+extended to await the appeal.
 
-`PS-270-063` — **A reversal restores the content and records the reversal; it
-does not erase the case.**
+**Source:** `SR-94-063`; CBD-94 §3.8; `PS-270-033`; `PS-270-075`.
+
+`PS-270-063` — **Conditional on `OQ-270-006`. A reversal restores the content
+and records the reversal; it does not erase the case.**
 
 `SR-94-064` requires that selective deletion be detectable. A reversed decision
 leaves both decisions in the record.
 
-**Source:** `SR-94-064`; `PS-270-045`.
+**Source:** `SR-94-064`; `PS-270-045`; `PS-270-075`.
 
 `PS-270-064` — **There is no appeal against a product rule.**
 
@@ -931,10 +1155,11 @@ None of these is answered here. Each names the authority that must answer it.
 | --- | --- | --- | --- |
 | `OQ-270-001` | `OP-92-003`'s closed purpose list excludes moderation, so no approved path lets platform-safety staff read stored comment content. Is the reporter-submission-only model in `PS-270-017` the final position, or does `OP-92-003` gain a further purpose class with its own dual approval and notice rules? | CBD-92 is approved and belongs to another package. **Proposed amendment, pending.** | Product Owner and Security, through a focused change to CBD-92 |
 | `OQ-270-002` | May comments ship with business-hours-only coverage for Critical cases, given one operational owner and no named deputy? | A staffing and risk-acceptance decision in CBD-94 §3.6's Critical class, requiring a written accountable-security recommendation | Product Owner, after the CBD-273 qualified input |
-| `OQ-270-003` | The operational owner, the Product Owner, the case decider, and the appeal authority are one person. Is the external CBD-273 route a sufficient standing substitute for `OP-92-004` and `SR-94-069` separation, or is a second named individual required before launch? | `SR-94-069` requires organizational and technical separation; this document cannot create a person | Product Owner and Security |
+| `OQ-270-003` | **Who holds the `PS-270-077` standing independent reviewer function?** It is continuous and unbounded in volume — a disposition on every Critical, account-level and `PS-270-028` case, a post-use review of every case access and enforcement execution, and every appeal against the operational owner. CBD-273 is a one-time chartered review and is **not** this function; v0.1 wrongly used it as one. The candidates are a second named individual, a retained external reviewer under a standing engagement, or an explicit Product Owner acceptance of the gap with a narrowed scope for what the process may do without it. Until it is answered, §8, §10 and §13 are not operable. | `SR-94-069` requires organizational and technical separation, and `OP-92-007` requires an independent post-use reviewer. This document cannot create a person or widen a sibling subtask's charter | Product Owner and Security; a `RG-94-011` readiness input |
 | `OQ-270-004` | Retention, deletion, redaction, and legal-hold rules for `DI-91-043` case content and `DI-91-063` metadata. | `DI-91-043` records them as unknown and `EG-91-009` owns them. Inventing a period would be a false closure | The `EG-91-009` owner, with legal input where hold or deletion claims are implicated |
 | `OQ-270-005` | A non-user third party named in a comment — a merchant counterparty, an ex-partner, a child — has no account and therefore no intake path. Does one exist, and what would it disclose? | CBD-93 §7.1 records that free text is frequently about someone other than its author; no approved source gives a non-user standing | Product Owner, with privacy and legal input; interacts with `EG-93-002` |
-| `OQ-270-006` | **Does the platform have authority to remove an author's content at all?** CBD-72 §5.6 item 4 denies every *role* that authority and §5.6 item 9 routes serious abuse here, but no approved source states that the platform itself may remove a comment. This model assumes such a power exists for the unlawful-content and Critical classes and specifies its limits; the power itself is undecided. | It is a product decision about the approved permission model, not a specification detail. Settling it here would be inventing product intent | Product Owner; touches CBD-72 §5.6 and `DL-76-020` |
+| `OQ-270-006` | **Does the platform hold any power to remove or withhold an author's content? Proposed amendment, pending.** Not a silence in the sources but a live contradiction between them. **Prohibiting:** `EG-91-009`'s interim position — *"No silent support access, reassignment, or cross-author moderation"* — and `SR-94-067` — *"staff MUST NOT browse content, impersonate, moderate, or infer resource existence."* **Delegating:** permission 11d routes serious abuse, unlawful content, and accidental disclosure to *"a separate platform safety/support process outside budget-space role permissions"*, and `RI-93-008` leaves the *"platform response"* to this document. The amendment sought is a bounded platform content power, scoped to the unlawful-content and Critical classes, shaped by `PS-270-010`, `PS-270-033`, and `PS-270-049`, and recorded as a closure of the moderation limb of `EG-91-009`. Without it the process has no terminal action and `SR-94-074` cannot be satisfied. | `EG-91-009` is the owning gap and is not this package's to close; permission 11d and `DL-76-020` are approved product decisions. Asserting the power here would settle product intent by specification | The Product Owner **and the accountable security decision-maker**, who `EG-91-009` names jointly with CBD-93/94 as its disposition authority |
+| `OQ-270-009` | **Is the `PS-270-076` machine-mediated resolution step permitted, and under what record?** It resolves a comment reference to an author identifier and a notification destination — two classes `OP-92-001` denies by name — without rendering either to any person. The construction honours the rule's purpose but is authorized by no approved row. The same amendment conversation as `OQ-270-001` settles it, and the two should be taken together. **Proposed amendment, pending.** | `OP-92-001` draws no distinction between machine-mediated resolution and staff access, and CBD-92 belongs to another package | Product Owner and Security, through the same focused change to CBD-92 as `OQ-270-001` |
 | `OQ-270-007` | Which jurisdictions define "unlawful content" for `PS-270-002`? | `RG-94-013` and `EG-93-002` are open; no jurisdiction set is approved | Counsel, per CBD-94 §3.6 |
 | `OQ-270-008` | Does a report or a case record survive the reporter's personal-account deletion under `PA-92-001`–`PA-92-005`, and does the reported author's deletion end an open case? | The `PA-92-*` lifecycle is approved but its interaction with an operational case record is addressed by no source, and the `EG-91-002` per-class terminal disposition is open | The `EG-91-002` and `EG-91-009` owners, with Data Lifecycle |
 
@@ -956,6 +1181,13 @@ Named so that Manager can route them to Guard. They are not written here.
    enumerated, once registered.
 5. No `PS-270-*` decision grants a power §4 prohibits — a keyword check over the
    decision bodies against the prohibited-power list.
+6. Every decision `PS-270-075` lists as conditional carries the literal marker
+   **Conditional on `OQ-270-006`** in its own heading, and no decision carries
+   the marker without appearing in that list. The two must not drift, because
+   the marker is what tells a reader — and the Guard registering the §17.2
+   vocabulary — that the capability is undecided.
+7. `Actioned` is the only `platform-safety-case-outcome` member reachable
+   solely through a conditional decision, and §17.2 says so.
 
 ## 17. Publication, vocabulary, and change control
 
@@ -993,6 +1225,15 @@ change does not edit. Both are reported for registration:
 | `platform-safety-case-outcome` | `Actioned`, `No action`, `Out of scope`, `Escalated`, `Withdrawn` | this document §11, `PS-270-052` |
 | `platform-safety-appeal-outcome` | `Upheld`, `Reversed`, `Modified`, `Out of scope` | this document §13, `PS-270-062` |
 
+**Both sets are complete as written, and one member is not yet reachable.**
+`Actioned` depends on the content power `OQ-270-006` has not granted; until it
+does, a case that would be `Actioned` terminates as `Escalated`
+(`PS-270-052`). The member stays in the registered set — removing it would make
+the vocabulary drift the moment the question closes — but whoever registers it
+should know the capability behind it is undecided. The whole
+`platform-safety-appeal-outcome` set is likewise reachable only through
+`PS-270-062`, which is conditional.
+
 Severity deliberately reuses CBD-94 §3.8's Critical, High, Medium, and Low
 rather than defining a parallel set, so it needs no registration of its own.
 
@@ -1019,51 +1260,79 @@ to Manager.
 | # | Required element | Section | Decisions |
 | --- | --- | --- | --- |
 | 1 | Scope | §3 | `PS-270-001`–`PS-270-005` |
-| 2 | Prohibited staff powers | §4 | `PS-270-006`–`PS-270-015` |
+| 2 | Prohibited staff powers | §4 | `PS-270-006`, `PS-270-007`, **`PS-270-075`**, `PS-270-008`–`PS-270-015` |
 | 3 | Intake | §5 | `PS-270-016`–`PS-270-023` |
 | 4 | Severity model | §6 | `PS-270-024`–`PS-270-028` |
 | 5 | Response targets | §7 | `PS-270-029`–`PS-270-034` |
-| 6 | Staffing and on-call ownership | §8 | `PS-270-035`–`PS-270-039` |
+| 6 | Staffing and on-call ownership | §8 | `PS-270-035`–`PS-270-039`, **`PS-270-077`** |
 | 7 | Evidence handling | §9 | `PS-270-040`–`PS-270-045` |
-| 8 | Access controls | §10 | `PS-270-046`–`PS-270-050` |
+| 8 | Access controls | §10 | `PS-270-046`, `PS-270-047`, **`PS-270-076`**, `PS-270-048`–`PS-270-050` |
 | 9 | User communication | §11 | `PS-270-051`–`PS-270-056` |
 | 10 | Escalation | §12 | `PS-270-057`–`PS-270-059` |
 | 11 | Appeals | §13 | `PS-270-060`–`PS-270-065` |
 | 12 | Audit | §14 | `PS-270-066`–`PS-270-071` |
 | 13 | Training | §15 | `PS-270-072`–`PS-270-074` |
 
-The order is the criterion's order. `CBD-131-AC01` is supported to the extent a
-written model supports it; it is not closed, because `EG-93-009` also requires
-exercised cases from CBD-272 and the qualified review from CBD-273.
+The order is the criterion's order. The three bold decisions were added in
+v0.2 and appended at the next free numbers rather than renumbering the set, so
+`PS-270-001`–`074` keep the meanings they had in v0.1; §1 records the
+convention.
+
+`CBD-131-AC01` is supported to the extent a written model supports it; it is
+not closed, because `EG-93-009` also requires exercised cases from CBD-272 and
+the qualified review from CBD-273.
 
 ### 18.2 `CBD-270-AC02` — prohibited powers explicit, no role gains moderation authority, process inside `OP-92-001` and `OP-92-002`
 
-**Status: Met, with one structural finding recorded rather than resolved.**
+**Status: Met in part, with a structural finding. The residue is routed, not
+closed.**
 
-* Prohibited powers are explicit and closed: `PS-270-006`–`PS-270-014`, with
-  `PS-270-015` requiring tool enforcement.
+v0.1 marked this **Met**. That was wrong: it was graded against `OP-92-001` and
+`OP-92-002`, which the criterion names, while `SR-94-067`'s staff-moderation
+prohibition and `EG-91-009`'s interim cross-author-moderation position went
+unaddressed even though the document cited `SR-94-067` five times. A criterion
+is not met by satisfying the two rows it names while leaving a third prohibition
+in the same boundary unexamined.
+
+What is met:
+
+* Prohibited powers are explicit and closed: `PS-270-006`–`PS-270-014` and
+  `PS-270-075`, with `PS-270-015` requiring tool enforcement.
 * No budget-space role gains moderation authority: `PS-270-001` and `PS-270-008`
-  restate `DL-76-020` and `SR-94-102` and add nothing to any role. `PS-270-008`
-  also closes the owner-reporting question, which would otherwise be the back
-  door.
-* The process stays inside the staff boundary: `PS-270-006` leaves `OP-92-001`
+  restate `DL-76-020`, permission 11d, and `SR-94-102`, and add nothing to any
+  role. `PS-270-008` also closes the owner-reporting question, which would
+  otherwise be the back door.
+* The process stays inside `OP-92-001` and `OP-92-002`: `PS-270-006` leaves
   default-deny intact, and `PS-270-017` builds intake on the `OP-92-002`
   customer-submission rule rather than on any staff read.
-* **The finding:** `OP-92-003` excludes moderation from the exceptional-purpose
-  list, so there is no approved path to stored content for this process at all.
-  `PS-270-007` records that, `PS-270-048` states what happens to a case that
-  needs it, and `OQ-270-001` routes the amendment. Staying inside the boundary
-  is therefore achieved by narrowing what the process does, not by claiming an
-  access the sources do not grant.
+
+What is not met, and where it goes:
+
+* **`OP-92-003` excludes moderation** from the exceptional-purpose list, so no
+  approved path reaches stored content. `PS-270-007` records it, `PS-270-048`
+  states what happens to a case that needs it, `OQ-270-001` routes the
+  amendment.
+* **`SR-94-067` and `EG-91-009` prohibit staff moderation outright.**
+  `PS-270-075` quotes both, holds the removal power unheld, and marks seven
+  dependent decisions conditional. `OQ-270-006` routes the amendment to the
+  Product Owner and the accountable security decision-maker jointly.
+* **`PS-270-076`'s resolution step narrows `OP-92-001` without authorization**
+  from any approved row. `OQ-270-009` routes it.
+
+Staying inside the boundary is therefore achieved by narrowing what the process
+does and by naming three amendments it would take to do more — not by claiming
+an access or a power the sources do not grant.
 
 ### 18.3 `CBD-270-AC03` — a named operational owner is recorded
 
 **Status: Met, with the separation-of-duties consequence recorded.**
 
 `PS-270-035` names Alexander Wohlford as Platform Safety Owner. `PS-270-036`
-records that one person cannot satisfy `OP-92-004` and `SR-94-069`, states the
-two consequences that follow, and `OQ-270-003` routes the question of whether
-the external CBD-273 route is a sufficient standing substitute.
+records that one person cannot satisfy `OP-92-004` and `SR-94-069`, and states
+the two consequences that follow. `PS-270-077` separates the continuous
+independent-reviewer function from CBD-273's one-time chartered review — v0.1
+conflated them and would have redefined a sibling subtask's scope — and
+`OQ-270-003` routes the question of who holds the standing function.
 
 ### 18.4 `CBD-270-AC04` — merged to main, published to Confluence after merge, PR and merge SHA recorded
 
@@ -1084,7 +1353,9 @@ requires explicit authorization for that specific change.
 | `RG-94-009` | Open. Tool-enforced boundary, dual control, and tamper-evident evidence are unbuilt (`PS-270-015`, `PS-270-045`). |
 | `SG-93-038` | Specified, not satisfied. Intake, triage, authority, timeline, and outcome are now written; the operational readiness gate still needs evidence. |
 | `SR-94-074` and `SR-94-103` | Open. Shared comments remain unshippable, and the process that `SR-94-103` requires to own escalation now exists only on paper. |
-| `EG-91-009` | Unchanged. This document reports a platform-safety process into it and closes none of its unknowns. |
+| `EG-91-009` | Unchanged, and now correctly characterized. Its interim position actively prohibits cross-author moderation, so it is not merely the gap this document reports into — it is the gap that must close before §9 through §13 are operable. `OQ-270-006` seeks the closure of its moderation limb. |
+| `SR-94-067` | Open on its moderation limb. The technical-limitation half is answered by `PS-270-015`; the *"staff MUST NOT ... moderate"* half is honoured by holding the power unheld (`PS-270-075`) and is not closed. |
+| `PS-270-077` standing independent reviewer | **Unfilled.** `OP-92-004`, `OP-92-007`, and `SR-94-069` require it continuously; nobody holds it, so §8, §10, and §13 are not operable. `OQ-270-003`. |
 | `RI-93-008` | Unchanged and respected. CBD-271 owns the semantics. |
 | `FU-95-025` | Open. This is the first of its four required pieces. |
 
@@ -1092,4 +1363,5 @@ requires explicit authorization for that specific change.
 
 | Version | Date | Author | Change | Status |
 | --- | --- | --- | --- | --- |
+| 0.2 | September 12, 2026 | Claude | Independent review of `01a8eac` returned five blockers; all five are addressed. **F1:** v0.1 recorded the platform content power as a silence in the sources. It is a contradiction between them. Added `PS-270-075` quoting `EG-91-009`'s interim prohibition on cross-author moderation and `SR-94-067`'s *"staff MUST NOT ... moderate"* — the half of a row this document cited five times while quoting only its technical-limitation clause — against permission 11d's explicit routing of serious abuse to this process and `RI-93-008`'s delegation of the platform response. Restated `OQ-270-006` as a proposed amendment naming `EG-91-009` as the owning gap and the accountable security decision-maker alongside the Product Owner. Marked `PS-270-010`, `PS-270-033`, `PS-270-049`, `PS-270-053`, `PS-270-060`, `PS-270-062`, `PS-270-063` conditional, and flagged the `Actioned` vocabulary member. Added permission 11d to §1.1. **F2:** `PS-270-047`'s "nothing else is read" contradicted three of this document's own decisions; corrected, and added `PS-270-076` specifying the minimum machine-mediated resolution step, its four data classes, its four constraints, and that it narrows `OP-92-001` without authorization — routed at the new `OQ-270-009`. **F3:** withdrew the mapping of an individual abuse case onto CBD-94 §3.8's Critical stop-ship rule, which is scoped to a *finding* about a control stopping a *release surface*. Rewrote `PS-270-033` to separate Critical case from Critical finding and to bound the interim measure on scope, duration, appeal, voice, and counter-abuse, closing the one-submission silencing path that `PS-270-025`'s fail-upward rule opened. Recorded the divergence rather than hiding it. **F4:** downgraded `CBD-270-AC02` to Met in part with the residue routed. **F5:** added `PS-270-077` separating the continuous independent-reviewer function from CBD-273's one-time chartered review, which v0.1 conflated and would have silently widened; the standing function is unfilled and `OQ-270-003` now asks who holds it. Three decisions appended at the next free numbers rather than renumbering, so `PS-270-001`–`074` keep their v0.1 meanings. No approved source amended. | Draft; Product Owner approval required, and `EG-93-009` also requires the CBD-272 exercises and the CBD-273 review |
 | 0.1 | September 12, 2026 | Claude | Initial draft against the `CBD-270-AC01`–`AC04` criteria and the `EG-93-009` closure element list. Defines 74 `PS-270-*` decisions across the thirteen required elements and registers eight open questions. Records the `OP-92-003` moderation exclusion as the structural constraint the model is built around, names the operational owner, and states the single-operator separation-of-duties gap rather than assuming it away. Amends no approved source; proposes one CBD-92 amendment that remains pending under `OQ-270-001`. | Draft; Product Owner approval required, and `EG-93-009` also requires the CBD-272 exercises and the CBD-273 review |
