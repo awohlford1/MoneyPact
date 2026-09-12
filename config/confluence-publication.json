@@ -1501,7 +1501,7 @@
         "cbd-95-follow-up-register"
       ],
       "policy": "approved",
-      "approved_sha256": "f7b7385402d3540f90a811af832f1114272dc87e1b6b9c1bb889bdd32d8f4660"
+      "approved_sha256": "5aba82f4607e310fe64376969d13457e21848a0d70c81c2c0fad4cd537b96ac6"
     },
     {
       "path": "docs/cbd-95-architecture-roadmap-follow-up-register.md",

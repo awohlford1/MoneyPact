@@ -44,9 +44,10 @@ FROZEN_BLOBS = {
         "6938bbb0ca8eafad11b4712f1b3d35da432723af"
     ),
     Path("docs/cbd-93-privacy-coercion-abuse-analysis.md"): (
-        # Re-frozen at CBD-93 v1.1.1, an editorial header correction that
-        # changed no normative content. See manifest section 6.
-        "beabfa99835cd78126bc3c744d6224dbeda80d15"
+        # Re-frozen September 12, 2026 at CBD-93 v1.1.2 (editorial): the §12
+        # sentence that still called joint-account projection a §13 gap was
+        # corrected to cite §4.12. No normative content changed.
+        "62527c870bb2d1c2bb39b211f46bd6b7c8a2e8a0"
     ),
     # Re-frozen September 3, 2026 at CBD-94 v1.0.1.  The RK, SR, and RG family
     # counts this audit enforces are unchanged; only two section 8 rows and the
