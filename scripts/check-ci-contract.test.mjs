@@ -100,12 +100,13 @@ const validRootPackage = {
     "check:docs": "node scripts/check-mermaid.mjs",
     "check:tokens": "node scripts/check-tokens.mjs",
     "check:copy": "node scripts/check-copy-language.mjs",
+    "check:migrations": "node scripts/check-migrations.mjs",
     lint: "eslint scripts && npm run lint --workspaces --if-present",
     typecheck: "npm run typecheck --workspaces --if-present",
     test: "npm run test --workspaces --if-present",
     build: "npm run build --workspaces --if-present",
     "check:pages": "node scripts/check-public-pages.mjs",
-    check: "npm run check:ci && npm run check:secrets && npm run check:env && npm run check:publication && npm run check:docs && npm run check:tokens && npm run check:copy && npm run lint && npm run typecheck && npm run test && npm run build && npm run check:pages",
+    check: "npm run check:ci && npm run check:secrets && npm run check:env && npm run check:publication && npm run check:docs && npm run check:tokens && npm run check:copy && npm run check:migrations && npm run lint && npm run typecheck && npm run test && npm run build && npm run check:pages",
   },
 };
 
