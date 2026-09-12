@@ -674,6 +674,41 @@ class TransportTests(unittest.TestCase):
         history = mock_history([current], [workflow_jobs(current, 'skipped')])
         self.assertEqual(history.safe_heads(1, 2, HEAD, EMPTY_RECOVERY), {"successful": [], "reconciled": []})
 
+    def test_history_treats_a_run_cancelled_before_any_step_as_safe(self):
+        """The shape a superseded queued run leaves behind: completed/cancelled,
+        steps=[]. Verified against run 34046106132. Nothing executed, so
+        nothing was written, and it must not block later runs."""
+        current = workflow_run(2, status='in_progress', conclusion=None)
+        superseded = workflow_run(1, conclusion='cancelled')
+        response = {"total_count": 1, "jobs": [{"run_id": 1, "head_sha": HEAD,
+                    "name": "Approved merged documentation publication",
+                    "status": "completed", "conclusion": "cancelled", "steps": []}]}
+        history = mock_history([current, superseded], [response])
+        self.assertEqual(history.safe_heads(2, 1, HEAD, EMPTY_RECOVERY),
+                         {"successful": [], "reconciled": []})
+
+    def test_history_still_rejects_the_neighbours_of_the_cancelled_empty_shape(self):
+        """Only cancelled-and-empty is safe. A failure with no steps is missing
+        evidence; a cancellation that executed steps is an uncertain attempt."""
+        current = workflow_run(2, status='in_progress', conclusion=None)
+        prior = workflow_run(1, conclusion='cancelled')
+        base = {"run_id": 1, "head_sha": HEAD, "name": "Approved merged documentation publication",
+                "status": "completed"}
+        failed_empty = dict(base, conclusion="failure", steps=[])
+        cancelled_mid_run = dict(base, conclusion="cancelled", steps=[
+            {"name": "Publish approved selected documents", "status": "completed", "conclusion": "cancelled"}])
+        still_running_empty = dict(base, status="in_progress", conclusion=None, steps=[])
+        # GitHub never reports a conclusion on an unfinished job; a response that
+        # does is malformed and must not be mistaken for a safe cancellation.
+        inconsistent = dict(base, status="in_progress", conclusion="cancelled", steps=[])
+        for label, job in (("failed with no steps", failed_empty),
+                           ("cancelled after executing steps", cancelled_mid_run),
+                           ("in progress with no steps yet", still_running_empty),
+                           ("cancelled conclusion on an unfinished job", inconsistent)):
+            history = mock_history([current, prior], [{"total_count": 1, "jobs": [job]}])
+            with self.subTest(label=label), self.assertRaises(p.PublicationError):
+                history.safe_heads(2, 1, HEAD, EMPTY_RECOVERY)
+
     def test_history_rejects_missing_malformed_or_substituted_attempt_evidence(self):
         current = workflow_run(2, status='in_progress', conclusion=None)
         failed = workflow_run()
