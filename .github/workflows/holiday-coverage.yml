@@ -36,11 +36,13 @@ on:
   # next to the alarm.
   workflow_dispatch:
 
-# Read-only, and no secrets anywhere in this file. The check reads the
-# calendar out of the checkout and, for one condition, a base commit's blob
-# via local, read-only git -- no network credential, nothing to authenticate
-# to, and nothing written. A workflow that holds no credential cannot leak one
-# (CBD-250-AC03).
+# Read-only, and no configured secrets anywhere in this file. The check reads
+# the calendar out of the checkout and, for one condition, a base commit's
+# blob via local, read-only git -- nothing written, nothing to authenticate
+# to. The only credential in play is the job's own read-only GITHUB_TOKEN,
+# which actions/checkout uses to clone and does not persist
+# (persist-credentials: false). No repository secret is referenced, so there
+# is none to leak (CBD-250-AC03).
 permissions:
   contents: read
 
@@ -73,21 +75,28 @@ jobs:
       - name: Determine the base ref for this push
         if: github.event_name == 'push'
         id: base
+        # Contexts reach the shell through env, never through ${{ }} inside
+        # the script: a branch or SHA value is data, and inline expression
+        # substitution happens before bash parses the line.
+        env:
+          BEFORE: ${{ github.event.before }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           zero="0000000000000000000000000000000000000000"
-          if [ "${{ github.event.before }}" = "$zero" ]; then
-            base="$(git merge-base HEAD "origin/${{ github.event.repository.default_branch }}")"
+          if [ "$BEFORE" = "$zero" ]; then
+            base="$(git merge-base HEAD "origin/$DEFAULT_BRANCH")"
           else
-            base="${{ github.event.before }}"
+            base="$BEFORE"
           fi
           echo "ref=$base" >> "$GITHUB_OUTPUT"
 
       # The guard before the thing it guards. These tests break the calendar
       # deliberately in a temp directory and prove each condition is the only
       # thing catching its fixture; if they fail, a green horizon step below
-      # would mean nothing. No dependency install: the runner's python3 and
-      # the standard library are the whole toolchain.
+      # would mean nothing. No dependency install: the runner's python3, the
+      # standard library, and the runner's git (which the baseline tests
+      # drive) are the whole toolchain.
       - name: Prove the guard still fails on a broken calendar
         run: python3 scripts/test_check_holiday_coverage.py
 
