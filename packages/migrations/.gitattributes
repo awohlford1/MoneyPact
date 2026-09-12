@@ -1,0 +1,6 @@
+# Migrations are checksummed and reviewed as text. Keeping them LF in every
+# checkout means the diff a reviewer approved is byte-for-byte the text that
+# runs, on Windows as well as on the Linux runner. The checksum normalises line
+# endings anyway (src/catalog.ts), and the check only rejects a file that mixes
+# them; this keeps the files themselves canonical so neither ever has to.
+*.sql text eol=lf
