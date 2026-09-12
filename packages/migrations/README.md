@@ -45,8 +45,24 @@ environment is exactly what is wrong when someone resets the wrong database.
    holding **one advisory lock**, inserting the ledger row for each migration in
    the same transaction as the migration itself.
 
-Applying twice is therefore a no-op that exits 0 and says so, and a run that
-fails part way leaves neither schema nor ledger changed.
+Applying twice **in sequence** is therefore a no-op that exits 0 and says so,
+and a run that fails part way leaves neither schema nor ledger changed.
+
+**Two runners at once is a different case, and weaker than it should be.** The
+ledger is read in step 2, in an earlier session, before the lock of step 4 is
+taken. Two runners starting together both read the same ledger and build the
+same script. The lock serialises them, so the second cannot interleave with the
+first — but it replays work already done and fails on `already exists` or on
+the ledger's `ordinal text PRIMARY KEY`, inside its own transaction, which
+rolls back.
+
+So concurrency is **safe but not live**: no corruption, no half-applied schema,
+no duplicate ledger row, but the second runner exits non-zero rather than
+finding nothing to do. In a retried pipeline that is a failed retry. Fixing it
+means reading the ledger inside the locked transaction, which means building
+the plan after the lock instead of before — a restructure into a single
+session. It is a follow-up, and it should be resolved before anything deploys
+with two concurrent runners.
 
 **Limitation.** One transaction for the whole set means a statement that cannot
 run inside a transaction — `CREATE INDEX CONCURRENTLY`, `ALTER TYPE ... ADD
@@ -118,6 +134,15 @@ ALTER TABLE budget_space_plan_line DROP COLUMN superseded_at;
 `completes-expand` must name a migration that actually exists in the directory
 and precedes this one, so the header cannot say just anything.
 
+Both spellings of each removal are caught, because PostgreSQL accepts both:
+`DROP COLUMN c` and `DROP c`, `DROP COLUMN IF EXISTS c` and `DROP IF EXISTS c`,
+`RENAME COLUMN a TO b` and `RENAME a TO b`. Matching only the verbose form
+would have let a migration destroy a committed column while the check printed
+`passed`. Inside `ALTER TABLE` the words that may follow `DROP` are a closed
+list — `COLUMN`, `CONSTRAINT`, `DEFAULT`, `NOT NULL`, `IDENTITY`, `EXPRESSION`,
+or a bare column name — so the rule excludes the five that destroy no column by
+name and treats everything else as a removal.
+
 ### A typed SQL layer, not an ORM (AC06)
 
 The architecture chose "managed PostgreSQL with a typed SQL layer". The schema
@@ -170,9 +195,13 @@ reason proves nothing. `fixtures/positive/` must produce no findings at all.
 | `cbd-116-fx-11-unparsable-file-name` | AC07 — sequential counter name |
 | `cbd-116-fx-12-down-migration-file` | AC03 — `.down.sql` |
 | `cbd-116-fx-13-reversion-directive` | AC03 — `migrate:down` directive |
-| `cbd-116-fx-14-transaction-control` | AC01 — `COMMIT` inside a migration |
+| `cbd-116-fx-14-transaction-control` | AC01 — `COMMIT` at the start of a line |
 | `cbd-116-fx-15-non-sql-migration` | AC06 — migration written as code |
-| `cbd-116-fx-16`, `cbd-116-fx-17` | positive: compliant expand and contract |
+| `cbd-116-fx-23-abbreviated-drop-column` | AC04 — `DROP c` with `COLUMN` omitted |
+| `cbd-116-fx-24-abbreviated-drop-if-exists` | AC04 — `DROP IF EXISTS c` with `COLUMN` omitted |
+| `cbd-116-fx-25-abbreviated-rename-column` | AC04 — `RENAME a TO b` with `COLUMN` omitted |
+| `cbd-116-fx-26-inline-transaction-control` | AC01 — `COMMIT` mid-line |
+| `cbd-116-fx-16`, `17`, `27` | positive: compliant expand and contract, and every non-destructive `ALTER TABLE` action that must not be swept in |
 | `cbd-116-fx-18` … `cbd-116-fx-21` | AC02 — byte order mark, no trailing newline, invalid UTF-8, mixed line endings (built in the test, not committed) |
 | `cbd-116-fx-22` | AC06 — a schema-owning ORM in the manifest (built in the test) |
 

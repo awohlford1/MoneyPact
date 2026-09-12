@@ -21,7 +21,14 @@ import { test } from "node:test";
 import { readCatalog } from "../catalog.ts";
 import { loadPolicy } from "../policy.ts";
 import { checkCatalog, checkFixtureDirectory, checkRepository, formatFindings, manifestOf } from "./index.ts";
-import { encodingFindings, parseColumn, normalizeType, typedSqlLayerFindings } from "./rules.ts";
+import {
+  destructiveMatches,
+  encodingFindings,
+  normalizeType,
+  parseColumn,
+  statementFindings,
+  typedSqlLayerFindings,
+} from "./rules.ts";
 
 const policy = loadPolicy();
 const fixtures = fileURLToPath(new URL("../../fixtures/", import.meta.url));
@@ -52,7 +59,91 @@ const NEGATIVE: Readonly<Record<string, readonly string[]>> = {
   "cbd-116-fx-13-reversion-directive": ["forward-only"],
   "cbd-116-fx-14-transaction-control": ["transaction-control"],
   "cbd-116-fx-15-non-sql-migration": ["file-name", "schema-owner"],
+  "cbd-116-fx-23-abbreviated-drop-column": ["contract-step"],
+  "cbd-116-fx-24-abbreviated-drop-if-exists": ["contract-step"],
+  "cbd-116-fx-25-abbreviated-rename-column": ["contract-step"],
+  "cbd-116-fx-26-inline-transaction-control": ["transaction-control"],
 };
+
+/**
+ * The abbreviated spellings, asserted directly as well as through the
+ * fixtures.
+ *
+ * The fixtures prove the rule fires. This proves the *pair* is equivalent:
+ * PostgreSQL accepts both spellings of each destructive action, so a checker
+ * that treats them differently has a hole rather than a preference. The first
+ * revision of this package had exactly that hole -- `ALTER TABLE m DROP c`
+ * removed a column and the check printed "passed" -- and it survived because
+ * every fixture happened to use the verbose form.
+ */
+const EQUIVALENT_SPELLINGS: readonly (readonly [string, string])[] = [
+  ["ALTER TABLE m DROP COLUMN c;", "ALTER TABLE m DROP c;"],
+  ["ALTER TABLE m DROP COLUMN IF EXISTS c;", "ALTER TABLE m DROP IF EXISTS c;"],
+  ["ALTER TABLE m RENAME COLUMN a TO b;", "ALTER TABLE m RENAME a TO b;"],
+];
+
+for (const [verbose, abbreviated] of EQUIVALENT_SPELLINGS) {
+  test(`${abbreviated} is caught exactly as ${verbose} is`, () => {
+    const long = destructiveMatches(verbose, policy).map((hit) => hit.id);
+    const short = destructiveMatches(abbreviated, policy).map((hit) => hit.id);
+    assert.ok(long.length > 0, `${verbose} is not caught at all`);
+    assert.deepEqual(short, long, `${abbreviated} is not treated as ${verbose}`);
+  });
+}
+
+/**
+ * The closed list of things that can follow DROP inside ALTER TABLE and do not
+ * remove a column. Over-sweeping here would demand a contract-step header for
+ * changes that destroy nothing, and a header demanded for no reason is a
+ * header authors learn to paste.
+ */
+test("non-destructive ALTER TABLE actions are not contract steps", () => {
+  for (const statement of [
+    "ALTER TABLE m DROP CONSTRAINT c;",
+    "ALTER TABLE m DROP CONSTRAINT IF EXISTS c;",
+    "ALTER TABLE m ALTER COLUMN c DROP DEFAULT;",
+    "ALTER TABLE m ALTER COLUMN c DROP NOT NULL;",
+    "ALTER TABLE m ALTER COLUMN c DROP IDENTITY;",
+    "ALTER TABLE m ALTER COLUMN c DROP IDENTITY IF EXISTS;",
+    "ALTER TABLE m ALTER COLUMN c DROP EXPRESSION;",
+    "ALTER TABLE m RENAME CONSTRAINT a TO b;",
+    "ALTER TABLE m ADD COLUMN c text;",
+  ]) {
+    assert.deepEqual(destructiveMatches(statement, policy), [], statement);
+  }
+});
+
+test("a table rename is a table rename, and a column rename is not one", () => {
+  assert.deepEqual(destructiveMatches("ALTER TABLE m RENAME TO n;", policy).map((h) => h.id),
+    ["rename-table"]);
+  assert.deepEqual(destructiveMatches("ALTER TABLE m RENAME a TO b;", policy).map((h) => h.id),
+    ["rename-column"]);
+});
+
+test("a destructive action cannot be assembled from two separate statements", () => {
+  // `[^;]` rather than `[\s\S]`: an ALTER in one statement and a RENAME TO in
+  // the next are not a table rename.
+  assert.deepEqual(destructiveMatches("ALTER TABLE m ADD COLUMN c text;\nALTER INDEX i RENAME TO j;\n", policy), []);
+});
+
+test("transaction control is caught wherever it sits on the line", () => {
+  const inline = statementFindings(
+    { fileName: "x.sql", source: "CREATE TABLE t (id uuid); COMMIT;\n", bytes: Buffer.from("") },
+    policy,
+  );
+  assert.deepEqual(inline.map((item) => item.rule), ["transaction-control"]);
+});
+
+test("END closing a CASE expression is not transaction control", () => {
+  const source = "ALTER TABLE t ADD CONSTRAINT c CHECK (\n    CASE WHEN a < 0 THEN false\n"
+    + "    ELSE true\n    END\n);\n";
+  assert.deepEqual(statementFindings({ fileName: "x.sql", source, bytes: Buffer.from("") }, policy), []);
+});
+
+test("BEGIN inside a plpgsql body is not transaction control", () => {
+  const source = "CREATE FUNCTION f() RETURNS void AS $body$\nBEGIN\n  RETURN;\nEND\n$body$ LANGUAGE plpgsql;\n";
+  assert.deepEqual(statementFindings({ fileName: "x.sql", source, bytes: Buffer.from("") }, policy), []);
+});
 
 test("every negative fixture directory on disk is registered here", () => {
   const onDisk = readdirSync(join(fixtures, "negative"), { withFileTypes: true })

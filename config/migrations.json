@@ -40,8 +40,8 @@
     "forbidden": [
       {
         "id": "transaction-control",
-        "pattern": "^[ \\t]*(?:BEGIN|START\\s+TRANSACTION|COMMIT|END|ROLLBACK|SAVEPOINT)\\b",
-        "why": "The runner owns the transaction; a migration that ends it would leave the applied-state ledger and the schema able to disagree.",
+        "pattern": "\\b(?:BEGIN|START\\s+TRANSACTION|COMMIT|ROLLBACK|SAVEPOINT|RELEASE\\s+SAVEPOINT)\\b",
+        "why": "The runner owns the transaction; a migration that ends it would leave the applied-state ledger and the schema able to disagree. Not anchored to the start of a line, because a statement ending mid-line ends the transaction just as effectively. END is deliberately absent: it is transaction control only as a synonym for COMMIT, it is invisible here anyway inside a dollar-quoted plpgsql body, and at the start of a line it is far more likely to be closing a CASE expression in a CHECK constraint.",
         "instead": "nothing -- the statement is already inside a transaction"
       },
       {
@@ -64,21 +64,21 @@
       },
       {
         "id": "drop-column",
-        "pattern": "\\bDROP\\s+COLUMN\\b",
+        "pattern": "\\bALTER\\s+TABLE\\b[^;]*?\\bDROP\\s+(?:COLUMN\\s+)?(?:IF\\s+EXISTS\\s+)?(?!COLUMN\\b|CONSTRAINT\\b|DEFAULT\\b|NOT\\b|IDENTITY\\b|EXPRESSION\\b)[A-Za-z_\"]",
         "describes": "removes a column",
-        "why": "Dropping a column destroys committed customer data that no rollback of code or configuration restores."
+        "why": "Dropping a column destroys committed customer data that no rollback of code or configuration restores. COLUMN is optional in the grammar -- ALTER TABLE t DROP [COLUMN] [IF EXISTS] c -- so matching the word COLUMN would let the shorter spelling through. Inside ALTER TABLE the only other things that can follow DROP are CONSTRAINT, DEFAULT, NOT NULL, IDENTITY and EXPRESSION, and those are excluded by name because none of them removes a column."
       },
       {
         "id": "rename-table",
-        "pattern": "\\bALTER\\s+TABLE\\b[\\s\\S]*?\\bRENAME\\s+TO\\b",
+        "pattern": "\\bALTER\\s+TABLE\\b[^;]*?\\bRENAME\\s+TO\\b",
         "describes": "renames a table",
-        "why": "To every deployed version that still reads the old name, a rename is a drop and an add at the same instant."
+        "why": "To every deployed version that still reads the old name, a rename is a drop and an add at the same instant. Bounded to one statement with [^;] so an ALTER in one statement cannot be paired with a RENAME in another."
       },
       {
         "id": "rename-column",
-        "pattern": "\\bRENAME\\s+COLUMN\\b",
+        "pattern": "\\bALTER\\s+TABLE\\b[^;]*?\\bRENAME\\s+(?:COLUMN\\s+)?(?!TO\\b|CONSTRAINT\\b)[A-Za-z_\"][A-Za-z0-9_$\"]*\\s+TO\\b",
         "describes": "renames a column",
-        "why": "To every deployed version that still reads the old name, a rename is a drop and an add at the same instant."
+        "why": "To every deployed version that still reads the old name, a rename is a drop and an add at the same instant. COLUMN is optional here too -- ALTER TABLE t RENAME [COLUMN] a TO b -- while RENAME TO is a table rename and RENAME CONSTRAINT renames neither, so both are excluded."
       }
     ],
     "requiredHeaderKeys": ["contract-step", "completes-expand", "last-reader-removed-in"],

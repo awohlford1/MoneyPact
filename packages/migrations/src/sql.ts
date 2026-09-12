@@ -45,7 +45,10 @@ export function lineOf(source: string, index: number): number {
   return line;
 }
 
-const DOLLAR_TAG = /^\$(?:[A-Za-z_-￿][A-Za-z0-9_-￿]*)?\$/u;
+// The class is A-Z, a-z, underscore, and the range U+0080-U+FFFF -- the
+// escapes are spelled out because the raw characters are invisible, and an
+// invisible character next to a hyphen reads as a range that is not there.
+const DOLLAR_TAG = /^\$(?:[A-Za-z_\u0080-\uFFFF][A-Za-z0-9_\u0080-\uFFFF]*)?\$/u;
 
 export function strip(source: string): StrippedSql {
   const out: string[] = [];

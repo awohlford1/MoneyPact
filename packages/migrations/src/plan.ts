@@ -18,8 +18,27 @@
  *
  * **An advisory lock inside that transaction.** Two deploys racing is not
  * hypothetical -- it is what a retried pipeline does. `pg_advisory_xact_lock`
- * makes the second wait for the first and then find nothing pending, which is
- * the same answer it would have got had it run alone.
+ * serialises them: the second waits for the first to commit, and cannot
+ * interleave with it.
+ *
+ * Be precise about what that does and does not buy, because an earlier version
+ * of this comment overstated it. The plan is computed from a ledger read in an
+ * *earlier* psql session (commands.ts), before the lock is taken. So two
+ * runners starting together both read the same empty ledger and both build the
+ * same script. A commits; B waits, is released, and replays work that is
+ * already done.
+ *
+ * What holds is safety. B's replay fails -- on `already exists`, or on the
+ * ledger's `ordinal text PRIMARY KEY` -- inside its own transaction, which
+ * rolls back. There is no corruption, no half-applied schema, and no duplicate
+ * ledger row; the primary key is doing real work here, not decoration.
+ *
+ * What does not hold is liveness. B does not quietly find nothing pending; it
+ * exits non-zero. In the retried-pipeline case above that is a failed retry,
+ * not a safe no-op. Closing it means reading the ledger *inside* the locked
+ * transaction, which requires the plan to be built after the lock rather than
+ * before it -- a restructure into a single session, not a patch. It is a
+ * follow-up to resolve before anything deploys with two concurrent runners.
  *
  * **Out-of-order arrivals are applied, not refused.** Two branches stamp
  * T1 < T2, T2 merges and deploys first, then T1 merges. Refusing T1 would mean
