@@ -10,8 +10,16 @@ permissions:
 
 concurrency:
   group: confluence-publication-main
+  # A run that has started -- including one parked at the environment gate --
+  # is never cancelled: a cancelled write is an uncertain attempt that needs
+  # an owner reconciliation. Runs still queued behind it are a different
+  # matter. With the previous queue setting every push to main waited its
+  # turn and demanded its own approval, so eight merges in an afternoon meant
+  # eight approvals and four harmless failures. Without it GitHub keeps only
+  # the newest pending run and cancels older ones before they execute a step,
+  # which the recovery gate now recognises as safe. The newest run publishes
+  # from current main, which contains everything the cancelled ones would have.
   cancel-in-progress: false
-  queue: max
 
 jobs:
   publish:

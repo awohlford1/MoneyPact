@@ -1079,7 +1079,10 @@ class GitAndContractTests(unittest.TestCase):
             validate_workflow(workflow.replace("'" + command + "'", command))
         for old, new in (("push:", "pull_request_target:"), ("branches: [main]", "branches: ['*']"),
                          ("contents: read", "contents: write"), ("actions: read", "actions: write"),
-                         ("cancel-in-progress: false", "cancel-in-progress: true"), ("queue: max", "queue: single"),
+                         ("cancel-in-progress: false", "cancel-in-progress: true"),
+                         # queue: max was removed so newer pushes supersede queued runs;
+                         # putting it back is a boundary change and must be caught.
+                         ("cancel-in-progress: false", "cancel-in-progress: false\n  queue: max"),
                          ("fetch-depth: 0", "fetch-depth: 1"), ("persist-credentials: false", "persist-credentials: true"),
                          ("      - name: Publish", "      - if: false\n        name: Publish"),
                          ("  push:", "  workflow_dispatch:\n  push:"), ("  push:", "  push:\n    paths: ['docs/**']"),
