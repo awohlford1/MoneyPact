@@ -73,13 +73,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = REPO_ROOT / ".env.local"
 
 # Links whose direction looks inverted to the heuristic but which were read
-# against the issues' own text and confirmed correct by the Product Owner on
-# August 16, 2026. Keyed by link id so a reused id cannot inherit the pass.
+# against the issues' own text and confirmed correct. Keyed by link id so a
+# reused id cannot inherit the pass. The first four were confirmed by the
+# Product Owner on August 16, 2026; 10177 was confirmed by Manager
+# verification against both issues' acceptance criteria on 2026-09-12
+# (record LINK10177-SCRUM-001).
 REVIEWED: dict[int, str] = {
     10037: "CBD-91 blocks CBD-75 - CBD-75 copy depends on CBD-91 privacy findings",
     10038: "CBD-105 blocks CBD-19 - provider selection gates the database work",
     10052: "CBD-94 blocks CBD-62 - the requirement catalog gates lifecycle work",
     10069: "CBD-95 blocks CBD-76 - the CBD-95 package is the gate on CBD-76",
+    10177: "CBD-253 blocks CBD-119 - the customer-managed key must exist before the instance is created with it",
 }
 
 
