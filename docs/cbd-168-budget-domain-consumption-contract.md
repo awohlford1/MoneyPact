@@ -3,8 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Status | **Proposed — awaiting reviewer approval linked to CBD-96** |
-| Document version | 1.0 |
-| Decision | `DC-168-001` through `DC-168-012` |
+| Document version | 1.1 |
+| Decision | `DC-168-001` through `DC-168-012`, plus `DC-168-011a` |
 | Owner | Alexander Wohlford |
 | Jira subtask | [CBD-168](https://cobudget.atlassian.net/browse/CBD-168) |
 | Parent | [CBD-96](https://cobudget.atlassian.net/browse/CBD-96) |
@@ -79,7 +79,12 @@ namespaces with runtime meaning. That option is what keeps the source strippable
 by Node, so for this package it is load-bearing rather than stylistic.
 `apps/api` sets `"erasableSyntaxOnly": false` because NestJS needs decorator
 metadata. That exemption is specific to the application composition root and
-must not propagate into the domain package.
+must not propagate into the domain package — and it cannot do so silently. The
+package's own `tsc --noEmit` runs in CI through the root `typecheck` script,
+which is `npm run typecheck --workspaces`, so a non-erasable construct in this
+package fails the build under the package's inherited setting no matter what a
+consumer's tsconfig says. This is an enforced property rather than an
+instruction; the only way to lose it is to change the package's own tsconfig.
 
 **`DC-168-006` (Binding). Workspace resolution must dereference the link.**
 npm links a workspace package into `node_modules` as a symlink or a Windows
@@ -114,17 +119,18 @@ Critically, choosing source now does not forfeit this option — §8 shows the
 migration is additive and invisible to consumers, so the cost of deferring is
 close to zero while the cost of building the machinery now is immediate.
 
-**Publishing a root barrel (`"."`) alongside the subpaths — rejected.** A root
-entry would re-export all four modules from one specifier. It creates a second
-public surface that `barrel.test.ts` does not cover, so a symbol could be
-reachable at the root and missing from its module barrel, or the reverse, with
-nothing to notice. It also erases the module boundary the subpaths exist to
-express. The absence of `src/index.ts` is deliberate and stays deliberate.
+**Publishing a root barrel (`"."`) alongside the subpaths — rejected, and
+already mechanically refused.** A root entry would re-export every module from
+one specifier, erasing the module boundary the subpaths exist to express. It is
+not merely against policy: `barrel.test.ts` asserts outright that `exports` has
+no `"."` key, so adding one fails the package's own test suite. The absence of
+`src/index.ts` is deliberate and is guarded.
 
-**A `./*` wildcard export for deep access — rejected.** It would make every
-internal file public by default and turn the private-import policy in §6 from a
-mechanically enforced rule into a request. The current map has no wildcard and
-should not acquire one.
+**A `./*` wildcard export for deep access — rejected, and likewise refused.** It
+would make every internal file public by default and reduce the private-import
+policy in §6 to a request. The same assertion catches it: `barrel.test.ts`
+compares the sorted `exports` keys against the module directories discovered on
+disk, and a `./*` key matches no directory.
 
 **`tsx` or another loader as the supported runtime for consumers — rejected as
 the contract, retained as a convenience.** `apps/api` and `apps/worker` already
@@ -135,7 +141,9 @@ Plain Node is the floor; a loader on top of it is allowed and unremarkable.
 
 ## 6. The supported contract
 
-**`DC-168-007` (Binding). The public surface is exactly four specifiers.**
+**`DC-168-007` (Binding). The public surface is exactly the published module
+barrels — one subpath per module directory under `src/`, no root key, no
+wildcard.** Today that is four, and the four are:
 
 | Specifier | Resolves to |
 | --- | --- |
@@ -144,16 +152,26 @@ Plain Node is the floor; a loader on top of it is allowed and unremarkable.
 | `@cobudget/budget-domain/income` | `src/income/index.ts` |
 | `@cobudget/budget-domain/targets` | `src/targets/index.ts` |
 
-Anything reachable from one of those four barrels is public. Anything else is
-internal and may be renamed, moved, or deleted without notice.
+The invariant is the one-to-one correspondence, not the number. `barrel.test.ts`
+enforces exactly that: it discovers the barrel directories from the filesystem
+and asserts that the sorted `exports` keys equal the discovered set, so adding a
+fifth module directory with an `index.ts` obliges a fifth export key and adding
+an export key with no module behind it fails the same assertion. Stating this
+decision as "four" rather than as the correspondence would put a future fifth
+module in the position of violating a Binding decision by satisfying the guard.
+
+Anything reachable from a published barrel is public. Anything else is internal
+and may be renamed, moved, or deleted without notice.
 
 **`DC-168-008` (Binding). Private-import policy.** A consumer must not import
 the package root, must not import a path below a published subpath, and must not
 reach the package by a relative path. The first two are enforced by Node itself:
 with an `exports` map present and no wildcard key, both
 `@cobudget/budget-domain` and `@cobudget/budget-domain/src/schedule/period.ts`
-fail with `ERR_PACKAGE_PATH_NOT_EXPORTED`, and TypeScript's `nodenext` and
-`bundler` resolution modes both honour the same map. §7 records the observation.
+fail with `ERR_PACKAGE_PATH_NOT_EXPORTED`. §7 `EV-168-04` records the
+observation, and records that it is a Node runtime observation only —
+TypeScript's own enforcement under `nodenext` and `bundler` resolution was not
+probed and is listed there as assigned rather than verified.
 
 The third is not enforced by anything. A file in `apps/web` can write
 `../../../packages/budget-domain/src/schedule/period.ts` and every tool in the
@@ -162,22 +180,51 @@ the barrel guard in one line, and it does not even require the package to be
 declared as a dependency. This is the one part of the policy that is currently
 words only. §9 raises it.
 
-**`DC-168-009` (Binding). Consumer obligations.** A consumer declares
-`"@cobudget/budget-domain": "*"` in its `dependencies`. A consumer whose
-toolchain does not resolve raw TypeScript out of `node_modules` by default must
-configure it to — for Next.js that is `transpilePackages`. A consumer must not
-run with `--preserve-symlinks`.
+**`DC-168-009` (Binding). Consumer obligations.** A consumer must do all four of
+these:
 
-**`DC-168-010`. Type checking is per-consumer and the package keeps its own.**
-Because consumers read source, the domain's files enter each consumer's
-TypeScript program and are checked under that consumer's compiler options, not
-the package's. `apps/web` does not extend `tsconfig.base.json` and therefore
-does not set `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, or
-`verbatimModuleSyntax`. Those settings are strictly looser, so source that
-passes the package's own check will pass a consumer's — the divergence is safe
-in that direction only. The package's `typecheck` script remains the sole place
-the strict options are enforced and must keep running in CI independently of
-any consumer.
+1. Declare `"@cobudget/budget-domain": "*"` in its `dependencies`.
+2. Enable `allowImportingTsExtensions` in its own `tsconfig.json`, or extend
+   `tsconfig.base.json`, which sets it. This is not optional and not a
+   strictness preference — see `DC-168-010`.
+3. Configure its bundler to compile workspace TypeScript if it does not already.
+   For Next.js that is `transpilePackages`. This is a separate obligation from
+   the one above and neither substitutes for the other.
+4. Not run with `--preserve-symlinks`.
+
+**`DC-168-010`. Type checking is per-consumer, and only one kind of divergence
+is safe.** Because consumers read source, the domain's 37 files enter each
+consumer's TypeScript program and are checked under that consumer's compiler
+options rather than the package's. Divergence between the two is therefore
+normal, but it splits into two kinds and only the first is harmless.
+
+*Strictness divergence is safe in one direction.* `apps/web` does not extend
+`tsconfig.base.json` and so does not set `noUncheckedIndexedAccess`,
+`exactOptionalPropertyTypes`, or `verbatimModuleSyntax`. Each of those is
+strictly looser, so source that passes the package's own check passes the
+consumer's. Looser is safe; stricter would not be, and no consumer currently is.
+
+*Resolution and compatibility divergence has no safe direction, and must be
+enumerated rather than assumed away.* One instance exists today and it is
+disqualifying rather than cosmetic. `apps/web/tsconfig.json` has no `extends`
+key at all, so it does not inherit `allowImportingTsExtensions`. Every one of
+the package's 137 relative specifiers ends in `.ts`, and each one entering
+`apps/web`'s program without that option raises TS5097 — *an import path can
+only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.*
+`next build` type-checks by default, so the build fails, roughly 137 times over.
+`transpilePackages` does not help: it governs what the bundler compiles, not
+what the compiler accepts. The fix is obligation 2 in `DC-168-009`, which is why
+that obligation is stated separately from the bundler one.
+
+The general rule the instance illustrates: a consumer may relax a strictness
+option, and must match every option that governs how modules resolve or which
+syntax is accepted. `allowImportingTsExtensions` is the one that bites today
+because the package's import style depends on it; a future consumer on a
+different `module` or `moduleResolution` setting needs the same scrutiny before
+it is declared compliant.
+
+The package's `typecheck` script remains the sole place the strict options are
+enforced and must keep running in CI independently of any consumer.
 
 ## 7. Verification evidence
 
@@ -199,12 +246,20 @@ theoretical one: any packaging step that materialises the workspace package as
 files inside `node_modules`, instead of preserving the link and the
 `packages/` tree, reproduces `EV-168-03` in production.
 
-Not verified here, and assigned rather than assumed: whether `next build`
-resolves and compiles these subpaths without additional configuration
-(`DC-168-009`), and whether npm's workspace script execution would have ordered
-a build correctly (§4, CI row). Neither is a dependency of this decision — the
-first is a consumer obligation to prove when a consumer exists, the second only
-matters if the rejected alternative is ever revisited.
+All four probes are Node runtime observations. No TypeScript compiler was run,
+because this working tree has no installed `typescript` and obtaining one was
+out of scope for this change. The following are therefore **assigned rather
+than verified**, and no claim elsewhere in this record should be read as
+resting on evidence for them:
+
+| ID | Claim | Assigned to |
+| --- | --- | --- |
+| `AS-168-01` | TypeScript's `nodenext` and `bundler` resolution modes honour the `exports` map and reject the root and deep specifiers as Node does. Probably true, and `DC-168-008` is written not to depend on it. | Runtime export guard work |
+| `AS-168-02` | `apps/web` with obligations 2 and 3 of `DC-168-009` satisfied type-checks and builds against these subpaths. The failure predicted without obligation 2 is derived from the compiler's documented behaviour, not observed. | First consumer integration |
+| `AS-168-03` | npm's workspace script execution would not have ordered a package build before its consumers. Only matters if the rejected alternative is revisited. | Only on reversal, §8 step 3 |
+
+`AS-168-02` is the one to prove first, because it is the assumption a consumer
+acts on rather than one this record acts on.
 
 ## 8. Reversal and migration
 
@@ -213,6 +268,16 @@ should be revisited if the package must be published or consumed outside this
 workspace; if a consumer's toolchain cannot be made to read workspace
 TypeScript; if deployment packaging cannot preserve the workspace link and the
 `packages/` tree; or if the Node floor moves below native type stripping.
+
+**`DC-168-011a`. The evidence expires with the toolchain that produced it.** §7
+was observed on Node v24.15.0. `.nvmrc` pins `24` and CI resolves its Node from
+`.nvmrc`, so the patch and minor version in §7 will drift from what actually
+runs without anything failing. A Node or TypeScript major version change obliges
+re-running the four probes and re-reading this record before the bump merges.
+Type stripping is a young feature and `EV-168-02` and `EV-168-03` depend on an
+implementation restriction — the `node_modules` refusal — that could be relaxed
+in either direction by a future release. Treat a green CI on a new major as
+evidence that nothing in CI exercised these paths, not as confirmation.
 
 **`DC-168-012` (Binding). Reversal is additive and must not change any consumer
 import.** The four subpath keys in §6 are the contract. A migration that
@@ -223,8 +288,11 @@ The path, in order:
 
 1. Add a build tsconfig that emits. This cannot be done by editing
    `tsconfig.base.json`, and it is the step people underestimate.
-   `allowImportingTsExtensions` is enabled repository-wide, and TypeScript
-   permits it alongside emit only when `rewriteRelativeImportExtensions` is also
+   `allowImportingTsExtensions` is set in exactly one tracked file,
+   `tsconfig.base.json`, and reaches this package by inheritance — every
+   workspace tsconfig extends that base except `apps/web`, which has no
+   `extends` key and is the subject of `DC-168-010`. TypeScript permits the
+   option alongside emit only when `rewriteRelativeImportExtensions` is also
    enabled. So emitting means either turning that rewrite on, or turning
    `allowImportingTsExtensions` off and rewriting all 137 relative specifiers
    from `.ts` to `.js`. Both are deliberate compiler-option decisions; neither is
@@ -250,7 +318,7 @@ consumer. That property is the main reason `DC-168-001` is safe to choose now.
 
 | ID | Gap | Disposition |
 | --- | --- | --- |
-| `FU-168-01` | Nothing prevents a consumer from reaching into `packages/budget-domain/src/...` by relative path, bypassing the export map entirely. `DC-168-008` is words only for this case. | Needs a lint rule with no owning ticket. Raised to Manager; candidate follow-up. |
+| `FU-168-01` | Nothing prevents a consumer from reaching into `packages/budget-domain/src/...` by relative path, bypassing the export map entirely. `DC-168-008` is words only for this case. | Ticketed by Manager, gated on the first consumer integration. The mechanism is already precedented inside this package: `packages/budget-domain/eslint.config.mjs` uses `no-restricted-imports` patterns to hold the internal module seams, under a header reading "A convention nobody checks is not a constraint." The same rule shape applied at the workspace root closes this. Harmless while no consumer exists. |
 | `FU-168-02` | Type-only exports are outside the barrel guard's reach; a forgotten `export type` still slips through. Stated in `barrel.test.ts` itself. | Already owned under CBD-96. |
 | `FU-168-03` | No deployment packaging exists yet — no Dockerfile, no image definition. Whatever is built must preserve the workspace link and the `packages/` tree, or it reproduces `EV-168-03` in production. | Belongs with cross-workspace packaging verification. |
 | `FU-168-04` | `docs/architecture.md` §Open architecture decisions does not record this contract, and its Domain modules section does not mention the package. Out of scope for this change and not edited here. | Raised to Manager for routing to the owner of that document. |
@@ -261,7 +329,7 @@ consumer. That property is the main reason `DC-168-001` is safe to choose now.
 | Criterion | Requirement | Where satisfied |
 | --- | --- | --- |
 | `CBD-168-AC01` | Decision compares development, CI, production build, debugging, caching, publication, and rollback or migration | §4, one row per dimension, both options; §5 records why the alternative lost on the balance |
-| `CBD-168-AC02` | One supported contract, Node and TypeScript assumptions, and private-import policy are explicit | §2 `DC-168-001`; §3 `DC-168-003` through `DC-168-006`; §6 `DC-168-007` through `DC-168-010`, with the enforcement boundary stated and the unenforced case named |
+| `CBD-168-AC02` | One supported contract, Node and TypeScript assumptions, and private-import policy are explicit | §2 `DC-168-001`; §3 `DC-168-003` through `DC-168-006`; §6 `DC-168-007` through `DC-168-010`. The TypeScript assumptions are stated as consumer obligations in `DC-168-009` and as the divergence taxonomy in `DC-168-010`, which separates strictness divergence a consumer may keep from resolution and compatibility divergence it must not. The private-import policy names what Node enforces, what `barrel.test.ts` enforces, and the one case nothing enforces |
 | `CBD-168-AC03` | Export map, tsconfig, and package scripts are consistent with the decision | §11 |
 | `CBD-168-AC04` | The record identifies how to reverse or migrate the choice without breaking consumers | §8, with `DC-168-012` fixing the four subpath keys as the invariant that keeps consumers untouched |
 
@@ -298,3 +366,4 @@ before any other file changed.
 | Version | Date | Change |
 | --- | --- | --- |
 | 1.0 | September 12, 2026 | Initial record. Selects source consumption through the export map, states the Node and TypeScript assumptions and the private-import policy, records the four observed behaviours in §7, and gives the additive reversal path. |
+| 1.1 | September 12, 2026 | Independent review, four blockers, decision unchanged. Corrected §8 step 1, which claimed `allowImportingTsExtensions` was enabled repository-wide when it is set in one file and reaches packages by inheritance that `apps/web` does not have. Rewrote `DC-168-010` to separate strictness divergence from resolution and compatibility divergence, and added the instance that made the distinction necessary: `apps/web` lacking `allowImportingTsExtensions` fails on all 137 specifiers with TS5097, which `transpilePackages` does not fix. Promoted that fix to a numbered obligation in `DC-168-009`. Moved the untested TypeScript-resolution claim out of `DC-168-008` into a new assigned-assumption table in §7. Restated `DC-168-007` as the barrel correspondence `barrel.test.ts` actually enforces rather than the number four. Strengthened the §5 rejections and the `DC-168-005` fence to cite the guards that already enforce them, and added `DC-168-011a` on evidence expiry. |

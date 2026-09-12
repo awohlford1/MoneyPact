@@ -13,16 +13,26 @@ time and there is no `dist`.
 import { /* ... */ } from "@cobudget/budget-domain/schedule";
 ```
 
-The public surface is exactly four specifiers — `/shared`, `/schedule`,
-`/income`, `/targets`.
+The public surface is one subpath per module directory — currently `/shared`,
+`/schedule`, `/income`, `/targets`. There is no root entry and no wildcard, and
+`barrel.test.ts` enforces that correspondence rather than the count.
 
-Do not import the package root, do not import a path below one of those four,
+Do not import the package root, do not import a path below a published subpath,
 and do not reach the package by a relative path into `src/`. The first two fail
 at resolution; the third is a policy violation that no tool currently catches.
 
-A consumer must declare `"@cobudget/budget-domain": "*"` in its dependencies,
-must not run with `--preserve-symlinks`, and must configure its bundler to read
-workspace TypeScript if it does not already (for Next.js, `transpilePackages`).
+A consumer must:
+
+1. Declare `"@cobudget/budget-domain": "*"` in its dependencies.
+2. **Enable `allowImportingTsExtensions` in its own tsconfig, or extend
+   `tsconfig.base.json`.** Every relative import in this package ends in `.ts`.
+   A consumer without this option gets TS5097 on all 137 of them, and
+   `next build` type-checks by default, so the build fails. `apps/web` does not
+   extend the base tsconfig and needs this explicitly.
+3. Configure its bundler to compile workspace TypeScript — for Next.js,
+   `transpilePackages`. This does **not** substitute for step 2: one governs
+   what the bundler compiles, the other what the compiler accepts.
+4. Not run with `--preserve-symlinks`.
 
 ## Why, and how to change it
 
