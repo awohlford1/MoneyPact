@@ -76,42 +76,43 @@ DEFAULT_SOURCE = Path("packages/budget-domain/src/schedule/business-day.ts")
 #     lead time = (longest forward horizon the product offers, in years,
 #                  rounded up) + 1 year of owner action time
 #
-# The first term is there because a user is blocked well before the uncovered
-# year arrives. `assertHorizonCovered` in paycheck-period.ts throws if *any*
-# year in a requested horizon is uncovered, so with coverage through 2030 a
-# 12-month forward view stops working in January 2030, not January 2031. The
-# guard has to fire before the first blocked user, not before the boundary.
+#     24-month product horizon -> 2, plus 1 year of action time = 3
 #
-# The second term is the work itself: read the published Federal Reserve
+# FIRST TERM -- the product offers a 24-month forward view. Decided by the
+# Executive on 2026-09-12. It has to be the product horizon rather than the
+# uncovered year itself, because a user is blocked well before the uncovered
+# year arrives: `assertHorizonCovered` in paycheck-period.ts throws if *any*
+# year in a requested horizon is uncovered, not merely the last one.
+#
+#     for (let year = first; year <= last; year += 1) {
+#       if (!isYearCovered(year)) { throw new HolidayCoverageError(year); }
+#     }
+#
+# So with coverage through 2030, a 24-month view stops working in January
+# 2029 -- two years ahead of 2031, not on it. The guard has to fire before
+# the first blocked user, not before the boundary.
+#
+# SECOND TERM -- the extension work. Read the published Federal Reserve
 # Financial Services schedule, extend the range, update datasetVersion and
-# verifiedOn, review, merge. CBD-68 Section 10.3 requires it be verified
-# before activation, so this is reviewed owner work rather than a constant
-# bump -- but it is days of work, and one year of margin against days is
-# already generous.
+# verifiedOn, review, merge. CBD-68 Section 10.3 requires verification before
+# activation, so it is reviewed owner work rather than a constant bump. It is
+# still only days of work; a year of margin against days is deliberate slack,
+# because the warning is worthless if it lands in the middle of the cycle it
+# was meant to start.
 #
-# THE FIRST TERM IS NOT DECIDED YET. The product's longest forward projection
-# horizon is an open product decision: PD-68-08 leaves generation on demand,
-# and no application code constructs a PaycheckHorizon, so nothing in this
-# repository fixes it. The Executive shipped this guard at 2 with the
-# dependency recorded rather than buried.
+# The two terms together give the guard a fixed property: it fires one year
+# before the first user could be blocked, whatever the product horizon is. At
+# 3, with the bound at 2030, it fails from 1 January 2028 and the first
+# 24-month view breaks in January 2029.
 #
-#   * 2 assumes a product view of 12 months or less:  1 + 1 = 2.
-#   * A 24-month product view REQUIRES 3:             2 + 1 = 3.
-#     At 2, a 24-month view would give zero notice -- the guard would fire in
-#     January 2029 and the first blocked user would arrive the same month.
-#
-# So: whoever decides the product's forward horizon must come back here and
-# recompute this, and the arithmetic above says what to recompute and why.
-# That is the one legitimate reason to change this number.
-#
-# Changing it for any other reason is not free in either direction. Raising it
-# makes the guard fail earlier, eventually against years the Federal Reserve
-# has not published -- it publishes only a rolling five-year window, which
-# caps this constant somewhere below 5 regardless of the product horizon.
-# Lowering it spends the notice period this guard exists to create, and
-# because every test here derives its expectations from this constant, no test
-# will stop you. The derivation above is the control. Use it, not a new number.
-LEAD_TIME_YEARS = 2
+# Changing this number legitimately means one of the two terms changed --
+# in practice, the product's forward horizon moving. Recompute from the
+# formula; do not pick a number. Lowering it otherwise spends the notice this
+# guard exists to create. Raising it otherwise eventually fires against years
+# the Federal Reserve has not published: it publishes only a rolling
+# five-year window, which caps this constant below 5 whatever the product
+# horizon becomes.
+LEAD_TIME_YEARS = 3
 
 CALENDAR_LITERAL = "FEDERAL_RESERVE_CALENDAR"
 

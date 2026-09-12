@@ -14,7 +14,7 @@ Fixture identifiers, for the completion record:
 
     FX-250-01  bound at year + LEAD - 1          expect FAIL  (horizon reached)
     FX-250-02  bound at year + LEAD              expect PASS  (horizon boundary)
-    FX-250-03  bound at year + LEAD + 1          expect PASS  (clear)
+    FX-250-03  bound well clear of the boundary   expect PASS  (clear)
     FX-250-04  bound at year - 1                 expect FAIL  (already uncovered)
     FX-250-05  calendar literal renamed          expect FAIL  (unreadable)
     FX-250-06  bounds transposed                 expect FAIL  (incoherent range)
@@ -26,9 +26,10 @@ Fixture identifiers, for the completion record:
 FX-250-01 and FX-250-02 are the load-bearing pair for CBD-250-AC01: they sit
 either side of the single year where the horizon condition changes its answer.
 Both are computed from `guard.LEAD_TIME_YEARS` rather than written as years,
-so they follow the constant if the open product-horizon decision recorded
-beside it ever moves the lead time. `HorizonBoundaryTests` records the ruling
-that settled which pair straddles the boundary.
+so they followed the constant unchanged when the settled product horizon moved
+it from 2 to 3. `HorizonBoundaryTests` records both rulings behind them, and
+`GuardStructureTests.test_the_lead_time_matches_its_recorded_derivation` is
+what stops the constant moving without its derivation moving too.
 
 The per-condition tests below are only half the proof. `LoadBearingTests`
 removes each condition from the registry in turn and shows that its fixture
@@ -56,7 +57,21 @@ guard = importlib.util.module_from_spec(_spec)
 # Registered before execution: @dataclass resolves its annotations through
 # sys.modules and fails on a module that is not there yet.
 sys.modules[_spec.name] = guard
-_spec.loader.exec_module(guard)
+
+# Compiled from the source text rather than run through `_spec.loader`, which
+# would consult __pycache__. That cache decides a .pyc is current by comparing
+# the source's mtime and SIZE, and the mutation testing this suite exists to
+# support routinely changes one character -- LEAD_TIME_YEARS 3 to 4, `<` to
+# `<=`. Those edits leave the size identical, and a mutate-run-restore cycle
+# can complete inside one mtime tick, so the loader serves the stale bytecode
+# and the run silently measures the previous revision. That happened here: a
+# harness run reported a guard restored byte-identical on disk while the next
+# process still imported the mutant. A test suite that can read a different
+# revision than the one on disk cannot prove anything about the one on disk.
+#
+# Only this test path was affected. The guard runs as __main__ from the
+# command line and in the workflow, and __main__ is never cached.
+exec(compile(SCRIPT.read_text(encoding="utf-8"), str(SCRIPT), "exec"), guard.__dict__)
 
 REAL_SOURCE = CALENDAR.read_text(encoding="utf-8")
 LEAD = guard.LEAD_TIME_YEARS
@@ -112,7 +127,15 @@ def with_bound(year: int) -> str:
 FIXTURES: dict[str, str] = {
     "FX-250-01": with_bound(NOW + LEAD - 1),
     "FX-250-02": with_bound(NOW + LEAD),
-    "FX-250-03": with_bound(NOW + LEAD + 1),
+    # Well clear of the boundary, and deliberately NOT `NOW + LEAD + 1`.
+    # That offset collided with the real bound the moment LEAD_TIME_YEARS
+    # moved from 2 to 3 -- 2026 + 3 + 1 is 2030, which is exactly what the
+    # calendar declares, so the fixture became a byte-identical copy of
+    # FX-250-10 and asserted nothing while still passing. Anchoring past the
+    # later of today and the real bound keeps it distinct whatever the
+    # constant is and whenever the calendar is extended, which matters
+    # because extending the calendar is the very action this guard demands.
+    "FX-250-03": with_bound(max(NOW, REAL_CALENDAR.verified_through) + LEAD + 2),
     "FX-250-04": with_bound(NOW - 1),
     "FX-250-05": REAL_SOURCE.replace("FEDERAL_RESERVE_CALENDAR", "FED_CALENDAR"),
     # Transposed far enough into the future that the horizon condition stays
@@ -134,6 +157,30 @@ FIXTURES: dict[str, str] = {
         REAL_SOURCE, r" && year <= FEDERAL_RESERVE_CALENDAR\.verifiedThrough", ""),
     "FX-250-10": REAL_SOURCE,
 }
+
+# What each fixture is for. Also the vacuity check below.
+MUST_FAIL = ("FX-250-01", "FX-250-04", "FX-250-05", "FX-250-06",
+             "FX-250-07", "FX-250-08", "FX-250-09")
+MUST_PASS = ("FX-250-02", "FX-250-03", "FX-250-10")
+
+# A fixture that is supposed to carry a defect must not be a copy of the clean
+# file. `substitute()` catches a pattern that stopped matching; it cannot catch
+# an offset that happens to land on the value already there -- FX-250-03 became
+# a byte-identical copy of FX-250-10 the moment the lead time moved from 2 to
+# 3, because 2026 + 3 + 1 is exactly the 2030 the calendar declares. It kept
+# passing and stopped proving anything.
+#
+# Only the must-fail fixtures are checked. A must-pass fixture coinciding with
+# the real file is uninformative but not unsound -- the boundary fixture is
+# entitled to land on the real bound -- and making that fatal would take the
+# whole suite down at import over a harmless coincidence, which is a worse
+# failure than the one it prevents.
+_VACUOUS = [name for name in MUST_FAIL if FIXTURES[name] == REAL_SOURCE]
+if _VACUOUS:
+    raise AssertionError(
+        f"{', '.join(_VACUOUS)} is byte-identical to the unmodified calendar but is "
+        "meant to carry a defect, so it proves nothing. Re-anchor it away from the "
+        "value the calendar currently declares.")
 
 # Which condition each failing fixture exists to exercise. This mapping is what
 # LoadBearingTests removes from the registry, one entry at a time.
@@ -159,6 +206,41 @@ class GuardStructureTests(unittest.TestCase):
                          "a condition was added to or removed from the guard without "
                          "a fixture proving it is load-bearing")
 
+    def test_the_lead_time_matches_its_recorded_derivation(self):
+        """The constant is derived, so it must not drift away from its derivation.
+
+        This pin is meant to be *updated*, not deleted. It fails loudly with
+        the arithmetic and the decision behind it, so anyone moving the number
+        has to say which term changed. Every other expectation in this suite
+        is computed from the constant and will follow it silently; this is the
+        one place that notices.
+        """
+        product_horizon_years = 2   # 24-month forward view, Executive, 2026-09-12
+        owner_action_years = 1      # extend, verify, review, merge (CBD-68 10.3)
+        self.assertEqual(
+            LEAD, product_horizon_years + owner_action_years,
+            "LEAD_TIME_YEARS no longer matches its recorded derivation.\n"
+            "\n"
+            "    lead time = (longest forward product horizon in years, rounded up)\n"
+            "                + 1 year of owner action time\n"
+            f"              = {product_horizon_years} + {owner_action_years} "
+            f"= {product_horizon_years + owner_action_years}\n"
+            f"    LEAD_TIME_YEARS is currently {LEAD}\n"
+            "\n"
+            "The first term is the product's longest forward projection horizon,\n"
+            "settled by the Executive on 2026-09-12 at 24 months. It is the product\n"
+            "horizon and not the uncovered year because assertHorizonCovered throws\n"
+            "on ANY uncovered year inside a requested horizon, so a user is blocked\n"
+            "a full horizon before the uncovered year arrives.\n"
+            "\n"
+            "A change is legitimate only if one of those two terms changed -- in\n"
+            "practice, the product horizon moving. If it did: update the numbers in\n"
+            "this test, the derivation beside LEAD_TIME_YEARS in\n"
+            "check-holiday-coverage.py, and the note in HorizonBoundaryTests, and\n"
+            "record who decided and when. If it did not, the constant is wrong, not\n"
+            "this test: lowering it spends the notice the guard exists to create and\n"
+            "raising it fires against years the Federal Reserve has not published.")
+
     def test_the_real_calendar_is_readable(self):
         """FX-250-10: the guard must understand the file it is pointed at.
 
@@ -175,24 +257,28 @@ class GuardStructureTests(unittest.TestCase):
 class HorizonBoundaryTests(unittest.TestCase):
     """CBD-250-AC01: the year the answer changes.
 
-    AC01 and AC02 contradicted each other as drafted -- AC01 and the
-    description's worked example ("a bound of 2030 warns from January 1,
-    2029") put the boundary between a bound of `year + 1` (fails) and
-    `year + 2` (passes), while AC02 asked for `year + 2` to fail and
-    `year + 3` to pass, which is reachable only with a three-year lead time.
-    The Executive ruled AC02 the drafting error: the lead time stays two and
-    AC02's text was corrected to express the fixtures against the constant
-    rather than in absolute relative years. FX-250-01 and FX-250-02 below are
-    that corrected pair, and FX-250-03 is AC02's passing side, which agreed
-    either way.
+    Two rulings sit behind these fixtures, and they are independent of each
+    other. AC01 and AC02 contradicted each other as drafted, and the
+    Executive ruled AC02 the drafting error -- AC02 never stated a lead time,
+    so correcting AC01 to match a number AC02 only implied would have
+    ratified an off-by-one as policy. AC02's text was corrected to express
+    its fixtures against the constant rather than in absolute relative years.
 
-    The boundary is deliberately not pinned to a year here. Every expectation
-    in this class derives from `guard.LEAD_TIME_YEARS`, so a future change to
-    that constant moves these fixtures with it -- which is what the open
-    product-horizon dependency recorded beside the constant will eventually
-    require. `test_the_boundary_moves_with_the_lead_time_and_nothing_else` is
-    what makes that safe: it proves the boundary is arithmetic on the one
-    constant rather than a hardcoded year.
+    Separately, and afterwards, the Executive settled the product's longest
+    forward horizon at 24 months, which is the open first term of the
+    derivation recorded beside `LEAD_TIME_YEARS`. That moved the constant
+    from 2 to 3. It did not reverse the AC02 ruling: the constant moved
+    because a product decision fed the derivation, not because AC02 won. The
+    corrected AC02 text survives the change unaltered, which is exactly why
+    it was phrased against the constant.
+
+    Nothing here is pinned to a year. Every expectation in this class is
+    computed from `guard.LEAD_TIME_YEARS`, which is why the move from 2 to 3
+    flipped no expectation -- FX-250-01 and FX-250-02 simply follow the
+    boundary. `test_the_boundary_moves_with_the_lead_time_and_nothing_else`
+    is what makes that safe, and
+    `GuardStructureTests.test_the_lead_time_matches_its_recorded_derivation`
+    is what stops the constant moving without the derivation moving with it.
     """
 
     def test_fx_250_01_bound_at_the_horizon_fails(self):
