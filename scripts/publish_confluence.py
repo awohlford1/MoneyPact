@@ -5,7 +5,8 @@ import json
 
 from publication import (ROOT, MANIFEST, SHA, PublicationError, ancestor, bootstrap_manifest, bounded, converter,
                          execute_plan, git, inventory, json_object, read_manifest, registry,
-                         sections, select_documents, sha256, source, validate_manifest, validate_range)
+                         sections, select_documents, sha256, source, validate_manifest, validate_publishable,
+                         validate_range)
 from publication_transport import Confluence, WorkflowHistory, validate_recovery
 
 PLAN = ROOT / ".cache/confluence-publication-plan.json"
@@ -108,6 +109,7 @@ def build_plan(repo, plan):
     desired_paths = inventory(repo, plan["head"])
     desired_bodies = {path: source(repo, plan["head"], path) for path in desired_paths}
     validate_manifest(desired, desired_paths, desired_bodies, registry())
+    validate_publishable(desired)
     base_paths = inventory(repo, plan["base"])
     base_bodies = {path: source(repo, plan["base"], path) for path in base_paths}
     # The first deployment has an independent historical snapshot. Never infer

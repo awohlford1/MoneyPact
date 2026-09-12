@@ -2,7 +2,7 @@
 
 from importlib.metadata import version
 
-from publication import ROOT, PublicationError, bootstrap_manifest, json_object, registry, sha256, validate_manifest
+from publication import ROOT, PublicationError, bootstrap_manifest, json_object, registry, sha256, validate_manifest, validate_publishable
 from publication_transport import validate_recovery
 
 WORKFLOW_DIGEST = "a0f46f7b48640b4f0f1ed4952b95e31ada24d7782d467f2f6760587bd5dd1751"
@@ -29,6 +29,7 @@ def check(root=ROOT):
               for path in (root / "docs").glob("*.md")}
     manifest = json_object((root / "config/confluence-publication.json").read_text(encoding="utf-8"))
     validate_manifest(manifest, set(bodies), bodies, registry())
+    validate_publishable(manifest)
     for path in (root / ".github/workflows").iterdir():
         if path.name != "publish-confluence.yml" and path.suffix in (".yml", ".yaml"):
             if "CONFLUENCE_" in path.read_text(encoding="utf-8"):

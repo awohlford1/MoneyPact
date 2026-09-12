@@ -138,6 +138,38 @@ class ManifestTests(unittest.TestCase):
             with self.subTest(dependencies=dependencies), self.assertRaises(p.PublicationError):
                 self.validate(manifest([entry(dependencies=dependencies)]))
 
+    def test_approved_document_may_not_depend_on_a_held_baseline(self):
+        """A held ancestor guarantees baseline-awaits-approval on the next edit."""
+        held = dict(entry("base", page="101", order=0), policy="held", approved_sha256=None)
+        direct = manifest([held, entry("one", page="100", order=1, dependencies=["base"])])
+        with self.assertRaisesRegex(p.PublicationError, "approved-document-depends-on-held-baseline"):
+            p.validate_publishable(direct)
+        # Transitive: approved -> approved -> held is caught four hops up just as well.
+        chain = manifest([held,
+                          entry("mid", page="102", order=1, dependencies=["base"]),
+                          entry("one", page="100", order=2, dependencies=["mid"])])
+        with self.assertRaisesRegex(p.PublicationError, "approved-document-depends-on-held-baseline"):
+            p.validate_publishable(chain)
+
+    def test_held_documents_are_fine_when_nothing_approved_is_above_them(self):
+        held = dict(entry("base", page="101", order=1), policy="held", approved_sha256=None)
+        # A held leaf, and a held document that itself depends on approved ones.
+        p.validate_publishable(manifest([entry("one", page="100", order=0), held]))
+        p.validate_publishable(manifest([entry("one", page="100", order=0),
+                                         dict(held, depends_on=["one"])]))
+        # A held document above another held one is also not a publication failure.
+        p.validate_publishable(manifest([held, dict(dict(entry("top", page="103", order=2)),
+                                                    policy="held", approved_sha256=None,
+                                                    depends_on=["base"])]))
+
+    def test_publishable_check_is_not_applied_to_the_bootstrap_snapshot(self):
+        """Frozen history legitimately carried held-beneath-approved; only the
+        manifest being published from must satisfy the invariant."""
+        held = dict(entry("base", page="101", order=0), policy="held", approved_sha256=None)
+        snapshot = manifest([held, entry("one", page="100", order=1, dependencies=["base"])])
+        bodies = {"docs/base.md": "body", "docs/one.md": "body"}
+        p.validate_manifest(snapshot, set(bodies), bodies)  # must not raise
+
     def test_registry_title_mismatch(self):
         target = entry()
         target["expected_title"] = "Wrong"
