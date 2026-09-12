@@ -25,8 +25,10 @@ Fixture identifiers, for the completion record:
 
 FX-250-01 and FX-250-02 are the load-bearing pair for CBD-250-AC01: they sit
 either side of the single year where the horizon condition changes its answer.
-See the AC02 note on `HorizonBoundaryTests` for the discrepancy between AC01
-and AC02 over which pair of fixtures straddles that boundary.
+Both are computed from `guard.LEAD_TIME_YEARS` rather than written as years,
+so they follow the constant if the open product-horizon decision recorded
+beside it ever moves the lead time. `HorizonBoundaryTests` records the ruling
+that settled which pair straddles the boundary.
 
 The per-condition tests below are only half the proof. `LoadBearingTests`
 removes each condition from the registry in turn and shows that its fixture
@@ -171,27 +173,26 @@ class GuardStructureTests(unittest.TestCase):
 
 
 class HorizonBoundaryTests(unittest.TestCase):
-    """CBD-250-AC01 and CBD-250-AC02: the year the answer changes.
+    """CBD-250-AC01: the year the answer changes.
 
-    NOTE -- a contract discrepancy, reported to the Manager and not resolved
-    here. AC01 and the CBD-250 description define the rule as "exit non-zero
-    when the current year plus the lead time reaches the first uncovered year",
-    with a two-year lead time, and the description gives the worked example:
-    "a bound of 2030 warns from January 1, 2029". Both statements put the
-    boundary between a bound of `year + 1` (fails) and a bound of `year + 2`
-    (passes) -- which is what FX-250-01 and FX-250-02 assert below.
+    AC01 and AC02 contradicted each other as drafted -- AC01 and the
+    description's worked example ("a bound of 2030 warns from January 1,
+    2029") put the boundary between a bound of `year + 1` (fails) and
+    `year + 2` (passes), while AC02 asked for `year + 2` to fail and
+    `year + 3` to pass, which is reachable only with a three-year lead time.
+    The Executive ruled AC02 the drafting error: the lead time stays two and
+    AC02's text was corrected to express the fixtures against the constant
+    rather than in absolute relative years. FX-250-01 and FX-250-02 below are
+    that corrected pair, and FX-250-03 is AC02's passing side, which agreed
+    either way.
 
-    AC02 instead asks for a fixture at `year + 2` that fails and one at
-    `year + 3` that passes. That boundary is one year later, and is reachable
-    only with a three-year lead time -- which contradicts both AC01's stated
-    two years and the description's 2030-warns-from-2029 example.
-
-    The implementation follows the two agreeing statements. FX-250-03 records
-    AC02's passing side, which agrees either way, and
-    `test_ac02_failing_side_passes_under_the_ac01_rule` pins the exact
-    behaviour AC02 disagrees with, so the discrepancy is visible in the test
-    output rather than buried in a report. If the Manager rules for AC02, the
-    fix is `LEAD_TIME_YEARS = 3` and this note; nothing else changes.
+    The boundary is deliberately not pinned to a year here. Every expectation
+    in this class derives from `guard.LEAD_TIME_YEARS`, so a future change to
+    that constant moves these fixtures with it -- which is what the open
+    product-horizon dependency recorded beside the constant will eventually
+    require. `test_the_boundary_moves_with_the_lead_time_and_nothing_else` is
+    what makes that safe: it proves the boundary is arithmetic on the one
+    constant rather than a hardcoded year.
     """
 
     def test_fx_250_01_bound_at_the_horizon_fails(self):
@@ -202,20 +203,6 @@ class HorizonBoundaryTests(unittest.TestCase):
 
     def test_fx_250_02_bound_one_year_beyond_the_horizon_passes(self):
         self.assertEqual(findings_for("FX-250-02"), [])
-
-    def test_ac02_failing_side_passes_under_the_ac01_rule(self):
-        """Pins the discrepancy: AC02 expects this fixture to fail.
-
-        Under AC01's rule with a two-year lead time it passes, because the
-        first uncovered year is still three years out. This assertion exists so
-        that a change to LEAD_TIME_YEARS cannot silently move the boundary
-        without somebody reading this docstring.
-        """
-        self.assertEqual(LEAD, 2, "the AC01/AC02 discrepancy note above assumes a "
-                                  "two-year lead time")
-        self.assertEqual(findings_for("FX-250-02"), [],
-                         "AC02 expects a bound at year+2 to fail; AC01 and the CBD-250 "
-                         "description both say it passes. Unresolved.")
 
     def test_fx_250_03_bound_well_clear_passes(self):
         self.assertEqual(findings_for("FX-250-03"), [])

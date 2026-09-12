@@ -71,24 +71,46 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULT_SOURCE = Path("packages/budget-domain/src/schedule/business-day.ts")
 
-# How far ahead the guard looks.
+# How far ahead the guard looks. This value is DERIVED, not chosen:
 #
-# Two calendar years, and the reason is the publication cadence on both sides.
-# The Federal Reserve Financial Services schedule is published as a rolling
-# window a few years deep, so an extension can only ever be prepared a bounded
-# distance in advance; and CBD-68 Section 10.3 requires the extension to be
-# *verified* against that publication and recorded, which is owner work with a
-# review, not a constant bump. One year of notice would put that work inside
-# the year users are already scheduling into -- a payday in December is set
-# from a schedule that reaches into January. Two years leaves a full annual
-# planning cycle between the first warning and the first user who cannot be
-# answered, while staying inside the window the Federal Reserve has actually
-# published, so the warning arrives when it can still be acted on.
+#     lead time = (longest forward horizon the product offers, in years,
+#                  rounded up) + 1 year of owner action time
 #
-# Raising this is not free: it makes the guard fail earlier, against a schedule
-# the Federal Reserve may not have published yet. Lowering it is worse: it
-# spends the notice period this guard exists to create. Change it with the
-# reason above, not around it.
+# The first term is there because a user is blocked well before the uncovered
+# year arrives. `assertHorizonCovered` in paycheck-period.ts throws if *any*
+# year in a requested horizon is uncovered, so with coverage through 2030 a
+# 12-month forward view stops working in January 2030, not January 2031. The
+# guard has to fire before the first blocked user, not before the boundary.
+#
+# The second term is the work itself: read the published Federal Reserve
+# Financial Services schedule, extend the range, update datasetVersion and
+# verifiedOn, review, merge. CBD-68 Section 10.3 requires it be verified
+# before activation, so this is reviewed owner work rather than a constant
+# bump -- but it is days of work, and one year of margin against days is
+# already generous.
+#
+# THE FIRST TERM IS NOT DECIDED YET. The product's longest forward projection
+# horizon is an open product decision: PD-68-08 leaves generation on demand,
+# and no application code constructs a PaycheckHorizon, so nothing in this
+# repository fixes it. The Executive shipped this guard at 2 with the
+# dependency recorded rather than buried.
+#
+#   * 2 assumes a product view of 12 months or less:  1 + 1 = 2.
+#   * A 24-month product view REQUIRES 3:             2 + 1 = 3.
+#     At 2, a 24-month view would give zero notice -- the guard would fire in
+#     January 2029 and the first blocked user would arrive the same month.
+#
+# So: whoever decides the product's forward horizon must come back here and
+# recompute this, and the arithmetic above says what to recompute and why.
+# That is the one legitimate reason to change this number.
+#
+# Changing it for any other reason is not free in either direction. Raising it
+# makes the guard fail earlier, eventually against years the Federal Reserve
+# has not published -- it publishes only a rolling five-year window, which
+# caps this constant somewhere below 5 regardless of the product horizon.
+# Lowering it spends the notice period this guard exists to create, and
+# because every test here derives its expectations from this constant, no test
+# will stop you. The derivation above is the control. Use it, not a new number.
 LEAD_TIME_YEARS = 2
 
 CALENDAR_LITERAL = "FEDERAL_RESERVE_CALENDAR"
