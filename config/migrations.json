@@ -1,0 +1,182 @@
+{
+  "version": 1,
+  "comment": [
+    "CBD-116 migration policy. Every rule the migration check enforces is data",
+    "here rather than a literal in the checker, so that a reviewer can read the",
+    "contract without reading the implementation, and so that each rule carries",
+    "the approved decision it comes from.",
+    "Sources: docs/architecture.md (Key data rules; Managed PostgreSQL with a",
+    "typed SQL layer), docs/cbd-103-runtime-topology-specification.md (TD-103-027,",
+    "TD-103-028), docs/cbd-105-data-protection-and-recovery-specification.md",
+    "(DP-105-001)."
+  ],
+
+  "migrationsDirectory": "packages/migrations/migrations",
+  "ledgerTable": "cobudget_schema_migrations",
+  "advisoryLockKey": 4886116,
+
+  "fileName": {
+    "pattern": "^(\\d{8}T\\d{6}Z)__([a-z0-9]+(?:_[a-z0-9]+)*)\\.sql$",
+    "ordinalFormat": "YYYYMMDDThhmmssZ",
+    "why": "A UTC instant orders deterministically as text, and two authors on two branches do not have to agree on a next number. A collision is still possible to the second, so it is rejected outright rather than resolved silently (CBD-116-AC07)."
+  },
+
+  "forwardOnly": {
+    "why": "TD-103-028: rollback is a code and configuration operation, never a schema reversal.",
+    "forbiddenFileSuffixes": [".down.sql", ".rollback.sql", ".undo.sql", ".revert.sql"],
+    "forbiddenDirectives": [
+      "migrate:down",
+      "+migrate Down",
+      "+goose Down",
+      "//@UNDO",
+      "@undo"
+    ],
+    "forbiddenCommands": ["revert", "down", "rollback", "undo", "redo"],
+    "recovery": "reset and re-migrate"
+  },
+
+  "statements": {
+    "why": "The runner wraps the whole pending set in one transaction with one advisory lock, so that a failure half way through leaves nothing applied and two runners cannot interleave. A migration that opens or closes a transaction of its own, or that runs a psql meta-command, breaks both guarantees.",
+    "forbidden": [
+      {
+        "id": "transaction-control",
+        "pattern": "^[ \\t]*(?:BEGIN|START\\s+TRANSACTION|COMMIT|END|ROLLBACK|SAVEPOINT)\\b",
+        "why": "The runner owns the transaction; a migration that ends it would leave the applied-state ledger and the schema able to disagree.",
+        "instead": "nothing -- the statement is already inside a transaction"
+      },
+      {
+        "id": "psql-meta-command",
+        "pattern": "^[ \\t]*\\\\[a-zA-Z]",
+        "why": "A psql meta-command is not SQL, is not sent to the server, and would not be portable to any other way of applying the file.",
+        "instead": "plain SQL"
+      }
+    ]
+  },
+
+  "contractStep": {
+    "why": "CBD-116-AC04. A migration that removes structure must name the expand migration it completes and the deployed version that removed the last reader, so that the contract half of TD-103-028 expand-and-contract is evidenced in the file itself.",
+    "destructivePatterns": [
+      {
+        "id": "drop-table",
+        "pattern": "\\bDROP\\s+TABLE\\b",
+        "describes": "removes a table",
+        "why": "Dropping a table is the contract half of expand-and-contract, and redeploying the previous image does not bring it back."
+      },
+      {
+        "id": "drop-column",
+        "pattern": "\\bDROP\\s+COLUMN\\b",
+        "describes": "removes a column",
+        "why": "Dropping a column destroys committed customer data that no rollback of code or configuration restores."
+      },
+      {
+        "id": "rename-table",
+        "pattern": "\\bALTER\\s+TABLE\\b[\\s\\S]*?\\bRENAME\\s+TO\\b",
+        "describes": "renames a table",
+        "why": "To every deployed version that still reads the old name, a rename is a drop and an add at the same instant."
+      },
+      {
+        "id": "rename-column",
+        "pattern": "\\bRENAME\\s+COLUMN\\b",
+        "describes": "renames a column",
+        "why": "To every deployed version that still reads the old name, a rename is a drop and an add at the same instant."
+      }
+    ],
+    "requiredHeaderKeys": ["contract-step", "completes-expand", "last-reader-removed-in"],
+    "contractStepValue": "yes",
+    "deployedVersionPattern": "^v\\d+\\.\\d+\\.\\d+$"
+  },
+
+  "schema": {
+    "monetary": {
+      "why": "docs/architecture.md Key data rules: store monetary amounts as integer minor units with a currency code. CBD-116-AC05 requires a floating-point or money monetary column to be rejected.",
+      "columnNamePatterns": [
+        "^amount(_[a-z0-9_]+)?$",
+        "^[a-z0-9_]+_amount$",
+        "^[a-z0-9_]+_minor_units$",
+        "^minor_units$",
+        "^balance(_[a-z0-9_]+)?$",
+        "^[a-z0-9_]+_balance$",
+        "^[a-z0-9_]+_cents$",
+        "^price(_[a-z0-9_]+)?$",
+        "^[a-z0-9_]+_price$",
+        "^cost(_[a-z0-9_]+)?$",
+        "^[a-z0-9_]+_cost$",
+        "^total(_[a-z0-9_]+)?$",
+        "^[a-z0-9_]+_total$"
+      ],
+      "allowedTypes": ["integer", "int", "int4", "bigint", "int8", "smallint", "int2"],
+      "currencyColumnPattern": "^([a-z0-9_]+_)?currency_code$"
+    },
+    "forbiddenTypes": [
+      {
+        "id": "money",
+        "pattern": "\\bmoney\\b",
+        "instead": "bigint minor units with a currency code",
+        "why": "PostgreSQL money is locale-dependent and lossy; architecture Key data rules require integer minor units."
+      },
+      {
+        "id": "binary-floating-point",
+        "pattern": "\\b(?:real|float4|float8|float|double\\s+precision)\\b",
+        "instead": "bigint minor units for money, numeric for exact non-money decimals",
+        "why": "Binary floating point cannot represent decimal money exactly."
+      },
+      {
+        "id": "timestamp-without-time-zone",
+        "pattern": "\\btimestamp\\b(?!\\s*(?:\\(\\s*\\d+\\s*\\))?\\s+with\\s+time\\s+zone)",
+        "instead": "timestamptz",
+        "why": "A timestamp without time zone loses the offset the calendar rules need; architecture Key data rules require UTC timestamps with a budget-space time zone."
+      },
+      {
+        "id": "time-without-time-zone",
+        "pattern": "\\btime\\b(?!\\s*(?:\\(\\s*\\d+\\s*\\))?\\s+(?:with|without)\\s+time\\s+zone)(?!\\s+zone)",
+        "instead": "timestamptz, or an interval",
+        "why": "A bare time carries no date to resolve an offset against."
+      },
+      {
+        "id": "timetz",
+        "pattern": "\\b(?:timetz|time\\s*(?:\\(\\s*\\d+\\s*\\))?\\s+with\\s+time\\s+zone)\\b",
+        "instead": "timestamptz",
+        "why": "time with time zone has no date to resolve the offset against."
+      }
+    ],
+    "scopeAnnotation": {
+      "why": "CBD-116-AC05 requires a budget-space-scoped table without a budget-space column to be rejected. Scope cannot be inferred from a table name, so every CREATE TABLE declares it and the declaration is checked.",
+      "keyword": "scope",
+      "allowedValues": ["budget-space", "financial-profile", "identity", "platform"],
+      "budgetSpaceValue": "budget-space",
+      "budgetSpaceColumnPattern": "^budget_space_id$"
+    }
+  },
+
+  "typedSqlLayer": {
+    "why": "CBD-116-AC06 and docs/architecture.md: Managed PostgreSQL with a typed SQL layer, not an ORM that owns the schema. The schema is owned by the .sql files in this directory; a query layer reads that schema, it does not define it.",
+    "migrationFileExtension": ".sql",
+    "forbiddenSchemaOwners": [
+      "prisma",
+      "@prisma/client",
+      "@prisma/migrate",
+      "typeorm",
+      "sequelize",
+      "sequelize-typescript",
+      "mikro-orm",
+      "@mikro-orm/core",
+      "objection",
+      "waterline",
+      "bookshelf"
+    ]
+  },
+
+  "encoding": {
+    "why": "The applied-state ledger stores a checksum of each migration, and a checksum is only comparable across machines if the input is. The checksum is therefore taken over line-ending-normalised, BOM-stripped UTF-8 rather than over raw bytes, so a Windows checkout and a Linux runner agree. These rules keep the file itself canonical on top of that: a file that is not valid UTF-8 has no single normalisation, a byte order mark reaches the server as part of the first statement, and mixed line endings inside one file mean the diff a reviewer approved is not the text that will run.",
+    "requireUtf8": true,
+    "forbidMixedLineEndings": true,
+    "requireTrailingNewline": true,
+    "forbidByteOrderMark": true
+  },
+
+  "reset": {
+    "why": "TD-103-028 gives no down path, so local recovery is reset and re-migrate. Reset is refused against any database whose name is not recognisably a local one, and refused without an explicit flag.",
+    "confirmFlag": "--confirm-destroys-all-data",
+    "localDatabaseNamePattern": "^cobudget_(dev|local|test)(_[a-z0-9_]+)?$"
+  }
+}

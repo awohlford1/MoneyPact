@@ -1,0 +1,26 @@
+{
+  "name": "@cobudget/migrations",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Forward-only PostgreSQL migration tooling. Owns the .sql migration files, the applied-state ledger, and the migration check. No ORM, no query layer, no application code.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./check": "./src/check/index.ts"
+  },
+  "scripts": {
+    "migrate": "node src/cli.ts apply",
+    "migrate:status": "node src/cli.ts status",
+    "migrate:create": "node src/cli.ts create",
+    "migrate:reset": "node src/cli.ts reset",
+    "migrate:check": "node src/cli.ts check",
+    "lint": "eslint .",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@typescript-eslint/parser": "^8.70.0",
+    "eslint": "^9.39.5",
+    "typescript": "^5.9.0"
+  }
+}
