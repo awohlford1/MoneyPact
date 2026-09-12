@@ -1,0 +1,72 @@
+name: Holiday coverage horizon
+
+# CBD-250 / CBD-98. The Federal Reserve holiday dataset in
+# packages/budget-domain/src/schedule/business-day.ts is verified through a
+# fixed year, and business-day adjustment refuses -- correctly and loudly --
+# for any year past it. The refusal is silent until the day it is not, so this
+# runs on a clock rather than only on a change: nothing has to happen in the
+# repository for coverage to run out. Time passing is the whole risk.
+#
+# A separate workflow rather than a step in ci.yml on purpose. ci.yml answers
+# "is this pull request sound"; a pull request in 2029 cannot be blocked
+# because a calendar needs extending, and a repository with no pull requests
+# for six months still needs the warning. Different question, different clock,
+# different workflow.
+
+on:
+  # Monthly. Coverage is measured in years, so a daily run would add noise
+  # without shortening the warning by anything that matters. The 1st at 09:00
+  # UTC is inside a European working morning; GitHub delays scheduled runs
+  # under load, which is acceptable for a signal with a two-year lead time.
+  schedule:
+    - cron: "0 9 1 * *"
+  # And immediately on any change to the calendar or to the guard reading it,
+  # so an extension is confirmed at the moment it is made rather than up to a
+  # month later, and so a guard edited into uselessness is caught by itself.
+  push:
+    paths:
+      - "packages/budget-domain/src/schedule/business-day.ts"
+      - "scripts/check-holiday-coverage.py"
+      - "scripts/test_check_holiday_coverage.py"
+      - ".github/workflows/holiday-coverage.yml"
+  # No inputs, deliberately. The guard's --year and --source flags exist for
+  # local diagnosis; exposing either here would put a "make it green" button
+  # next to the alarm.
+  workflow_dispatch:
+
+# Read-only, and no secrets anywhere in this file. The check reads one
+# TypeScript file out of the checkout with the Python standard library: it has
+# nothing to authenticate to and nothing to write. A workflow that holds no
+# credential cannot leak one (CBD-250-AC03).
+permissions:
+  contents: read
+
+concurrency:
+  group: holiday-coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  horizon:
+    name: Federal Reserve holiday coverage horizon
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the calendar source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The guard before the thing it guards. These tests break the calendar
+      # deliberately in a temp directory and prove each condition is the only
+      # thing catching its fixture; if they fail, a green horizon step below
+      # would mean nothing. No dependency install: the runner's python3 and
+      # the standard library are the whole toolchain.
+      - name: Prove the guard still fails on a broken calendar
+        run: python3 scripts/test_check_holiday_coverage.py
+
+      # Exits non-zero while the first uncovered year is still within the
+      # recorded lead time. A red run here is the notification: GitHub emails
+      # the repository owner on a failed scheduled run, and the failure is
+      # visible on the Actions tab and in the commit status for a push.
+      - name: Check the coverage horizon
+        run: python3 scripts/check-holiday-coverage.py --verbose
