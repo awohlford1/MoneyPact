@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Proposed — awaiting reviewer approval linked to CBD-96** |
-| Document version | 1.1.1 |
+| Status | **Approved — Product Owner, September 12, 2026 (CBD168-APPROVAL-001)** |
+| Document version | 1.1.2 |
 | Decision | `DC-168-001` through `DC-168-012`, plus `DC-168-011a` |
 | Owner | Alexander Wohlford |
 | Jira subtask | [CBD-168](https://cobudget.atlassian.net/browse/CBD-168) |
@@ -374,5 +374,6 @@ before any other file changed.
 | Version | Date | Change |
 | --- | --- | --- |
 | 1.0 | September 12, 2026 | Initial record. Selects source consumption through the export map, states the Node and TypeScript assumptions and the private-import policy, records the four observed behaviours in §7, and gives the additive reversal path. |
+| 1.1.2 | September 12, 2026 | Product Owner approval recorded (decision CBD168-APPROVAL-001, records/decisions). Status moves from Proposed to Approved; no decision, identifier, or contract text changed. |
 | 1.1.1 | September 12, 2026 | Re-review. Corrected a false statement introduced by the v1.1 `DC-168-005` fence: the root script is `npm run typecheck --workspaces --if-present`, and the omitted flag is the load-bearing one. Because of it, changing the package's tsconfig is not the only way to lose the fence — deleting the package's own `typecheck` script loses it too, and silently, since `--if-present` skips a workspace that lacks the script rather than failing. Both paths are now named and the package's `typecheck` script is declared part of the contract surface. Tightened `DC-168-007` to "module directory that publishes a barrel", matching what `barrel.test.ts` filters on, and swept three residual "the four subpath keys" phrasings the v1.1 fix left in §4, `DC-168-012`, and the `CBD-168-AC04` row. |
 | 1.1 | September 12, 2026 | Independent review, four blockers, decision unchanged. Corrected §8 step 1, which claimed `allowImportingTsExtensions` was enabled repository-wide when it is set in one file and reaches packages by inheritance that `apps/web` does not have. Rewrote `DC-168-010` to separate strictness divergence from resolution and compatibility divergence, and added the instance that made the distinction necessary: `apps/web` lacking `allowImportingTsExtensions` fails on all 137 specifiers with TS5097, which `transpilePackages` does not fix. Promoted that fix to a numbered obligation in `DC-168-009`. Moved the untested TypeScript-resolution claim out of `DC-168-008` into a new assigned-assumption table in §7. Restated `DC-168-007` as the barrel correspondence `barrel.test.ts` actually enforces rather than the number four. Strengthened the §5 rejections and the `DC-168-005` fence to cite the guards that already enforce them, and added `DC-168-011a` on evidence expiry. |
