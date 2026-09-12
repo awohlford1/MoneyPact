@@ -22,6 +22,9 @@ Fixture identifiers, for the completion record:
     FX-250-08  uncovered-year throw deleted      expect FAIL  (refusal lost)
     FX-250-09  predicate upper bound dropped     expect FAIL  (refusal one-sided)
     FX-250-10  the real file, unmodified         expect PASS
+    FX-250-11  uncovered-year throw commented out expect FAIL (refusal only in a comment)
+    FX-250-12  bound+dataset raised, verifiedOn stale expect FAIL (unverified despite matching numbers)
+    FX-250-13  bound+dataset raised, verifiedOn updated expect PASS (genuinely re-verified)
 
 FX-250-01 and FX-250-02 are the load-bearing pair for CBD-250-AC01: they sit
 either side of the single year where the horizon condition changes its answer.
@@ -124,6 +127,32 @@ def with_bound(year: int) -> str:
                       f'datasetVersion: "frfs-{start}-{year}",')
 
 
+def with_reverified_bound(through: int, verified_on: str | None = None) -> str:
+    """FX-250-12/13: verifiedThrough and datasetVersion raised together.
+
+    `verifiedFrom` is untouched -- this fixture exists to isolate
+    `verified_on_moves_with_the_bounds`, so it must stay out of
+    `verified_range_is_coherent` and `dataset_version_names_the_verified_range`
+    (the raised bound and the raised dataset version agree with each other)
+    and out of `coverage_horizon_is_clear` (`through` is anchored past the
+    horizon by the caller). `verified_on` of None leaves `verifiedOn`
+    unchanged from the real file, which is the defect; a real date there is
+    the fix.
+    """
+    source = substitute(REAL_SOURCE, r"verifiedThrough: \d+,", f"verifiedThrough: {through},")
+    source = substitute(source, r'datasetVersion: "frfs-\d+-\d+",',
+                        f'datasetVersion: "frfs-{REAL_CALENDAR.verified_from}-{through}",')
+    if verified_on is not None:
+        source = substitute(source, r'verifiedOn: toISODate\("[\d-]+"\),',
+                            f'verifiedOn: toISODate("{verified_on}"),')
+    return source
+
+
+# Anchored the same way as FX-250-03: past the later of today and the real
+# bound, so it stays clear of the horizon condition whatever LEAD_TIME_YEARS
+# is or whenever the calendar is extended.
+_REVERIFY_THROUGH = max(NOW, REAL_CALENDAR.verified_through) + LEAD + 4
+
 FIXTURES: dict[str, str] = {
     "FX-250-01": with_bound(NOW + LEAD - 1),
     "FX-250-02": with_bound(NOW + LEAD),
@@ -156,12 +185,30 @@ FIXTURES: dict[str, str] = {
     "FX-250-09": substitute(
         REAL_SOURCE, r" && year <= FEDERAL_RESERVE_CALENDAR\.verifiedThrough", ""),
     "FX-250-10": REAL_SOURCE,
+    # The refusal text is still in the file, but commented out: a raw
+    # substring test would read this as a live throw. Finding 7.
+    "FX-250-11": substitute(
+        REAL_SOURCE, r"throw new HolidayCoverageError\(year\);",
+        "// throw new HolidayCoverageError(year); // TODO re-enable"),
+    # Bound and dataset version raised together, consistently -- but
+    # verifiedOn left exactly as it was. Finding 6.
+    "FX-250-12": with_reverified_bound(_REVERIFY_THROUGH),
+    "FX-250-13": with_reverified_bound(_REVERIFY_THROUGH, verified_on="2030-06-01"),
+}
+
+# Baselines for the one condition that compares two revisions instead of
+# reading a single file: `verified_on_moves_with_the_bounds`. Every other
+# fixture leaves this at None, which is exactly the "no prior revision" case
+# the condition treats as silence rather than a finding.
+BASELINES: dict[str, "guard.Calendar"] = {
+    "FX-250-12": REAL_CALENDAR,
+    "FX-250-13": REAL_CALENDAR,
 }
 
 # What each fixture is for. Also the vacuity check below.
 MUST_FAIL = ("FX-250-01", "FX-250-04", "FX-250-05", "FX-250-06",
-             "FX-250-07", "FX-250-08", "FX-250-09")
-MUST_PASS = ("FX-250-02", "FX-250-03", "FX-250-10")
+             "FX-250-07", "FX-250-08", "FX-250-09", "FX-250-11", "FX-250-12")
+MUST_PASS = ("FX-250-02", "FX-250-03", "FX-250-10", "FX-250-13")
 
 # A fixture that is supposed to carry a defect must not be a copy of the clean
 # file. `substitute()` catches a pattern that stopped matching; it cannot catch
@@ -188,13 +235,15 @@ CONDITION_FIXTURES: dict[str, str] = {
     "calendar_literal_is_readable": "FX-250-05",
     "verified_range_is_coherent": "FX-250-06",
     "dataset_version_names_the_verified_range": "FX-250-07",
+    "verified_on_moves_with_the_bounds": "FX-250-12",
     "uncovered_years_are_still_refused": "FX-250-08",
     "coverage_horizon_is_clear": "FX-250-01",
 }
 
 
 def findings_for(fixture: str, year: int = NOW) -> list:
-    return guard.evaluate(guard.subject_for(FIXTURES[fixture], year, fixture))
+    return guard.evaluate(guard.subject_for(
+        FIXTURES[fixture], year, fixture, baseline=BASELINES.get(fixture)))
 
 
 class GuardStructureTests(unittest.TestCase):
@@ -236,10 +285,16 @@ class GuardStructureTests(unittest.TestCase):
             "A change is legitimate only if one of those two terms changed -- in\n"
             "practice, the product horizon moving. If it did: update the numbers in\n"
             "this test, the derivation beside LEAD_TIME_YEARS in\n"
-            "check-holiday-coverage.py, and the note in HorizonBoundaryTests, and\n"
-            "record who decided and when. If it did not, the constant is wrong, not\n"
-            "this test: lowering it spends the notice the guard exists to create and\n"
-            "raising it fires against years the Federal Reserve has not published.")
+            "check-holiday-coverage.py, the note in HorizonBoundaryTests, the\n"
+            "coverage_horizon_is_clear docstring in check-holiday-coverage.py, and the\n"
+            "cron comment in .github/workflows/holiday-coverage.yml, and record who\n"
+            "decided and when. Two of those five sites were missed the last time this\n"
+            "constant moved (CBD250-CORRECTION-002) -- both still named the old lead\n"
+            "time and a year computed from it after the constant changed, which is\n"
+            "exactly the drift this list exists to stop. If it did not, the constant\n"
+            "is wrong, not this test: lowering it spends the notice the guard exists\n"
+            "to create and raising it fires against years the Federal Reserve has\n"
+            "not published.")
 
     def test_the_real_calendar_is_readable(self):
         """FX-250-10: the guard must understand the file it is pointed at.
@@ -379,6 +434,26 @@ class ConditionTests(unittest.TestCase):
                 REAL_SOURCE, calendar.first_uncovered_year - LEAD - 1, "FX-250-10")),
             [])
 
+    def test_fx_250_11_a_commented_out_throw_is_not_a_live_refusal(self):
+        """Finding 7: a raw substring match would have missed this."""
+        findings = self.assert_only("FX-250-11", "uncovered_years_are_still_refused")
+        self.assertIn("nothing throws", findings[0].problem)
+
+    def test_fx_250_12_a_raised_bound_with_a_stale_verified_on_is_caught(self):
+        """Finding 6: the bound and dataset version agree, but nobody re-checked."""
+        findings = self.assert_only("FX-250-12", "verified_on_moves_with_the_bounds")
+        self.assertIn("verifiedThrough moved", findings[0].problem)
+        self.assertIn(REAL_CALENDAR.verified_on, findings[0].problem)
+
+    def test_fx_250_13_a_raised_bound_with_a_fresh_verified_on_passes(self):
+        self.assertEqual(findings_for("FX-250-13"), [])
+
+    def test_verified_on_moves_with_the_bounds_is_silent_without_a_baseline(self):
+        """No prior revision to compare against means no finding, not a guess."""
+        self.assertEqual(
+            guard.evaluate(guard.subject_for(FIXTURES["FX-250-12"], NOW, "no-baseline")),
+            [])
+
 
 class LoadBearingTests(unittest.TestCase):
     """Drop each condition in turn; its fixture must then pass clean.
@@ -462,6 +537,55 @@ class CommandLineTests(unittest.TestCase):
             result = self.run_guard("--source", str(Path(directory) / "absent.ts"))
             self.assertEqual(result.returncode, 1)
             self.assertIn("does not exist", result.stdout)
+
+    def test_a_commented_out_throw_exits_non_zero(self):
+        """Finding 7, end to end: a raw substring match would exit 0 here."""
+        with tempfile.TemporaryDirectory(prefix="holiday-coverage-") as directory:
+            path = self.write_fixture(directory, "FX-250-11")
+            result = self.run_guard("--source", str(path), "--year", str(NOW))
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("nothing throws", result.stdout)
+
+    def run_git(self, *args, cwd: Path):
+        return subprocess.run(
+            ["git", *args], cwd=cwd, capture_output=True, text=True,
+            timeout=30, check=True)
+
+    def test_a_raised_bound_without_reverification_is_caught_end_to_end(self):
+        """Finding 6, through the real git-history path `main()` uses.
+
+        `verified_on_moves_with_the_bounds` only has something to compare
+        against inside a git working tree, so this is the one condition that
+        cannot be proved with a bare --source file the way every other
+        fixture is. Building a two-commit throwaway repository is what
+        actually exercises `previous_calendar`, not just the condition
+        function in isolation.
+        """
+        with tempfile.TemporaryDirectory(prefix="holiday-coverage-git-") as directory:
+            repo = Path(directory)
+            self.run_git("init", "--quiet", cwd=repo)
+            self.run_git("config", "user.email", "guard@example.invalid", cwd=repo)
+            self.run_git("config", "user.name", "Guard Test", cwd=repo)
+
+            source_path = repo / "business-day.ts"
+            source_path.write_text(REAL_SOURCE, encoding="utf-8")
+            self.run_git("add", "business-day.ts", cwd=repo)
+            self.run_git("commit", "--quiet", "-m", "baseline", cwd=repo)
+
+            # Deliberate violation: bound and dataset version raised together,
+            # verifiedOn left untouched -- uncommitted, exactly like a working
+            # change nobody has finished yet.
+            source_path.write_text(FIXTURES["FX-250-12"], encoding="utf-8")
+            result = self.run_guard("--source", str(source_path), "--year", str(NOW))
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("verified_on_moves_with_the_bounds", result.stdout)
+            self.assertIn("verifiedThrough moved", result.stdout)
+
+            # Restore: verifiedOn now moves with the bound.
+            source_path.write_text(FIXTURES["FX-250-13"], encoding="utf-8")
+            result = self.run_guard("--source", str(source_path), "--year", str(NOW))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Holiday coverage clear", result.stdout)
 
     def test_the_default_source_is_the_domain_calendar(self):
         """No --source: the guard reads the file the workflow cares about.

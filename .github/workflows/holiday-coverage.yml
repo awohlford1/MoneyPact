@@ -17,7 +17,9 @@ on:
   # Monthly. Coverage is measured in years, so a daily run would add noise
   # without shortening the warning by anything that matters. The 1st at 09:00
   # UTC is inside a European working morning; GitHub delays scheduled runs
-  # under load, which is acceptable for a signal with a two-year lead time.
+  # under load, which is acceptable for a signal with a multi-year lead time
+  # (LEAD_TIME_YEARS in scripts/check-holiday-coverage.py -- do not restate
+  # its value here; that is exactly the drift CBD250-CORRECTION-002 fixed).
   schedule:
     - cron: "0 9 1 * *"
   # And immediately on any change to the calendar or to the guard reading it,

@@ -20,12 +20,14 @@ This guard converts that silence into a lead time. It reads the verified range
 out of the domain source, computes the first uncovered year, and fails while
 that year is still `LEAD_TIME_YEARS` away -- long before any user meets it.
 
-It also refuses three ways the warning itself could be lost:
+It also refuses four ways the warning itself could be lost:
 
 * the calendar literal renamed, moved or reshaped, so a text-reading guard
   finds nothing and passes green on a file it no longer understands;
 * a bound advanced without the dataset version that records which published
   schedule was checked, which is a bound nobody verified;
+* a bound or dataset version advanced without `verifiedOn` moving too, which
+  is the same unverified bound wearing a consistent-looking pair of numbers;
 * the uncovered-year refusal deleted from the domain package, which would turn
   the loud cliff into exactly the quiet wrong answer PD-68-05 forbids.
 
@@ -63,6 +65,7 @@ from __future__ import annotations
 import argparse
 import datetime as _datetime
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -159,6 +162,12 @@ class Subject:
     year: int
     calendar: Calendar | None
     parse_problem: str | None
+    # The calendar as it stood before this change, when one is available. Only
+    # `verified_on_moves_with_the_bounds` reads this; every other condition
+    # judges `calendar` alone. None means no honest comparison is possible --
+    # no prior revision, no git, or a diagnostic source outside any repository
+    # -- not that the calendar is wrong.
+    baseline: Calendar | None = None
 
 
 @dataclass(frozen=True)
@@ -305,6 +314,51 @@ def dataset_version_names_the_verified_range(subject: Subject) -> list[Finding]:
     return []
 
 
+def verified_on_moves_with_the_bounds(subject: Subject) -> list[Finding]:
+    """A raised bound or a changed dataset version must carry a new `verifiedOn`.
+
+    `dataset_version_names_the_verified_range` catches a bound moved on its
+    own, with `datasetVersion` left stale. It has nothing to say about the
+    edit right next to that one: both numbers moved together, consistently,
+    but `verifiedOn` did not -- which is what typing the right-looking values
+    without re-reading the published Federal Reserve Financial Services
+    schedule that day looks like. CBD-68 Section 10.3 asks for verification
+    before activation; a verification that happened would have a new date
+    behind it.
+
+    Silent, not passing, whenever there is nothing honest to compare against:
+    a first calendar, or a source read outside git history. `subject.baseline`
+    is None in exactly those cases, and this condition reports nothing rather
+    than guessing what changed.
+    """
+    calendar = subject.calendar
+    baseline = subject.baseline
+    if calendar is None or baseline is None:
+        return []
+    if calendar.verified_on != baseline.verified_on:
+        return []
+
+    moved = []
+    if calendar.verified_through > baseline.verified_through:
+        moved.append(f"verifiedThrough moved {baseline.verified_through} -> "
+                     f"{calendar.verified_through}")
+    if calendar.dataset_version != baseline.dataset_version:
+        moved.append(f"datasetVersion moved {baseline.dataset_version!r} -> "
+                     f"{calendar.dataset_version!r}")
+    if not moved:
+        return []
+
+    return [Finding(
+        condition="verified_on_moves_with_the_bounds",
+        problem=f"{'; '.join(moved)}, but verifiedOn is still {calendar.verified_on!r}: "
+                "the record claims a moved bound with no new verification date behind it",
+        fix="re-verify against the published Federal Reserve Financial Services schedule "
+            "on the day you make this change and set verifiedOn to that date -- a bound "
+            "or dataset version that moved without verifiedOn moving too is a value "
+            "nobody actually rechecked",
+    )]
+
+
 def uncovered_years_are_still_refused(subject: Subject) -> list[Finding]:
     """The domain package must still refuse an uncovered year.
 
@@ -326,7 +380,12 @@ def uncovered_years_are_still_refused(subject: Subject) -> list[Finding]:
             fix="restore the error type; PD-68-05 requires an uncovered year to block "
                 "confirmation rather than fall back to weekday-only logic",
         ))
-    if "throw new HolidayCoverageError(" not in source:
+    throw_is_live = any(
+        "throw new HolidayCoverageError(" in line
+        for line in source.splitlines()
+        if not line.strip().startswith("//")
+    )
+    if not throw_is_live:
         findings.append(Finding(
             condition="uncovered_years_are_still_refused",
             problem="nothing throws HolidayCoverageError any more, so an uncovered year "
@@ -361,9 +420,12 @@ def coverage_horizon_is_clear(subject: Subject) -> list[Finding]:
     """The first uncovered year must stay more than the lead time away.
 
     CBD-250-AC01. The horizon is `year + LEAD_TIME_YEARS`; the guard fails when
-    it reaches the first uncovered year, which is `verifiedThrough + 1`. With a
-    two-year lead time and a bound of 2030, the first uncovered year is 2031 and
-    the horizon reaches it on 1 January 2029.
+    it reaches the first uncovered year, which is `verifiedThrough + 1`. This is
+    written against `LEAD_TIME_YEARS` rather than a year, because the number is
+    derived (see the constant's definition above) and has already changed once
+    -- a worked example pinned here would drift the moment it changed again,
+    exactly as the two-year, 1 January 2029 example this docstring used to
+    carry did after the derivation moved the constant from 2 to 3.
     """
     calendar = subject.calendar
     if calendar is None:
@@ -403,15 +465,84 @@ CONDITIONS = (
     calendar_literal_is_readable,
     verified_range_is_coherent,
     dataset_version_names_the_verified_range,
+    verified_on_moves_with_the_bounds,
     uncovered_years_are_still_refused,
     coverage_horizon_is_clear,
 )
 
 
-def subject_for(source: str, year: int, path: str = str(DEFAULT_SOURCE)) -> Subject:
+def subject_for(source: str, year: int, path: str = str(DEFAULT_SOURCE),
+                baseline: Calendar | None = None) -> Subject:
     calendar, parse_problem = parse_calendar(source)
     return Subject(path=path, source=source, year=year,
-                   calendar=calendar, parse_problem=parse_problem)
+                   calendar=calendar, parse_problem=parse_problem, baseline=baseline)
+
+
+def _read_git_blob(ref: str, relative_path: str, repo_root: Path) -> str | None:
+    """`git show <ref>:<path>`, or None on any failure. Never raises."""
+    try:
+        result = subprocess.run(
+            ["git", "show", f"{ref}:{relative_path}"],
+            cwd=repo_root, capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, ValueError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout
+
+
+def previous_calendar(source_path: Path, current_source: str) -> Calendar | None:
+    """The calendar as it stood before this change, read from git history.
+
+    Best effort only, and silence rather than a finding on any failure: no
+    `git` binary, the path is not inside a git working tree, the file has no
+    commit history, or git could not be run for any other reason. Those are
+    all "nothing to compare against", not "the calendar is wrong" -- a
+    fixture written to a bare temp directory hits this path every time and
+    that must not read as a defect.
+
+    Compares the *file*, not the commit graph: if the working copy already
+    matches its most recent commit, there is no pending edit to judge, so this
+    steps back one commit further and treats that as the baseline instead.
+    """
+    try:
+        toplevel = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=source_path.parent, capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, ValueError):
+        return None
+    if toplevel.returncode != 0:
+        return None
+    repo_root = Path(toplevel.stdout.strip())
+    try:
+        relative = source_path.resolve().relative_to(repo_root.resolve()).as_posix()
+    except (OSError, ValueError):
+        return None
+
+    try:
+        log = subprocess.run(
+            ["git", "log", "--format=%H", "-2", "--", relative],
+            cwd=repo_root, capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, ValueError):
+        return None
+    if log.returncode != 0:
+        return None
+    commits = [line.strip() for line in log.stdout.splitlines() if line.strip()]
+    if not commits:
+        return None
+
+    newest = _read_git_blob(commits[0], relative, repo_root)
+    if newest is not None and newest == current_source:
+        if len(commits) < 2:
+            return None
+        candidate = _read_git_blob(commits[1], relative, repo_root)
+    else:
+        candidate = newest
+    if candidate is None:
+        return None
+
+    calendar, problem = parse_calendar(candidate)
+    return calendar if problem is None else None
 
 
 def evaluate(subject: Subject) -> list[Finding]:
@@ -482,7 +613,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     year = args.year if args.year is not None else _datetime.date.today().year
-    subject = subject_for(source, year, display)
+    baseline = previous_calendar(source_path, source)
+    subject = subject_for(source, year, display, baseline=baseline)
     findings = evaluate(subject)
 
     if findings:
