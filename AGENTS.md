@@ -64,3 +64,17 @@ These instructions apply throughout the repository unless a more specific
   repository's established merge method.
 - Do not assume the in-app browser is authenticated. Use browser UI for GitHub
   mutations only after its signed-in state is visibly confirmed.
+
+## Agentic Workflow Role Routing
+
+- The main session the user prompts directly is the Manager. It decomposes
+  work, dispatches role agents, integrates their results, and owns the merge
+  lane. Its own operating instructions are kept outside this repository.
+- Delegated agents follow the shared specialist contract stated in full inside
+  their role definition under `.claude/agents/` or `.codex/agents/`. Both
+  providers carry the same role text, so the same eleven roles dispatch either
+  way.
+- A specialist receives a task packet naming its scope, the files it may write,
+  its gate command and its prohibitions, and reports back to the Manager.
+- Specialists do not become Managers and do not dispatch further agents.
+- Pending policies and approvals remain pending.
