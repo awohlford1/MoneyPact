@@ -154,6 +154,16 @@ dependency order conservatively retains the former publisher's baseline gates;
 a held or divergent baseline blocks dependent writes. Source-status labels other
 than Approved were not automatically promoted to approval.
 
+Because a held baseline blocks its dependents, an approved document may not
+sit above a held one anywhere in its `depends_on` chain. That is not a
+decision waiting to be made; it is a `baseline-awaits-approval` failure waiting
+for the next edit, and nothing reports it until that edit lands. The contract
+refuses it as `approved-document-depends-on-held-baseline`. The check applies
+to the manifest being published from, not to the bootstrap snapshot or base
+checkpoints, which are frozen history and legitimately carried that state.
+Resolve it by approving the baseline, if its status warrants it, or by holding
+the dependents -- never by editing `depends_on` to route around the hold.
+
 A rename can preserve page identity. An intentional target change must retain
 the old page explicitly and register the replacement. Removing a registered
 source requires a `retained_pages` record with `former_path`, `page_id`,

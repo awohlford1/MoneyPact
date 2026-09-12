@@ -184,6 +184,41 @@ def validate_manifest(data, documents, bodies, targets=None):
     return {entry["path"]: entry for entry in entries}
 
 
+def validate_publishable(data):
+    """Refuse a manifest that can never publish one of its approved documents.
+
+    select_documents walks depends_on transitively from every changed document
+    and raises baseline-awaits-approval if any ancestor is not approved. So an
+    approved document above a held one is not a valid state waiting for a
+    decision -- it is a publication failure waiting for the next edit, and
+    nothing reports it until that edit lands. Two held bootstrap defaults sat
+    beneath fifty-three and forty-four approved documents for a month before
+    the first change inside the subtree failed every run that followed.
+
+    This is deliberately not part of validate_manifest. That function also
+    checks the bootstrap snapshot and each base checkpoint, which are frozen
+    history and legitimately carried this state. Only the manifest about to be
+    published from has to satisfy it.
+    """
+    registered = {entry["target"]: entry for entry in data["documents"]
+                  if entry["disposition"] == "registered"}
+    for target, entry in registered.items():
+        if entry["policy"] != "approved":
+            continue
+        seen, stack = set(), list(entry["depends_on"])
+        while stack:
+            ancestor = stack.pop()
+            if ancestor in seen:
+                continue
+            seen.add(ancestor)
+            above = registered.get(ancestor)
+            if above is None:
+                continue  # validate_manifest reports a missing dependency
+            if above["policy"] != "approved":
+                raise PublicationError("approved-document-depends-on-held-baseline")
+            stack.extend(above["depends_on"])
+
+
 def read_manifest(repo, revision):
     return json_object(git(repo, "show", revision + ":" + MANIFEST).decode("utf-8"))
 
