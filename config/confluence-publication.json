@@ -1416,7 +1416,7 @@
         "cbd-92-threat-model"
       ],
       "policy": "approved",
-      "approved_sha256": "b3102493ee3e40cdbcee580ca24b178399c9064e320f60a1bd683dd01bdc37a6"
+      "approved_sha256": "3bfee67ebc8dccc5706ec9956b0b2d32f5b3b30ef30e840c926d92b62b2bd311"
     },
     {
       "path": "docs/cbd-94-acceptance-criteria-traceability.md",
@@ -1501,7 +1501,7 @@
         "cbd-95-follow-up-register"
       ],
       "policy": "approved",
-      "approved_sha256": "f7b7385402d3540f90a811af832f1114272dc87e1b6b9c1bb889bdd32d8f4660"
+      "approved_sha256": "5aba82f4607e310fe64376969d13457e21848a0d70c81c2c0fad4cd537b96ac6"
     },
     {
       "path": "docs/cbd-95-architecture-roadmap-follow-up-register.md",
