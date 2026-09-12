@@ -7,7 +7,7 @@ that each acceptance criterion is mapped, and that every governing CA-92-*
 contract this model claims to implement actually exists in CBD-92.
 
 That last check is the one worth having.  This package's whole claim is that it
-makes CA-92-001 through CA-92-012 implementable without changing them, so a
+makes CA-92-001 through CA-92-013 implementable without changing them, so a
 citation that resolves to nothing is the failure that matters most.
 
 It proves nothing about product correctness.  A pass closes no open issue and
@@ -29,10 +29,11 @@ PACKAGE_FILES = (MODEL, SCENARIOS, TRACE)
 
 SOURCE = Path("docs/cbd-92-system-flow-technical-threat-model.md")
 
-DOCUMENT_VERSION = "0.1"
+DOCUMENT_VERSION = "0.2"
 
 EXPECTED = {
     "EN": {f"EN-82-{n:02d}" for n in range(1, 13)},
+    "FD": {f"FD-82-{n:03d}" for n in range(1, 65)},
     "CD": {f"CD-82-{n:02d}" for n in range(1, 13)},
     "AU": {f"AU-82-{n:02d}" for n in range(1, 11)},
     "LK": {f"LK-82-{n:02d}" for n in range(1, 8)},
@@ -43,47 +44,94 @@ EXPECTED = {
     "DR": {f"DR-82-{n:02d}" for n in range(1, 5)},
     "AE": {f"AE-82-{n:02d}" for n in range(1, 4)},
     "OI": {f"OI-82-{n:03d}" for n in range(1, 5)},
+    "CR": {f"CR-82-{n:02d}" for n in range(1, 10)},
+    "DS": {f"DS-82-{n:02d}" for n in range(1, 8)},
+    "EV": {f"EV-82-{n:02d}" for n in range(1, 22)},
+    "HO": {f"HO-82-{n:02d}" for n in range(1, 7)},
 }
 
-SCENARIO_COUNTS = {"LNK": 7, "AUTH": 6, "CANON": 6, "JOINT": 8, "LIFE": 8, "ISO": 7, "DEL": 4}
-SCENARIO_TOTAL = 46
+SCENARIO_COUNTS = {
+    "LNK": 7,
+    "AUTH": 6,
+    "CANON": 6,
+    "JOINT": 8,
+    "LIFE": 8,
+    "ISO": 7,
+    "DEL": 4,
+    "CORR": 7,
+    "DERIV": 6,
+}
+SCENARIO_TOTAL = 59
+
+# A count alone is satisfied by a renumbered family of the same size, so the
+# scenario identifiers are pinned as a closed set the same way the registers are.
+EXPECTED_SCENARIOS = {
+    f"{family}-82-T{n:02d}" for family, count in SCENARIO_COUNTS.items() for n in range(1, count + 1)
+}
 
 EXPECTED_AC = {f"CBD-82-AC{n:02d}" for n in range(1, 13)}
 
 # Every CA-92-* contract this package claims to implement must exist upstream.
-EXPECTED_CA = {f"CA-92-{n:03d}" for n in range(1, 13)}
+# CA-92-013 governs membership loss, permanent subject loss, and orphan history;
+# it is implemented by LC-82-02 and section 8, so the set ends at 013, not 012.
+EXPECTED_CA = {f"CA-92-{n:03d}" for n in range(1, 14)}
 
 REQUIRED_HEADINGS = {
     MODEL: (
         "## 3. Logical entities",
+        "### 3.1 Field-level logical schema and retention inventory",
         "## 4. Cardinality and uniqueness",
         "## 5. The authority matrix",
         "## 6. The account-to-space link",
         "## 7. Canonicalization and joint projection",
+        "### 7.1 Correction, retry, and repair",
         "## 8. Lifecycle and the outcome matrix",
+        "### 8.1 Scope effects",
+        "### 8.2 Record effects",
+        "### 8.3 State machines",
+        "### 8.4 Derived state, cache, and revocation propagation",
         "## 9. Prohibitions",
+        "### 10.1 Retained-event inventory",
+        "## 11. Handoff to sibling tasks",
         "## 12. Open issues",
         "## 13. What this closes, and what it does not",
     ),
     SCENARIOS: ("## 3. Scenario inventory", "## 4. Family totals"),
     TRACE: (
         "## 3. Per-criterion mapping",
+        "### 3.1 Reverse map: source to decision",
         "## 4. Discrepancy register",
         "## 6. Evidence gates",
     ),
 }
 
-LOCAL_ID = re.compile(r"\b(?:EN|CD|AU|LK|AS|OC|LC|PB|DR|AE|OI)-82-\d{2,3}\b")
-SCENARIO_ID = re.compile(r"\b(?:LNK|AUTH|CANON|JOINT|LIFE|ISO|DEL)-82-T\d{2}\b")
+def alternation(names: "list[str] | tuple[str, ...]") -> str:
+    """Longest-first so no name can be swallowed by a shorter one sharing a stem."""
+    return "|".join(sorted(names, key=lambda n: (-len(n), n)))
+
+
+# Both alternations are derived from the pinned sets above rather than retyped.
+# Registering a new prefix or scenario family therefore updates every regex that
+# has to know about it, which is the drift these literals used to invite.
+REGISTER_ALT = alternation(tuple(EXPECTED))
+FAMILY_ALT = alternation(tuple(SCENARIO_COUNTS))
+
+LOCAL_ID = re.compile(rf"\b(?:{REGISTER_ALT})-82-\d{{2,3}}\b")
+SCENARIO_ID = re.compile(rf"\b(?:{FAMILY_ALT})-82-T\d{{2}}\b")
 AC_ID = re.compile(r"\bCBD-82-AC\d{2}\b")
 CA_ID = re.compile(r"\bCA-92-\d{3}\b")
 
 RANGE = re.compile(
-    r"\b(EN|CD|AU|LK|AS|OC|LC|PB|DR|AE|OI)-82-(\d{2,3})`?\s*[–—-]\s*`?(?:\1-82-)?(\d{2,3})\b"
+    rf"\b({REGISTER_ALT})-82-(\d{{2,3}})`?\s*[–—-]\s*`?(?:\1-82-)?(\d{{2,3}})\b"
 )
 SCENARIO_RANGE = re.compile(
-    r"\b(LNK|AUTH|CANON|JOINT|LIFE|ISO|DEL)-82-T(\d{2})`?\s*[–—-]\s*`?(?:\1-82-)?T?(\d{2})\b"
+    rf"\b({FAMILY_ALT})-82-T(\d{{2}})`?\s*[–—-]\s*`?(?:\1-82-)?T?(\d{{2}})\b"
 )
+
+# Identifiers lead a defining table row, optionally wrapped in backticks.  The
+# backtick is not optional in practice -- every row in this package uses one --
+# so a pattern that omits it silently matches nothing at all.
+SCENARIO_ROW = re.compile(rf"^\| `?((?:{FAMILY_ALT})-82-T\d{{2}})`? \|")
 
 
 def expand_ranges(text: str) -> set[str]:
@@ -169,7 +217,11 @@ def main() -> int:
 
     # Registers are defined once each, in the model.
     for prefix, expected in EXPECTED.items():
-        width = 3 if prefix == "OI" else 2
+        # Derived from the pinned set, so a three-digit register never has to be
+        # remembered in a second place.  OI and FD are the wide ones today.
+        widths = {len(i.rsplit("-", 1)[1]) for i in expected}
+        audit.check(len(widths) == 1, f"{prefix}: mixed identifier widths {sorted(widths)}")
+        width = widths.pop() if len(widths) == 1 else 2
         found = table_ids(texts[MODEL], rf"{prefix}-82-\d{{{width}}}")
         duplicates = {i for i in found if found.count(i) > 1}
         audit.check(not duplicates, f"{prefix}: duplicate definitions {sorted(duplicates)}")
@@ -190,12 +242,28 @@ def main() -> int:
     )
 
     # Scenarios: defined once, counted correctly, and every one cites a rule.
-    scenarios = table_ids(texts[SCENARIOS], r"(?:LNK|AUTH|CANON|JOINT|LIFE|ISO|DEL)-82-T\d{2}")
+    scenarios = table_ids(texts[SCENARIOS], rf"(?:{FAMILY_ALT})-82-T\d{{2}}")
     audit.check(
         len(scenarios) == SCENARIO_TOTAL,
         f"scenario count is {len(scenarios)}, declared {SCENARIO_TOTAL}",
     )
     audit.check(len(set(scenarios)) == len(scenarios), "duplicate scenario identifiers")
+
+    # The count above is satisfied by any set of the right size.  Pin the
+    # identifiers themselves so a renumbered family fails even when it still totals.
+    audit.check(
+        not sorted(EXPECTED_SCENARIOS - set(scenarios)),
+        f"scenarios: missing {sorted(EXPECTED_SCENARIOS - set(scenarios))}",
+    )
+    audit.check(
+        not sorted(set(scenarios) - EXPECTED_SCENARIOS),
+        f"scenarios: unexpected {sorted(set(scenarios) - EXPECTED_SCENARIOS)}",
+    )
+    audit.check(
+        not sorted(set(SCENARIO_ID.findall(package_text)) - EXPECTED_SCENARIOS),
+        "dangling scenario references: "
+        f"{sorted(set(SCENARIO_ID.findall(package_text)) - EXPECTED_SCENARIOS)}",
+    )
     audit.check(
         f"**{SCENARIO_TOTAL} scenarios**" in texts[SCENARIOS],
         f"the coverage rule does not state {SCENARIO_TOTAL} scenarios",
@@ -207,16 +275,25 @@ def main() -> int:
             f"| {family} | {count} |" in texts[SCENARIOS],
             f"{family}: the totals table does not state {count}",
         )
+    rows_seen = 0
     for block in table_blocks(texts[SCENARIOS]):
         for row in block:
-            match = re.match(r"^\| ((?:LNK|AUTH|CANON|JOINT|LIFE|ISO|DEL)-82-T\d{2}) \|", row)
+            match = SCENARIO_ROW.match(row)
             if not match:
                 continue
+            rows_seen += 1
             cells = [c.strip() for c in row.strip().strip("|").split("|")]
             audit.check(
                 len(cells) == 4 and all(cells),
                 f"{match.group(1)}: scenario row is missing a populated cell",
             )
+    # The row scan above reached nothing at all for as long as its pattern
+    # omitted the backtick every identifier here is wrapped in.  Assert that it
+    # visited every scenario, so it cannot quietly stop guarding a second time.
+    audit.check(
+        rows_seen == SCENARIO_TOTAL,
+        f"the scenario row scan reached {rows_seen} of {SCENARIO_TOTAL} rows",
+    )
 
     ac_rows = table_ids(texts[TRACE], r"CBD-82-AC\d{2}")
     audit.check(
