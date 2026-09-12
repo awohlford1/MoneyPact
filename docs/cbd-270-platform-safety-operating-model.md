@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | **Draft** — not approved. Written to close the `EG-93-009` element list. Approval authority is the Product Owner, with the qualified safety and privacy review CBD-273 obtains and the abuse-case exercise CBD-272 runs. Neither is complete, so `EG-93-009` and `RG-94-011` remain open and shared comments remain unshippable. |
-| Document version | 0.4 |
+| Document version | 0.5 |
 | Owner | Alexander Wohlford |
 | Reviewer | Pending — Product Owner, plus the qualified reviewer CBD-273 engages |
 | Jira | [CBD-270](https://cobudget.atlassian.net/browse/CBD-270) |
@@ -219,7 +219,7 @@ approval, not by a specification. Two rules follow:
    **That is not a dead end, and it must never be communicated as one.** An
    honest "nothing" that omits the remedies which do exist reads as
    abandonment to the person receiving it, and abandonment is itself a harm
-   this model is supposed to prevent. Four remedies survive the absence of the
+   this model is supposed to prevent. Three remedies survive the absence of the
    content power, and the reporter is told about each that applies to them:
 
    | Remedy | Basis | Who acts |
@@ -320,11 +320,15 @@ moderation it cannot perform. Four things are wrong with it:
 The prohibition is therefore stated positively and broadly: no case
 acknowledgement, status message, outcome message, escalation record, appeal
 response, or staff communication may propose, recommend, hint at, or describe
-as available any removal, role change, scope reduction, invitation, archival,
-or other membership or lifecycle action, against the reported author or anyone
-else. Where a person asks whether such a power exists, the answer directs them
-to the ordinary product surface that governs it and does not connect it to
-their report.
+as available any member removal, role change, scope reduction, invitation,
+archival, or other membership or lifecycle action, against the reported author
+or anyone else. Where a person asks whether such a power exists, the answer is
+that the question is out of scope for this process, on the `PS-270-064`
+pattern: no pointer to the product surface that governs it, no statement of
+what that surface permits, and no connection to their report. Inside the case
+channel a pointer is connected to the report by context, and a pointer
+describes the power as available — which is what the sentence above forbids.
+§16.1 check 10 scans this answer.
 
 This does not narrow anybody's existing authority. A Primary Owner's role
 powers are untouched by this document (`PS-270-001`); what is forbidden is this
@@ -387,7 +391,13 @@ or other person's state. Outcomes are uniform across "no such content", "content
 exists but no action", and "not authorized to ask", exactly as `RL-92-003` and
 CBD-72 `XSP-02` require of every other surface. A case is not an oracle.
 
-**Source:** `RL-92-003`; CBD-72 `XSP-02`; `SR-94-065`.
+The one state-dependent observable this document accepts sits outside the case
+response: `PS-270-033` axis 6's timing correlation, where a comment withheld
+from every reader at the moment a report was filed correlates with the filing.
+It is stated there as a residual. It is not a confirmation the case channel
+gives, and this decision's uniformity rule is not carved out for it.
+
+**Source:** `RL-92-003`; CBD-72 `XSP-02`; `SR-94-065`; `PS-270-033` axis 6.
 
 `PS-270-014` — **No escalation path overrides any rule in this section, and no
 missing tool is permission for manual access.**
@@ -542,21 +552,48 @@ disclosure:
 
    It is therefore handled on the `PS-270-076` pattern:
 
-   * **Enforced machine-side at `PS-270-053`.** The election gates the
-     notification dispatch itself. No human decides whether to honour it.
+   * **Enforced machine-side, at two gates and by no person.** The
+     `PS-270-049` enforcement workflow checks the election before it executes
+     a `PS-270-033` interim measure, because the measure is what requires the
+     `PS-270-053` notice; the notification dispatch checks it before sending.
+     `PS-270-053` states both gates.
    * **Never rendered to a handler**, in the case record, the queue, the
      routing metadata, or any derived view. A handler cannot see that an
      election was made, still less which way.
-   * **Recorded only in the audit stream**, under the same fixed-field-set
-     discipline `PS-270-076` requires: the record's shape must be identical
-     whether or not an election was made, so its presence is not itself the
-     signal.
+   * **Stored, never rendered**, under the same fixed-field-set discipline
+     `PS-270-076` requires: the record's shape must be identical whether or
+     not an election was made, so its presence is not itself the signal. The
+     two gates consult it; nothing displays it.
    * **No effect on case handling, severity assignment, triage order, or
-     outcome** — which now holds structurally, because the people and systems
-     making those decisions cannot observe it.
+     outcome.** This is a rule, not a structural guarantee, and v0.4
+     overstated it as one. The election is unobservable; its consequence is
+     not. Where a Critical case's decision record calls for the interim
+     measure and no execution, notice, or expiry event follows (`PS-270-066`,
+     axis 2, `PS-270-050`), the handler who took the decision and the
+     reviewer who reviews executions can infer that the reporter declined.
+     The inference is not certain — `PS-270-033`'s reader-count condition
+     also prevents a measure from executing, and no handler- or reviewer-visible
+     field records which cause applied — but "probably declined" is still the
+     `SG-93-088`-substance inference this design exists to remove. The
+     fixed-field discipline is deliberately **not** extended to execution,
+     notice, and expiry events: making those events identical whether or not
+     the action happened would leave the audit stream unable to say whether a
+     content action occurred, which `SR-94-063` and `SR-94-064` require it to
+     say and which `PS-270-050`'s post-use review depends on. **The
+     absent-execution inference is a residual, stated as one, not accepted
+     here, and an input to CBD-273's review.**
+
+   "Any measure that notifies" is read against `PS-270-075`: no measure is
+   held today, and the one this election is specified to cover is the
+   `PS-270-033` interim measure. Whether the election also reaches a terminal
+   action or its notice is
+   **undefined** while `OQ-270-006` is open — no terminal content action
+   exists, and this document does not define the election's reach over a
+   power it does not hold.
 
 **Source:** `SG-93-086`, `SG-93-088`, `SG-93-094`; `RI-93-016`; `RI-93-008`;
-`PS-270-012`, `PS-270-025`, `PS-270-033`, `PS-270-053`, `PS-270-075`.
+`SR-94-063`, `SR-94-064`; `PS-270-012`, `PS-270-025`, `PS-270-033`,
+`PS-270-049`, `PS-270-050`, `PS-270-053`, `PS-270-066`, `PS-270-075`.
 
 ## 6. Severity model
 
@@ -733,7 +770,8 @@ two of them depend on a function §8 records as unfilled.
 | 6 | Uniform visibility | **Yes** — a property of the action |
 | 7 | Non-refiring | **Yes** — a property of the action |
 
-1. **Scope.** It withholds from display only the specific reported comment. It
+1. **Scope.** It withholds only the specific reported comment, and it withholds
+   it on every path axis 6 names, not from the primary display alone. It
    never suspends the reported author's ability to comment, never affects the
    author's other content, never affects the target's other comments, and never
    suspends the comment surface for a target, a space, or the product. Only
@@ -763,12 +801,28 @@ two of them depend on a function §8 records as unfilled.
    `PS-270-071`'s stated scope is closed cases, missed targets, and
    prohibited-power alarms; a pattern of non-surviving Critical reports is none
    of those, so recording the signal today routes it nowhere. `PS-270-020`'s
-   rate ceiling does not bound the pattern either, because one submission
-   suffices. Extending `PS-270-071`'s scope, or building a distinct review, is
-   a `RG-94-011` readiness input and is unbuilt.
+   filing ceiling does not bound the pattern against one target, because one
+   submission suffices there; against a serial campaign across successive
+   comments the control shape is the per-reporter measure-triggering ceiling
+   named below, which is distinct from the filing ceiling and is unbuilt.
+   Extending `PS-270-071`'s scope, or building a distinct review, is a
+   `RG-94-011` readiness input and is unbuilt.
 6. **Uniform visibility.** The measure withholds the comment from **every
    reader, the reporter included**. One rule, one rendering, no per-viewer
    exception.
+
+   **The withhold applies on every path that renders or reproduces the comment
+   body**, not on the primary display alone: the rendered thread; any cache of
+   it, which is invalidated when the measure takes effect; any export or
+   report that would include it; any digest; any search index and the results
+   it serves; and the body of any in-app notification, and of any email, which
+   `PS-270-051` already confines to the action class. A digest or notification
+   generated after the measure takes effect and carrying the body would
+   re-broadcast Critical-class content. An artifact delivered before the
+   measure is beyond reach — `SG-93-091` already says so, and no outcome
+   message may suggest otherwise. This is a negative test: no path renders the
+   body while the measure stands. It is routed to CBD-272 beside the
+   `PS-270-054` tombstone fixture (§18.5).
 
    **This reverses v0.3, on an Executive ruling, and the reasoning is worth
    keeping.** v0.3 exempted the reporter to close a calibration oracle: a
@@ -831,13 +885,20 @@ This residual is **not accepted here**, on the same footing as `PS-270-025`'s.
 It is an input to `OQ-270-003` and to CBD-273's review, and it is a
 `RG-94-011` readiness input. The control shape it needs is a **per-reporter
 ceiling on measure-triggering reports, distinct from the ceiling on filing** —
-`PS-270-020` bounds filing and axis 5 wrongly dismisses it as inapplicable
-because one submission suffices, which is true of one target and false of a
-serial campaign. A separate measure-triggering ceiling also satisfies
-`RL-92-005` non-weaponization, because the reporter can still file, the case is
-still handled, and severity is still assigned at full weight; only the interim
-measure is rate-bound. Selecting the value is build-time work and is not done
-here.
+`PS-270-020` bounds filing, and axis 5 records that a filing ceiling does not
+bound the pattern against one target, where one submission suffices; a serial
+campaign is exactly why a separate ceiling is needed. A separate
+measure-triggering ceiling also satisfies `RL-92-005` non-weaponization,
+because the reporter can still file, the case is still handled, and severity
+is still assigned at full weight; only the interim measure is rate-bound.
+Selecting the value is build-time work and is not done here.
+
+**A residual of the per-reporter shape is named with it rather than
+discovered later.** Two members of one space alternating reports circumvent
+any per-reporter ceiling, and CBD-93 §5.3 and `PS-270-022` both say that the
+members of a shared space are precisely the people with a shared interest in
+silencing one of their number. The alternation residual is not closed by this
+control shape and travels with it into §18.5.
 
 **The measure's protective value depends on the reader count, and below a
 threshold it has none.** In a two-person space the only other reader is the
@@ -860,7 +921,7 @@ unavailable and a Critical case escalates under `PS-270-057` with no in-product
 measure at all.
 
 **Source:** CBD-94 §3.8; `PS-270-024`, `PS-270-025`, `PS-270-029`; `AB-93-034`;
-CBD-93 §5.3; `PS-270-075`.
+CBD-93 §5.3; `SG-93-091`; `PS-270-051`, `PS-270-054`, `PS-270-075`.
 
 `PS-270-034` — **The product claims no monitoring and no protection.**
 
@@ -1070,7 +1131,7 @@ reporter supplied, and only that reference:
 | --- | --- | --- |
 | Comment author's internal subject identifier | `DI-91-001` account subject reference | **Nobody.** Held by the service; never rendered to a case handler |
 | Author's notification destination | `DI-91-029` destination, S3 | **Nobody.** Consumed by the notification service to address the `PS-270-053` notice; never rendered, exported, or written into the case record |
-| A **space-scoped** opaque **party** token, for system-side reciprocity detection and routing | `DI-91-063`-class opaque correlation, S2 | **Nobody.** System-side only; never rendered to a handler |
+| A **space-scoped** opaque **party** token, one per party to the case, consumed only by `PS-270-033` axis 5's counter-abuse signal and by the per-reporter measure-triggering ceiling `PS-270-033` names | `DI-91-063`-class opaque correlation, S2 | **Nobody.** System-side only; never rendered to a handler |
 | A **comment-scoped** duplicate key, for `PS-270-022` grouping | `DI-91-063`-class opaque correlation, S2 | The case handler, as an opaque key that answers "these reports concern the same **content**" and nothing else |
 | Whether the reference resolves at all | Boolean, internal | **Nobody.** A non-resolving reference produces the same uniform outcome as any other, per `PS-270-013` |
 
@@ -1115,8 +1176,15 @@ Eight constraints bind the step:
    who sees it will weigh it, which is the outcome `PS-270-021` exists to
    prevent. A token answering "same party" is `PS-270-046`'s prohibited
    correlation delivered without the search. The party token is therefore
-   consumed only by the system, for reciprocity detection and case routing,
-   and never appears in any handler-visible surface.
+   consumed only by the system, and v0.4's stated consumer — "reciprocity
+   detection and routing" — is withdrawn: `PS-270-021` forbids acting on
+   reciprocity, so nothing may consume the token for it. Its consumers are
+   exactly two, both in `PS-270-033`: the axis 5 counter-abuse signal, which
+   counts non-surviving Critical reports against one author within a space,
+   and the per-reporter measure-triggering ceiling, which counts
+   measure-triggering reports by one reporter within a space. Until the
+   ceiling is built, the signal record is the token's only consumer. It never
+   appears in any handler-visible surface.
 
    *What the handler gets instead.* `PS-270-022` duplicate grouping is the one
    legitimate handler-facing need, and it is about the same **content**, not
@@ -1268,7 +1336,9 @@ have been `Actioned` terminates as `Escalated`.
 receives: notice at the point an action or an interim measure lands, stating it
 and the appeal route.**
 
-The notice states which content is affected, what changed, when it took effect,
+The notice states which content is affected, what changed, when it took effect
+— at no finer timing granularity than the `PS-270-054` tombstone carries, so
+the notice hands the author no timestamp the ordinary artifact withholds —
 when an interim measure expires, and how to appeal. It never names or
 characterizes the reporter, never quotes the reporter's submission, never
 states how many reports were made, and never describes any person's
@@ -1280,13 +1350,20 @@ Addressing this notice requires the `PS-270-076` resolution step, which is
 itself unrouted under `OQ-270-009`.
 
 **Dispatch is gated machine-side by the reporter's `PS-270-023` item 4
-election.** Where the reporter declined, no notice is sent and no interim
-measure requiring one is applied. The gate is evaluated by the notification
-path, never by a person, and the election is never visible to a handler — see
-`PS-270-023` item 4 for why recording it on the case was itself a disclosure.
+election.** Where the reporter declined, no notice is sent and no `PS-270-033`
+interim measure is applied. There are two gates and neither is a person: the
+`PS-270-049` enforcement workflow checks the election before it executes an
+interim measure, because the measure is what requires this notice; the
+notification dispatch checks it before sending. A notification path cannot
+prevent a content action — the workflow that would execute the action is what
+refuses it. The election is never visible to a handler; see `PS-270-023` item
+4 for why recording it on the case was itself a disclosure, and for the
+absent-execution-event residual that survives the machine-side gate. Whether
+the election reaches a terminal action or its notice is undefined while
+`OQ-270-006` is open, and this document does not define it.
 
 **Source:** `PS-270-012`; `SG-93-092`; the `RI-93-015` notice-field pattern;
-`PS-270-033`, `PS-270-076`.
+`PS-270-033`, `PS-270-049`, `PS-270-054`, `PS-270-076`.
 
 `PS-270-054` — **A third party whose visible state changes receives only what
 the ordinary rules already allow.**
@@ -1373,10 +1450,10 @@ trigger where it belongs.
 places: `PS-270-033`'s Critical-finding row, and row 2 of the table above,
 which restates it. Both are confined to a Critical finding.** No other
 decision, and no other row of this table, authorizes one — §16.1 check 8
-enforces that mechanically and asserts these two rows positively rather than
-exempting them. §4 does not prohibit suspension, because it is an operations
-action rather than one of the staff powers §4 governs, so nothing else in the
-document would have caught the stale row.
+enforces that mechanically and asserts both authorizing rows positively
+rather than exempting them. §4 does not prohibit suspension, because it is an
+operations action rather than one of the staff powers §4 governs, so nothing
+else in the document would have caught the stale row.
 
 **Source:** CBD-94 §3.6, §3.8; `MON-94-008`; `OP-92-003`; `PS-270-033`,
 `PS-270-077`.
@@ -1588,7 +1665,7 @@ None of these is answered here. Each names the authority that must answer it.
 | --- | --- | --- | --- |
 | `OQ-270-001` | `OP-92-003`'s closed purpose list excludes moderation, so no approved path lets platform-safety staff read stored comment content. Is the reporter-submission-only model in `PS-270-017` the final position, or does `OP-92-003` gain a further purpose class with its own dual approval and notice rules? | CBD-92 is approved and belongs to another package. **Proposed amendment, pending.** | Product Owner and Security, through a focused change to CBD-92 |
 | `OQ-270-002` | May comments ship with business-hours-only coverage for Critical cases, given one operational owner and no named deputy? | A staffing and risk-acceptance decision in CBD-94 §3.6's Critical class, requiring a written accountable-security recommendation | Product Owner, after the CBD-273 qualified input |
-| `OQ-270-003` | **Who holds the `PS-270-077` standing independent reviewer function?** It is continuous and unbounded in volume — a disposition on every Critical, account-level and `PS-270-028` case, a post-use review of every case access and enforcement execution, and every appeal against the operational owner. CBD-273 is a one-time chartered review and is **not** this function; v0.1 wrongly used it as one. The candidates are a second named individual, a retained external reviewer under a standing engagement, or an explicit Product Owner acceptance of the gap with a narrowed scope for what the process may do without it. **The retained-external-reviewer candidate is not free of the `PS-270-038` constraint**: a standing external reviewer sees `DI-91-043` S3 case content including `SG-93-088` safety disclosures, which places that content in a subprocessor's custody and requires the same new Product Owner and privacy approval, subprocessor evidence, access, retention, and deletion rules that `PS-270-038` demands of an outsourced queue. Choosing it is choosing that approval, not avoiding it. Until this is answered, §8, §10 and §13 are not operable, and `PS-270-033` axes 3 and 5 do not function. | `SR-94-069` requires organizational and technical separation, and `OP-92-007` requires an independent post-use reviewer. This document cannot create a person or widen a sibling subtask's charter | Product Owner and Security; a `RG-94-011` readiness input |
+| `OQ-270-003` | **Who holds the `PS-270-077` standing independent reviewer function?** It is continuous and unbounded in volume — a disposition on every Critical, account-level and `PS-270-028` case, a post-use review of every case access and enforcement execution, and every appeal against the operational owner. CBD-273 is a one-time chartered review and is **not** this function; v0.1 wrongly used it as one. The candidates are a second named individual, a retained external reviewer under a standing engagement, or an explicit Product Owner acceptance of the gap with a narrowed scope for what the process may do without it. **The retained-external-reviewer candidate is not free of the `PS-270-038` constraint**: a standing external reviewer sees `DI-91-043` S3 case content including `SG-93-088` safety disclosures, which places that content in a subprocessor's custody and requires the same new Product Owner and privacy approval, subprocessor evidence, access, retention, and deletion rules that `PS-270-038` demands of an outsourced queue. Choosing it is choosing that approval, not avoiding it. Until this is answered, §8, §10 and §13 are not operable, and `PS-270-033` axis 3 does not function (axis 5 depends on `PS-270-071`'s scope, not on this function). | `SR-94-069` requires organizational and technical separation, and `OP-92-007` requires an independent post-use reviewer. This document cannot create a person or widen a sibling subtask's charter | Product Owner and Security; a `RG-94-011` readiness input |
 | `OQ-270-004` | Retention, deletion, redaction, and legal-hold rules for `DI-91-043` case content and `DI-91-063` metadata. | `DI-91-043` records them as unknown and `EG-91-009` owns them. Inventing a period would be a false closure | The `EG-91-009` owner, with legal input where hold or deletion claims are implicated |
 | `OQ-270-005` | A non-user third party named in a comment — a merchant counterparty, an ex-partner, a child — has no account and therefore no intake path. Does one exist, and what would it disclose? | CBD-93 §7.1 records that free text is frequently about someone other than its author; no approved source gives a non-user standing | Product Owner, with privacy and legal input; interacts with `EG-93-002` |
 | `OQ-270-006` | **Does the platform hold any power to remove or withhold an author's content? Proposed amendment, pending.** Not a silence in the sources but a live contradiction between them. **Prohibiting:** `EG-91-009`'s interim position — *"No silent support access, reassignment, or cross-author moderation"* — and `SR-94-067` — *"staff MUST NOT browse content, impersonate, moderate, or infer resource existence."* **Delegating:** permission 11d routes serious abuse, unlawful content, and accidental disclosure to *"a separate platform safety/support process outside budget-space role permissions"*, and `RI-93-008` leaves the *"platform response"* to this document. The amendment sought is a bounded platform content power, scoped to the unlawful-content and Critical classes, shaped by `PS-270-010`, `PS-270-033`, and `PS-270-049`, and recorded as a closure of the moderation limb of `EG-91-009`. Without it the process has no terminal action and `SR-94-074` cannot be satisfied. | `EG-91-009` is the owning gap and is not this package's to close; permission 11d and `DL-76-020` are approved product decisions. Asserting the power here would settle product intent by specification | The Product Owner **and the accountable security decision-maker**, who `EG-91-009` names jointly with CBD-93/94 as its disposition authority |
@@ -1623,48 +1700,86 @@ Named so that Manager can route them to Guard. They are not written here.
    capability is undecided.
 7. `Actioned` is the only `platform-safety-case-outcome` member reachable
    solely through a conditional decision, and §17.2 says so.
-8. **No decision other than `PS-270-033` *authorizes* a suspension, stop, or
-   disabling of a surface, a target, a space, or the product.** Check 5 is
-   blind to this: it tests the §4 prohibited-power list, and §4 does not
+8. **No passage other than two authorizing rows — `PS-270-033`'s
+   Critical-finding row and `PS-270-057` row 2 — *authorizes* a suspension,
+   stop, or disabling of a surface, a target, a space, or the product.** Check
+   5 is blind to this: it tests the §4 prohibited-power list, and §4 does not
    prohibit suspension, because suspension is an operations action rather than
    one of the staff powers §4 governs. This check is what would have caught
    the stale `PS-270-057` row that survived the v0.2 rewrite of `PS-270-033`.
+   `PS-270-057`'s closing paragraph states the same rule in prose; the two
+   must agree.
 
-   **Scanned nouns.** A surface, target, space, or product — and also an
-   **ability**, **capability**, **posting**, **commenting**, or
-   **participation**. The last five are the correction v0.3 needed: its
+   **Scope.** The scan covers decision bodies only: from each `PS-270-*`
+   heading line through the end of its **Source** line. §1, §2, §16 through
+   §19 and this check's own text are outside it, so the example below and the
+   §19 entries that quote the stale row are not hits and need no exemption.
+   v0.4 exempted §19 by row; that row is dropped as unnecessary.
+
+   **What is a hit.** Every sentence or table cell in scope, read with its
+   line wrapping collapsed to single spaces, containing a scanned verb form —
+   *suspend*, *suspends*, *suspended*, *suspending*,
+   *suspension*, *stop*, *stops*, *stopped*, *stopping*, *stop-ship*,
+   *disable*, *disables*, *disabled*, *disabling*. The scan is keyed on the
+   verb, not on the noun, so that it fires on every suspension whatever its
+   object; the nouns that mark an authorization — a **surface**, **target**,
+   **space**, or **product**, and also an **ability**, **capability**,
+   **posting**, **commenting**, or **participation** — are listed so that a
+   reader recognizes one. The last five are the correction v0.3 needed: its
    exemption for "suspending an action, not a surface" would have admitted a
    future decision reading *"the process may suspend the author's ability to
    comment on the target."* That suspends an ability, which is a per-person
    surface suspension, which is exactly the abuser's objective, and axis 1
    forbids it in terms.
 
-   **Exemption 2 is sense-scoped.** It covers the suspension of a *procedural
-   step* — an appeal, a deadline, a timer — and never the suspension of a
-   person's capability.
+   **Every hit must be one of the four positively asserted cells or carry an
+   allowlist entry; any other hit fails the check.** A hit's sense is never
+   inferred. The `PS-270-062` entry below, for example, is exempt because it
+   suspends a *procedural step* — an appeal — and never a person's
+   capability, and that reasoning lives in the allowlist row rather than in a
+   sense rule.
+
+   **Positive assertions, four cells.** These are asserted rather than
+   exempted, because a site exemption at `PS-270-057` is where the v0.2
+   defect lived and a recurrence at the exact site would not have fired:
+
+   * `PS-270-033` trigger table, Critical **case** row **must** contain
+     "Never a target-wide or product-wide suspension" and **must not** contain
+     a surface-stop authorization.
+   * `PS-270-033` trigger table, Critical **finding** row **must** contain
+     "stop the affected release surface".
+   * `PS-270-057` row 1 **must** contain "never a target-, space- or
+     product-wide suspension" and **must not** contain a surface-stop
+     authorization.
+   * `PS-270-057` row 2 **must** contain "stop the affected release surface",
+     and no other row of that table may.
 
    **Exemptions are an explicit allowlist of decision id plus exact quoted
    string, not heuristics**, so that editing an exempted passage re-arms the
-   check rather than silently keeping its exemption:
+   check rather than silently keeping its exemption. A hit is exempt only if
+   it contains the quoted string verbatim. The list is complete for v0.5;
+   every hit in scope not covered by a positive assertion is here:
 
    | Decision | Exact exempted string | Why exempt |
    | --- | --- | --- |
+   | `PS-270-024` | "stop-ship rules are keyed to these four words" | Names CBD-94's rule; authorizes nothing |
+   | `PS-270-033` heading | "Only a Critical *finding* stops a release surface" | Restates the finding row's authorization, which is asserted positively |
+   | `PS-270-033` | "Critical stop-ship rule in one sentence" | History of the withdrawn v0.1 mapping |
+   | `PS-270-033` | "its remedy is stopping a **release surface**" | Describes CBD-94 §3.8's remedy, not this process's |
    | `PS-270-033` axis 1 | "never suspends the reported author's ability to comment" | Prohibitive |
    | `PS-270-033` axis 1 | "never suspends the comment surface for a target, a space, or the product" | Prohibitive |
+   | `PS-270-033` axis 1 | "Only this decision may specify a suspension at all, and only on a Critical finding" | Restricts who may authorize; authorizes nothing itself |
+   | `PS-270-033` axis 3 | "an appeal does not suspend a Critical enforcement action applies to a terminal action, not to this measure" | Procedural step, not a capability |
+   | `PS-270-033` | "declines to apply the release-surface stop-ship rule to case handling" | Records the divergence from CBD-94 §3.8 |
+   | `PS-270-043` | "`AN-92-001` disables product analytics" | Cites an approved analytics control; not an action of this process |
+   | `PS-270-057` heading | "only the finding stops a surface" | Restates row 2, which is asserted positively |
+   | `PS-270-057` | "v0.2 left row 1 of this table saying" | History of the corrected defect; the sentence quotes the stale row |
+   | `PS-270-057` | "the surface-stopping action is moved to its own trigger" | History of the corrected defect |
+   | `PS-270-057` | "A suspension of a surface, target, or space may be authorized in exactly two places" | The prose rule this check enforces |
+   | `PS-270-057` | "§4 does not prohibit suspension, because it is an operations action" | Explanatory prose about the rule |
    | `PS-270-062` | "An appeal does not suspend a terminal Critical enforcement action" | Procedural step, not a capability |
+   | `PS-270-075` item 1a | "would stop being the safe reading of the sources" | Not a suspension of anything |
    | `PS-270-075` item 2 | "suspending a defective surface is an operations action" | Explanatory prose about the rule |
-   | §19 | the v0.3 and v0.4 entries, which quote the stale row they removed | Rewriting them would falsify the record |
-
-   **No site exemption for `PS-270-057`.** v0.3 exempted both its rows, which
-   is where the v0.2 defect lived — a recurrence at the exact site would not
-   have fired. The rows are instead asserted positively:
-
-   * Row 1 **must** contain the prohibitive scope phrasing ("never a target-,
-     space- or product-wide suspension") and **must not** contain a
-     surface-stop authorization.
-   * Row 2's authorization **must** be confined to the Critical-**finding**
-     trigger; an authorization appearing in any other row of that table fails
-     the check.
 
    Per `CLAUDE.md`, this check is not finished until a deliberate violation
    has failed it, and the violation to stage is at a `PS-270-057` row: put a
@@ -1679,7 +1794,12 @@ Named so that Manager can route them to Guard. They are not written here.
 10. The `PS-270-075` remedy set contains no membership, role, or lifecycle
    action, and no customer-facing text restating it — `PS-270-023` item 1,
    `PS-270-048` — reintroduces one. `PS-270-078` is the rule; this is the
-   check that it holds at every restatement site.
+   check that it holds at every restatement site. The same scan covers the
+   `PS-270-078` out-of-scope answer: the text specifying what a person is
+   told when they ask whether such a power exists may not direct them to,
+   name, or describe the product surface that governs a membership, role, or
+   lifecycle power. v0.4's "directs them to the ordinary product surface" is
+   the string that must fail it.
 
 ## 17. Publication, vocabulary, and change control
 
@@ -1861,9 +1981,10 @@ requires explicit authorization for that specific change.
 | `SR-94-067` | Open on its moderation limb. The technical-limitation half is answered by `PS-270-015`; the *"staff MUST NOT ... moderate"* half is honoured by holding the power unheld (`PS-270-075`) and is not closed. |
 | `PS-270-077` standing independent reviewer | **Unfilled.** `OP-92-004`, `OP-92-007`, and `SR-94-069` require it continuously; nobody holds it, so §8, §10, and §13 are not operable, `PS-270-033` axis 3 does not function, and `PS-270-057` row 1 has no authority that exists. `OQ-270-003`. |
 | `PS-270-033` axes 3, 4, 5 | **Not operable.** Appeal needs `PS-270-077`; voice exists only to serve appeal; counter-abuse needs a review `PS-270-071`'s scope does not cover. Axes 1, 2, 6, and 7 hold today. A `RG-94-011` readiness input. |
-| `PS-270-033` serial suppression | **Live unbounded residual, not accepted.** Axis 7 protects one comment; nothing protects the next. Successive reports against successive comments hold a person's contributions invisible on a rolling basis indefinitely. Needs a per-reporter ceiling on measure-triggering reports, distinct from the filing ceiling. Build-time; `RG-94-011` input. |
+| `PS-270-033` serial suppression | **Live unbounded residual, not accepted.** Axis 7 protects one comment; nothing protects the next. Successive reports against successive comments hold a person's contributions invisible on a rolling basis indefinitely. Needs a per-reporter ceiling on measure-triggering reports, distinct from the filing ceiling. Build-time; `RG-94-011` input. A per-reporter ceiling is circumvented by two members alternating reports; that residual travels with the control shape and is not closed. |
+| `PS-270-023` item 4 absent-execution inference | **Residual, not accepted.** The decline election is unobservable, but a Critical decision followed by no execution, notice, or expiry event lets the handler and the `PS-270-050` reviewer infer it. The fixed-field discipline is not extended to those events because the audit stream must say whether a content action occurred. CBD-273 input. |
 | `PS-270-071` scope | **Too narrow for axis 5.** Closed cases, missed targets, and prohibited-power alarms do not include a pattern of non-surviving Critical reports. Extending it, or building a distinct review, is unbuilt. |
-| `PS-270-054` tombstone indistinguishability | **Unverified.** It is a negative test against permission-11c self-removal, and no fixture exists. CBD-272 territory; named in §16.1. |
+| `PS-270-054` tombstone indistinguishability and the `PS-270-033` axis 6 every-path withhold | **Unverified.** Both are negative tests: the tombstone against a permission-11c self-removal, and the withhold against every path that renders or reproduces the comment body — thread, cache, export, digest, search index, notification bodies. No fixture exists for either. CBD-272 territory, not a §16.1 mechanical check. |
 | `RI-93-008` | Unchanged and respected. CBD-271 owns the semantics. |
 | `FU-95-025` | Open. This is the first of its four required pieces. |
 
@@ -1871,6 +1992,7 @@ requires explicit authorization for that specific change.
 
 | Version | Date | Author | Change | Status |
 | --- | --- | --- | --- | --- |
+| 0.5 | September 12, 2026 | Claude | Reviewer request_changes (F1–F7) and Security remediate (F1–F9 plus one observation) on `3726d75`. No Executive question resolved; `OQ-270-001`, `003`, `006`, `009` left open, and the standing rulings on axis 6, the membership remedy and `PS-270-078` untouched. Sites changed, by finding. **Reviewer F1 / Security F3:** `PS-270-075` item 1 "Four remedies" corrected to three. **Reviewer F2 / Security F7:** `PS-270-023` item 4 — "holds structurally" withdrawn; the election is enforced at two machine-side gates, the `PS-270-049` workflow before executing an interim measure and the notification dispatch before sending; "recorded only in the audit stream" replaced by "stored, never rendered"; the absent-execution-event inference stated as a residual with the reason the fixed-field discipline is **not** extended to execution, notice and expiry events (the audit stream must say whether a content action occurred); new §18.5 row. `PS-270-053` gate paragraph rewritten to name both gates and to say a notification path cannot prevent a content action. **Reviewer F3 / Security F8:** §16.1 check 8 reconciled — scope declared decision-bodies-only, the §19 exemption row dropped, the headline changed from "no decision other than `PS-270-033`" to "no passage other than the two authorizing rows", the scan keyed on the verb with the noun list retained as documentation, `PS-270-033`'s two trigger rows added to the positive assertions beside `PS-270-057`'s, the "Exemption 2" reference replaced, and the allowlist completed from an exhaustive scan (eighteen rows, including `PS-270-043`'s "disables product analytics", which nobody had flagged); `PS-270-057`'s prose rule now says both authorizing rows are asserted positively. **Reviewer F4:** `PS-270-078` "any removal" qualified as "any member removal". **Reviewer F5 / Security F4:** axis 5 now says the filing ceiling does not bound the one-target pattern and names the measure-triggering ceiling for a serial campaign; the R2 paragraph drops "wrongly". **Reviewer F6:** `OQ-270-003` says axis 3 only, with axis 5 attributed to `PS-270-071`'s scope. **Reviewer F7:** `PS-270-023` item 4 and `PS-270-053` state that the election's reach over a terminal action or its notice is undefined while `OQ-270-006` is open, and define nothing. **Security F1:** `PS-270-078`'s pointer sentence deleted; the answer is out-of-scope on the `PS-270-064` pattern with no pointer; check 10 scans it and names the v0.4 string that must fail. **Security F2:** axis 6 states the withhold applies on every path that renders or reproduces the comment body and names them — thread, cache, export, digest, search index, in-app and email notification bodies; axis 1 "from display only" corrected; the negative test routed to CBD-272 beside the `PS-270-054` fixture, whose §18.5 row now covers both. **Security F5, second half only:** the two-reporter alternation residual of the per-reporter ceiling named in `PS-270-033`'s R2 paragraph and in §18.5; the measure's enablement precondition is unchanged and remains an Executive question recorded separately. **Security F6:** `PS-270-053`'s "when it took effect" bound to the `PS-270-054` timing granularity. **Security F9:** the party token's v0.4 consumer ("reciprocity detection and routing") withdrawn as contrary to `PS-270-021`; its consumers are `PS-270-033` axis 5's signal and the measure-triggering ceiling, stated in the `PS-270-076` table and constraint 5. **PS-270-013 observation:** cross-reference to axis 6's timing residual added, with the uniformity rule not carved out. Beyond the list: the `PS-270-054` §18.5 row's "named in §16.1" was false (no §16.1 check names it) and is replaced. | Draft; Product Owner approval required, and `EG-93-009` also requires the CBD-272 exercises and the CBD-273 review |
 | 0.4 | September 12, 2026 | Claude | Reviewer request_changes and Security remediate on `40e3146`, plus two Executive rulings. **Ruling 1 — axis 6 reversed.** v0.3 exempted the reporter from the interim measure to close a calibration oracle; the exemption was a worse leak. The measure applies only where a third-party readership exists, `PS-270-053` notifies the author the same business day, and the author then asks one member whether they can still see the comment — whoever says yes is the reporter. v0.3's own mitigating clause, that the asymmetry "must not be inferable by any other reader", is unsatisfiable between people who know each other and is deleted rather than reworked. The measure now withholds from every reader including the reporter; `PS-270-054`'s byte-for-byte indistinguishability extends to the reporter's view; the timing-correlation residual is stated and is the same one already accepted for permission-11c self-removal. Axis 6 renamed **Uniform visibility**. **Ruling 2 — the membership remedy deleted, and `PS-270-078` added.** v0.3 told a reporting Primary Owner that their membership powers remained available, at `PS-270-075` and restated customer-facing at `PS-270-023` and `PS-270-048`: owner-side silencing offered by the safety process as a substitute for the moderation it cannot perform, routing the abuse route back into the role permissions `DL-76-020` and permission 11d put it outside, and strictly worse for the target than the remedy withheld. Deleted at all three sites; new `PS-270-078` forbids the process **proposing** any membership, role, or lifecycle action, which `PS-270-001` never covered because it only forbade taking one. **D2/T3:** the party token is now system-side only — v0.3 attributed a handler-visible "same party" token to `PS-270-021` and `PS-270-046`, which are prohibitions on correlation, not consumers of it; the handler gets a comment-scoped duplicate key for `PS-270-022` instead. **R2:** serial suppression across distinct comments named as a live unbounded residual, unaccepted, with the per-reporter measure-triggering ceiling identified as the control shape. **R3/R4/D4:** check 8 gains ability, capability, posting, commenting and participation as scanned nouns, sense-scopes exemption 2 to procedural steps, replaces the `PS-270-057` site exemption with positive row assertions, moves exemptions to an id-plus-exact-string allowlist, and names the deliberate violation to stage per `CLAUDE.md`; the §12 prose rule corrected to admit row 2. **R5:** the decline election moved off the case record to the notification dispatch, machine-enforced, never handler-visible, audited under the fixed-field-set discipline — recording it on the case was itself an `SG-93-088`-substance disclosure. **T4:** destination held for one dispatch, never persisted joinably, never reused. **D3:** axis arithmetic corrected — four hold, one partly, two not. No approved source amended; `OQ-270-001`, `003`, `006`, `009` left open. | Draft; Product Owner approval required, and `EG-93-009` also requires the CBD-272 exercises and the CBD-273 review |
 | 0.3 | September 12, 2026 | Claude | Independent review and security assessment of `654c18c` returned request_changes and remediate, converging on one central defect. **Critical:** `PS-270-057` row 1 still ordered *"Stop the affected surface"* on a Critical case, citing `PS-270-033` as authority while `PS-270-033` had been rewritten in v0.2 to forbid it — and §12 is the runbook a handler actually reads, so the stale row was the operative instruction. Suspension is an operations action, so `OQ-270-006` did not gate it and no conditional marker covered it: the one outcome an abuser most wants was the one action §12 mandated. Row 1 rewritten to the interim measure and marked conditional at row level; surface-stopping moved to its own Critical-**finding** row, correctly unmarked; the stale `PS-270-036` authority corrected to the unfilled `PS-270-077`; new §16.1 check 8 added, because check 5 tests the §4 power list and §4 does not prohibit suspension. **B6/N2:** `PS-270-033`'s five axes presented as live bounds when three are not; now seven axes with an enforceability column, and axes 3, 4, 5 marked not operable with the reason. `PS-270-025`'s "safe because `PS-270-033` bounds" claim withdrawn as unsupported. **B2:** interim measure now withholds from every reader **except the reporter**, closing the real-time Critical-grading confirmation; reader-count condition added — below a threshold the measure protects nobody while delivering full silencing value. **B4:** non-refiring rule added as axis 7. **B5:** `PS-270-023` now lets a reporter decline any measure that notifies the reported author, with no effect on handling or severity, because in a two-person space `PS-270-012` is nominal and a same-day notice reaches a cohabiting abuser. **M1:** `PS-270-075` enumerates the four remedies that survive the absent content power, restated at `PS-270-023` and `PS-270-048`. **M2:** `PS-270-075` now carries the forcing function — comments do not ship while `OQ-270-006` is open. **T1/T2/N3:** `PS-270-076` gated on the reporter's read check, failing check indistinguishable from non-resolution; counterparty token derived per space with the cross-space counter-abuse cost stated; audit record given a fixed field set and an exhaustive prohibited-field list; unenforceability recorded. **Also:** `PS-270-054` tombstone indistinguishability as a negative test; `PS-270-023`/`024` warn that describing a safety situation raises severity but buys no content action; `OQ-270-003` cross-references `PS-270-038` subprocessor custody; §1.1 pins the CBD-94 verification inventory. **N4:** the §18.1 stability claim corrected — numbers are stable, text is versioned. No approved source amended; `OQ-270-001`, `003`, `006`, `009` left open. | Draft; Product Owner approval required, and `EG-93-009` also requires the CBD-272 exercises and the CBD-273 review |
 | 0.2 | September 12, 2026 | Claude | Independent review of `01a8eac` returned five blockers; all five are addressed. **F1:** v0.1 recorded the platform content power as a silence in the sources. It is a contradiction between them. Added `PS-270-075` quoting `EG-91-009`'s interim prohibition on cross-author moderation and `SR-94-067`'s *"staff MUST NOT ... moderate"* — the half of a row this document cited five times while quoting only its technical-limitation clause — against permission 11d's explicit routing of serious abuse to this process and `RI-93-008`'s delegation of the platform response. Restated `OQ-270-006` as a proposed amendment naming `EG-91-009` as the owning gap and the accountable security decision-maker alongside the Product Owner. Marked `PS-270-010`, `PS-270-033`, `PS-270-049`, `PS-270-053`, `PS-270-060`, `PS-270-062`, `PS-270-063` conditional, and flagged the `Actioned` vocabulary member. Added permission 11d to §1.1. **F2:** `PS-270-047`'s "nothing else is read" contradicted three of this document's own decisions; corrected, and added `PS-270-076` specifying the minimum machine-mediated resolution step, its four data classes, its four constraints, and that it narrows `OP-92-001` without authorization — routed at the new `OQ-270-009`. **F3:** withdrew the mapping of an individual abuse case onto CBD-94 §3.8's Critical stop-ship rule, which is scoped to a *finding* about a control stopping a *release surface*. Rewrote `PS-270-033` to separate Critical case from Critical finding and to bound the interim measure on scope, duration, appeal, voice, and counter-abuse, closing the one-submission silencing path that `PS-270-025`'s fail-upward rule opened. Recorded the divergence rather than hiding it. **F4:** downgraded `CBD-270-AC02` to Met in part with the residue routed. **F5:** added `PS-270-077` separating the continuous independent-reviewer function from CBD-273's one-time chartered review, which v0.1 conflated and would have silently widened; the standing function is unfilled and `OQ-270-003` now asks who holds it. Three decisions appended at the next free numbers rather than renumbering, so `PS-270-001`–`074` keep their v0.1 meanings. No approved source amended. | Draft; Product Owner approval required, and `EG-93-009` also requires the CBD-272 exercises and the CBD-273 review |
