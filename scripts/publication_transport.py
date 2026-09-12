@@ -166,6 +166,19 @@ class WorkflowHistory:
                         or job.get("name") != "Approved merged documentation publication"
                         or not isinstance(job.get("steps"), list)):
                     raise PublicationError("invalid-publication-attempt-evidence")
+                # A run cancelled before its job executed anything carries an
+                # empty steps array. Verified against run 34046106132, cancelled
+                # one second after starting when a force-push superseded it:
+                # completed/cancelled, steps=[]. Nothing ran, so nothing was
+                # written. Treating that as incomplete evidence would block every
+                # later run behind an error with no reconciliation path, which is
+                # what superseding a queued run would otherwise do. Only this exact
+                # shape is safe: a failed job with no steps still needs a look, and
+                # a cancelled job that did execute steps falls through to the
+                # uncertain-attempt gate like any other.
+                if (job.get("status") == "completed" and job.get("conclusion") == "cancelled"
+                        and job["steps"] == []):
+                    continue
                 steps = [step for step in job["steps"] if isinstance(step, dict)
                          and step.get("name") == "Publish approved selected documents"]
                 if len(steps) != 1:

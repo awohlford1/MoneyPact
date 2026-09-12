@@ -191,7 +191,15 @@ deliberate change requires review of the corresponding contract pin and tests.
 
 ## Reconciliation, failures and recovery
 
-Runs are serialized without cancellation. The effective Base is the most recent
+A run that has started is never cancelled, including one parked at the
+environment gate. Runs still queued behind it are superseded: GitHub keeps only
+the newest pending run for the group and cancels older ones before they execute
+a step, leaving `completed/cancelled` with an empty steps array. The recovery
+gate recognises that exact shape as safe, because nothing ran. A cancelled job
+that did execute steps is still an uncertain attempt and still needs an owner
+reconciliation, and a failed job with no steps is still missing evidence. The
+newest run publishes from current `main`, which contains everything the
+superseded ones would have. The effective Base is the most recent
 successful ancestral publication head, initially `bootstrap_sha`; it is not
 simply the current push's `before`. Coalesced runs and failures before the
 publication step can recover automatically. An overtaken older run is a no-op
