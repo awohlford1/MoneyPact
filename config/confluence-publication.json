@@ -1162,8 +1162,8 @@
     {
       "path": "docs/cbd-73-exhaustive-review-findings.md",
       "disposition": "registered",
-      "rationale": "Registered legacy target is held because its current status does not establish approval for this exact automated publication.",
-      "authority": "Repository status record in docs/cbd-73-exhaustive-review-findings.md; existing page identity from scripts/sync-confluence.py.",
+      "rationale": "Existing approved document; its status record reads Remediation verified v1.0.1. The bootstrap-era hold predated that status and was never revisited. The live page already matches this source, so approval publishes nothing and unblocks the documents that depend on it.",
+      "authority": "Repository status record in docs/cbd-73-exhaustive-review-findings.md (the August 18, 2026 Product Owner decisions); Product Owner approved lifting the hold on September 11, 2026 after every run since PR #266 failed baseline-awaits-approval on this target's dependents.",
       "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
       "target": "cbd-73-review-findings",
       "page_id": "11468801",
@@ -1173,8 +1173,8 @@
       "depends_on": [
         "cbd-73-test-inventory"
       ],
-      "policy": "held",
-      "approved_sha256": null
+      "policy": "approved",
+      "approved_sha256": "d6f3a20ed42ce1edd12638d0b0c93e59e4a19ca38f0f6a4f27cc2cd5584687db"
     },
     {
       "path": "docs/cbd-73-invitation-consent-lifecycle-specification.md",
@@ -1438,8 +1438,8 @@
     {
       "path": "docs/cbd-94-exhaustive-review-findings.md",
       "disposition": "registered",
-      "rationale": "Registered legacy target is held because its current status does not establish approval for this exact automated publication.",
-      "authority": "Repository status record in docs/cbd-94-exhaustive-review-findings.md; existing page identity from scripts/sync-confluence.py.",
+      "rationale": "Existing approved document; its status record reads Accepted v1.0 with all seven findings closed. The bootstrap-era hold predated that status and was never revisited. The live page already matches this source, so approval publishes nothing and unblocks the documents that depend on it.",
+      "authority": "Repository status record in docs/cbd-94-exhaustive-review-findings.md (CBD-94 v1.0 approved August 16, 2026); Product Owner approved lifting the hold on September 11, 2026 after every run since PR #266 failed baseline-awaits-approval on this target's dependents.",
       "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change.",
       "target": "cbd-94-review-findings",
       "page_id": "9633793",
@@ -1449,8 +1449,8 @@
       "depends_on": [
         "cbd-94-verification-inventory"
       ],
-      "policy": "held",
-      "approved_sha256": null
+      "policy": "approved",
+      "approved_sha256": "74389c4fb030dd217b332c5c17dd39eb2eb3f7074c3b4112495cbec9a3098ed5"
     },
     {
       "path": "docs/cbd-94-risk-mitigation-requirement-register.md",
