@@ -1,0 +1,120 @@
+name: Holiday coverage horizon
+
+# CBD-250 / CBD-98. The Federal Reserve holiday dataset in
+# packages/budget-domain/src/schedule/business-day.ts is verified through a
+# fixed year, and business-day adjustment refuses -- correctly and loudly --
+# for any year past it. The refusal is silent until the day it is not, so this
+# runs on a clock rather than only on a change: nothing has to happen in the
+# repository for coverage to run out. Time passing is the whole risk.
+#
+# A separate workflow rather than a step in ci.yml on purpose. ci.yml answers
+# "is this pull request sound"; a pull request in 2029 cannot be blocked
+# because a calendar needs extending, and a repository with no pull requests
+# for six months still needs the warning. Different question, different clock,
+# different workflow.
+
+on:
+  # Monthly. Coverage is measured in years, so a daily run would add noise
+  # without shortening the warning by anything that matters. The 1st at 09:00
+  # UTC is inside a European working morning; GitHub delays scheduled runs
+  # under load, which is acceptable for a signal with a multi-year lead time
+  # (LEAD_TIME_YEARS in scripts/check-holiday-coverage.py -- do not restate
+  # its value here; that is exactly the drift CBD250-CORRECTION-002 fixed).
+  schedule:
+    - cron: "0 9 1 * *"
+  # And immediately on any change to the calendar or to the guard reading it,
+  # so an extension is confirmed at the moment it is made rather than up to a
+  # month later, and so a guard edited into uselessness is caught by itself.
+  push:
+    paths:
+      - "packages/budget-domain/src/schedule/business-day.ts"
+      - "scripts/check-holiday-coverage.py"
+      - "scripts/test_check_holiday_coverage.py"
+      - ".github/workflows/holiday-coverage.yml"
+  # No inputs, deliberately. The guard's --year and --source flags exist for
+  # local diagnosis; exposing either here would put a "make it green" button
+  # next to the alarm.
+  workflow_dispatch:
+
+# Read-only, and no configured secrets anywhere in this file. The check reads
+# the calendar out of the checkout and, for one condition, a base commit's
+# blob via local, read-only git -- nothing written, nothing to authenticate
+# to. The only credential in play is the job's own read-only GITHUB_TOKEN,
+# which actions/checkout uses to clone and does not persist
+# (persist-credentials: false). No repository secret is referenced, so there
+# is none to leak (CBD-250-AC03).
+permissions:
+  contents: read
+
+concurrency:
+  group: holiday-coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  horizon:
+    name: Federal Reserve holiday coverage horizon
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the calendar source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Full history, not the default depth-1 shallow clone. Depth 1 has
+          # nothing before HEAD to diff against, which is exactly what made
+          # verified_on_moves_with_the_bounds a silent no-op on push before
+          # CBD250-CORRECTION-003: no history in, "clean" out, regardless of
+          # what actually changed.
+          fetch-depth: 0
+
+      # Only meaningful on push: the ref to compare against is the commit the
+      # push moved from, or -- when there is none (a brand-new branch, so
+      # github.event.before is the all-zero SHA) -- the merge-base with the
+      # default branch. Named here rather than resolved inside the guard so
+      # the guard itself stays testable with a plain --base-ref string.
+      - name: Determine the base ref for this push
+        if: github.event_name == 'push'
+        id: base
+        # Contexts reach the shell through env, never through ${{ }} inside
+        # the script: a branch or SHA value is data, and inline expression
+        # substitution happens before bash parses the line.
+        env:
+          BEFORE: ${{ github.event.before }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          zero="0000000000000000000000000000000000000000"
+          if [ "$BEFORE" = "$zero" ]; then
+            base="$(git merge-base HEAD "origin/$DEFAULT_BRANCH")"
+          else
+            base="$BEFORE"
+          fi
+          echo "ref=$base" >> "$GITHUB_OUTPUT"
+
+      # The guard before the thing it guards. These tests break the calendar
+      # deliberately in a temp directory and prove each condition is the only
+      # thing catching its fixture; if they fail, a green horizon step below
+      # would mean nothing. No dependency install: the runner's python3, the
+      # standard library, and the runner's git (which the baseline tests
+      # drive) are the whole toolchain.
+      - name: Prove the guard still fails on a broken calendar
+        run: python3 scripts/test_check_holiday_coverage.py
+
+      # Exits non-zero while the first uncovered year is still within the
+      # recorded lead time. A red run here is the notification: GitHub emails
+      # the repository owner on a failed scheduled run, and the failure is
+      # visible on the Actions tab and in the commit status for a push.
+      #
+      # A push run passes the base ref resolved above, so
+      # verified_on_moves_with_the_bounds compares against the state before
+      # this push and an unreadable base ref is a finding. A schedule or
+      # workflow_dispatch run has no push to diff, so it declares that up
+      # front with --no-baseline-check instead of guessing at a baseline.
+      - name: Check the coverage horizon
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            python3 scripts/check-holiday-coverage.py --verbose --base-ref "${{ steps.base.outputs.ref }}"
+          else
+            python3 scripts/check-holiday-coverage.py --verbose --no-baseline-check
+          fi
