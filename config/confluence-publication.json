@@ -1598,6 +1598,13 @@
       "rationale": "secret-scanning is held repository-only because no approved page target is registered; this task does not create pages.",
       "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy.",
       "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-168-budget-domain-consumption-contract.md",
+      "disposition": "unpublished",
+      "rationale": "CBD-168 decision record held repository-only because no approved Confluence target is registered for it; this change does not create pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy, matching the docs/architecture.md precedent already in this manifest.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
     }
   ],
   "retained_pages": []
