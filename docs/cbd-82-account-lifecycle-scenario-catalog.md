@@ -2,14 +2,14 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft v0.1 — Product Owner review and approval required. Rule-level expectations only; deterministic fixtures are test-design scope under `OI-82-002`** |
-| Document version | 0.1 |
+| Status | **Draft v0.2 — Product Owner review and approval required. Rule-level expectations only; deterministic fixtures are test-design scope under `OI-82-002`** |
+| Document version | 0.2 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-82](https://cobudget.atlassian.net/browse/CBD-82) |
 | Parent | [CBD-22](https://cobudget.atlassian.net/browse/CBD-22) |
 | Governing model | `docs/cbd-82-financial-profile-and-account-ownership-model.md` |
 | Traceability | `docs/cbd-82-acceptance-criteria-traceability.md` |
-| Last updated | September 3, 2026 |
+| Last updated | September 12, 2026 |
 
 ## 1. What these scenarios are
 
@@ -21,7 +21,7 @@ Every negative scenario exists because the model would otherwise be untestable i
 
 Every scenario belongs to exactly one family and maps to at least one criterion in the traceability record. A new scenario must not create an observable distinction the isolation rules forbid.
 
-This draft contains **46 scenarios** in seven families.
+This draft contains **59 scenarios** in nine families. v0.2 added the `CORR` and `DERIV` families, which cover the correction, retry, cache, count, and lost-revocation outcomes the v0.1 traceability record claimed and the catalog did not contain.
 
 ## 3. Scenario inventory
 
@@ -106,6 +106,29 @@ This draft contains **46 scenarios** in seven families.
 | `DEL-82-T03` | Customer copy describes what unlinking removes | It never promises removal of permitted immutable provenance or of anything a recipient already holds | `DR-82-03` |
 | `DEL-82-T04` | A retained field is examined for its basis | It carries a purpose, audience, sensitivity, and a retention rule or a named gate | `DR-82-01` |
 
+### 3.8 Correction, retry, and repair — CORR, 7 scenarios
+
+| ID | Scenario | Expected outcome | Source |
+| --- | --- | --- | --- |
+| `CORR-82-T01` | A contributor judges a live projection wrong and removes their own source | It separates without any other contributor's permission, and no other contributor learns why | `CR-82-01` |
+| `CORR-82-T02` | A Primary Owner dissolves a projection they judge wrong | It dissolves in their space only; no connection, provenance, or profile-local canonicalization is touched | `CR-82-02`, `AU-82-04` |
+| `CORR-82-T03` | A Primary Owner attempts to split a canonical account inside a member's profile | Denied. Only the profile subject may correct a canonicalization | `CR-82-03` |
+| `CORR-82-T04` | The provider redelivers the same event three times | At most one observation exists and no derived value is counted twice | `CR-82-05` |
+| `CORR-82-T05` | A provider retry arrives after the connection was revoked | Recorded as historical against that connection; no link, account, or projection reactivates | `CR-82-06`, `PB-82-04` |
+| `CORR-82-T06` | The provider corrects a transaction already attributed to a closed period | A later observation supersedes the earlier one, neither is edited or deleted, and derived values recompute deterministically | `CR-82-07`, `FD-82-021` |
+| `CORR-82-T07` | A space withdraws its own non-association decision | The refusal lifts; no projection forms until the full `AS-82-05` confirmation path runs again | `CR-82-08` |
+
+### 3.9 Derived state, cache, and revocation — DERIV, 6 scenarios
+
+| ID | Scenario | Expected outcome | Source |
+| --- | --- | --- | --- |
+| `DERIV-82-T01` | A link is removed while a cached space report still holds its values | The cache is invalidated in the same atomic commit; no stale value is ever served | `DS-82-01` |
+| `DERIV-82-T02` | A read arrives holding a cache entry built under a superseded link version | The entry is discarded and the read resolves against the current version | `DS-82-02`, `LK-82-03` |
+| `DERIV-82-T03` | A space's search results, suggestions, and counts are examined after an unlink | None of them differ from a space where the account never existed | `DS-82-03`, `ISO-82-T01` |
+| `DERIV-82-T04` | The provider never confirms a revocation | The connection does not reach `revoked`, the not-syncing marker applies immediately, the discrepancy is audited, and the authorizer is told | `DS-82-04`, `DS-82-05` |
+| `DERIV-82-T05` | A lifecycle recomputation runs twice | The second run yields the same result and emits no second notice | `DS-82-06` |
+| `DERIV-82-T06` | A recomputation would reunite two accounts the subject previously split | It stops and requires `CR-82-03` confirmation or materially new approved evidence | `DS-82-07`, `AS-82-08` |
+
 ## 4. Family totals
 
 | Family | Scenarios |
@@ -117,10 +140,13 @@ This draft contains **46 scenarios** in seven families.
 | LIFE | 8 |
 | ISO | 7 |
 | DEL | 4 |
-| **Total** | **46** |
+| CORR | 7 |
+| DERIV | 6 |
+| **Total** | **59** |
 
 ## 5. Revision history
 
 | Version | Date | Author | Change | Approval |
 | --- | --- | --- | --- | --- |
+| 0.2 | September 12, 2026 | Claude with Alexander Wohlford as Product Owner | Added the `CORR` and `DERIV` families, 13 scenarios, taking the catalog to 59 in nine families. They cover the correction rights, provider retry and redelivery, correction observations, cache invalidation, search and count residue, lost revocation, idempotent recomputation, and silent re-merge that the v0.1 traceability record claimed against `PB-82-06`, `LC-82-04`, and `PB-82-05` without a scenario or a rule behind any of them. The seven original families are unchanged. | Draft; Product Owner review required |
 | 0.1 | September 3, 2026 | Claude with Alexander Wohlford as Product Owner | Initial catalog. 46 rule-level scenarios in seven families, weighted toward the negative cases the isolation rules exist to make testable. Deterministic fixtures remain test-design scope under `OI-82-002`. | Draft; Product Owner review required |
