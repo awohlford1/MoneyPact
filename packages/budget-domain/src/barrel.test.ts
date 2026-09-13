@@ -11,15 +11,29 @@
  * coverage until someone remembered to add it — reintroducing exactly the
  * "rely on remembering" weakness this file exists to remove.
  *
- * Coverage is runtime values only. Type-only exports do not exist at runtime and
- * cannot be enumerated this way, so a forgotten `export type` still slips
- * through. That gap is narrower than the one being closed, and is tracked in
- * CBD-96 rather than implied away.
+ * Runtime values are checked against the public package subpath consumers load.
+ * Type-only declarations are checked from the TypeScript syntax tree below.
+ * The public/private rule is structural: every declaration exported by a
+ * non-test source module is public-required; an intentionally private helper
+ * must omit `export`. That prevents private declarations from becoming false
+ * positives without maintaining an exception list that can drift.
  */
 
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { describe, it } from "node:test";
+
+import * as incomeBarrel from "@cobudget/budget-domain/income";
+import * as scheduleBarrel from "@cobudget/budget-domain/schedule";
+import * as sharedBarrel from "@cobudget/budget-domain/shared";
+import * as targetsBarrel from "@cobudget/budget-domain/targets";
+
+import {
+  missingRuntimeExports,
+  missingTypeExports,
+  runtimeDiagnostic,
+  typeDiagnostic,
+} from "../scripts/public-export-guard.mjs";
 
 interface BarrelGroup {
   readonly label: string;
@@ -45,6 +59,12 @@ function barrelGroups(): readonly BarrelGroup[] {
 }
 
 const GROUPS = barrelGroups();
+const PUBLIC_BARRELS: Readonly<Record<string, Record<string, unknown>>> = {
+  income: incomeBarrel,
+  schedule: scheduleBarrel,
+  shared: sharedBarrel,
+  targets: targetsBarrel,
+};
 
 describe("barrel discovery", () => {
   it("finds at least one barrel directory", () => {
@@ -79,9 +99,8 @@ function sourceModulesIn(directory: URL): readonly string[] {
 
 for (const group of GROUPS) {
   const fileNames = sourceModulesIn(group.directory);
-  const barrel: Record<string, unknown> = await import(
-    new URL("index.ts", group.directory).href
-  );
+  const barrel = PUBLIC_BARRELS[group.label];
+  assert.ok(barrel, `no public package import is registered for ${group.label}`);
 
   describe(`${group.label} barrel`, () => {
     it("has at least one module to check", () => {
@@ -95,13 +114,33 @@ for (const group of GROUPS) {
         const module: Record<string, unknown> = await import(
           new URL(fileName, group.directory).href
         );
-        const missing = Object.keys(module)
-          .filter((name) => !(name in barrel))
-          .sort();
+        const missing = missingRuntimeExports(module, barrel);
         assert.deepEqual(
           missing,
           [],
-          `${fileName} exports ${missing.join(", ")} which ${group.label}/index.ts does not re-export`,
+          runtimeDiagnostic(fileName, group.label, missing),
+        );
+      });
+    }
+  });
+}
+
+for (const group of GROUPS) {
+  const fileNames = sourceModulesIn(group.directory);
+  const barrelFile = new URL("index.ts", group.directory);
+
+  describe(`${group.label} type barrel`, () => {
+    for (const fileName of fileNames) {
+      it(`re-exports every public type of ${fileName}`, () => {
+        const missing = missingTypeExports(
+          readFileSync(new URL(fileName, group.directory), "utf8"),
+          readFileSync(barrelFile, "utf8"),
+          `./${fileName}`,
+        );
+        assert.deepEqual(
+          missing,
+          [],
+          typeDiagnostic(fileName, group.label, missing),
         );
       });
     }
@@ -124,6 +163,7 @@ describe("package entry points", () => {
       Object.keys(packageJson.exports).sort(),
       GROUPS.map((group) => `./${group.label}`),
     );
+    assert.deepEqual(Object.keys(PUBLIC_BARRELS).sort(), GROUPS.map((group) => group.label));
     assert.equal(Object.hasOwn(packageJson.exports, "."), false, "no root entry point");
   });
 });
