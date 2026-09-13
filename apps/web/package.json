@@ -8,9 +8,11 @@
     "start": "next start",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
   },
   "dependencies": {
+    "@cobudget/budget-domain": "*",
     "next": "16.3.4",
     "react": "19.2.8",
     "react-dom": "19.2.8"

@@ -1,6 +1,16 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
+import { periodIncome } from "@cobudget/budget-domain/income";
+import {
+  setupPreview,
+  validateCadenceDefinition,
+  weeklyMonthlyBoundaries,
+  type WeeklyOrMonthlyDefinition,
+} from "@cobudget/budget-domain/schedule";
+import { toISODate } from "@cobudget/budget-domain/shared";
+import { fullPeriodTargets, type BaseTargetSet } from "@cobudget/budget-domain/targets";
+
 import { Alert } from "../../components/Alert";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
@@ -92,6 +102,47 @@ const ROWS = [
   { name: "Groceries", role: "Category", count: 12 },
   { name: "Utilities", role: "Category", count: 4 },
 ];
+
+function monthlyPreviewDefinition(): WeeklyOrMonthlyDefinition {
+  const result = validateCadenceDefinition({
+    cadence: "monthly",
+    anchor: { kind: "day-of-month", day: 1 },
+  });
+  if (!result.ok || result.value.cadence !== "monthly") {
+    throw new Error("The foundation monthly schedule fixture must be valid.");
+  }
+  return result.value;
+}
+
+const PREVIEW_DATE = toISODate("2026-09-12");
+const PREVIEW_DEFINITION = monthlyPreviewDefinition();
+const PREVIEW_PERIODS = setupPreview(
+  weeklyMonthlyBoundaries(PREVIEW_DEFINITION),
+  PREVIEW_DATE,
+);
+const PREVIEW_TARGETS: BaseTargetSet = {
+  cadence: "monthly",
+  currency: "USD",
+  targets: [
+    { categoryId: "groceries", amountMinorUnits: 60_000 },
+    { categoryId: "utilities", amountMinorUnits: 24_000 },
+  ],
+};
+const PREVIEW_ROWS = PREVIEW_PERIODS.map((period) => {
+  const targets = fullPeriodTargets(PREVIEW_TARGETS, PREVIEW_DEFINITION.cadence, period);
+  const [income] = periodIncome([period], [], [], { asOf: PREVIEW_DATE, links: [] });
+  return {
+    period: `${period.start} to ${period.end}`,
+    target: targets.reduce((total, target) => total + target.amountMinorUnits, 0) / 100,
+    income: (income?.expectedMinorUnits ?? 0) / 100,
+  };
+});
+
+const PREVIEW_COLUMNS = [
+  { key: "period", label: "Period" },
+  { key: "target", label: "Targets", numeric: true },
+  { key: "income", label: "Expected income", numeric: true },
+] as const;
 
 export default function Foundation() {
   return (
@@ -264,6 +315,13 @@ export default function Foundation() {
             <Table caption="Error" columns={COLUMNS} rows={[]} error="Categories could not be loaded." />
           </>
         )}
+      </Section>
+
+      <Section
+        title="Budget-domain schedule preview"
+        note="A deterministic review fixture consumed through the package's four public subpaths."
+      >
+        {() => <Table caption="Monthly budget preview" columns={PREVIEW_COLUMNS} rows={PREVIEW_ROWS} />}
       </Section>
     </main>
   );
