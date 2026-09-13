@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | **Proposed — architecture contract for implementation and independent Security review** |
-| Document version | 0.2.1 |
+| Document version | 0.2.2 |
 | Jira subtask | [CBD-191](https://cobudget.atlassian.net/browse/CBD-191) |
 | Parent | [CBD-21](https://cobudget.atlassian.net/browse/CBD-21) |
 | Repository baseline | `a6c13d2` |
@@ -415,9 +415,12 @@ events missed during transport outage, and is itself configured frequently
 enough to remain inside the same end-to-end target. No cause is marked globally
 complete merely because the application epoch bump committed.
 
-**`OQ-191-001` (Product decision: zero memberships).** Ordinary role/scope
-narrowing does not revoke the session because CBD-236 re-evaluates it live.
-Two cheap branches are designed for the unresolved zero-membership case:
+**`OQ-191-001` (Product decision: zero memberships) — DECIDED, branch B.**
+The Executive selected branch B on September 13, 2026 (records/decisions
+`CBD191-ZERO-MEMBERSHIP-001`): losing the last membership does not end
+authenticated standing. Ordinary role/scope narrowing does not revoke the
+session because CBD-236 re-evaluates it live. Both branches stay recorded so
+the rejected one is not rediscovered:
 
 * **A — zero memberships ends authenticated standing:** the transaction that
   revokes the last membership also enqueues `permission_loss`, bumps the
@@ -532,8 +535,13 @@ called is insufficient: `CT-191-012` proves every affected device can no
 longer mint a session, or that each remaining artifact expires inside the hard
 bound.
 
-**`OQ-191-003` (Executive risk decision: global provider invalidation).** Two
-activation branches are defined:
+**`OQ-191-003` (Executive risk decision: global provider invalidation) —
+CONDITIONALLY DECIDED.** Recorded on September 13, 2026 as
+`CBD191-PROVIDER-BOUND-001`: if activation evidence shows branch A is
+unavailable, the Executive accepts branch B's hard provider-session lifetime
+bound — the shortest the provider supports and inside `CBD-191-AC06`'s limit —
+as the residual risk for non-participating devices, revisited at activation.
+Two activation branches are defined:
 
 * **A — provider operation available:** configure and authenticate the
   server-side global invalidation API, prove binding/environment scope and
@@ -684,9 +692,9 @@ retain configuration or provider evidence named above.
 
 | ID | Question or finding | Consequence |
 | --- | --- | --- |
-| `OQ-191-001` (Product decision) | Does zero memberships end authenticated standing (branch A), or does profile-level standing remain while CBD-236 denies space access (branch B)? Ordinary role/scope narrowing is non-revoking in either branch. | Selects whether the last-membership transaction bumps the subject epoch and retires delegations. |
+| `OQ-191-001` (Product decision — decided: branch B, `CBD191-ZERO-MEMBERSHIP-001`) | Does zero memberships end authenticated standing (branch A), or does profile-level standing remain while CBD-236 denies space access (branch B)? Ordinary role/scope narrowing is non-revoking in either branch. | Selects whether the last-membership transaction bumps the subject epoch and retires delegations. |
 | `OQ-191-002` (Security/Executive) | Cognito's real security-event delivery mechanism and authenticity proof are undecided; no live tenant exists to observe one under `PROVIDERS-LOCAL-001`. | Blocks the provider-only half of AC05/AC06 traceability and the real adapter's §6.2 authenticity check. |
-| `OQ-191-003` (Executive risk decision if needed) | Can Cognito supply branch A server-side global invalidation, or branch B a proven hosted-session lifetime no greater than `PR-94-001`? | If neither is supportable, activation is blocked absent explicit Executive acceptance of the exact residual risk; current-browser logout cannot substitute. |
+| `OQ-191-003` (Executive risk decision — conditionally accepted, `CBD191-PROVIDER-BOUND-001`) | Can Cognito supply branch A server-side global invalidation, or branch B a proven hosted-session lifetime no greater than `PR-94-001`? | If neither is supportable, activation is blocked absent explicit Executive acceptance of the exact residual risk; current-browser logout cannot substitute. |
 | `OQ-191-004` (Manager routing) | Which package owns the fixed delegation-retirement port in §7? | Design behavior is fixed, but implementation integration cannot close until a single writer is assigned. |
 | `OQ-191-005` (cross-contract finding) | CBD-236 v0.4 §4.1/§4.2 assigns API `assurance.*` provenance to `idp_evidence`, while CBD-191 persists the validated evidence on the session row. | CBD-236 must either define persisted server-attested IdP evidence as `idp_evidence` or amend provenance to `session_store`; CBD-191 does not silently choose. |
 | `OQ-191-006` (finding, coordination) | `SessionStorePort` (§3.4) assumes CBD-246 supports environment-scoped statements alongside its budget-space-tenant-scoped ones; CBD-246 is not yet a merged contract. | May require a CBD-246 seam extension or a separate session-store module once CBD246-IMPL-001's actual shape is known. |
@@ -696,6 +704,7 @@ retain configuration or provider evidence named above.
 
 | Version | Date | Author | Change | Disposition |
 | --- | --- | --- | --- | --- |
+| 0.2.2 | September 13, 2026 | Manager, in the merge lane | Executive decisions applied: `OQ-191-001` decided as branch B (`CBD191-ZERO-MEMBERSHIP-001`); `OQ-191-003` conditionally accepted (`CBD191-PROVIDER-BOUND-001`). Question text and both branches retained; no mechanism changed. | Proposed. |
 | 0.2.1 | September 13, 2026 | Manager, in the merge lane | Review closures on v0.2: the `authentication` rotation cause requires the current row's subject to equal the resolved subject, a mismatch forcing `account_switch` (Security `MQ-191-SEC-006`, answered: force the explicit switch, never silently end a foreign row); the same rule added to §5.3's fence; the bound-context branch marked v0.3-blocked exactly like `recovery` so §11 AC03 reads consistently (Reviewer clarity finding). No other text changed. | Proposed; Reviewer approve and Security remediate-closed at this revision. |
 | 0.2 | September 12, 2026 | Architecture specialist, dispatched under `CBD191-ARCH-002 v1` | Correction round for Review `CBD191-REVIEW-001` and Security `CBD191-SECURITY-001`: finding-to-line map follows this table. | Proposed; fresh independent Review and Security review required. |
 | 0.1 | September 12, 2026 | Architecture specialist, dispatched under `CBD191-ARCH-001 v1` | Initial session schema, opaque identifier/store, cookie/lifetime configuration, session-generation counter, two-way revocation (application- and provider-initiated), provider-held-artifact bounding, customer-state clearing, test obligations, and AC traceability, consuming CBD-190 v0.3 and CBD-236 v0.4. | Proposed; independent Review and Security review required. |
