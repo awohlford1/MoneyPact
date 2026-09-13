@@ -1,0 +1,28 @@
+{
+  "name": "@cobudget/data-access",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The one typed SQL access path for the API and worker: tenant-scoped statements, role-separated connections, and S4 field encryption (CBD-246). No ORM, no schema ownership -- packages/migrations owns the schema.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tenant": "./src/tenant.ts",
+    "./encryption": "./src/encryption/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit",
+    "verify:live": "node --env-file-if-exists=../../.env.local scripts/verify-live.ts"
+  },
+  "dependencies": {
+    "@cobudget/migrations": "*",
+    "pg": "8.16.3"
+  },
+  "devDependencies": {
+    "@types/pg": "8.15.6",
+    "@typescript-eslint/parser": "^8.70.0",
+    "eslint": "^9.39.5",
+    "typescript": "^5.9.0"
+  }
+}

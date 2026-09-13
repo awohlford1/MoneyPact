@@ -14,7 +14,7 @@ import type { EffectContext } from "./boundary.js";
 import { Harness, testHistory } from "./test-support.js";
 import type { TestState } from "./test-support.js";
 
-const config = loadApiConfigFrom({ API_PORT: "3001", LOG_LEVEL: "info", NODE_ENV: "test", SERVICE_VERSION: "authorization-test" });
+const config = loadApiConfigFrom({ API_PORT: "3001", LOG_LEVEL: "info", NODE_ENV: "test", SERVICE_VERSION: "authorization-test", COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local", COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: Buffer.alloc(32, 7).toString("base64"), COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1" });
 let handlerCalls = 0;
 @Controller("protected")
 class ProtectedController {

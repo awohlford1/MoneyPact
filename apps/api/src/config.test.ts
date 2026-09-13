@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { describe, it } from "node:test";
@@ -8,11 +9,22 @@ import { ConfigError, undocumentedVariables } from "@cobudget/contracts/config";
 
 import { apiConfigSchema, loadApiConfigFrom, resolveApiListenAddress } from "./config.js";
 
+// Generated at test time (never a literal) so no fixture value in this file
+// shapes like a key/token for scripts/secret_scanner.py's generic-api-key rule.
+const TEST_LOCAL_KEY = randomBytes(32).toString("base64");
+
 const validEnvironment = {
   API_PORT: "3001",
   LOG_LEVEL: "info",
   NODE_ENV: "test",
   SERVICE_VERSION: "test-sha",
+  // COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY and _KEY_VERSION are required by
+  // loadApiConfigFrom whenever the provider is "local" (CBD246-SECURITY-002
+  // finding 1: fieldEncryptionConfigFailures runs immediately after the
+  // schema load), so both are present in every happy-path fixture below.
+  COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local",
+  COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: TEST_LOCAL_KEY,
+  COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1",
 } as const;
 
 describe("API configuration", () => {
@@ -45,6 +57,9 @@ describe("API configuration", () => {
       LOG_LEVEL: "info",
       NODE_ENV: "test",
       SERVICE_VERSION: "test-sha",
+      COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local",
+      COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: TEST_LOCAL_KEY,
+      COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1",
     });
   });
 
@@ -57,6 +72,9 @@ describe("API configuration", () => {
         LOG_LEVEL: "info",
         NODE_ENV: "test",
         SERVICE_VERSION: "test-sha",
+        COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local",
+        COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: TEST_LOCAL_KEY,
+        COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1",
       },
     );
   });
@@ -85,6 +103,40 @@ describe("API configuration", () => {
         return true;
       },
     );
+  });
+
+  it("fails startup naming the missing local key when the provider is local (CBD246-SECURITY-002 finding 1)", () => {
+    const { COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: _removed, ...withoutKey } = validEnvironment;
+
+    assert.throws(
+      () => loadApiConfigFrom(withoutKey),
+      (error: unknown) => {
+        assert.ok(error instanceof ConfigError);
+        assert.match(error.message, /COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY/);
+        assert.doesNotMatch(error.message, new RegExp(TEST_LOCAL_KEY));
+        return true;
+      },
+    );
+  });
+
+  it("fails startup naming the missing key version when the provider is local (CBD246-SECURITY-002 finding 1)", () => {
+    const { COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: _removed, ...withoutVersion } = validEnvironment;
+
+    assert.throws(
+      () => loadApiConfigFrom(withoutVersion),
+      (error: unknown) => {
+        assert.ok(error instanceof ConfigError);
+        assert.match(error.message, /COBUDGET_FIELD_ENCRYPTION_KEY_VERSION/);
+        return true;
+      },
+    );
+  });
+
+  it("does not require a local key or key version for the kms provider", () => {
+    const { COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: _removedKey, COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: _removedVersion, ...withoutLocalMaterial } = validEnvironment;
+
+    const config = loadApiConfigFrom({ ...withoutLocalMaterial, COBUDGET_FIELD_ENCRYPTION_PROVIDER: "kms" });
+    assert.equal(config.COBUDGET_FIELD_ENCRYPTION_PROVIDER, "kms");
   });
 
   it("documents every API variable in the repository environment template", () => {

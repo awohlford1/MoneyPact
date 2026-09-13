@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { describe, it } from "node:test";
 
@@ -17,6 +18,12 @@ const config = loadWorkerConfigFrom({
   LOG_LEVEL: "info",
   NODE_ENV: "test",
   SERVICE_VERSION: "test-sha",
+  COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local",
+  // Generated at test time (never a literal) so no fixture value in this
+  // file shapes like a key/token for scripts/secret_scanner.py's
+  // generic-api-key rule.
+  COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: randomBytes(32).toString("base64"),
+  COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1",
 });
 
 describe("worker signal handling", () => {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { afterEach, describe, it } from "node:test";
 
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
@@ -10,12 +11,18 @@ import { HTTP_LIMITS } from "./http-security.js";
 import type { ReliabilitySink } from "./telemetry.js";
 
 const createApiApplication = (config: Parameters<typeof createRuntimeApplication>[0], sink: ReliabilitySink) => createRuntimeApplication(config, sink, testHistory);
+// Generated at test time (never a literal) so no fixture value in this file
+// shapes like a key/token for scripts/secret_scanner.py's generic-api-key rule.
+const TEST_LOCAL_KEY = randomBytes(32).toString("base64");
 
 const config = loadApiConfigFrom({
   API_PORT: "3001",
   LOG_LEVEL: "info",
   NODE_ENV: "test",
   SERVICE_VERSION: "test-sha",
+  COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local",
+  COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: TEST_LOCAL_KEY,
+  COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1",
 });
 
 describe("API application", () => {
@@ -125,6 +132,9 @@ describe("API application", () => {
       LOG_LEVEL: "info",
       NODE_ENV: "production",
       SERVICE_VERSION: "test-sha",
+      COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local",
+      COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: TEST_LOCAL_KEY,
+      COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1",
     });
     app = await createApiApplication(productionConfig, () => undefined);
     await app.init();

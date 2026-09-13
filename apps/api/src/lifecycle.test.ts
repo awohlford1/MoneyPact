@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { dirname, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 type ShutdownSignal = "SIGINT" | "SIGTERM";
+
+// Generated at test time (never a literal) so no fixture value in this file
+// shapes like a key/token for scripts/secret_scanner.py's generic-api-key rule.
+const TEST_LOCAL_KEY = randomBytes(32).toString("base64");
 
 interface ProcessResult {
   readonly code: number | null;
@@ -44,6 +49,9 @@ async function runUntilSignal(signal: ShutdownSignal): Promise<string> {
       LOG_LEVEL: "info",
       NODE_ENV: "test",
       SERVICE_VERSION: "signal-test",
+      COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local",
+      COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: TEST_LOCAL_KEY,
+      COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -179,6 +187,9 @@ describe("API startup failures", () => {
         LOG_LEVEL: "info",
         NODE_ENV: "test",
         SERVICE_VERSION: "must-not-leak",
+        COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local",
+        COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: TEST_LOCAL_KEY,
+        COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1",
       });
 
       assert.equal(result.code, 1);
@@ -190,6 +201,103 @@ describe("API startup failures", () => {
         blocker.close((error) => (error ? reject(error) : resolveClosed()));
       });
     }
+  });
+});
+
+/** Confirms the process exited before any listener bound `port`. */
+async function assertNoListener(port: number): Promise<void> {
+  const probe = createServer();
+  await new Promise<void>((accept, reject) => {
+    probe.once("error", reject);
+    probe.listen(port, "127.0.0.1", accept);
+  });
+  await new Promise<void>((accept, reject) => {
+    probe.close((error) => (error ? reject(error) : accept()));
+  });
+}
+
+describe("API field-encryption startup enforcement (CBD246-SECURITY-002 finding 1)", () => {
+  it("exits before opening a listener or reporting readiness when the provider is missing", async () => {
+    const port = await availablePort();
+    const result = await runToExit({
+      NODE_ENV: "test",
+      LOG_LEVEL: "info",
+      SERVICE_VERSION: "field-encryption-test",
+      API_PORT: String(port),
+    });
+
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, "");
+    assert.ok(result.stderr.includes("COBUDGET_FIELD_ENCRYPTION_PROVIDER"));
+    await assertNoListener(port);
+  });
+
+  it("exits before opening a listener or reporting readiness when the local key is missing", async () => {
+    const port = await availablePort();
+    const result = await runToExit({
+      NODE_ENV: "test",
+      LOG_LEVEL: "info",
+      SERVICE_VERSION: "field-encryption-test",
+      API_PORT: String(port),
+      COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local",
+      COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1",
+    });
+
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, "");
+    assert.ok(result.stderr.includes("COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY"));
+    await assertNoListener(port);
+  });
+
+  it("exits before opening a listener or reporting readiness when the key version is missing", async () => {
+    const port = await availablePort();
+    const result = await runToExit({
+      NODE_ENV: "test",
+      LOG_LEVEL: "info",
+      SERVICE_VERSION: "field-encryption-test",
+      API_PORT: String(port),
+      COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local",
+      COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: TEST_LOCAL_KEY,
+    });
+
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, "");
+    assert.ok(result.stderr.includes("COBUDGET_FIELD_ENCRYPTION_KEY_VERSION"));
+    await assertNoListener(port);
+  });
+
+  it("exits before opening a listener or reporting readiness when NODE_ENV=production selects the local provider", async () => {
+    const port = await availablePort();
+    const result = await runToExit({
+      NODE_ENV: "production",
+      LOG_LEVEL: "info",
+      SERVICE_VERSION: "field-encryption-test",
+      API_PORT: String(port),
+      COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local",
+      COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: TEST_LOCAL_KEY,
+      COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1",
+    });
+
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, "");
+    assert.ok(result.stderr.includes("local field-encryption provider is refused"));
+    await assertNoListener(port);
+  });
+
+  it("exits before opening a listener or reporting readiness when the kms provider has no client", async () => {
+    const port = await availablePort();
+    const result = await runToExit({
+      NODE_ENV: "test",
+      LOG_LEVEL: "info",
+      SERVICE_VERSION: "field-encryption-test",
+      API_PORT: String(port),
+      COBUDGET_FIELD_ENCRYPTION_PROVIDER: "kms",
+    });
+
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, "");
+    assert.ok(result.stderr.includes("KMS field-encryption provider has no client"));
+    await assertNoListener(port);
   });
 });
 

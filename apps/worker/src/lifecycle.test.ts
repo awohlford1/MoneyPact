@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -14,11 +15,19 @@ interface ProcessResult {
 }
 
 // Same entrypoint logic, with an explicit synthetic release row for lifecycle tests.
-const sourceEntry = resolve(dirname(fileURLToPath(import.meta.url)), "authorization/process-fixture.ts");
+const sourceEntry = resolve(dirname(fileURLToPath(import.meta.url)), "main.ts");
+
+// Generated at test time (never a literal) so no fixture value in this file
+// shapes like a key/token for scripts/secret_scanner.py's generic-api-key rule.
+const TEST_LOCAL_KEY = randomBytes(32).toString("base64");
+
 const validEnvironment = {
   LOG_LEVEL: "info",
   NODE_ENV: "test",
   SERVICE_VERSION: "process-test",
+  COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local",
+  COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: TEST_LOCAL_KEY,
+  COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1",
 };
 
 // A cold Windows checkout can spend more than ten seconds starting the tsx
@@ -166,6 +175,76 @@ describe("worker process lifecycle", () => {
       },
       { service: "worker", version: "process-test", status: "ready" },
     ]);
+  });
+});
+
+describe("worker field-encryption startup enforcement (CBD246-SECURITY-002 finding 1)", () => {
+  it("exits before reporting readiness when the provider is missing", async () => {
+    const result = await runToExit({
+      LOG_LEVEL: "info",
+      NODE_ENV: "test",
+      SERVICE_VERSION: "field-encryption-test",
+    });
+
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, "");
+    assert.ok(result.stderr.includes("COBUDGET_FIELD_ENCRYPTION_PROVIDER"));
+  });
+
+  it("exits before reporting readiness when the local key is missing", async () => {
+    const result = await runToExit({
+      LOG_LEVEL: "info",
+      NODE_ENV: "test",
+      SERVICE_VERSION: "field-encryption-test",
+      COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local",
+      COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1",
+    });
+
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, "");
+    assert.ok(result.stderr.includes("COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY"));
+  });
+
+  it("exits before reporting readiness when the key version is missing", async () => {
+    const result = await runToExit({
+      LOG_LEVEL: "info",
+      NODE_ENV: "test",
+      SERVICE_VERSION: "field-encryption-test",
+      COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local",
+      COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: TEST_LOCAL_KEY,
+    });
+
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, "");
+    assert.ok(result.stderr.includes("COBUDGET_FIELD_ENCRYPTION_KEY_VERSION"));
+  });
+
+  it("exits before reporting readiness when NODE_ENV=production selects the local provider", async () => {
+    const result = await runToExit({
+      LOG_LEVEL: "info",
+      NODE_ENV: "production",
+      SERVICE_VERSION: "field-encryption-test",
+      COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local",
+      COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: TEST_LOCAL_KEY,
+      COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1",
+    });
+
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, "");
+    assert.ok(result.stderr.includes("local field-encryption provider is refused"));
+  });
+
+  it("exits before reporting readiness when the kms provider has no client", async () => {
+    const result = await runToExit({
+      LOG_LEVEL: "info",
+      NODE_ENV: "test",
+      SERVICE_VERSION: "field-encryption-test",
+      COBUDGET_FIELD_ENCRYPTION_PROVIDER: "kms",
+    });
+
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, "");
+    assert.ok(result.stderr.includes("KMS field-encryption provider has no client"));
   });
 });
 
