@@ -1,0 +1,446 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cobudget.local/rate-limit/parameter-record-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "record_id",
+    "surface_id",
+    "window",
+    "threshold",
+    "burst",
+    "safe_counting_key",
+    "counter_store",
+    "quota",
+    "anti_lockout_rule",
+    "capacity_basis",
+    "product_owner_approval",
+    "source_requirements",
+    "created_at",
+    "supersedes_record_id",
+    "record_digest"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "record_id": {
+      "type": "string",
+      "pattern": "^rlp-266-[a-z0-9-]+-v[1-9][0-9]*$"
+    },
+    "surface_id": {
+      "type": "string",
+      "pattern": "^surf-266-[a-z0-9-]+$"
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "duration_ms",
+        "kind",
+        "anchor"
+      ],
+      "properties": {
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "kind": {
+          "enum": [
+            "fixed",
+            "sliding"
+          ]
+        },
+        "anchor": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "threshold": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "burst": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "additional_units",
+        "refill_units",
+        "refill_interval_ms"
+      ],
+      "properties": {
+        "additional_units": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "refill_units": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "refill_interval_ms": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "safe_counting_key": {
+      "$ref": "#/$defs/safeCountingKey"
+    },
+    "counter_store": {
+      "$ref": "#/$defs/counterStore"
+    },
+    "quota": {
+      "$ref": "#/$defs/quota"
+    },
+    "anti_lockout_rule": {
+      "$ref": "#/$defs/antiLockout"
+    },
+    "capacity_basis": {
+      "$ref": "#/$defs/capacityBasis"
+    },
+    "product_owner_approval": {
+      "$ref": "#/$defs/productOwnerApproval"
+    },
+    "source_requirements": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "supersedes_record_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "record_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "$defs": {
+    "safeCountingKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "components",
+        "derivation_version",
+        "normalization",
+        "rotation_behavior",
+        "privacy_basis",
+        "subject_bound_after_authentication"
+      ],
+      "properties": {
+        "phase": {
+          "enum": [
+            "pre_authentication",
+            "post_authentication",
+            "service",
+            "compound"
+          ]
+        },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "derivation_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "normalization": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rotation_behavior": {
+          "type": "string",
+          "minLength": 1
+        },
+        "privacy_basis": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subject_bound_after_authentication": {
+          "type": "boolean"
+        }
+      }
+    },
+    "counterStore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "binding",
+        "namespace",
+        "atomic_operation",
+        "consistency",
+        "region",
+        "ttl_ms",
+        "clock_source",
+        "failure_mode"
+      ],
+      "properties": {
+        "binding": {
+          "type": "string",
+          "minLength": 1
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "atomic_operation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consistency": {
+          "type": "string",
+          "minLength": 1
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ttl_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "clock_source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "failure_mode": {
+          "const": "deny"
+        }
+      }
+    },
+    "quota": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unit",
+        "ceiling",
+        "scope",
+        "reset",
+        "resource_dimensions"
+      ],
+      "properties": {
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ceiling": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reset": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource_dimensions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "antiLockout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attackable_dimensions",
+        "victim_bound_dimensions",
+        "independent_recovery_surface_id",
+        "pool_isolation",
+        "exhaustion_state_effect",
+        "reset_authority",
+        "notification_behavior",
+        "rationale",
+        "verification_cases"
+      ],
+      "properties": {
+        "attackable_dimensions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "victim_bound_dimensions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "independent_recovery_surface_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pool_isolation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "exhaustion_state_effect": {
+          "const": "none"
+        },
+        "reset_authority": {
+          "type": "string",
+          "minLength": 1
+        },
+        "notification_behavior": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verification_cases": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "capacityBasis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_locator",
+        "measured_at",
+        "sustained_capacity",
+        "peak_assumption",
+        "headroom",
+        "failure_budget",
+        "workload_assumptions",
+        "reviewer_role"
+      ],
+      "properties": {
+        "evidence_locator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "measured_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sustained_capacity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "peak_assumption": {
+          "type": "string",
+          "minLength": 1
+        },
+        "headroom": {
+          "type": "string",
+          "minLength": 1
+        },
+        "failure_budget": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workload_assumptions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "reviewer_role": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "productOwnerApproval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "approval_id",
+        "approved_by_actor_id",
+        "decided_at",
+        "candidate_digest",
+        "conditions",
+        "expires_at"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "pending",
+            "approved",
+            "rejected",
+            "revoked",
+            "expired"
+          ]
+        },
+        "approval_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "approved_by_actor_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "decided_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "candidate_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}
