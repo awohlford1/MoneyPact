@@ -112,15 +112,12 @@ function buildConditions(conditions: readonly Condition[] | undefined, params: u
   return ` and ${clauses.join(" and ")}`;
 }
 
-async function execute(pool: Pool, table: string, operation: string, text: string, params: readonly unknown[]): Promise<QueryResult> {
+async function execute(pool: Pick<Pool, "query">, table: string, operation: string, text: string, params: readonly unknown[]): Promise<QueryResult> {
   try {
     return await pool.query(text, params as unknown[]);
-  } catch {
-    // The raw driver error is deliberately discarded here, not merely
-    // unattached downstream: `wrapDriverError` never sees it either
-    // (CBD-246-AC06). Its own message and any `cause` chain can echo
-    // statement text or bound values.
-    throw wrapDriverError(table, operation);
+  } catch (error) {
+    // Preserve only the validated SQLSTATE; discard message and cause.
+    throw wrapDriverError(table, operation, error);
   }
 }
 
@@ -152,7 +149,7 @@ export interface TenantSelectQuery {
   readonly conditions?: readonly Condition[];
 }
 
-export function tenantSelect(pool: Pool, query: TenantSelectQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
+export function tenantSelect(pool: Pick<Pool, "query">, query: TenantSelectQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
   const table = assertTenantTable(catalog, query.table);
   assertBudgetSpaceId(table, query.budgetSpaceId);
   const columns = (query.columns ?? ["*"]).map(assertSelectColumn).join(", ");
@@ -169,7 +166,7 @@ export interface TenantInsertQuery {
   readonly returning?: readonly string[];
 }
 
-export function tenantInsert(pool: Pool, query: TenantInsertQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
+export function tenantInsert(pool: Pick<Pool, "query">, query: TenantInsertQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
   const table = assertTenantTable(catalog, query.table);
   assertBudgetSpaceId(table, query.budgetSpaceId);
   const entries = Object.entries(query.values);
@@ -194,7 +191,7 @@ export interface TenantUpdateQuery {
   readonly conditions?: readonly Condition[];
 }
 
-export function tenantUpdate(pool: Pool, query: TenantUpdateQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
+export function tenantUpdate(pool: Pick<Pool, "query">, query: TenantUpdateQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
   const table = assertTenantTable(catalog, query.table);
   assertBudgetSpaceId(table, query.budgetSpaceId);
   const entries = Object.entries(query.set);
@@ -217,7 +214,7 @@ export interface TenantDeleteQuery {
   readonly conditions?: readonly Condition[];
 }
 
-export function tenantDelete(pool: Pool, query: TenantDeleteQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
+export function tenantDelete(pool: Pick<Pool, "query">, query: TenantDeleteQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
   const table = assertTenantTable(catalog, query.table);
   assertBudgetSpaceId(table, query.budgetSpaceId);
   const params: unknown[] = [query.budgetSpaceId];
@@ -239,7 +236,7 @@ export interface PlatformSelectQuery {
   readonly conditions?: readonly Condition[];
 }
 
-export function platformSelect(pool: Pool, query: PlatformSelectQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
+export function platformSelect(pool: Pick<Pool, "query">, query: PlatformSelectQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
   const table = assertPlatformTable(catalog, query.table);
   const columns = (query.columns ?? ["*"]).map(assertSelectColumn).join(", ");
   const params: unknown[] = [];
@@ -255,7 +252,7 @@ export interface PlatformInsertQuery {
   readonly returning?: readonly string[];
 }
 
-export function platformInsert(pool: Pool, query: PlatformInsertQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
+export function platformInsert(pool: Pick<Pool, "query">, query: PlatformInsertQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
   const table = assertPlatformTable(catalog, query.table);
   const entries = Object.entries(query.values);
   if (entries.length === 0) throw new RangeError(`platform insert on "${table}" must set at least one column`);
@@ -276,7 +273,7 @@ export interface PlatformUpdateQuery {
   readonly conditions?: readonly Condition[];
 }
 
-export function platformUpdate(pool: Pool, query: PlatformUpdateQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
+export function platformUpdate(pool: Pick<Pool, "query">, query: PlatformUpdateQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
   const table = assertPlatformTable(catalog, query.table);
   const entries = Object.entries(query.set);
   if (entries.length === 0) throw new RangeError(`platform update on "${table}" must set at least one column`);
@@ -297,7 +294,7 @@ export interface PlatformDeleteQuery {
   readonly conditions?: readonly Condition[];
 }
 
-export function platformDelete(pool: Pool, query: PlatformDeleteQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
+export function platformDelete(pool: Pick<Pool, "query">, query: PlatformDeleteQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
   const table = assertPlatformTable(catalog, query.table);
   const params: unknown[] = [];
   const extra = buildConditions(query.conditions, params);

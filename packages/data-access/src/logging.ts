@@ -14,12 +14,14 @@
 export class StatementFailedError extends Error {
   readonly table: string;
   readonly operation: string;
+  readonly sqlState: string | undefined;
 
-  constructor(table: string, operation: string) {
+  constructor(table: string, operation: string, sqlState?: string) {
     super(`statement on "${table}" failed (${operation}); see the database's own logs for detail`);
     this.name = "StatementFailedError";
     this.table = table;
     this.operation = operation;
+    this.sqlState = typeof sqlState === "string" && /^[0-9A-Z]{5}$/u.test(sqlState) ? sqlState : undefined;
   }
 }
 
@@ -29,8 +31,13 @@ export class StatementFailedError extends Error {
  * the stack that logs `error.cause` or `error.message` recursively must not
  * be able to leak statement text through this seam.
  */
-export function wrapDriverError(table: string, operation: string): StatementFailedError {
-  return new StatementFailedError(table, operation);
+export function wrapDriverError(table: string, operation: string, error?: unknown): StatementFailedError {
+  const code = error !== null && typeof error === "object" && "code" in error ? error.code : undefined;
+  return new StatementFailedError(table, operation, typeof code === "string" ? code : undefined);
+}
+
+export function isRetryableSqlState(code: string | undefined): boolean {
+  return code === "23505" || code === "40001" || code === "40P01";
 }
 
 export type LogFields = {

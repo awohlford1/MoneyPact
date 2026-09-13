@@ -1,3 +1,6 @@
+import { PUBLIC_SURFACES, apiIdentity, surfaceOutcome } from "../../../../packages/rate-limit/src/index.ts";
+import { ApiRateLimits } from "../rate-limit/http.js";
+import type { ApiSurfaceGate } from "../rate-limit/http.js";
 import { externalDenial } from "@cobudget/contracts/authorization";
 import type { ExternalDenial } from "@cobudget/contracts/authorization";
 import { createParamDecorator, HttpException, Inject, Injectable, RequestMethod, ServiceUnavailableException, SetMetadata } from "@nestjs/common";
@@ -24,6 +27,7 @@ export interface RouteAuthorization {
 }
 export interface ApiAuthorizationOptions {
   boundary: AuthorizationBoundary;
+  rateLimit?: ApiSurfaceGate;
   /** CBD-266 supplies the approved surface check when its hook order is settled. */
   surfaceApproved(request: FastifyRequest): Promise<boolean>;
   /** Read an opaque session locator only; the fact source resolves the session. */
@@ -58,10 +62,13 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
   readonly #pending = new WeakMap<object, AuthorizedContext>();
   readonly #registered = new Set<string>();
   readonly #missing: string[] = [];
+  readonly #leases = new WeakMap<object, () => Promise<void>>();
+  readonly #surfacePassed = new WeakSet<object>();
+  readonly #rateLimit: ApiSurfaceGate;
 
   constructor(@Inject(API_AUTHORIZATION) options: ApiAuthorizationOptions, @Inject(Reflector) reflector: Reflector,
     @Inject(DiscoveryService) discovery: DiscoveryService, @Inject(HttpAdapterHost) adapter: HttpAdapterHost) {
-    this.#options = options; this.#reflector = reflector; this.#discovery = discovery; this.#adapter = adapter;
+    this.#options = options; this.#rateLimit = options.rateLimit ?? new ApiRateLimits("cbd266-prototype-v1"); this.#reflector = reflector; this.#discovery = discovery; this.#adapter = adapter;
   }
   inventory(): readonly string[] { return [...this.#missing]; }
   onModuleInit(): void {
@@ -83,10 +90,40 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
       }
     }
     const server = this.#adapter.httpAdapter.getInstance<FastifyInstance>();
+    // Fastify preHandler precedes Nest guards. Install the surface/session gate
+    // before CBD-236's raw-route/metadata guard on the same Fastify instance.
+    server.addHook("preHandler", async (request, reply) => {
+      if (request.routeOptions.url === undefined) return;
+      const evidence = this.#rateLimit.evidence(request);
+      let actor: string | undefined;
+      try {
+        if (!PUBLIC_SURFACES[apiIdentity(request.method, request.routeOptions.url)]) {
+          try { actor = await this.#options.boundary.resolveSession(this.#options.sessionLocator(request)); }
+          catch {
+            return await this.#options.boundary.rejectEnforcement({ ...surfaceOutcome(evidence, "deny_input_invalid"), earliest_decisive_gate: "session", safe_reason_class: "not_authenticated" });
+          }
+        }
+        const decision = await this.#rateLimit.enforce(request, actor);
+        if (decision.outcome !== "allow") return await this.#options.boundary.rejectEnforcement(surfaceOutcome(evidence, decision.outcome));
+        this.#leases.set(request, decision.release); this.#surfacePassed.add(request);
+      } catch (error) {
+        if (!(error instanceof AuthorizationDenied)) {
+          try { await this.#options.boundary.rejectEnforcement(surfaceOutcome(evidence, "deny_counter_unavailable")); } catch { /* One decisive denial. */ }
+        }
+        try { this.#options.deny(externalDenial()); }
+        catch (denial) { return reply.code(denial instanceof HttpException ? denial.getStatus() : 503).send(externalDenial()); }
+      }
+    });
+    server.addHook("onResponse", async (request) => {
+      const release = this.#leases.get(request); this.#leases.delete(request);
+      if (release) { try { await release(); } catch { /* Failure cannot reset a ceiling or admit work. */ } }
+    });
     server.addHook("preHandler", async (request, reply) => {
       // No matched route invokes no customer handler; preserve the router's 404.
       if (request.routeOptions.url === undefined) return;
-      if (request.method === "GET" && request.routeOptions.url === "/openapi.json") return;
+      // Generated HEAD routes execute the same public read-only handlers.
+      // Operational health stays isolated from protected pools (AL-266-004/008).
+      if (PUBLIC_SURFACES[apiIdentity(request.method, request.routeOptions.url)]) return;
       if (this.#registered.has(`${request.method} ${request.routeOptions.url}`)) return;
       try { await this.#options.boundary.reject(); }
       catch {
@@ -99,12 +136,13 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
     if (context.getClass() === HealthController && context.getHandler() === HealthController.prototype.getReadiness) return true;
     const request = context.switchToHttp().getRequest<FastifyRequest>();
     try {
+      if (!this.#surfacePassed.has(request)) return await this.#options.boundary.reject();
+      if (!await this.#options.surfaceApproved(request)) return await this.#options.boundary.rejectEnforcement(surfaceOutcome(this.#rateLimit.evidence(request), "deny_policy_unavailable"));
       const metadata = this.#reflector.get<RouteAuthorization | undefined>(METADATA, context.getHandler());
       if (!metadata || metadata.purpose !== "user_delegated") return await this.#options.boundary.reject();
       // Session resolution occurs inside authorize. No body can supply authority.
       const operation = { ...metadata.resourceLocator(request), action: metadata.action, purpose: metadata.purpose, mode: "user_delegated" as const };
-      const authorized = await this.#options.boundary.authorize({ operation, credential: this.#options.sessionLocator(request) });
-      if (!await this.#options.surfaceApproved(request)) return await this.#options.boundary.reject();
+      const authorized = await this.#options.boundary.authorize({ operation, credential: this.#options.sessionLocator(request) }, this.#rateLimit.evidence(request));
       this.#pending.set(request, authorized);
       return true;
     } catch (error) {

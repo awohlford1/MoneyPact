@@ -1,0 +1,21 @@
+{
+  "name": "@cobudget/rate-limit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CBD-266 registry and fail-closed single-process prototype counter interface.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@typescript-eslint/parser": "^8.70.0",
+    "eslint": "^9.39.5",
+    "typescript": "^5.9.0"
+  }
+}

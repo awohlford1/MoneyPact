@@ -1,3 +1,6 @@
+import { surfaceOutcome } from "../../../../packages/rate-limit/src/index.ts";
+import { WorkerRateLimits } from "../rate-limit/jobs.js";
+import type { WorkerSurfaceGate } from "../rate-limit/jobs.js";
 import type { KeyObject } from "node:crypto";
 import { sha256, verifyLocalDecision } from "@cobudget/contracts/authorization";
 import type { CapturedVersions, EffectClass, TransportedPolicyDecision } from "@cobudget/contracts/authorization";
@@ -25,6 +28,7 @@ export interface RegisteredJob {
 }
 export interface WorkerAuthorizationOptions {
   boundary: AuthorizationBoundary;
+  rateLimit?: WorkerSurfaceGate;
   jobs: Readonly<Record<string, RegisteredJob>>;
   authenticateProducer(producerRef: string): Promise<unknown | null>;
   /** Durable unique receiver-owned relation, in the effect's transaction. */
@@ -72,17 +76,20 @@ function validEnvelope(value: unknown): value is JobEnvelope {
 
 export class AuthorizedJobs {
   readonly #options: WorkerAuthorizationOptions;
+  readonly #rateLimit: WorkerSurfaceGate;
   constructor(options: WorkerAuthorizationOptions) {
     const jobs = Object.fromEntries(Object.entries(options.jobs).map(([name, job]) => {
       if (![name, job.action, job.purpose, job.queueContractRef].every(text) || typeof job.run !== "function") throw new Error("unregistered_job");
       return [name, Object.freeze({ ...job })];
     }));
     this.#options = { ...options, jobs: Object.freeze(jobs) };
+    this.#rateLimit = options.rateLimit ?? new WorkerRateLimits("cbd266-prototype-v1");
   }
   inventory(): readonly { jobType: string; action: string; purpose: string; queueContractRef: string }[] {
     return Object.entries(this.#options.jobs).map(([jobType, job]) => ({ jobType, action: job.action, purpose: job.purpose, queueContractRef: job.queueContractRef }));
   }
   async run(value: unknown): Promise<{ outcome: "completed"; value: unknown } | { outcome: "denied"; terminal: true }> {
+    let release: (() => Promise<void>) | undefined;
     try {
       if (!validEnvelope(value)) return await this.#options.boundary.reject();
       const envelope = structuredClone(value);
@@ -90,12 +97,16 @@ export class AuthorizedJobs {
       if (!job || job.action !== envelope.operation.action || job.purpose !== envelope.operation.purpose) return await this.#options.boundary.reject();
       const credential = await this.#options.authenticateProducer(envelope.producerRef);
       if (credential === null || credential === undefined) return await this.#options.boundary.reject("not_authenticated");
+      const rateEvidence = this.#rateLimit.evidence(envelope.jobType);
+      const rateDecision = await this.#rateLimit.enforce(envelope.jobType, credential).catch(() => ({ outcome: "deny_counter_unavailable" as const }));
+      if (rateDecision.outcome !== "allow") return await this.#options.boundary.rejectEnforcement(surfaceOutcome(rateEvidence, rateDecision.outcome));
+      release = rateDecision.release;
       const transported = envelope.transportedDecision;
       if (transported) {
         const local = this.#options.localTransport;
         if (!local || local.environment !== "local" || !verifyLocalDecision(transported, local.publicKey, { ...local, now: new Date().toISOString() }) || !text(transported.oneUseId)) return await this.#options.boundary.reject();
       }
-      const context = await this.#options.boundary.authorize({ operation: envelope.operation, credential });
+      const context = await this.#options.boundary.authorize({ operation: envelope.operation, credential }, rateEvidence);
       if (envelope.claimedEffectClass !== context.decision.effectClass || sha256(envelope.claimedVersions) !== sha256(context.decision.capturedVersions)) return await this.#options.boundary.reject("stale_version");
       if (transported && (transported.decision.outcome !== "allow" || transported.action !== context.input.request.action
         || transported.targetBinding !== context.input.resource?.id || transported.claimedEffectClass !== context.decision.effectClass
@@ -116,7 +127,7 @@ export class AuthorizedJobs {
         try { await this.#options.boundary.reject(); } catch { /* Remains terminal. */ }
       }
       return { outcome: "denied", terminal: true };
-    }
+    } finally { if (release) { try { await release(); } catch { /* No reset or retry. */ } } }
   }
 }
 

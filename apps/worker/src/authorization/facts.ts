@@ -95,6 +95,14 @@ export class FactAssembler {
     } finally { clearTimeout(timer); controller.abort(); }
   }
 
+  /** Prerequisite identity read only; no metadata, resource lookup or policy evaluation. */
+  async resolveSession(credential: unknown): Promise<string> {
+    const identity = await this.#read("session_store", { credential, operation: { action: "", purpose: "user_delegated", mode: "user_delegated", fieldSet: "default" } });
+    const actor = identity?.["subject.accountSubjectId"];
+    if (typeof actor !== "string" || !actor.length || actor.length > 256) throw new FactFailure("not_authenticated");
+    return actor;
+  }
+
   async assemble(lookup: FactLookup, transaction?: unknown, captured?: CapturedVersions): Promise<PolicyInput> {
     const { operation } = lookup;
     const bootstrap = operation.action === "space.create";
