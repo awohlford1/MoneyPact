@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "path": "app/node_modules/@scarf/scarf/package.json",
+      "content_chunks": ["{"]
+    },
+    {
+      "path": "app/planted.txt",
+      "content_chunks": ["-----BEGIN ", "PRIVATE KEY-----"]
+    }
+  ]
+}
