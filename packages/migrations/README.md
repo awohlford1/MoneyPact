@@ -416,3 +416,18 @@ Recorded on 2026-09-12 against Docker Desktop 29.4.2 (Linux engine), image
 - The one-transaction limitation recorded under *How a migration is applied*
   stands: `CREATE INDEX CONCURRENTLY` cannot be used as written.
 - Two runners at once remain safe but not live, as recorded above.
+
+### Deferred identity foreign keys (CBD-231)
+
+The 2026-09-13 CBD-231 migrations (`create_budget_space`,
+`create_budget_space_membership`, and `create_budget_creation_operation`)
+store `created_by_subject_id`, `account_subject_id`, and `profile_id` as plain
+`uuid` columns with no foreign key, by Manager ruling on `CBD231-IMPL-001`:
+CBD-212's identity/profile schema is not implemented yet (CBD-190
+unimplemented), so there is nothing yet to reference. Each such column carries
+a comment pointing back here. A follow-up migration, to be named
+`create_budget_space_identity_foreign_keys`, must add the deferred foreign
+keys once CBD-212's schema lands; until then, DB-231-007's "composite
+subject/profile validation" is enforced only as far as the plain columns
+allow (orphan-subject and cross-profile rejection are not yet database
+guarantees).
