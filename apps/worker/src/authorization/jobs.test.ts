@@ -114,7 +114,7 @@ describe("worker fail-closed job chain", () => {
     assert.equal((await new AuthorizedJobs(optionsFor(h)).run(envelopeFor(h.input))).outcome, "completed");
   });
   it("rejects startup mismatches and installs an empty deny-by-default job inventory", async () => {
-    assert.throws(() => assertWorkerPolicyCompatibility(), /policy_version_unsupported/);
+    assert.throws(() => assertWorkerPolicyCompatibility([]), /policy_version_unsupported/);
     assert.throws(() => assertWorkerPolicyCompatibility(testHistory, [{ ...SUPPORTED_POLICY_TUPLES[0]!, schemaVersion: 2 }]), /policy_version_unsupported/);
     const config = loadWorkerConfigFrom({ LOG_LEVEL: "info", NODE_ENV: "test", SERVICE_VERSION: "authorization-test" });
     const worker = startWorker(config, { readiness: () => undefined, reliability: () => undefined }, undefined, testHistory);

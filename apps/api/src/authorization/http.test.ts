@@ -84,7 +84,7 @@ describe("API enforcement installation", () => {
     finally { await app.close(); }
   });
   it("refuses startup before registration without a released compatible tuple", () => {
-    assert.throws(() => AppModule.register(config, () => undefined), /policy_version_unsupported/);
+    assert.throws(() => AppModule.register(config, () => undefined, undefined, []), /policy_version_unsupported/);
     assert.throws(() => AppModule.register(config, () => undefined, undefined, [{ ...testHistory[0], digest: "0".repeat(64) }]), /policy_version_unsupported/);
   });
 });

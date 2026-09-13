@@ -67,15 +67,18 @@ it("limits lifecycle test launchers to release fixtures and a signal-only proces
     assert.equal(readFileSync(join(src, "authorization/process-fixture.ts"), "utf8").replaceAll("\r\n", "\n"), expected);
   }
 });
-it("refuses real API and worker process startup before readiness with the unreleased policy", () => {
+it("real API and worker processes start on the released policy p1 and refuse an empty history", () => {
+  // CBD236-P1-RELEASE-001 released p1, so the checked-in history now admits
+  // startup; the fail-closed branch is proven through the injected history in
+  // the process fixture and the unit tests above.
   const root = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
   for (const app of ["api", "worker"]) {
     const result = spawnSync(process.execPath, ["--import=tsx", "src/main.ts"], {
-      cwd: join(root, "apps", app), timeout: 30_000, encoding: "utf8",
-      env: { NODE_ENV: "test", LOG_LEVEL: "info", SERVICE_VERSION: "unreleased-policy-test", API_PORT: "3001" },
+      cwd: join(root, "apps", app), timeout: 15_000, encoding: "utf8", killSignal: "SIGTERM",
+      env: { NODE_ENV: "test", LOG_LEVEL: "info", SERVICE_VERSION: "released-policy-test", API_PORT: "3001" },
     });
-    assert.equal(result.error, undefined); assert.equal(result.status, 1, app);
-    assert.equal(result.stdout.includes('"operation":"startup"'), false, app);
-    assert.equal(result.stdout.includes('"status":"ready"'), false, app);
+    assert.equal(result.error?.name === "Error" && (result.error as NodeJS.ErrnoException).code !== "ETIMEDOUT" ? result.error : undefined, undefined, app);
+    assert.equal(result.stdout.includes('"operation":"startup"'), true, `${app} startup line`);
+    assert.equal(result.stdout.includes('policy_version_unsupported'), false, app);
   }
 });

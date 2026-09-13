@@ -157,6 +157,13 @@ describe("authorization transaction boundary", () => {
     assert.throws(() => assertPolicyCompatibility(testHistory, [{ ...SUPPORTED_POLICY_TUPLES[0]!, expectedDigest: "0".repeat(64) }]), /policy_version_unsupported/);
     assert.throws(() => assertPolicyCompatibility([]), /policy_version_unsupported/);
     assert.throws(() => assertPolicyCompatibility([{ ...testHistory[0], securityApprovalRef: "" }]), /policy_version_unsupported/);
-    assert.deepEqual(readReleaseHistory(), [], "release prerequisite remains pending; update this assertion when the Manager releases a policy");
+    // p1 was released under CBD236-P1-RELEASE-001: the checked-in history must
+    // carry exactly that row and satisfy the guard the processes run at startup.
+    const released = readReleaseHistory() as Array<Record<string, unknown>>;
+    assert.equal(released.length, 1, "exactly one released policy row");
+    assert.equal(released[0]?.version, "p1");
+    assert.equal(released[0]?.productApprovalRef, "PO-CONTRACT-APPROVALS-001");
+    assert.equal(released[0]?.securityApprovalRef, "CBD236-SECURITY-001");
+    assert.doesNotThrow(() => assertPolicyCompatibility(released));
   });
 });
