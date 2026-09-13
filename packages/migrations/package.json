@@ -14,6 +14,13 @@
     "migrate:create": "node src/cli.ts create",
     "migrate:reset": "node src/cli.ts reset",
     "migrate:check": "node src/cli.ts check",
+    "db:up": "node src/cli.ts db up",
+    "db:migrate": "node src/cli.ts --local apply",
+    "db:status": "node src/cli.ts --local status",
+    "db:reset": "node src/cli.ts --local reset --confirm-destroys-all-data",
+    "db:verify": "node src/cli.ts db verify",
+    "db:stop": "node src/cli.ts db stop",
+    "db:destroy": "node src/cli.ts db destroy",
     "lint": "eslint .",
     "test": "node --test",
     "typecheck": "tsc --noEmit"

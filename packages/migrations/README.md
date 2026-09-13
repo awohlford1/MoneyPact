@@ -1,25 +1,34 @@
 # @cobudget/migrations
 
-Forward-only PostgreSQL migrations for MoneyPact. CBD-116.
+Forward-only PostgreSQL migrations for MoneyPact (CBD-116) and the local
+development database they run against (CBD-117).
 
 PostgreSQL is the decision recorded in CBD-105 (`DP-105-001`). Forward-only is
 the decision recorded in CBD-103 (`TD-103-028`). Neither is re-opened here.
 
 ## Commands
 
-The connection is never read by this tool. `psql` resolves it from the standard
-libpq environment — `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`,
-`PGSERVICE`, `PGSSLMODE`, `~/.pgpass` — so no password passes through our
-process, reaches a log line, appears in `ps` output, or has to be registered as
-a variable this repository reads.
+Two ways to reach a database. Locally, the `db:*` commands below run `psql`
+inside the CBD-117 container, so nothing but Docker is installed on the host.
+Hosted, the `migrate*` commands run `psql` on the runner, and the connection is
+never read by this tool: `psql` resolves it from the standard libpq environment
+— `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGSERVICE`,
+`PGSSLMODE`, `~/.pgpass` — so no password passes through our process, reaches a
+log line, appears in `ps` output, or has to be registered as a variable this
+repository reads. Both routes run the same code; `--local` only swaps the
+executor.
 
-| What | Command |
-| --- | --- |
-| Apply every migration, from empty or from anywhere | `npm run migrate --workspace=@cobudget/migrations` |
-| Show what is applied and what is pending | `npm run migrate:status --workspace=@cobudget/migrations` |
-| Stamp a new migration | `npm run migrate:create --workspace=@cobudget/migrations -- "add budget space"` |
-| Check the migrations without a database | `npm run migrate:check --workspace=@cobudget/migrations` |
-| Local recovery: drop everything and re-apply | `npm run migrate:reset --workspace=@cobudget/migrations -- --confirm-destroys-all-data` |
+| What | Local (container) | Hosted (libpq environment) |
+| --- | --- | --- |
+| Start the database, confirm the pinned major | `npm run db:up --workspace=@cobudget/migrations` | — |
+| Apply every migration, from empty or from anywhere | `npm run db:migrate --workspace=@cobudget/migrations` | `npm run migrate --workspace=@cobudget/migrations` |
+| Show what is applied and what is pending | `npm run db:status --workspace=@cobudget/migrations` | `npm run migrate:status --workspace=@cobudget/migrations` |
+| Recovery: drop everything and re-apply | `npm run db:reset --workspace=@cobudget/migrations` | `npm run migrate:reset --workspace=@cobudget/migrations -- --confirm-destroys-all-data` |
+| Prove version, roles, and grants | `npm run db:verify --workspace=@cobudget/migrations` | — |
+| Stop, keeping the data | `npm run db:stop --workspace=@cobudget/migrations` | — |
+| Remove the container and its data | `npm run db:destroy --workspace=@cobudget/migrations` | — |
+| Stamp a new migration | `npm run migrate:create --workspace=@cobudget/migrations -- "add budget space"` | same |
+| Check the migrations without a database | `npm run migrate:check --workspace=@cobudget/migrations` | same |
 
 There is no revert, down, rollback, or undo command, and there is no way to ask
 for one. Rollback is a code and configuration operation; a reversible "down"
@@ -33,6 +42,12 @@ and re-migrate. `commandNames` is asserted against the forbidden list in
 `SELECT current_database()` and refuses any name that is not recognisably
 local. The server is asked rather than the environment inspected, because the
 environment is exactly what is wrong when someone resets the wrong database.
+`db:reset` passes the flag for you, because the database it reaches is the
+container's by construction; the name check still runs.
+
+Before any of `apply`, `status`, or `reset` reads or changes anything, the
+tool asks the server its version and refuses to continue if the major differs
+from the one pinned in `compose.yaml`, naming both (CBD-117-AC03, below).
 
 ## How a migration is applied
 
@@ -67,7 +82,7 @@ with two concurrent runners.
 **Limitation.** One transaction for the whole set means a statement that cannot
 run inside a transaction — `CREATE INDEX CONCURRENTLY`, `ALTER TYPE ... ADD
 VALUE` on older servers — cannot be used as written. That is a real constraint
-on CBD-117 and later, recorded here rather than discovered later. Changing it
+on every later migration, recorded here rather than discovered later. Changing it
 means giving up all-or-nothing application, which is what makes "applied state
 lives in the database" true after a failure and not only after a success.
 
@@ -159,20 +174,20 @@ for nothing.
 
 ## Where the check runs
 
-It runs inside `npm run check` today: the rules are tests in this package, and
-`npm run check` runs `npm run test --workspaces --if-present`, so every fixture
-below executes on every check and on every CI run. It can also be run alone:
+It runs inside `npm run check` twice over: as the named `check:migrations`
+stage (`node scripts/check-migrations.mjs`, asserted by `REQUIRED_CHECK_STAGES`
+in `scripts/check-ci-contract.mjs`), and again as the tests in this package
+that `npm run test --workspaces --if-present` executes, so every fixture below
+runs on every check and on every CI run. It can also be run alone:
 
 ```
 node scripts/check-migrations.mjs
 npm run migrate:check --workspace=@cobudget/migrations
 ```
 
-Promoting it to a named `check:migrations` stage would mean editing the `check`
-script in the root `package.json` and `REQUIRED_CHECK_STAGES` in
-`scripts/check-ci-contract.mjs`, which asserts the two agree. Both are
-single-writer shared surfaces and CBD-116 was not scoped to touch them; the
-one-line change is left to whoever owns that lane.
+Neither touches a database. The `db:*` commands and the live run recorded
+under *The local development database* are the explicitly-run tier; the gate
+stays hermetic (CBD-19-AC06).
 
 ## Fixtures
 
@@ -206,15 +221,204 @@ reason proves nothing. `fixtures/positive/` must produce no findings at all.
 | `cbd-116-fx-18` … `cbd-116-fx-21` | AC02 — byte order mark, no trailing newline, invalid UTF-8, mixed line endings (built in the test, not committed) |
 | `cbd-116-fx-22` | AC06 — a schema-owning ORM in the manifest (built in the test) |
 
-## What a live database still has to confirm
+## The local development database (CBD-117)
 
-Everything that decides *what* runs is pure and tested. What no test here can
-confirm is that the generated SQL is valid PostgreSQL, because that needs a
-server. On a machine with one:
+One PostgreSQL container, defined in [`compose.yaml`](../../compose.yaml) at
+the repository root, started and driven by the `db:*` commands above. Local
+only: no hosted resource is created, referenced, or paid for
+(PROVIDERS-LOCAL-001).
+
+### A fresh clone (AC01)
 
 ```
-createdb cobudget_dev
-PGDATABASE=cobudget_dev npm run migrate --workspace=@cobudget/migrations
-PGDATABASE=cobudget_dev npm run migrate --workspace=@cobudget/migrations   # no-op
-PGDATABASE=cobudget_dev psql -c 'TABLE cobudget_schema_migrations'
+npm ci
+npm run db:up --workspace=@cobudget/migrations
+npm run db:migrate --workspace=@cobudget/migrations
 ```
+
+That is the whole path from clone to a running, migrated database. Nothing is
+installed by hand: `db:up` pulls the pinned image on first use, waits for the
+healthcheck, and confirms the server's major; `db:migrate` runs the migration
+check, then `psql` *inside* the container as the migration role, over the
+container's Unix socket. The PostgreSQL client is not needed on the host and
+no password crosses it.
+
+There is no seed step yet. The schema today is the ledger and the role grants;
+the first domain migration arrives with the story that needs it, and seeding
+follows that. Until then `db:migrate` is the whole seed.
+
+`db:stop` stops the container and keeps every row. `db:up` starts it again.
+`db:destroy` removes the container and the volume; the next `db:up` runs
+`initdb` again, which is the only time the roles are created.
+
+The container listens on `127.0.0.1:5432` and nowhere else. If that port is
+taken, `COBUDGET_DB_PORT=5433 npm run db:up ...` moves the host side; compose
+interpolates it and nothing in the repository reads it.
+
+`compose.yaml` fixes the compose project name to `cobudget`, so every checkout
+and worktree of this repository shares one database, one volume, and one port,
+rather than each directory name creating its own.
+
+### Recovery (AC02)
+
+```
+npm run db:reset --workspace=@cobudget/migrations
+```
+
+Drops the `public` schema with everything in it, recreates it, and re-applies
+every migration from the ledger up. There is no down path to reason about, so
+there is no guesswork: a broken local state becomes a fresh one in one command.
+`db:destroy` followed by `db:up` is the heavier version, for when the roles or
+the server itself are what is broken.
+
+One cosmetic difference between a reset database and a fresh one: `initdb`
+leaves `public` owned by `pg_database_owner`, and reset leaves it owned by
+`cobudget_migration`. Both give the migration role, and only the migration
+role, `CREATE` on it; `db:verify` passes in both states.
+
+### The pinned major (AC03)
+
+The PostgreSQL major version is written in exactly one place: the
+`image: postgres:<major>` line of `compose.yaml`. That is the line the server
+starts from, so it cannot drift from what runs. `src/version.ts` reads that
+same line, and every command that reaches a database — `apply`, `status`,
+`reset`, `db up`, `db verify`, with or without `--local` — asks the server for
+`server_version_num` first and refuses if the major differs, naming both:
+
+```
+refusing to continue: the server is PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) (major 17)
+but compose.yaml pins major 16. Either this is not the local database (run
+npm run db:up --workspace=@cobudget/migrations) or the host moved and the pin
+must move with it.
+```
+
+**Why 17, and what is assumed.** CBD-108 selected Cloud SQL for PostgreSQL
+(C1) on 2026-09-02, so the pin is the Cloud SQL major. No CBD-105 or CBD-108
+document states which major the evaluation ran against — version-page
+confirmation of each candidate's PostgreSQL is `OQ-105-003`, still open — so
+the current Cloud SQL for PostgreSQL default major, 17, is taken and recorded
+here as an assumption. When `OQ-105-003` closes, or when CBD-119 creates the
+first hosted instance, the pin either already matches or moves in one line.
+Moving it to 18 or later also moves the volume target in `compose.yaml`; the
+comment on the pin says how.
+
+The hosted runner reads the same line. A hosted instance upgraded to a major
+the repository does not pin stops every migration until someone moves the pin
+deliberately, which is the point.
+
+### Credentials (AC04)
+
+The container's credentials are constants that are obviously local: the
+bootstrap superuser is `postgres` / `local-only-superuser`, the three roles
+below have passwords of the form `local-only-<role>`, all are shorter than any
+secret scanner's threshold, and the server is bound to the loopback interface.
+`src/local.test.ts` asserts every one of those properties, so a value that
+could be mistaken for a production credential fails the build.
+
+No variable is read by this package. The environment contract's guard
+(`scripts/check-environment.mjs`) forbids environment access anywhere but the
+shared loaders, this package has none, and `psql` inside the container needs
+none. The migration role reaches the server over the Unix socket, where the
+official image trusts local connections.
+
+What this does *not* yet deliver, and why: the ticket asks that credentials
+flow through the environment contract with CBD-113 inventory rows. The host
+side of that — `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` for the
+api and worker processes — is CBD-246's role wiring, and adding the rows needs
+`config/environment-inventory.json`, `.env.example`, and a consumer the guard
+can observe, which today means only the api and worker schemas or a Python
+`load_tool_config` group. All three are outside this package. The rows are
+specified in the CBD-117 result for whoever owns that change; until then the
+values a host process needs are the constants in `compose.yaml` and
+`local/initdb/010-roles.sql`.
+
+### The three roles (AC05)
+
+`DP-105-003` names them; `local/initdb/010-roles.sql` creates them the first
+time the volume is initialised, as the bootstrap superuser, and makes the
+migration role the owner of `cobudget_dev`:
+
+| Role | Holds | Used by |
+| --- | --- | --- |
+| `cobudget_migration` | owns the database and everything it creates; `CREATE` on `public` | this tool |
+| `cobudget_api` | `USAGE` on `public`; `SELECT, INSERT, UPDATE, DELETE` on every table a migration creates | the API (CBD-246) |
+| `cobudget_worker` | the same as `cobudget_api` | the worker (CBD-246) |
+
+The grants are **not** in the initdb script. They are in
+`migrations/20260912T170000Z__grant_application_roles.sql`, which is applied by
+the same command locally and hosted, so "the same grants as hosted" is true by
+construction rather than by someone transcribing them twice. The initdb script
+creates roles and ownership only, which is the part that cannot be a migration
+(passwords, and a migration cannot run before the role that runs it exists).
+
+That makes two things a contract with hosted provisioning (CBD-119): the roles
+are called `cobudget_migration`, `cobudget_api`, and `cobudget_worker`, and the
+migration role owns the database. `src/local.ts` and `src/local.test.ts` hold
+the names and assert that the initdb script, the grants migration, and the
+code agree.
+
+`db:verify` proves the state rather than describing it. It confirms the major,
+that each role holds exactly the schema privileges above, that the ledger
+exists, and then issues `CREATE TABLE` and `ALTER TABLE` as `cobudget_api` and
+as `cobudget_worker`, each of which would have changed the schema had it been
+allowed, and passes only on a permission denial — a failure for any other
+reason is reported as what it is. It also confirms the migration role's default
+privileges for future tables exist, which is what gives the application access
+to every table a later migration creates. The role-separation test tier that
+runs against this database is CBD-246's; this is the database it runs against.
+
+Nothing is granted on the ledger table. The application has no reason to read
+or write its own migration history.
+
+### The live run this was proved with
+
+Recorded on 2026-09-12 against Docker Desktop 29.4.2 (Linux engine), image
+`postgres:17` at PostgreSQL 17.11, on this branch, with the commands above:
+
+- **First-run ledger read.** CBD-116 left open whether `readAppliedScript`
+  survives a truly empty database, since `parseAppliedRows` throws on any
+  stdout line without a pipe and the read sends `CREATE TEMP TABLE` and a `DO`
+  block before its `SELECT`. It does: with `--quiet`, psql prints no command
+  tag for either, stdout is zero bytes, exit 0, and the parser returns no rows.
+  `db:status` on the empty database listed both migrations as pending.
+- **AC01.** `db:up` created the network, volume, and container and reported
+  healthy; `db:migrate` applied both migrations; a second `db:migrate` reported
+  `nothing to apply: 2 migration(s) already applied`; the ledger held two rows
+  with `applied_by = cobudget_migration`.
+- **AC02.** A stray table with a row was created by hand; `db:reset` dropped
+  and re-applied; `pg_tables` for `public` then listed the ledger only;
+  `db:verify` passed; `pg_default_acl` held the two grant rows again.
+- **AC03.** With the server running at 17 and the pin edited to 16, `status`,
+  `apply`, and `reset` each exited 1 with the message quoted above and the
+  ledger unchanged. The pin was restored.
+- **AC05.** `db:verify` passed; issued directly, `CREATE TABLE` as either
+  application role returned `permission denied for schema public` and
+  `ALTER TABLE cobudget_schema_migrations` returned `must be owner of table`;
+  `\ddp` showed `cobudget_api=arwd` and `cobudget_worker=arwd` on tables and
+  `rU` on sequences, owner `cobudget_migration`.
+- **Stop and start.** `db:stop`, then `status` reported
+  `service "db" is not running` with the hint to run `db:up`; `db:up` again;
+  `status` listed both migrations as applied.
+
+### Fixtures
+
+| Fixture | Breaks |
+| --- | --- |
+| `cbd-117-fx-01` | AC03 — a server one major below the pin stops `apply`, `status`, and `reset` before the ledger is read, naming both versions (built in `commands.test.ts`) |
+| `cbd-117-fx-02` | AC03 — a compose file pinning no major, two majors, or an implausible one is refused |
+| `cbd-117-fx-03` | AC03 — `db up` fails startup on a mismatched server, naming both |
+| `cbd-117-fx-04` | AC05 — a missing role fails `db verify` |
+| `cbd-117-fx-05` | AC05 — an application role holding `CREATE` on `public` fails `db verify` |
+| `cbd-117-fx-06` | AC05 — an application role allowed DDL fails `db verify` |
+| `cbd-117-fx-07` | AC05 — a DDL failure for any reason but permission is not a pass |
+| `cbd-117-fx-08` | AC05 — a database without the ledger, or without default privileges, fails `db verify` |
+
+### Limitations
+
+- `docs/development.md` (AC06) is not updated by this package's change; the
+  section it needs is in the CBD-117 result for the documentation lane.
+- The environment-contract rows (AC04) are specified, not delivered; see
+  *Credentials* above.
+- The one-transaction limitation recorded under *How a migration is applied*
+  stands: `CREATE INDEX CONCURRENTLY` cannot be used as written.
+- Two runners at once remain safe but not live, as recorded above.

@@ -34,6 +34,8 @@ type Fake = Executor & {
   readonly scripts: string[];
   databaseName: string;
   failNextApply: boolean;
+  /** What the fake server reports as server_version_num | server_version. */
+  serverVersion: string;
 };
 
 function fakeDatabase(): Fake {
@@ -45,8 +47,12 @@ function fakeDatabase(): Fake {
     scripts,
     databaseName: "cobudget_dev",
     failNextApply: false,
+    serverVersion: "170011|17.11",
     run(sql: string): ExecutionResult {
       scripts.push(sql);
+      if (sql.startsWith("SELECT current_setting('server_version_num')")) {
+        return { status: 0, stdout: `${fake.serverVersion}\n`, stderr: "" };
+      }
       if (sql.startsWith("SELECT current_database()")) {
         return { status: 0, stdout: `${fake.databaseName}\n`, stderr: "" };
       }
@@ -87,7 +93,7 @@ function harness(source = realMigrations, now = new Date(Date.UTC(2027, 0, 15, 9
     executor,
     out,
     err,
-    deps: { policy, executor, io, now: () => now, directory, packageRoot },
+    deps: { policy, executor, io, now: () => now, directory, packageRoot, pinnedMajor: 17 },
   };
 }
 
@@ -106,7 +112,8 @@ test("CBD-116-AC02: applying twice is a no-op, not an error", () => {
   out.length = 0;
   assert.equal(apply(deps), 0, "a second apply must succeed");
   assert.ok(out.some((line) => line.startsWith("nothing to apply")), out.join("\n"));
-  assert.equal(executor.scripts.length, after + 1, "only the applied-state read is sent the second time");
+  assert.equal(executor.scripts.length, after + 2,
+    "only the version probe and the applied-state read are sent the second time");
 });
 
 test("CBD-116-AC02: applied state comes from the database, not from the tree", () => {
@@ -181,6 +188,34 @@ test("create refuses a description that produces no slug", () => {
   const { deps, err } = harness();
   assert.equal(create(deps, "  ***  "), 1);
   assert.ok(err.join("\n").includes("needs a description"));
+});
+
+test("CBD-117-AC03 (cbd-117-fx-01): a server whose major differs from the pin stops every database command, naming both", () => {
+  for (const command of [apply, status, (deps: Deps) => reset(deps, [policy.reset.confirmFlag])]) {
+    const { deps, executor, err } = harness();
+    executor.serverVersion = "160009|16.9";
+    assert.equal(command(deps), 1);
+    assert.equal(executor.scripts.length, 1, "nothing but the read-only version probe reached the server");
+    const message = err.join("\n");
+    assert.ok(message.includes("PostgreSQL 16.9"), message);
+    assert.ok(message.includes("major 16"), message);
+    assert.ok(message.includes("pins major 17"), message);
+    assert.equal(executor.applied.size, 0);
+  }
+});
+
+test("CBD-117-AC03: a matching major of any minor proceeds", () => {
+  const { deps, executor } = harness();
+  executor.serverVersion = "170000|17.0";
+  assert.equal(apply(deps), 0);
+  assert.ok(executor.applied.size > 0);
+});
+
+test("CBD-117-AC03: an unreadable server version is a refusal, not a guess", () => {
+  const { deps, executor, err } = harness();
+  executor.serverVersion = "PostgreSQL 17.11";
+  assert.equal(status(deps), 1);
+  assert.ok(err.join("\n").includes("unrecognised server version"), err.join("\n"));
 });
 
 test("CBD-116-AC03: reset is refused without the confirmation flag", () => {

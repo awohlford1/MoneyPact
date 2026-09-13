@@ -1,0 +1,62 @@
+# MoneyPact local development database (CBD-117).
+#
+# One service: PostgreSQL, the engine CBD-105 selected (DP-105-001), at the
+# major version the intended host runs. Local only -- no hosted resource is
+# created or referenced here (PROVIDERS-LOCAL-001).
+#
+# Documented commands live in packages/migrations/README.md and are wrapped by
+# that package's npm scripts (db:up, db:migrate, db:status, db:reset, db:stop,
+# db:destroy, db:verify). `docker compose up -d --wait` from the repository
+# root works as well; the wrappers only add the version and role checks.
+#
+# The project name is fixed so that every checkout and worktree of this
+# repository shares one database and one volume rather than each directory
+# name creating its own.
+name: cobudget
+
+services:
+  db:
+    # THE PIN. This is the only place the PostgreSQL major version is written.
+    #
+    # It is 17 because CBD-108 selected Cloud SQL for PostgreSQL (C1) on
+    # 2026-09-02 and no CBD-105 or CBD-108 document states the major that
+    # evaluation ran against (version-page confirmation is OQ-105-003, still
+    # open), so the current Cloud SQL for PostgreSQL default major is taken and
+    # recorded as an assumption in packages/migrations/README.md. Changing the
+    # host's major means changing this one line; the migration tool reads it
+    # (packages/migrations/src/local.ts) and refuses to touch any server whose
+    # major differs, naming both versions.
+    #
+    # If this ever moves to 18 or later: the official image's data directory
+    # moved from /var/lib/postgresql/data to /var/lib/postgresql/<major>/docker
+    # in 18, so the volume target below must move with it.
+    image: postgres:17
+    environment:
+      # Local bootstrap superuser. The application never uses it; the roles
+      # the application and the migration runner use are created by
+      # packages/migrations/local/initdb/010-roles.sql on first start, and
+      # their grants come from a migration so they match hosted exactly.
+      # These values are deliberately obvious, short, low-entropy, and not
+      # secrets: this server listens on the loopback interface only.
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: local-only-superuser
+      POSTGRES_DB: cobudget_dev
+    ports:
+      # Loopback only. Override the host port with COBUDGET_DB_PORT in the
+      # shell when 5432 is taken; nothing in the repository reads it.
+      - "127.0.0.1:${COBUDGET_DB_PORT:-5432}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./packages/migrations/local/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # Over TCP on purpose. While the image runs its initdb scripts it starts
+      # a temporary server that listens on the Unix socket only, and a
+      # socket-based pg_isready would report healthy before the roles exist.
+      test: ["CMD-SHELL", "pg_isready -h localhost -U postgres -d cobudget_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+volumes:
+  db-data:
