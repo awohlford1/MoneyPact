@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | **Proposed — implementation, independent review, Security review, and transaction evidence pending** |
-| Document version | 0.1 |
+| Document version | 0.1.1 |
 | Jira subtask | [CBD-233](https://cobudget.atlassian.net/browse/CBD-233) |
 | Parent | [CBD-23](https://cobudget.atlassian.net/browse/CBD-23) |
 | Consumes | CBD-231 v0.1 proposal; CBD-232 v0.2.1; CBD-236 v0.4 proposal |
@@ -133,8 +133,9 @@ following serializable transaction can authorize creation:
 4. Allocate candidate budget, Primary membership, schedule-version,
    current-period, outcome, and onboarding-continuation identifiers server-side.
    Assemble CBD-236's
-   `ApiBootstrapUserPolicyInput` for `space.create` from verified session,
-   subject, profile, registry, and transactional absence reads. Call `decide`.
+   `PolicyInput` in its API bootstrap-user variant for `space.create` from
+   verified session, subject, profile, registry, and transactional absence
+   reads. Call `decide`.
 5. Through CBD-236's runtime mutation seam, re-read and exactly compare the
    bootstrap captured versions, candidate IDs, policy tuple, input digest, and
    absence predicates. Discharge `create_primary_owner_membership`. A denial
@@ -146,8 +147,13 @@ following serializable transaction can authorize creation:
    version, and immutable reviewed preview periods. Deferred composite foreign
    keys validate the forward references before commit, so no nullable or
    temporarily unbound budget shape is required.
-7. Insert the CBD-236 allow audit and the single `budget.created` creation audit.
-   Insert the success outcome and idempotency row. Mark the proposal
+7. Insert the CBD-231 §3.4 `budget_creation_operation` row keyed by
+   `proposal_id` in state `succeeded`, referencing the candidate budget; its
+   unique constraints on `proposal_id` and operation-to-budget are what make a
+   second outcome for the same proposal impossible. Insert the CBD-236 allow
+   audit and the single `budget.created` creation audit, each referencing that
+   operation. Insert the success outcome (success-to-operation and
+   success-to-budget unique) and the idempotency row. Mark the proposal
    `confirmed`, recording the authoritative budget identifier and outcome.
 8. Force deferred constraint evaluation, then commit. Only after commit load
    the stored outcome and serialize the response.
@@ -300,4 +306,5 @@ rule are not compatible. Neither finding changes an approved source.
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.1.1 | September 13, 2026 | Manager, in the merge lane. Review closures (CBD231-REVIEW-001): §4 step 7 now writes the CBD-231 §3.4 `budget_creation_operation` row that the uniqueness guards reference (finding 1); the CBD-236 input named as `PolicyInput` in its API bootstrap-user variant instead of a type CBD-236 does not define (finding 2). No other text changed. |
 | 0.1 | September 12, 2026 | Initial architecture proposal: request/response, transaction and replay protocol, failure and race matrices, audit/data boundary, CBD-232 identifier-level disposition, compatibility implications, test catalog, and AC traceability. |
