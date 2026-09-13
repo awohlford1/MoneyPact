@@ -19,7 +19,7 @@ void test("durable proposal locator composes subject/environment predicates; for
     assert.ok(Object.hasOwn(conditions, "account_subject_id"));
     assert.ok(Object.hasOwn(conditions, "environment"));
     return { rows: conditions.account_subject_id === proposalContext.subjectId && conditions.environment === proposalContext.environment
-      ? [{ proposal_payload: record, candidate_budget_space_id: "durable-candidate", lifecycle_revision: 1 }] : [], rowCount: 1 };
+      ? [{ proposal_payload: record, candidate_budget_space_id: "durable-candidate", candidate_primary_membership_id: "durable-membership", lifecycle_revision: 1 }] : [], rowCount: 1 };
   } } as unknown as DataAccessClient;
   const store = new DurableProposalStore(client, () => { throw new Error("read must not allocate"); }, () => "2026-09-13T12:00:00Z");
   assert.equal((await store.locate(proposalContext))?.candidateBudgetSpaceId, "durable-candidate");
@@ -29,6 +29,7 @@ void test("durable proposal locator composes subject/environment predicates; for
   ]) assert.equal(await store.loadForContext(other), null);
   const reopened = new DurableProposalStore(client, () => "new-candidate", () => "2026-09-13T12:00:00Z");
   assert.equal((await reopened.locate(proposalContext))?.candidateBudgetSpaceId, "durable-candidate");
+  assert.equal((await reopened.locate(proposalContext))?.candidatePrimaryMembershipId, "durable-membership");
   const count = queries.length;
   assert.equal(await store.locate({ ...proposalContext, proposalId: "malformed" }), null);
   assert.equal(queries.length, count);

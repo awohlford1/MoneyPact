@@ -12,7 +12,12 @@ export interface Operation {
   readonly purpose: string;
   readonly mode: "user_delegated" | "service";
   readonly fieldSet: "default" | readonly string[];
+  /** Opaque server-resolved reference; never populated from request fields. */
+  readonly proposalReference?: string;
 }
+export type CreationCandidates = Readonly<{ spaceId: string; membershipId: string }>;
+/** Trusted composition supplies persisted candidates for a resolved proposal. */
+export type ProposalCandidateProvider = (operation: Operation) => Promise<CreationCandidates>;
 export interface FactLookup {
   readonly operation: Operation;
   readonly credential: unknown;
@@ -76,11 +81,19 @@ export class FactAssembler {
   readonly #adapter: "api" | "worker";
   readonly #clock: () => Date;
   readonly #timeoutMs: number;
-  constructor(adapter: "api" | "worker", source: FactSourceAdapter, clock: () => Date = () => new Date(), timeoutMs = 5_000) {
+  readonly #proposalCandidates: ProposalCandidateProvider | undefined;
+  constructor(adapter: "api" | "worker", source: FactSourceAdapter, clock: () => Date = () => new Date(), timeoutMs = 5_000, proposalCandidates?: ProposalCandidateProvider) {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 5_000) throw new Error("invalid_fact_deadline");
     this.#adapter = adapter; this.#source = source; this.#clock = clock; this.#timeoutMs = timeoutMs;
+    this.#proposalCandidates = proposalCandidates;
   }
-  candidates(): { spaceId: string; membershipId: string } { return { spaceId: randomUUID(), membershipId: randomUUID() }; }
+  async candidates(operation: Operation): Promise<CreationCandidates> {
+    if (operation.proposalReference === undefined) return { spaceId: randomUUID(), membershipId: randomUUID() };
+    if (!this.#proposalCandidates || operation.action !== "space.create" || this.#adapter !== "api") throw new FactFailure("input_invalid");
+    const candidates = await this.#proposalCandidates(operation);
+    if (!validLeaf("spaceId", candidates.spaceId) || !validLeaf("membershipId", candidates.membershipId)) throw new FactFailure("input_invalid");
+    return { spaceId: candidates.spaceId, membershipId: candidates.membershipId };
+  }
 
   async #read(source: FactSource, lookup: FactLookup, transaction?: unknown): Promise<Readonly<Record<string, unknown>> | null> {
     const controller = new AbortController();

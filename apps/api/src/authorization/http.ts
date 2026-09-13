@@ -4,7 +4,7 @@ import type { ApiSurfaceGate } from "../rate-limit/http.js";
 import { externalDenial } from "@cobudget/contracts/authorization";
 import type { ExternalDenial } from "@cobudget/contracts/authorization";
 import { createParamDecorator, HttpException, Inject, Injectable, RequestMethod, ServiceUnavailableException, SetMetadata } from "@nestjs/common";
-import type { CallHandler, CanActivate, ExecutionContext, NestInterceptor, OnModuleInit } from "@nestjs/common";
+import type { CallHandler, CanActivate, DynamicModule, ExecutionContext, NestInterceptor, OnModuleInit } from "@nestjs/common";
 import { METHOD_METADATA, PATH_METADATA } from "@nestjs/common/constants.js";
 import { DiscoveryService, HttpAdapterHost, Reflector } from "@nestjs/core";
 import type { FastifyInstance, FastifyRequest } from "fastify";
@@ -20,12 +20,20 @@ import type { Operation } from "./facts.js";
 
 const METADATA = Symbol("authorization.route");
 export const API_AUTHORIZATION = Symbol("authorization.dependencies");
+/** A route-owned application failure, transported only after rollback. */
+export class RouteFailure extends Error {
+  readonly status: number; readonly response: Readonly<{ error: string }>;
+  constructor(status: number, error: string) { super("route failure"); this.status = status; this.response = Object.freeze({ error }); }
+}
+export type RouteReplay = { readonly kind: "committed"; readonly response: unknown } | { readonly kind: "conflict" } | { readonly kind: "absent" };
 export interface RouteAuthorization {
+  readonly replay?: (request: FastifyRequest, subject: string) => Promise<RouteReplay>;
   readonly action: string;
   readonly purpose: "user_delegated";
   readonly resourceLocator: (request: FastifyRequest) => Omit<Operation, "action" | "purpose" | "mode">;
 }
 export interface ApiAuthorizationOptions {
+  readonly modules?: readonly DynamicModule[];
   boundary: AuthorizationBoundary;
   rateLimit?: ApiSurfaceGate;
   /** CBD-266 supplies the approved surface check when its hook order is settled. */
@@ -60,6 +68,7 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
   readonly #discovery: DiscoveryService;
   readonly #adapter: HttpAdapterHost;
   readonly #pending = new WeakMap<object, AuthorizedContext>();
+  readonly #replays = new WeakMap<object, RouteReplay>();
   readonly #registered = new Set<string>();
   readonly #missing: string[] = [];
   readonly #leases = new WeakMap<object, () => Promise<void>>();
@@ -140,12 +149,21 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
       if (!await this.#options.surfaceApproved(request)) return await this.#options.boundary.rejectEnforcement(surfaceOutcome(this.#rateLimit.evidence(request), "deny_policy_unavailable"));
       const metadata = this.#reflector.get<RouteAuthorization | undefined>(METADATA, context.getHandler());
       if (!metadata || metadata.purpose !== "user_delegated") return await this.#options.boundary.reject();
-      // Session resolution occurs inside authorize. No body can supply authority.
+      // Replay is authenticated independently and never evaluates creation policy.
+      if (metadata.replay) {
+        const subject = await this.#options.boundary.resolveSession(this.#options.sessionLocator(request));
+        const replay = await metadata.replay(request, subject);
+        if (replay.kind !== "absent") { this.#replays.set(request, replay); return true; }
+      }
       const operation = { ...metadata.resourceLocator(request), action: metadata.action, purpose: metadata.purpose, mode: "user_delegated" as const };
       const authorized = await this.#options.boundary.authorize({ operation, credential: this.#options.sessionLocator(request) }, this.#rateLimit.evidence(request));
       this.#pending.set(request, authorized);
       return true;
     } catch (error) {
+      if (error instanceof RouteFailure) {
+        try { await this.#options.boundary.rejectEnforcement(surfaceOutcome(this.#rateLimit.evidence(request), "deny_input_invalid")); } catch { /* Restricted pre-policy rejection. */ }
+        throw new HttpException(error.response, error.status);
+      }
       if (!(error instanceof AuthorizationDenied)) {
         try { await this.#options.boundary.reject(); } catch { /* Denial is recorded before responding. */ }
       }
@@ -155,17 +173,26 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getClass() === HealthController && context.getHandler() === HealthController.prototype.getReadiness) return next.handle();
     const request = context.switchToHttp().getRequest<FastifyRequest>();
+    const replay = this.#replays.get(request);
+    this.#replays.delete(request);
+    if (replay?.kind === "committed") return from(Promise.resolve(replay.response));
+    if (replay?.kind === "conflict") return from(Promise.reject(new HttpException({ error: "idempotency_key_reused" }, 409)));
     const authorized = this.#pending.get(request);
     this.#pending.delete(request);
     return from((async () => {
       try {
         if (!authorized) return await this.#options.boundary.reject();
-        return await this.#options.boundary.execute(authorized, async (effect) => {
+        const result = await this.#options.boundary.execute(authorized, async (effect) => {
           active.set(request, effect);
           try { return await lastValueFrom(next.handle()); }
           finally { active.delete(request); }
         });
-      } catch { return this.#options.deny(externalDenial()); }
+        if (result instanceof RouteFailure) throw result;
+        return result;
+      } catch (error) {
+        if (error instanceof RouteFailure) throw new HttpException(error.response, error.status);
+        return this.#options.deny(externalDenial());
+      }
     })());
   }
 }

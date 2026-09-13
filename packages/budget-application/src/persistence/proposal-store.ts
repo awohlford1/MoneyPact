@@ -33,6 +33,7 @@ function sameScope(left: IdempotencyRecord, right: IdempotencyRecord): boolean {
 export interface LocatedProposal {
   readonly record: ProposalRecord;
   readonly candidateBudgetSpaceId: string;
+  readonly candidatePrimaryMembershipId: string;
   readonly lifecycleRevision: number;
 }
 
@@ -53,9 +54,9 @@ export class DurableProposalStore implements BudgetCreationProposalStore {
     const result = await client.platformSelect({ table: TABLE, conditions: [
       ...subjectConditions(key), { column: "proposal_id", value: proposalUuid(key.proposalId) },
     ] });
-    const row = result.rows[0] as { proposal_payload: ProposalRecord; candidate_budget_space_id: string; lifecycle_revision: number } | undefined;
+    const row = result.rows[0] as { proposal_payload: ProposalRecord; candidate_budget_space_id: string; candidate_primary_membership_id: string; lifecycle_revision: number } | undefined;
     if (!row || !contextMatches(row.proposal_payload, key)) return null;
-    return { record: row.proposal_payload, candidateBudgetSpaceId: row.candidate_budget_space_id, lifecycleRevision: row.lifecycle_revision };
+    return { record: row.proposal_payload, candidateBudgetSpaceId: row.candidate_budget_space_id, candidatePrimaryMembershipId: row.candidate_primary_membership_id, lifecycleRevision: row.lifecycle_revision };
   }
   async loadForContext(key: ProposalContextKey): Promise<ProposalRecord | null> {
     return (await this.locate(key))?.record ?? null;
@@ -88,7 +89,7 @@ export class DurableProposalStore implements BudgetCreationProposalStore {
     await client.platformInsert({ table: TABLE, values: {
       proposal_id: proposalUuid(r.proposalId), account_subject_id: r.subjectId, environment: r.environment,
       proposal_version: String(r.proposalVersion), proposal_digest: r.previewDigest, proposal_state: r.status,
-      candidate_budget_space_id: this.#candidateId(), binding_digest: digestOf(r.confirmationBinding),
+      candidate_budget_space_id: this.#candidateId(), candidate_primary_membership_id: this.#candidateId(), binding_digest: digestOf(r.confirmationBinding),
       proposal_payload: r, proposal_idempotency: command.idempotency,
       created_at: r.issuedAt, updated_at: command.now, lifecycle_revision: 1,
     } });
@@ -131,4 +132,37 @@ export class DurableProposalStore implements BudgetCreationProposalStore {
       await this.#update(client, key, prior, { ...prior.record, status: "invalidated", statusReason: reason }, this.#now());
     });
   }
+}
+
+/** CBD-233 section 8: this port is constructed with the confirmation callback's
+ * scoped client. Its claim state cannot escape into a later transaction. */
+export function proposalConfirmationPort(proposals: DurableProposalStore, client: DataAccessClient): import("../creation-proposals/ports.ts").BudgetCreationConfirmationUnitOfWork {
+  const claims = new Map<string, { located: LocatedProposal; bindingDigest: string }>();
+  return {
+    claimCurrentProposal: async (key, binding, expectedLifecycleRevision) => {
+      const located = await proposals.locate(key, client);
+      if (!located || located.lifecycleRevision !== expectedLifecycleRevision || located.record.status !== "previewed" || located.record.successorProposalId !== null) throw new Error("proposal claim conflict");
+      const bindingDigest = digestOf(binding);
+      const claimed = await client.platformUpdate({ table: TABLE, conditions: [...subjectConditions(key),
+        { column: "proposal_id", value: proposalUuid(key.proposalId) }, { column: "lifecycle_revision", value: expectedLifecycleRevision },
+        { column: "proposal_state", value: "previewed" }, { column: "binding_digest", value: bindingDigest }], set: { lifecycle_revision: expectedLifecycleRevision } });
+      if (claimed.rowCount !== 1) throw new Error("proposal claim conflict");
+      claims.set(key.proposalId, { located, bindingDigest }); return located.record;
+    },
+    recordConfirmed: async command => {
+      const claim = claims.get(command.context.proposalId);
+      if (!claim || !contextMatches(claim.located.record, command.context) || command.expectedLifecycleRevision !== claim.located.lifecycleRevision
+        || command.bindingDigest !== claim.bindingDigest || command.authoritativeBudgetSpaceId !== claim.located.candidateBudgetSpaceId
+        || !command.confirmationOutcomeId) throw new Error("proposal confirmation conflict");
+      const record = claim.located.record;
+      const result = await client.platformUpdate({ table: TABLE, conditions: [...subjectConditions(command.context),
+        { column: "proposal_id", value: proposalUuid(command.context.proposalId) }, { column: "lifecycle_revision", value: command.expectedLifecycleRevision },
+        { column: "binding_digest", value: command.bindingDigest }, { column: "proposal_state", value: "previewed" }],
+        set: { proposal_state: "confirmed", lifecycle_revision: command.expectedLifecycleRevision + 1,
+          proposal_payload: { ...record, status: "confirmed", statusReason: "confirmed", confirmedBudgetSpaceId: command.authoritativeBudgetSpaceId,
+            confirmationOutcomeId: command.confirmationOutcomeId, confirmedBindingDigest: command.bindingDigest } } });
+      if (result.rowCount !== 1) throw new Error("proposal confirmation conflict");
+      claims.delete(command.context.proposalId);
+    },
+  };
 }

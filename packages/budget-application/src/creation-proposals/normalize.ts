@@ -56,7 +56,7 @@ function normalizeName(value: unknown): { value?: string; errors: FieldError[] }
       errors: [{ code: "name.required", path: "name", message: "Enter a budget name." }],
     };
   }
-  if ([...normalized].length > 100) {
+  if ([...new Intl.Segmenter("und", { granularity: "grapheme" }).segment(normalized)].length > 100) {
     return {
       errors: [
         { code: "name.too-long", path: "name", message: "Use 100 characters or fewer." },

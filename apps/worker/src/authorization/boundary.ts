@@ -85,12 +85,13 @@ export class AuthorizationBoundary {
     let input: PolicyInput | undefined;
     let decision = deny("input_invalid");
     try {
-      const privateLookup: FactLookup = { ...structuredClone(lookup), ...(lookup.operation.action === "space.create" ? { candidates: this.#assembler.candidates() } : {}) };
-      input = await this.#assembler.assemble(privateLookup);
+      const privateLookup: FactLookup = structuredClone(lookup);
+      const resolvedLookup: FactLookup = { ...privateLookup, ...(privateLookup.operation.action === "space.create" ? { candidates: await this.#assembler.candidates(privateLookup.operation) } : {}) };
+      input = await this.#assembler.assemble(resolvedLookup);
       decision = decide(input); evaluated = true;
       if (decision.outcome === "allow" && this.#audit) {
         const context = freeze({ input: structuredClone(input), decision: structuredClone(decision) });
-        this.#contexts.set(context, { lookup: privateLookup, input: structuredClone(input), decision: structuredClone(decision), correlationId, ...(enforcement ? { enforcement: structuredClone(enforcement) } : {}) });
+        this.#contexts.set(context, { lookup: resolvedLookup, input: structuredClone(input), decision: structuredClone(decision), correlationId, ...(enforcement ? { enforcement: structuredClone(enforcement) } : {}) });
         return context;
       }
       if (decision.outcome === "allow") decision = deny("input_invalid");
