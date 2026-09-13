@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Proposed — architecture contract for implementation and independent Security review; provider observations remain open** |
+| Status | **Approved — Product Owner, September 13, 2026 (PO-CONTRACT-APPROVALS-001); open questions and residuals stay recorded and open** |
 | Document version | 0.3 |
 | Jira subtask | [CBD-190](https://cobudget.atlassian.net/browse/CBD-190) |
 | Parent | [CBD-21](https://cobudget.atlassian.net/browse/CBD-21) |
@@ -739,6 +739,7 @@ conformance.
 
 | Version | Date | Author | Change | Disposition |
 | --- | --- | --- | --- | --- |
+| 0.3 (approval) | September 13, 2026 | Manager, in the merge lane | Product Owner approval recorded (PO-CONTRACT-APPROVALS-001). Status Proposed → Approved at the same version; no decision, identifier or contract text changed. | Approved. |
 | 0.1 | September 12, 2026 | Architecture specialist, dispatched under `CBD190-ARCH-001 v1` | Initial callback, mapping, CBD-191 hand-off, local-adapter fidelity, dual-adapter conformance, negative-test, environment, and AC traceability contract under `PROVIDERS-LOCAL-001`. | Proposed; independent Review and Security review required. |
 | 0.2 | September 12, 2026 | Architecture specialist, dispatched under `CBD190-ARCH-002 v1` | Review correction round: finding-to-line map follows below. | Proposed; independent Review required; the custody and zero-profile decisions then remained open. |
 | 0.3 | September 12, 2026 | Architecture specialist, dispatched under `CBD190-ARCH-003 v1` | Executive-decision and Security correction round: finding-to-line map follows below. | Proposed; independent Review and Security review required; provider observations remain open. |

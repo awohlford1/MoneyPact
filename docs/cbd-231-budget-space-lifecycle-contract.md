@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Proposed — implementation, independent review, and database evidence pending** |
+| Status | **Approved — Product Owner, September 13, 2026 (PO-CONTRACT-APPROVALS-001); open questions and residuals stay recorded and open** |
 | Document version | 0.1 |
 | Jira subtask | [CBD-231](https://cobudget.atlassian.net/browse/CBD-231) |
 | Parent | [CBD-23](https://cobudget.atlassian.net/browse/CBD-23) |
@@ -272,4 +272,5 @@ decision is changed.
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.1 (approval) | September 13, 2026 | Product Owner approval recorded (PO-CONTRACT-APPROVALS-001). Status Proposed → Approved at the same version; no decision, identifier or contract text changed. |
 | 0.1 | September 12, 2026 | Initial architecture proposal: record model, lifecycle, constraint catalog, CBD-246 port, migration/compatibility behavior, verification obligations, CBD-232 reconciliation, and AC traceability. |

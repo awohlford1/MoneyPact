@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Proposed — architecture review and implementation evidence pending** |
+| Status | **Approved — Product Owner, September 13, 2026 (PO-CONTRACT-APPROVALS-001); open questions and residuals stay recorded and open** |
 | Document version | 0.2.1 |
 | Jira subtask | [CBD-232](https://cobudget.atlassian.net/browse/CBD-232) |
 | Parent | [CBD-23](https://cobudget.atlassian.net/browse/CBD-23) |
@@ -791,6 +791,7 @@ confirmation-transaction participation remain enforceable.
 
 | Version | Date | Author | Change | Disposition |
 | --- | --- | --- | --- | --- |
+| 0.2.1 (approval) | September 13, 2026 | Manager, in the merge lane | Product Owner approval recorded (PO-CONTRACT-APPROVALS-001). Status Proposed → Approved at the same version; no decision, identifier or contract text changed. | Approved. |
 | 0.2.1 | September 12, 2026 | Manager, in the merge lane | Re-review closures: `replaceCurrent` evaluation order and terminal-head regeneration defined (re-review finding 1, §11 seam paragraph); empty `Idempotency-Key` now yields `idempotency-key.required` only (finding 2, §5 catalog). No other text changed. | Proposed; re-review findings 1 and 2 closed in the lane. |
 | 0.2 | September 12, 2026 | Architecture specialist, dispatched by Manager | Independent-review corrections: F1 → lines 161–226, 541–561, 627–651, and 710–711; F2 → lines 228–314; F3 → lines 554–558, 627–651, and 711; F4 → lines 34–38, 57–60, 316–339, 619, 666–696, 735–736, and 770–773; F5 → lines 343–401 and 708; F6 → lines 9, 20–26, and 767–769; F7 → lines 88–108. | Proposed; corrected candidate requires independent re-review and implementation evidence. |
 | 0.1 | September 12, 2026 | Architecture specialist, dispatched by Manager | Initial request/response, validation, computation, preview, binding, invalidation, package, persistence-seam, sibling-consumption, test, and AC traceability contract. | Proposed; independent architecture/review and implementation evidence pending. |

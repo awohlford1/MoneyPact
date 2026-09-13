@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Proposed — implementation, independent review, Security review, and transaction evidence pending** |
+| Status | **Approved — Product Owner, September 13, 2026 (PO-CONTRACT-APPROVALS-001); open questions and residuals stay recorded and open** |
 | Document version | 0.1.1 |
 | Jira subtask | [CBD-233](https://cobudget.atlassian.net/browse/CBD-233) |
 | Parent | [CBD-23](https://cobudget.atlassian.net/browse/CBD-23) |
@@ -306,5 +306,6 @@ rule are not compatible. Neither finding changes an approved source.
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.1.1 (approval) | September 13, 2026 | Product Owner approval recorded (PO-CONTRACT-APPROVALS-001). Status Proposed → Approved at the same version; no decision, identifier or contract text changed. |
 | 0.1.1 | September 13, 2026 | Manager, in the merge lane. Review closures (CBD231-REVIEW-001): §4 step 7 now writes the CBD-231 §3.4 `budget_creation_operation` row that the uniqueness guards reference (finding 1); the CBD-236 input named as `PolicyInput` in its API bootstrap-user variant instead of a type CBD-236 does not define (finding 2). No other text changed. |
 | 0.1 | September 12, 2026 | Initial architecture proposal: request/response, transaction and replay protocol, failure and race matrices, audit/data boundary, CBD-232 identifier-level disposition, compatibility implications, test catalog, and AC traceability. |
