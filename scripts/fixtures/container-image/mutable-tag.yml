@@ -1,0 +1,3 @@
+services:
+  api:
+    image: registry.example.invalid/moneypact/api:latest
