@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft v0.2 — Product Owner review and approval required. Rule-level expectations only; deterministic fixtures are test-design scope under `OI-82-002`** |
-| Document version | 0.2 |
+| Status | **Approved — Product Owner, September 12, 2026 (CBD82-APPROVAL-CONDITION-001)** |
+| Document version | 0.2.1 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-82](https://cobudget.atlassian.net/browse/CBD-82) |
 | Parent | [CBD-22](https://cobudget.atlassian.net/browse/CBD-22) |
@@ -21,7 +21,7 @@ Every negative scenario exists because the model would otherwise be untestable i
 
 Every scenario belongs to exactly one family and maps to at least one criterion in the traceability record. A new scenario must not create an observable distinction the isolation rules forbid.
 
-This draft contains **59 scenarios** in nine families. v0.2 added the `CORR` and `DERIV` families, which cover the correction, retry, cache, count, and lost-revocation outcomes the v0.1 traceability record claimed and the catalog did not contain.
+This catalog contains **60 scenarios** in nine families. v0.2 added the `CORR` and `DERIV` families, which cover the correction, retry, cache, count, and lost-revocation outcomes the v0.1 traceability record claimed and the catalog did not contain. v0.2.1 adds the shared-account unlink scenario required by `CBD-82-AC08`.
 
 ## 3. Scenario inventory
 
@@ -59,7 +59,7 @@ This draft contains **59 scenarios** in nine families. v0.2 added the `CORR` and
 | `CANON-82-T05` | A stale observation arrives after a split | It routes by provenance to its own connection and does not re-merge | `AS-82-03`, `CA-92-006` |
 | `CANON-82-T06` | An observation arrives for a connection that has been disconnected | Recorded against that connection as historical; no space receives an update | `OC-82-03` |
 
-### 3.4 Joint projection — JOINT, 8 scenarios
+### 3.4 Joint projection — JOINT, 9 scenarios
 
 | ID | Scenario | Expected outcome | Source |
 | --- | --- | --- | --- |
@@ -71,6 +71,7 @@ This draft contains **59 scenarios** in nine families. v0.2 added the `CORR` and
 | `JOINT-82-T06` | A link version changes between proposal and commit | The commit fails closed and leaves candidates separate | `AS-82-06` |
 | `JOINT-82-T07` | A contributor removes their own source from a live projection | Their source separates; the others remain; deduplication recomputes; no account is unlinked | `CA-92-011`, `OC-82-02` |
 | `JOINT-82-T08` | The same rejected evidence arrives again after a non-association decision | No projection re-forms. Re-association needs materially new evidence or a fresh unanimous confirmation | `AS-82-08` |
+| `JOINT-82-T09` | A contributor unlinks their account from one space while it is one of two sources in a live joint projection | The link is removed atomically and stops only that space; the projection dissolves, the remaining linked source becomes its separate budget-visible representation, and deduplication and derived values recompute. The connection and every other space stay untouched; the outcome is safely notified and audited | `LK-82-06`, `CD-82-10`, `OC-82-01`; CBD-93 §4.12 `AB-93-084`–`AB-93-086` |
 
 ### 3.5 Lifecycle outcomes — LIFE, 8 scenarios
 
@@ -136,17 +137,18 @@ This draft contains **59 scenarios** in nine families. v0.2 added the `CORR` and
 | LNK | 7 |
 | AUTH | 6 |
 | CANON | 6 |
-| JOINT | 8 |
+| JOINT | 9 |
 | LIFE | 8 |
 | ISO | 7 |
 | DEL | 4 |
 | CORR | 7 |
 | DERIV | 6 |
-| **Total** | **59** |
+| **Total** | **60** |
 
 ## 5. Revision history
 
 | Version | Date | Author | Change | Approval |
 | --- | --- | --- | --- | --- |
+| 0.2.1 | September 12, 2026 | Claude with Alexander Wohlford as Product Owner | Added `JOINT-82-T09`, the `CBD-82-AC08` scenario in which a contributor unlinks one of two sources from a live joint projection. The link stops only that space, the projection dissolves, the remaining linked source becomes a separate budget-visible representation, derived values recompute, the connection and other spaces stay untouched, and the outcome is safely notified and audited. Increased the `JOINT` family from 8 to 9 scenarios and the catalog total from 59 to 60. No rule or existing identifier changed. | Approved — `CBD82-APPROVAL-CONDITION-001` |
 | 0.2 | September 12, 2026 | Claude with Alexander Wohlford as Product Owner | Added the `CORR` and `DERIV` families, 13 scenarios, taking the catalog to 59 in nine families. They cover the correction rights, provider retry and redelivery, correction observations, cache invalidation, search and count residue, lost revocation, idempotent recomputation, and silent re-merge that the v0.1 traceability record claimed against `PB-82-06`, `LC-82-04`, and `PB-82-05` without a scenario or a rule behind any of them. The seven original families are unchanged. | Draft; Product Owner review required |
 | 0.1 | September 3, 2026 | Claude with Alexander Wohlford as Product Owner | Initial catalog. 46 rule-level scenarios in seven families, weighted toward the negative cases the isolation rules exist to make testable. Deterministic fixtures remain test-design scope under `OI-82-002`. | Draft; Product Owner review required |

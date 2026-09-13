@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Draft v0.2 — Product Owner review and approval required. Physical schema, provider evidence, and tests remain gated by `OI-82-001` and `OI-82-002`** |
-| Document version | 0.2 |
+| Status | **Approved — Product Owner, September 12, 2026 (CBD82-APPROVAL-CONDITION-001)** |
+| Document version | 0.2.1 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-82](https://cobudget.atlassian.net/browse/CBD-82) |
 | Parent | [CBD-22](https://cobudget.atlassian.net/browse/CBD-22) |
@@ -398,5 +398,6 @@ This document supplies the logical model beneath the last of those and answers `
 
 | Version | Date | Author | Change | Approval |
 | --- | --- | --- | --- | --- |
+| 0.2.1 | September 12, 2026 | Claude with Alexander Wohlford as Product Owner | Added no rule or identifier. The companion catalog now includes `JOINT-82-T09`, the scenario that exercises `LK-82-06` and the §8.3 projection transition when a contributor unlinks one of two sources from a live joint projection. The conditional approval in `CBD82-APPROVAL-CONDITION-001` therefore took effect. | Approved — `CBD82-APPROVAL-CONDITION-001` |
 | 0.2 | September 12, 2026 | Claude with Alexander Wohlford as Product Owner | Closed the seven criterion-level gaps found in the v0.1 review. Added §3 lifecycle states per entity and the §3.1 field-level logical schema and retention inventory, 64 fields each carrying purpose, audience, sensitivity, and a retention rule or named gate. Added `CR-82-01` to `CR-82-09` for correction, retry, and repair, which v0.1 named in its traceability and never stated. Split §8 into scope effects and record effects so provenance, customer notice, and audit have their own columns per event, and added §8.3 state machines for the connection, the link, and the joint proposal. Added `DS-82-01` to `DS-82-07` for cache invalidation, search and count residue, lost revocation, and silent re-merge, none of which v0.1 covered. Added the §10.1 retained-event inventory, 21 events on the same four-part obligation. Replaced the two-sentence §11 with explicit handoff contracts `HO-82-01` to `HO-82-06` naming CBD-212, CBD-214, CBD-216, CBD-219, CBD-84, CBD-49, CBD-107, CBD-67, and CBD-71. **Corrected the governing set from `CA-92-012` to `CA-92-013`** and rewrote `LC-82-02` against it, adding the rejoin, orphan-labeling, projection-recomputation, and restoration rules v0.1 omitted. No open issue was resolved: `OI-82-001` to `OI-82-004` and all five evidence gates stand. **Correction round after the first independent review, same version:** the header now cites CBD-93 §4.12 `AB-93-084`–`AB-93-086`, the analysis that covers joint projection, in place of a §13 coverage gap CBD-93 v1.1 had already closed; §13 names the four of six CBD-107 documents that cite `CA-92-013` instead of claiming all six. No rule, identifier, or count changed. | Draft; Product Owner review required |
 | 0.1 | September 3, 2026 | Claude with Alexander Wohlford as Product Owner | Initial complete draft. Twelve entities, twelve cardinality rules, ten authority rules, seven link rules, eight association rules, a seven-event outcome matrix with four lifecycle rules, ten prohibitions, seven data and audit requirements, and four open issues. Answers `EG-91-021` by naming the financial profile steward of connections, accounts, and provenance and the budget space steward of its own overlays, with the account-to-space link as the only bridge. | Draft; Product Owner review required |
