@@ -1,1 +1,10 @@
-[]
+[
+  {
+    "version": "p1",
+    "digest": "488d46739bee379870f6649a6b51aaccc97b4bfdec9519fae5ed93b581ce1f22",
+    "schemaVersion": 1,
+    "releaseCommit": "1fa9204c8a4ebe1d190f84b1e1f90a1b457096fc",
+    "productApprovalRef": "PO-CONTRACT-APPROVALS-001",
+    "securityApprovalRef": "CBD236-SECURITY-001"
+  }
+]

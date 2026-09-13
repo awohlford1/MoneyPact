@@ -15,6 +15,7 @@ COPY packages/migrations/package.json packages/migrations/package.json
 RUN PUPPETEER_SKIP_DOWNLOAD=true npm ci
 
 COPY tsconfig.base.json ./
+COPY config/authorization-policy-release-history.json config/authorization-policy-release-history.json
 COPY apps/api apps/api
 COPY apps/worker apps/worker
 COPY packages/contracts packages/contracts
@@ -53,6 +54,9 @@ COPY --from=build --chown=node:node /workspace/apps/api/dist apps/api/dist
 COPY --from=build --chown=node:node /workspace/apps/worker/package.json apps/worker/package.json
 COPY --from=build --chown=node:node /workspace/apps/worker/dist apps/worker/dist
 COPY --from=build --chown=node:node /workspace/packages/contracts packages/contracts
+# The authorization startup guard walks up from the process directory to find
+# the released policy history; without it every process fails closed.
+COPY --from=build --chown=node:node /workspace/config/authorization-policy-release-history.json config/authorization-policy-release-history.json
 
 # The processes invoke Node directly. Remove npm and its documentation from the
 # runtime image so build-only tooling and credential-shaped examples cannot ship.
