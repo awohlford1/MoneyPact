@@ -423,11 +423,16 @@ Recorded on 2026-09-12 against Docker Desktop 29.4.2 (Linux engine), image
 (CBD190-SCHEMA-001) adds the foreign keys this note used to defer, now that
 CBD-190/CBD-212's `account_subject` and `financial_profile` tables exist
 (`20260913T100000Z__create_identity_and_profile_schema.sql`):
-`budget_space.created_by_subject_id`, `budget_space_membership.
-account_subject_id`, `budget_space_membership.profile_id`,
-`budget_space_membership.created_by_subject_id`, `budget_creation_operation.
-account_subject_id`, `budget_creation_operation.profile_id`, and
-`budget_creation_idempotency.account_subject_id` are now real, `DEFERRABLE
-INITIALLY DEFERRED` foreign keys, so DB-231-007's orphan-subject and
-cross-profile rejection is a database guarantee rather than a plain-column
-limitation.
+`budget_space.created_by_subject_id` and `budget_space_membership.
+created_by_subject_id` are ordinary `DEFERRABLE INITIALLY DEFERRED` foreign
+keys to `account_subject`; `budget_creation_idempotency.account_subject_id`
+is the same. `budget_space_membership.account_subject_id`/`profile_id` and
+`budget_creation_operation.account_subject_id`/`profile_id` are instead one
+**composite** `DEFERRABLE INITIALLY DEFERRED` foreign key each, to
+`financial_profile (account_subject_id, profile_id)` -- CBD-231
+`DB-231-007`'s "composite subject/profile validation" -- so DB-231-007's
+orphan-subject and cross-profile rejection (subject A cannot pair with
+profile B) is a database guarantee, not just orphan-subject rejection
+(CBD190-REVIEW-SCHEMA-001 finding 1 corrected this from two independent
+single-column foreign keys, which would not have rejected a mismatched
+pair).

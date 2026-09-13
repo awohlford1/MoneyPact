@@ -58,7 +58,11 @@ CREATE TABLE account_subject (
 COMMENT ON TABLE account_subject IS
     'CBD-190 SS5.1: the opaque account-subject identity and lifecycle/version state. A row here never commits without exactly one active financial_profile row (CBD190-PROFILE-ATOMIC-001), enforced by the deferred pair trigger below.';
 
--- CBD-190 SS5.1: identifier and creation time are write-once.
+-- CBD-190 SS5.1: identifier and creation time are write-once. CBD-212 SS5:
+-- `deleted` has no exit -- a terminal subject is never reactivated or
+-- recreated, so an update that moves lifecycle_state away from 'deleted' is
+-- rejected regardless of what value it moves to (Review finding 2,
+-- CBD190-REVIEW-SCHEMA-001).
 CREATE FUNCTION forbid_account_subject_identity_mutation() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -67,6 +71,11 @@ BEGIN
     END IF;
     IF NEW.created_at IS DISTINCT FROM OLD.created_at THEN
         RAISE EXCEPTION 'account_subject.created_at is immutable' USING ERRCODE = '23514';
+    END IF;
+    IF OLD.lifecycle_state = 'deleted' AND NEW.lifecycle_state IS DISTINCT FROM OLD.lifecycle_state THEN
+        RAISE EXCEPTION 'account_subject % is terminal (deleted); it is never reactivated or recreated (CBD-212 SS5)',
+            OLD.account_subject_id
+            USING ERRCODE = '23514';
     END IF;
     RETURN NEW;
 END;
@@ -344,13 +353,28 @@ CREATE TABLE financial_profile (
     -- this table never holds a second row for one subject in any lifecycle
     -- state, per FP-212-01's own reasoning (a partial index would still
     -- permit a second deleted row).
-    CONSTRAINT financial_profile_account_subject_id_key UNIQUE (account_subject_id)
+    CONSTRAINT financial_profile_account_subject_id_key UNIQUE (account_subject_id),
+
+    -- Review finding 1 (CBD190-REVIEW-SCHEMA-001), CBD-231 DB-231-007
+    -- "composite subject/profile validation": since account_subject_id is
+    -- already unique above, this composite is implied in data but is
+    -- declared explicitly because it is the referenced side of the
+    -- composite foreign keys added on budget_space_membership and
+    -- budget_creation_operation in 20260913T100100Z. Two independent
+    -- foreign keys (one to account_subject, one to financial_profile) would
+    -- each be individually satisfiable by an unrelated subject/profile pair
+    -- -- subject A with profile B -- because neither alone proves the pair
+    -- belongs together; this composite unique target is what makes that
+    -- combination fail a composite foreign key.
+    CONSTRAINT financial_profile_account_subject_id_profile_id_key UNIQUE (account_subject_id, profile_id)
 );
 
 COMMENT ON TABLE financial_profile IS
     'CBD-212 SS3-SS4: exactly one row per account_subject, enforced together by the unconditional unique constraint and the deferred pair trigger below (FP-212-01-03). profile_id is never derived from account_subject_id, email, phone, display name, provider account number, or asserted legal identity (CBD-212-AC04).';
 
 -- CBD-212 SS3: profile_id, account_subject_id, and created_at are write-once.
+-- CBD-212 SS5: `deleted` has no exit -- a terminal profile is never
+-- reactivated or recreated (Review finding 2, CBD190-REVIEW-SCHEMA-001).
 CREATE FUNCTION forbid_financial_profile_identity_mutation() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -363,6 +387,11 @@ BEGIN
     END IF;
     IF NEW.created_at IS DISTINCT FROM OLD.created_at THEN
         RAISE EXCEPTION 'financial_profile.created_at is immutable' USING ERRCODE = '23514';
+    END IF;
+    IF OLD.profile_state = 'deleted' AND NEW.profile_state IS DISTINCT FROM OLD.profile_state THEN
+        RAISE EXCEPTION 'financial_profile % is terminal (deleted); it is never reactivated or recreated (CBD-212 SS5)',
+            OLD.profile_id
+            USING ERRCODE = '23514';
     END IF;
     RETURN NEW;
 END;
@@ -407,16 +436,21 @@ DECLARE
 BEGIN
     v_subject_id := COALESCE(NEW.account_subject_id, OLD.account_subject_id);
 
-    -- The subject row itself may have been the row that fired this trigger,
-    -- in which case NEW already carries its post-transaction lifecycle_state;
-    -- otherwise it is read back from the table.
-    IF TG_TABLE_NAME = 'account_subject' THEN
-        v_lifecycle := NEW.lifecycle_state;
-    ELSE
-        SELECT lifecycle_state INTO v_lifecycle
-        FROM account_subject
-        WHERE account_subject_id = v_subject_id;
-    END IF;
+    -- Review finding 3 (CBD190-REVIEW-SCHEMA-001), CBD-212 FP-212-02: always
+    -- re-read the row from the table rather than trusting this event's own
+    -- NEW. A deferred AFTER ROW CONSTRAINT TRIGGER queues one event per
+    -- statement that touched the row, each carrying that statement's own row
+    -- image; a transaction that updates the same subject more than once
+    -- (e.g. active -> deletion_pending -> deleted) queues an event per
+    -- update, and an earlier queued event's NEW is an intermediate state,
+    -- not the transaction's final one. By the time any deferred trigger
+    -- actually runs (at commit, after every statement in the transaction has
+    -- executed), the table already holds only the final persisted row for
+    -- this subject, so a plain SELECT is always correct here regardless of
+    -- which table's event is firing.
+    SELECT lifecycle_state INTO v_lifecycle
+    FROM account_subject
+    WHERE account_subject_id = v_subject_id;
 
     IF v_lifecycle IS NULL THEN
         -- No account_subject row exists for this identifier at commit. The
