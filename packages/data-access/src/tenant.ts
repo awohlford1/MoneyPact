@@ -19,7 +19,7 @@
  * `catalog.ts`'s closed catalog before anything is built: a tenant function
  * refuses any table not classified `budget-space`, and a platform function
  * refuses any table not classified `identity` or `platform` (financial-profile
- * has no seam yet). Every execution passes through `logging.ts`'s
+ * has its own subject-scoped seam). Every execution passes through `logging.ts`'s
  * `wrapDriverError`, so a rejected query never reaches a caller with the
  * driver's own message, which can echo statement text or bound values.
  */

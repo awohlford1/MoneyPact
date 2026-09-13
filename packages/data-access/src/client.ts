@@ -7,9 +7,10 @@
  * guarantee this package makes, no matter how safe the typed statement
  * builders in `tenant.ts` are. `createApiClient`/`createWorkerClient`
  * construct a role-specific pool internally (see `connection.ts`) and
- * return only a `DataAccessClient`: the closed set of tenant- and
- * platform-scoped operations, each already bound to that pool. There is no
- * member on this object that reaches the underlying `Pool`.
+ * return only closed client surfaces already bound to that pool. The API's
+ * `DataAccessClient` also exposes subject-scoped profile operations; the
+ * worker's `WorkerDataAccessClient` deliberately does not. Neither surface
+ * has a member that reaches the underlying `Pool`.
  */
 import type { Pool } from "./driver.ts";
 import { createApiConnection, createWorkerConnection } from "./connection.ts";
@@ -34,6 +35,8 @@ import type {
   TenantUpdateQuery,
 } from "./tenant.ts";
 import type { QueryResult } from "./driver.ts";
+import { profileDelete, profileInsert, profileSelect, profileUpdate } from "./profile.ts";
+import type { ProfileDeleteQuery, ProfileInsertQuery, ProfileSelectQuery, ProfileUpdateQuery } from "./profile.ts";
 
 export interface DataAccessClient {
   readonly tenantSelect: (query: TenantSelectQuery) => Promise<QueryResult>;
@@ -44,9 +47,24 @@ export interface DataAccessClient {
   readonly platformInsert: (query: PlatformInsertQuery) => Promise<QueryResult>;
   readonly platformUpdate: (query: PlatformUpdateQuery) => Promise<QueryResult>;
   readonly platformDelete: (query: PlatformDeleteQuery) => Promise<QueryResult>;
+  readonly profileSelect?: (query: ProfileSelectQuery) => Promise<QueryResult>;
+  readonly profileInsert?: (query: ProfileInsertQuery) => Promise<QueryResult>;
+  readonly profileUpdate?: (query: ProfileUpdateQuery) => Promise<QueryResult>;
+  readonly profileDelete?: (query: ProfileDeleteQuery) => Promise<QueryResult>;
 }
 
-function bindClient(pool: Pool): DataAccessClient {
+/** API client surface, with all subject-scoped financial-profile operations required. */
+export interface ApiDataAccessClient extends DataAccessClient {
+  readonly profileSelect: (query: ProfileSelectQuery) => Promise<QueryResult>;
+  readonly profileInsert: (query: ProfileInsertQuery) => Promise<QueryResult>;
+  readonly profileUpdate: (query: ProfileUpdateQuery) => Promise<QueryResult>;
+  readonly profileDelete: (query: ProfileDeleteQuery) => Promise<QueryResult>;
+}
+
+/** Worker client surface: the common statement operations with every profile member absent. */
+export type WorkerDataAccessClient = Omit<DataAccessClient, "profileSelect" | "profileInsert" | "profileUpdate" | "profileDelete">;
+
+function bindWorkerClient(pool: Pool): WorkerDataAccessClient {
   return {
     tenantSelect: (query) => tenantSelect(pool, query),
     tenantInsert: (query) => tenantInsert(pool, query),
@@ -59,12 +77,22 @@ function bindClient(pool: Pool): DataAccessClient {
   };
 }
 
+function bindApiClient(pool: Pool): ApiDataAccessClient {
+  const client = bindWorkerClient(pool);
+  return Object.defineProperties(client, {
+    profileSelect: { value: (query: ProfileSelectQuery) => profileSelect(pool, query) },
+    profileInsert: { value: (query: ProfileInsertQuery) => profileInsert(pool, query) },
+    profileUpdate: { value: (query: ProfileUpdateQuery) => profileUpdate(pool, query) },
+    profileDelete: { value: (query: ProfileDeleteQuery) => profileDelete(pool, query) },
+  }) as ApiDataAccessClient;
+}
+
 /** The API application's data-access client. Backed by the api role's pool only -- never worker's, never migration's. */
-export function createApiClient(): DataAccessClient {
-  return bindClient(createApiConnection());
+export function createApiClient(): ApiDataAccessClient {
+  return bindApiClient(createApiConnection());
 }
 
 /** The worker application's data-access client. Backed by the worker role's pool only -- never api's, never migration's. */
-export function createWorkerClient(): DataAccessClient {
-  return bindClient(createWorkerConnection());
+export function createWorkerClient(): WorkerDataAccessClient {
+  return bindWorkerClient(createWorkerConnection());
 }

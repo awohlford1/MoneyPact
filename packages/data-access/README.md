@@ -14,20 +14,32 @@ would otherwise have to reimplement:
    built, so a caller cannot reach a table the catalog does not classify
    `budget-space`. The `platformSelect`/`platformInsert`/`platformUpdate`/
    `platformDelete` escape hatch is equally closed: it refuses any table not
-   classified `identity` or `platform`, including every budget-space table.
-2. **Role separation.** `createApiClient`/`createWorkerClient` return a
-   `DataAccessClient` -- the closed set of operations above -- bound to only
-   that role's `pg.Pool`. Neither client, nor anything reachable from it,
+   classified `identity` or `platform`, including every budget-space and
+   financial-profile table.
+2. **Subject scoping.** Every financial-profile-scoped table is read or
+   written through `profileSelect`/`profileInsert`/`profileUpdate`/
+   `profileDelete`. Each query requires the server-obtained
+   `accountSubjectId`; the layer binds it as `account_subject_id = $1` on
+   reads, updates, and deletes, and as the inserted `account_subject_id` on
+   inserts. The reserved column cannot be supplied through `values`, `set`,
+   or `conditions`, so a caller cannot substitute another subject. This path
+   is available on the API `DataAccessClient` only. The worker client does not
+   expose it because the governing contract names session-derived API access
+   and grants no worker use case.
+3. **Role separation.** `createApiClient` returns an `ApiDataAccessClient`, while
+   `createWorkerClient` returns the narrower `WorkerDataAccessClient`; both
+   are closed operation sets bound to only that role's `pg.Pool`. Neither
+   client, nor anything reachable from it,
    ever holds the migration role's pool or credential; that role exists only
    inside this package's own tests and `scripts/verify-live.ts`
    (`createLocalConnections`), which is what actually needs it to set up and
    tear down scratch data.
-3. **Redacted failures.** Every statement builder executes through one
+4. **Redacted failures.** Every statement builder executes through one
    internal seam that catches a driver rejection and replaces it with
    `logging.ts`'s `StatementFailedError` before it can reach a caller; the
    raw error, which can echo statement text or a bound value, is discarded,
    not merely left unattached.
-4. **S4 field encryption.** `encryptField`/`decryptField` take a
+5. **S4 field encryption.** `encryptField`/`decryptField` take a
    `KeyProvider` and an `EncryptionContext` (tenant, table, row, column),
    bind that context as authenticated data on the AES-256-GCM ciphertext,
    and record the key version on every ciphertext; there is one documented
@@ -42,7 +54,8 @@ would otherwise have to reimplement:
 | `src/connection.ts` | Role-separated `PoolConfig`/`Pool` construction: `createApiConnection`/`createWorkerConnection` (single role each) and `createLocalConnections` (all three, test/verification only). |
 | `src/catalog.ts` | The closed table catalog every statement builder checks a table against before building SQL (CBD-246-AC02). |
 | `src/tenant.ts` | The tenant-scoped and platform statement builders (CBD-246-AC02), each executing through the redacted-failure seam. |
-| `src/client.ts` | `DataAccessClient` and `createApiClient`/`createWorkerClient`: the only thing either application imports from this package for querying. No member of a `DataAccessClient` reaches the underlying `Pool`. |
+| `src/profile.ts` | The subject-scoped financial-profile statement builders required by `SM-212-01`, each binding `account_subject_id` themselves. |
+| `src/client.ts` | `DataAccessClient`, its required-profile `ApiDataAccessClient` specialization, `WorkerDataAccessClient`, and their factories: the only query surfaces applications receive. Neither client reaches the underlying `Pool`; only the API factory returns profile statements. |
 | `src/logging.ts` | Error wrapping and log-line shaping that never carries statement text or bound values (CBD-246-AC06). |
 | `src/encryption/` | The key-provider interface, local and KMS providers, the AES-256-GCM cipher with AAD context binding, and provider selection (CBD-246-AC04). |
 | `src/no-per-customer-isolation.test.ts` | The `npm run check` assertion that no per-customer credential or row-level-security policy exists (CBD-246-AC05). |
@@ -59,6 +72,11 @@ await dataAccess.tenantSelect({
   table: "budget_line_items",
   budgetSpaceId: currentBudgetSpaceId,
   conditions: [{ column: "id", value: lineItemId }],
+});
+
+await dataAccess.profileSelect({
+  table: "financial_profile",
+  accountSubjectId: session.accountSubjectId,
 });
 ```
 

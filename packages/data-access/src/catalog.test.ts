@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { PRODUCTION_TABLE_CATALOG, isPlatformTable, isTenantTable } from "./catalog.ts";
+import { PRODUCTION_TABLE_CATALOG, isPlatformTable, isProfileTable, isTenantTable } from "./catalog.ts";
 
 const migrationsDirectory = join(import.meta.dirname, "../../migrations/migrations");
 const SCOPE_PATTERN = /^--\s*scope:\s*(budget-space|financial-profile|identity|platform)\s*$/iu;
@@ -55,7 +55,7 @@ void test("CBD-246-AC02: the closed table catalog agrees exactly with every migr
   }
 });
 
-void test("CBD-246-AC02: isTenantTable and isPlatformTable are mutually exclusive and closed", () => {
+void test("CBD-246-AC02/SM-212-01: table-scope classifiers are mutually exclusive and closed", () => {
   const catalog = { budget_space_table: "budget-space", platform_table: "platform", identity_table: "identity", other_table: "financial-profile" } as const;
   assert.equal(isTenantTable(catalog, "budget_space_table"), true);
   assert.equal(isPlatformTable(catalog, "budget_space_table"), false);
@@ -63,7 +63,12 @@ void test("CBD-246-AC02: isTenantTable and isPlatformTable are mutually exclusiv
   assert.equal(isPlatformTable(catalog, "platform_table"), true);
   assert.equal(isPlatformTable(catalog, "identity_table"), true);
   assert.equal(isTenantTable(catalog, "other_table"), false, "financial-profile is not a tenant table");
-  assert.equal(isPlatformTable(catalog, "other_table"), false, "financial-profile has no seam yet and must not leak through the platform escape hatch");
+  assert.equal(isPlatformTable(catalog, "other_table"), false, "financial-profile must not leak through the platform escape hatch");
+  assert.equal(isProfileTable(catalog, "other_table"), true);
+  assert.equal(isProfileTable(catalog, "budget_space_table"), false);
+  assert.equal(isProfileTable(catalog, "platform_table"), false);
+  assert.equal(isProfileTable(catalog, "identity_table"), false);
   assert.equal(isTenantTable(catalog, "unregistered_table"), false);
   assert.equal(isPlatformTable(catalog, "unregistered_table"), false);
+  assert.equal(isProfileTable(catalog, "unregistered_table"), false);
 });
