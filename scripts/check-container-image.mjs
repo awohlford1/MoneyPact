@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // A registry port (host:5000/repo) is a colon inside the first path component
 // and is allowed in both shapes.
 const BASE_IMAGE_REFERENCE = /^[^\s@]+@sha256:[0-9a-f]{64}$/;
-const DIGEST_REFERENCE = /^(?:[^\s@\/:]+(?::[0-9]+)?\/)?[^\s@:]+@sha256:[0-9a-f]{64}$/;
+const DIGEST_REFERENCE = /^(?:[^\s@/:]+(?::[0-9]+)?\/)?[^\s@:]+@sha256:[0-9a-f]{64}$/;
 const DEPLOYMENT_KEY = /^(?:container[_-]?image|image|image[_-]?ref)$/i;
 const TRACKER_PACKAGE = /(?:^|\/)node_modules\/(?:@amplitude\/analytics-node|@scarf\/scarf|@segment\/analytics-node|analytics-node|dd-trace|mixpanel|newrelic|posthog-node|sentry|@sentry\/[^/]+)(?:\/|$)/i;
 const SENSITIVE_PATH = /(?:^|\/)(?:\.env(?:\.[^/]*)?|\.npmrc|\.pypirc|id_(?:rsa|dsa|ecdsa|ed25519)|credentials)(?:\/|$)/i;
