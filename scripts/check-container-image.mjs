@@ -5,7 +5,16 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const DIGEST_REFERENCE = /^[^\s@]+@sha256:[0-9a-f]{64}$/;
+// Two shapes of immutable reference. A build-time base image (Dockerfile FROM)
+// may carry a tag beside its digest -- the digest is what the daemon resolves
+// and the tag documents what it was -- so `node:24.19.0-slim@sha256:...` is the
+// conventional pinned form. A deployment reference (image keys, --image flags)
+// must be digest only: a tag in front of the digest (`repo:v1.2.3@sha256:...`)
+// is a mutable name kept alive in a place TD-103-027 says never carries one.
+// A registry port (host:5000/repo) is a colon inside the first path component
+// and is allowed in both shapes.
+const BASE_IMAGE_REFERENCE = /^[^\s@]+@sha256:[0-9a-f]{64}$/;
+const DIGEST_REFERENCE = /^(?:[^\s@\/:]+(?::[0-9]+)?\/)?[^\s@:]+@sha256:[0-9a-f]{64}$/;
 const DEPLOYMENT_KEY = /^(?:container[_-]?image|image|image[_-]?ref)$/i;
 const TRACKER_PACKAGE = /(?:^|\/)node_modules\/(?:@amplitude\/analytics-node|@scarf\/scarf|@segment\/analytics-node|analytics-node|dd-trace|mixpanel|newrelic|posthog-node|sentry|@sentry\/[^/]+)(?:\/|$)/i;
 const SENSITIVE_PATH = /(?:^|\/)(?:\.env(?:\.[^/]*)?|\.npmrc|\.pypirc|id_(?:rsa|dsa|ecdsa|ed25519)|credentials)(?:\/|$)/i;
@@ -28,17 +37,18 @@ export function scanDeploymentSource(source, path = "input") {
     const line = originalLine.replace(/\s+#.*$/, "");
     const candidates = [];
     const dockerBase = /^\s*FROM\s+(?:--platform=\S+\s+)?(\S+)/i.exec(line);
-    if (dockerBase) candidates.push(dockerBase[1]);
+    if (dockerBase) candidates.push([dockerBase[1], BASE_IMAGE_REFERENCE]);
 
     const assignment = /^\s*["']?([A-Za-z][A-Za-z0-9_-]*)["']?\s*[:=]\s*(.+?)\s*$/.exec(line);
-    if (assignment && DEPLOYMENT_KEY.test(assignment[1])) candidates.push(assignment[2]);
+    if (assignment && DEPLOYMENT_KEY.test(assignment[1])) candidates.push([assignment[2], DIGEST_REFERENCE]);
 
-    for (const match of line.matchAll(/--image(?:=|\s+)([^\s]+)/g)) candidates.push(match[1]);
+    for (const match of line.matchAll(/--image(?:=|\s+)([^\s]+)/g)) candidates.push([match[1], DIGEST_REFERENCE]);
 
-    for (const candidate of candidates) {
+    for (const [candidate, shape] of candidates) {
       const reference = cleanReference(candidate);
-      if (!DIGEST_REFERENCE.test(reference)) {
-        failures.push(`${path}:${index + 1}: mutable or invalid image reference ${JSON.stringify(reference)}; require name@sha256:<64 lowercase hex characters>`);
+      if (!shape.test(reference)) {
+        const requirement = shape === BASE_IMAGE_REFERENCE ? "name[:tag]@sha256:<64 lowercase hex characters>" : "name@sha256:<64 lowercase hex characters> with no tag";
+        failures.push(`${path}:${index + 1}: mutable or invalid image reference ${JSON.stringify(reference)}; require ${requirement}`);
       }
     }
   }

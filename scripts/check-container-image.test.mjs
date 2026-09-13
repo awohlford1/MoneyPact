@@ -43,8 +43,20 @@ describe("container image deployment references", () => {
       "image: registry.example.invalid/cobudget@sha256:${DIGEST}",
       "image = registry.example.invalid/cobudget@sha256:1234",
       "deploy --image registry.example.invalid/cobudget:stable",
+      // A tag in front of the digest is still a tag (review finding, CBD254-REVIEW-001).
+      `image: registry.example.invalid/cobudget:v1.2.3@sha256:${"0".repeat(64)}`,
+      `image: cobudget:latest@sha256:${"a".repeat(64)}`,
     ]) {
       assert.equal(scanDeploymentSource(source).length, 1, source);
+    }
+  });
+
+  it("still accepts a registry port in front of a pure digest reference", () => {
+    for (const source of [
+      `image: registry.example.invalid:5000/cobudget@sha256:${"b".repeat(64)}`,
+      `image: registry.example.invalid/team/cobudget@sha256:${"c".repeat(64)}`,
+    ]) {
+      assert.deepEqual(scanDeploymentSource(source), [], source);
     }
   });
 });
