@@ -145,7 +145,7 @@ incident handling.
 `config/environment-inventory.json` is the inventory for every first-party
 environment consumer. `npm run check:env` runs in the root gate and compares
 application schemas, Python tool groups, source reads, and `.env.example`.
-It checks eleven operator settings plus the three platform/test settings
+It checks nineteen application and tooling settings plus the three platform/test settings
 `CI`, `SCARF_ANALYTICS`, and `TZ`. It never reads `.env.local` or real
 credentials; fixtures provide synthetic dictionaries and mocked HTTP clients.
 

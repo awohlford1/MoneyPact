@@ -4,3 +4,9 @@
 # endings anyway (src/catalog.ts), and the check only rejects a file that mixes
 # them; this keeps the files themselves canonical so neither ever has to.
 *.sql text eol=lf
+# The initdb hooks are bind-mounted into the Linux container and executed
+# there. A CRLF checkout on Windows turns the shebang into "bash" and the
+# container exits 127 before PostgreSQL can create a single role
+# (CBD117-REVIEW-002 finding 1). Keep them LF everywhere for the same reason.
+local/initdb/*.sh text eol=lf
+local/initdb/*.psql text eol=lf

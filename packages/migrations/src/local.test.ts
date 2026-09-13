@@ -36,6 +36,18 @@ const grantsMigration = readdirSync(join(packageRoot, "migrations"))
 // AC03: the pin
 // ---------------------------------------------------------------------------
 
+test("CBD-117-AC01 (cbd-117-fx-09): the bind-mounted initdb hooks are LF in every checkout", () => {
+  // The hooks run inside the Linux container. A CRLF checkout makes the
+  // shebang read "bash\r" and the container exits 127 before any role exists.
+  for (const [name, text] of [["010-roles.sh", initdbWrapper], ["010-roles.psql", initdb]] as const) {
+    assert.ok(!text.includes("\r"), `${name} contains a carriage return; check packages/migrations/.gitattributes`);
+  }
+  assert.ok(initdbWrapper.startsWith("#!/usr/bin/env bash\n") || initdbWrapper.startsWith("#!/bin/bash\n"), "the wrapper's shebang line must end in a bare LF");
+  const attributes = readFileSync(join(packageRoot, ".gitattributes"), "utf8");
+  assert.match(attributes, /^local\/initdb\/\*\.sh text eol=lf$/mu);
+  assert.match(attributes, /^local\/initdb\/\*\.psql text eol=lf$/mu);
+});
+
 test("CBD-117-AC03: compose.yaml pins the PostgreSQL major exactly once, and the code reads that line", () => {
   const compose = readFileSync(composeFile, "utf8");
   const major = readPinnedMajor(compose);
