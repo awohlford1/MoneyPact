@@ -103,6 +103,61 @@
       "description": "Optional IPv4 or IPv6 bind address; omission uses 127.0.0.1 in development/test and 0.0.0.0 in production."
     },
     {
+      "name": "COBUDGET_FIELD_ENCRYPTION_PROVIDER",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts",
+        "apps/worker/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": true,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "enum",
+        "values": ["local", "kms"]
+      },
+      "template": "included",
+      "placeholder": "local",
+      "description": "S4 field-encryption key provider. \"local\" for development; \"kms\" once CBD-120 delivers a client."
+    },
+    {
+      "name": "COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts",
+        "apps/worker/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "string"
+      },
+      "template": "included",
+      "placeholder": "",
+      "description": "Base64-encoded 32-byte AES-256 key for the local field-encryption provider. Required when the provider is \"local\"; refused outside NODE_ENV=development/test."
+    },
+    {
+      "name": "COBUDGET_FIELD_ENCRYPTION_KEY_VERSION",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts",
+        "apps/worker/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "string"
+      },
+      "template": "included",
+      "placeholder": "local-dev-v1",
+      "description": "Key version recorded on ciphertext written by the local provider. Required when the provider is \"local\"."
+    },
+    {
       "name": "CONFLUENCE_BASE_URL",
       "classification": "tooling",
       "consumer": [

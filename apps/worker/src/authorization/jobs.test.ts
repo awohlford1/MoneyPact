@@ -116,7 +116,7 @@ describe("worker fail-closed job chain", () => {
   it("rejects startup mismatches and installs an empty deny-by-default job inventory", async () => {
     assert.throws(() => assertWorkerPolicyCompatibility([]), /policy_version_unsupported/);
     assert.throws(() => assertWorkerPolicyCompatibility(testHistory, [{ ...SUPPORTED_POLICY_TUPLES[0]!, schemaVersion: 2 }]), /policy_version_unsupported/);
-    const config = loadWorkerConfigFrom({ LOG_LEVEL: "info", NODE_ENV: "test", SERVICE_VERSION: "authorization-test" });
+    const config = loadWorkerConfigFrom({ LOG_LEVEL: "info", NODE_ENV: "test", SERVICE_VERSION: "authorization-test", COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local", COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: Buffer.alloc(32, 7).toString("base64"), COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1" });
     const worker = startWorker(config, { readiness: () => undefined, reliability: () => undefined }, undefined, testHistory);
     try { assert.deepEqual(worker.jobs.inventory(), []); assert.deepEqual(await worker.jobs.run({}), { outcome: "denied", terminal: true }); }
     finally { await worker.stop(); }

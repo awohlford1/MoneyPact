@@ -9,6 +9,17 @@ const INFRASTRUCTURE_MESSAGE =
   "CBD-110 is an application skeleton only. Database, queue, provider, and " +
   "authentication dependencies arrive in their owning stories.";
 
+/**
+ * CBD246-SECURITY-002 finding 2: `no-restricted-imports` only sees a static
+ * `import`; `await import("pg")` (or `createRequire(...)("pg")`) reached the
+ * driver untouched. `no-restricted-syntax` below matches a dynamic
+ * `import(...)` call whose argument is a string literal naming `pg` or a
+ * `pg/...` subpath, closing that gap without loosening the static rule.
+ * Mirrors `packages/data-access/eslint.config.mjs`'s identical guard.
+ */
+const DYNAMIC_IMPORT_SELECTOR =
+  "ImportExpression[source.type='Literal'][source.value=/^pg(-.*)?(\\/.*)?$/]";
+
 export default defineConfig([
   globalIgnores(["dist/**", "node_modules/**"]),
   {
@@ -66,6 +77,10 @@ export default defineConfig([
         {
           selector: 'MemberExpression[object.name="process"][property.value="env"]',
           message: ENVIRONMENT_MESSAGE,
+        },
+        {
+          selector: DYNAMIC_IMPORT_SELECTOR,
+          message: INFRASTRUCTURE_MESSAGE,
         },
       ],
     },

@@ -75,7 +75,7 @@ it("real API and worker processes start on the released policy p1 and refuse an 
   for (const app of ["api", "worker"]) {
     const result = spawnSync(process.execPath, ["--import=tsx", "src/main.ts"], {
       cwd: join(root, "apps", app), timeout: 15_000, encoding: "utf8", killSignal: "SIGTERM",
-      env: { NODE_ENV: "test", LOG_LEVEL: "info", SERVICE_VERSION: "released-policy-test", API_PORT: "3001" },
+      env: { NODE_ENV: "test", LOG_LEVEL: "info", SERVICE_VERSION: "released-policy-test", API_PORT: "3001", COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local", COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: Buffer.alloc(32, 7).toString("base64"), COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1" },
     });
     assert.equal(result.error?.name === "Error" && (result.error as NodeJS.ErrnoException).code !== "ETIMEDOUT" ? result.error : undefined, undefined, app);
     assert.equal(result.stdout.includes('"operation":"startup"'), true, `${app} startup line`);

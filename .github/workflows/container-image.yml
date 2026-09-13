@@ -60,9 +60,15 @@ jobs:
       - name: Scan image content
         run: node scripts/check-container-image.mjs image-tar container-filesystem.tar
 
+      # The processes now fail closed at startup without field-encryption
+      # configuration (CBD-246). The smoke run supplies the local provider with
+      # a key generated for this run only, and NODE_ENV=test because the local
+      # provider refuses production; nothing here is a real secret and none of
+      # it reaches the published image.
       - name: Start and probe the API entrypoint
         run: |
-          docker run --detach --name cobudget-api --publish 3000:3000 --env API_PORT=3000 --env LOG_LEVEL=info --env SERVICE_VERSION=${{ github.sha }} cobudget-ci:${{ github.sha }}
+          SMOKE_KEY="$(openssl rand -base64 32)"
+          docker run --detach --name cobudget-api --publish 3000:3000 --env API_PORT=3000 --env LOG_LEVEL=info --env SERVICE_VERSION=${{ github.sha }} --env NODE_ENV=test --env COBUDGET_FIELD_ENCRYPTION_PROVIDER=local --env COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY="$SMOKE_KEY" --env COBUDGET_FIELD_ENCRYPTION_KEY_VERSION=ci-smoke-v1 cobudget-ci:${{ github.sha }}
           for attempt in $(seq 1 30); do curl --fail --silent http://127.0.0.1:3000/health && break; sleep 1; done
           curl --fail --silent http://127.0.0.1:3000/health
           docker logs cobudget-api
@@ -70,7 +76,8 @@ jobs:
 
       - name: Start and observe the worker entrypoint
         run: |
-          docker run --detach --name cobudget-worker --env LOG_LEVEL=info --env SERVICE_VERSION=${{ github.sha }} cobudget-ci:${{ github.sha }} apps/worker/dist/main.js
+          SMOKE_KEY="$(openssl rand -base64 32)"
+          docker run --detach --name cobudget-worker --env LOG_LEVEL=info --env SERVICE_VERSION=${{ github.sha }} --env NODE_ENV=test --env COBUDGET_FIELD_ENCRYPTION_PROVIDER=local --env COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY="$SMOKE_KEY" --env COBUDGET_FIELD_ENCRYPTION_KEY_VERSION=ci-smoke-v1 cobudget-ci:${{ github.sha }} apps/worker/dist/main.js
           for attempt in $(seq 1 30); do docker logs cobudget-worker 2>&1 | grep --fixed-strings '"status":"ready"' && break; sleep 1; done
           docker logs cobudget-worker 2>&1 | grep --fixed-strings '"status":"ready"'
           docker stop --time 10 cobudget-worker
