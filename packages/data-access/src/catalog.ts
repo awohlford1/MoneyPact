@@ -38,6 +38,7 @@ const PLATFORM_SCOPES: readonly TableScope[] = ["identity", "platform"];
 
 export const PRODUCTION_TABLE_CATALOG: TableCatalog = {
   cobudget_schema_migrations: "platform",
+  budget_creation_proposal: "identity",
   budget_space: "budget-space",
   budget_space_membership: "budget-space",
   budget_space_schedule_version: "budget-space",

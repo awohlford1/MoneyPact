@@ -43,6 +43,7 @@ void test("CBD246-SECURITY-001 finding 2: the api data-access client exposes no 
       "tenantInsert",
       "tenantSelect",
       "tenantUpdate",
+      "transaction",
     ].sort(),
   );
 });

@@ -78,11 +78,11 @@ function buildConditions(conditions: readonly Condition[] | undefined, params: u
   return ` and ${clauses.join(" and ")}`;
 }
 
-async function execute(pool: Pool, table: string, operation: string, text: string, params: readonly unknown[]): Promise<QueryResult> {
+async function execute(pool: Pick<Pool, "query">, table: string, operation: string, text: string, params: readonly unknown[]): Promise<QueryResult> {
   try {
     return await pool.query(text, params as unknown[]);
-  } catch {
-    throw wrapDriverError(table, operation);
+  } catch (error) {
+    throw wrapDriverError(table, operation, error);
   }
 }
 
@@ -93,7 +93,7 @@ export interface ProfileSelectQuery {
   readonly conditions?: readonly Condition[];
 }
 
-export function profileSelect(pool: Pool, query: ProfileSelectQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
+export function profileSelect(pool: Pick<Pool, "query">, query: ProfileSelectQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
   const table = assertProfileTable(catalog, query.table);
   assertAccountSubjectId(table, query.accountSubjectId);
   const columns = (query.columns ?? ["*"]).map(assertSelectColumn).join(", ");
@@ -109,7 +109,7 @@ export interface ProfileInsertQuery {
   readonly returning?: readonly string[];
 }
 
-export function profileInsert(pool: Pool, query: ProfileInsertQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
+export function profileInsert(pool: Pick<Pool, "query">, query: ProfileInsertQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
   const table = assertProfileTable(catalog, query.table);
   assertAccountSubjectId(table, query.accountSubjectId);
   const entries = Object.entries(query.values);
@@ -133,7 +133,7 @@ export interface ProfileUpdateQuery {
   readonly conditions?: readonly Condition[];
 }
 
-export function profileUpdate(pool: Pool, query: ProfileUpdateQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
+export function profileUpdate(pool: Pick<Pool, "query">, query: ProfileUpdateQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
   const table = assertProfileTable(catalog, query.table);
   assertAccountSubjectId(table, query.accountSubjectId);
   const entries = Object.entries(query.set);
@@ -155,7 +155,7 @@ export interface ProfileDeleteQuery {
   readonly conditions?: readonly Condition[];
 }
 
-export function profileDelete(pool: Pool, query: ProfileDeleteQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
+export function profileDelete(pool: Pick<Pool, "query">, query: ProfileDeleteQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
   const table = assertProfileTable(catalog, query.table);
   assertAccountSubjectId(table, query.accountSubjectId);
   const params: unknown[] = [query.accountSubjectId];
