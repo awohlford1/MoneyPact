@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Proposed v0.1 - Product Owner approval of every parameter record, implementation, Security/Reliability review, and negative-test evidence pending** |
-| Document version | 0.1 |
+| Status | **Proposed v0.2 - conservative prototype-only values and Executive set approval recorded; implementation, Security/Reliability review, and negative-test evidence pending** |
+| Document version | 0.2 |
 | Jira subtask | [CBD-266](https://cobudget.atlassian.net/browse/CBD-266) |
 | Parent | [CBD-123](https://cobudget.atlassian.net/browse/CBD-123) |
 | Repository baseline | `ce49e3dd6f795073132d82f4c077b9365045a0e7` |
@@ -27,12 +27,19 @@ is not ratified by this document; section 8 records the compatible ordering
 decision requested by `OQ-236-003`.
 
 `RL-92-007`, `OI-103-003`, and `PR-94-002` leave concrete values to each
-surface's own story and accountable approval. Consequently:
+surface's own story and accountable approval. `CBD266-PROTOTYPE-DEFAULTS-001`
+now supplies one conservative value set for each prototype surface class and
+approves those four sets as a whole for local prototype use only. Consequently:
 
-- this contract approves no parameter record and supplies no guessed ceiling;
+- section 4.7 supplies the only approved prototype defaults; they are planning
+  sets that implementation must project into exact immutable surface records;
 - a structurally valid record whose approval is `pending`, `rejected`, expired,
   revoked, for another digest, or otherwise unverifiable is not approved; and
 - a bounded surface without one current approved record cannot execute.
+
+No value or approval in section 4.7 is authority for a hosted environment.
+Every value, key, store, capacity assumption, and approval must be revisited
+before any hosted environment exists.
 
 The approved CBD-236 public exceptions for health and OpenAPI discovery are
 registered explicitly in the same inventory. They are not silently treated as
@@ -51,7 +58,7 @@ registered explicitly in the same inventory. They are not silently treated as
 | `RC-266-007` | Rate denial changes no protected state. It emits no remaining-quota hint and uses the response/timing class later approved under `PR-94-003`. |
 | `RC-266-008` | One enforcement-outcome coordinator owns a denied invocation's audit append. It records the earliest decisive gate and whether later gates were not evaluated; hooks do not emit competing denial records. |
 | `RC-266-009` | Public exceptions are exact registrations for `GET /health`, `GET /docs`, and `GET /openapi.json`. Adding another public route requires explicit authority; omission never implies exemption. |
-| `RC-266-010` | Concrete parameter values and Product Owner approval remain open per surface. This proposal cannot transition any record to `approved`. |
+| `RC-266-010` | `CBD266-PROTOTYPE-DEFAULTS-001` resolves the four class-level value sets and their approval only for a single-process local prototype. Exact per-surface records still require schema-valid projection and digests; hosted use requires a new review and decision. |
 
 ## 3. Canonical identities and closed vocabularies
 
@@ -154,7 +161,7 @@ without exposing a protected route.
 
 | Field | Type and rule |
 | --- | --- |
-| `status` | Closed approval status. Every record introduced by this document is `pending`. |
+| `status` | Closed approval status. A record is `approved` only when a durable decision covers its exact values, scope, conditions, and digest projection; otherwise it is `pending`. |
 | `approval_id` | Nullable durable approval-record ID; required non-null only for `approved`, `rejected`, or `revoked`. |
 | `approved_by_actor_id` | Nullable authenticated Product Owner identity; non-null only when supported by the cited approval. |
 | `decided_at` | Nullable RFC 3339 UTC instant; non-null for a decided status. |
@@ -343,6 +350,90 @@ level required field and each nested required field. Every variant must return
 the approved index. This proves the CBD-266-AC01 missing-field requirement; a
 single hand-picked omitted field is insufficient.
 
+### 4.7 Approved local-prototype parameter-record sets
+
+The following four sets are the complete conservative defaults approved by
+`CBD266-PROTOTYPE-DEFAULTS-001`. The approval value for every set is exactly
+**Executive, prototype-only, CBD266-PROTOTYPE-DEFAULTS-001, 2026-09-13**. The
+sets apply only to one local API process with its counter store in that same
+process. They are not measured hosted capacity and cannot be copied into a
+hosted environment without a new value, capacity, anti-lockout, and approval
+review.
+
+These are class-level planning records rather than executable registry rows.
+Implementation must create a separate immutable section 4 record for every
+exact bounded `surface_id`, copy the applicable class values, calculate both
+digests, and bind the decision projection. The public-health set governs the
+exact public `GET /health` exception but does not turn it into a bounded catalog
+surface or change `RC-266-009`. A route that spans classes takes the stricter
+applicable set or is split; values are never blended or silently defaulted.
+
+| Record set | Prototype surface coverage | Window | Threshold | Burst | Quota | Approval |
+| --- | --- | --- | ---: | --- | --- | --- |
+| `proto-public-health-v1` | Exact public `GET /health` registration only | Sliding 60,000 ms, `request_time` | 60 requests | 10 additional units; refill 1 per 6,000 ms | `unit: request`; `ceiling: 70`; `scope: counting key plus exact surface`; `reset: sliding expiry plus burst refill`; `resource_dimensions: []` | Executive, prototype-only, CBD266-PROTOTYPE-DEFAULTS-001, 2026-09-13 |
+| `proto-authenticated-read-v1` | Authenticated non-mutating prototype routes mapped to `surf-266-budget-read` or a stricter read row in the section 5 catalog | Sliding 60,000 ms, `request_time` | 60 requests | 10 additional units; refill 1 per 6,000 ms | `unit: request`; `ceiling: 70`; `scope: verified actor plus exact surface`; `reset: sliding expiry plus burst refill`; `resource_dimensions: []` | Executive, prototype-only, CBD266-PROTOTYPE-DEFAULTS-001, 2026-09-13 |
+| `proto-mutation-v1` | Authenticated state-changing prototype routes mapped to `surf-266-budget-mutation` or a stricter mutation row in the section 5 catalog; excludes bootstrap `space.create` | Sliding 60,000 ms, `request_time` | 12 requests | 3 additional units; refill 1 per 20,000 ms | `unit: request`; `ceiling: 15`; `scope: verified actor plus exact surface`; `reset: sliding expiry plus burst refill`; `resource_dimensions: [concurrency=1]` | Executive, prototype-only, CBD266-PROTOTYPE-DEFAULTS-001, 2026-09-13 |
+| `proto-bootstrap-v1` | First sign-in and the Primary Owner's initial `space.create` only, projected to their exact `surf-266-authentication` and `surf-266-budget-mutation` registrations | Sliding 600,000 ms, `request_time` | 6 units | 2 additional units; refill 1 per 300,000 ms | `unit: bootstrap_stage_decision`; `ceiling: 8`; `scope: ceremony plus stage`; `reset: sliding expiry plus burst refill`; `resource_dimensions: [reserved_first_sign_in=1, reserved_initial_space_create=1]` | Executive, prototype-only, CBD266-PROTOTYPE-DEFAULTS-001, 2026-09-13 |
+
+All four records use `schema_version: 1`, `supersedes_record_id: null`, and a
+`created_at` date of 2026-09-13. Exact record IDs, `surface_id` values,
+`candidate_digest`, and `record_digest` are produced only when implementation
+projects a set onto one exact registration; inventing placeholder digests here
+would defeat the approval binding in sections 4.1 and 4.4.
+
+#### 4.7.1 Safe counting keys and counter stores
+
+| Record set | `safe_counting_key` | `counter_store` |
+| --- | --- | --- |
+| `proto-public-health-v1` | `phase: pre_authentication`; components `[privacy_network_cohort_v1, exact_surface_id]`; `derivation_version: hmac-sha256-v1`; `normalization: network-cohort-v1`; rotation uses dual-read/single-write for at least 120,000 ms and carries forward the greater count; no subject locator is used; `subject_bound_after_authentication: false` | Binding `LOCAL_PROTOTYPE_COUNTER_STORE`; namespace `cbd266:prototype:public-health:v1`; one process-linearizable atomic consume; consistency `single-process-linearizable`; region `local-process`; TTL 120,000 ms; monotonic process clock; `failure_mode: deny` |
+| `proto-authenticated-read-v1` | `phase: post_authentication`; components `[verified_actor_id_v1, exact_surface_id]`; `derivation_version: hmac-sha256-v1`; `normalization: verified-id-v1`; rotation uses dual-read/single-write for at least 120,000 ms and carries forward the greater count; the actor comes only from verified server context and correlation is limited to actor plus exact surface; `subject_bound_after_authentication: true` | Binding `LOCAL_PROTOTYPE_COUNTER_STORE`; namespace `cbd266:prototype:authenticated-read:v1`; one process-linearizable atomic consume; consistency `single-process-linearizable`; region `local-process`; TTL 120,000 ms; monotonic process clock; `failure_mode: deny` |
+| `proto-mutation-v1` | `phase: post_authentication`; components `[verified_actor_id_v1, exact_surface_id]`; `derivation_version: hmac-sha256-v1`; `normalization: verified-id-v1`; rotation uses dual-read/single-write for at least 120,000 ms and carries forward the greater count; no shared space identifier is a counting dimension, so another member cannot spend the actor's pool; `subject_bound_after_authentication: true` | Binding `LOCAL_PROTOTYPE_COUNTER_STORE`; namespace `cbd266:prototype:mutation:v1`; one process-linearizable atomic consume; consistency `single-process-linearizable`; region `local-process`; TTL 120,000 ms; monotonic process clock; `failure_mode: deny` |
+| `proto-bootstrap-v1` | `phase: compound`; stage-specific components `[server_issued_bootstrap_ceremony_id_v1, bootstrap_stage_v1]` before authentication and `[verified_primary_owner_id_v1, server_issued_bootstrap_ceremony_id_v1, bootstrap_stage_v1]` after authentication; `derivation_version: hmac-sha256-v1`; `normalization: bootstrap-ceremony-v1`; rotation uses dual-read/single-write for at least 1,200,000 ms and carries forward the greater count and both reservations; no claimed email, account, or space locator is used; `subject_bound_after_authentication: true` | Binding `LOCAL_PROTOTYPE_COUNTER_STORE`; namespace `cbd266:prototype:bootstrap:v1`; one process-linearizable atomic consume including stage and reservation; consistency `single-process-linearizable`; region `local-process`; TTL 1,200,000 ms; monotonic process clock; `failure_mode: deny` |
+
+`LOCAL_PROTOTYPE_COUNTER_STORE` is the primary store for this single-process
+prototype, not a fallback. Process restart loses its counters and therefore
+invalidates this prototype release for continued use until a fresh local run is
+started. Multiple processes, replicas, remote callers, and any hosted use are
+outside the decision and remain denied.
+
+#### 4.7.2 Anti-lockout rules
+
+| Record set | Required `anti_lockout_rule` |
+| --- | --- |
+| `proto-public-health-v1` | `attackable_dimensions: [privacy_network_cohort_v1]`; `victim_bound_dimensions: []`; `independent_recovery_surface_id: null`; ordinary traffic cannot consume a subject pool because none exists (`FX-266-PUBLIC-COHORT-ISOLATION`); `exhaustion_state_effect: none`; reset authority is `local prototype operator / restore counter service only`; notification is one content-safe health denial with no quota remainder; the exact health route stays isolated from every protected pool; verify `FX-266-PUBLIC-COHORT-ISOLATION` and `VT-94-065`. |
+| `proto-authenticated-read-v1` | `attackable_dimensions: []`; `victim_bound_dimensions: [verified_actor_id_v1]`; `independent_recovery_surface_id: surf-266-recovery`; unauthenticated and other authenticated actors cannot consume the verified actor's pool, and recovery has a separate namespace/key (`FX-266-LOCKOUT-RECOVERY`); `exhaustion_state_effect: none`; reset authority is `local prototype operator / restore counter service only`; notification is uniform and reveals neither existence nor remaining quota; verify `FX-266-AUTHENTICATED-ACTOR-ISOLATION`, `FX-266-LOCKOUT-RECOVERY`, and `VT-94-066`. |
+| `proto-mutation-v1` | `attackable_dimensions: []`; `victim_bound_dimensions: [verified_actor_id_v1]`; `independent_recovery_surface_id: surf-266-recovery`; no caller-controlled or shared-space dimension can consume another actor's pool, and recovery remains separately keyed and budgeted (`FX-266-LOCKOUT-RECOVERY`); `exhaustion_state_effect: none`; reset authority is `local prototype operator / restore counter service only`; notification is uniform and reveals neither existence nor remaining quota; verify `FX-266-MUTATION-ACTOR-ISOLATION`, `FX-266-LOCKOUT-RECOVERY`, and `VT-94-068`. |
+| `proto-bootstrap-v1` | `attackable_dimensions: []`; `victim_bound_dimensions: [server_issued_bootstrap_ceremony_id_v1, verified_primary_owner_id_v1]`; `independent_recovery_surface_id: surf-266-recovery`; the store reserves one successful first-sign-in unit and one initial `space.create` unit for the valid ceremony until bootstrap completes or the 600,000 ms window ends. The two reserved units are a carve-out of the 8-unit ceiling, not the burst allowance repurposed: of threshold 6 + burst 2, two units are the reservation and six are the ordinary pool; the atomic consume routes a reserved unit only to a first sign-in or the initial `space.create` for the valid ceremony, and ordinary, failed-credential, or other-ceremony traffic draws from the six-unit pool only (`FX-266-PRIMARY-OWNER-BOOTSTRAP-RESERVATION` proves a flood of eight ordinary attempts leaves both reserved units intact). Ordinary authentication, reads, mutations, failed credentials, guessed identifiers, and other ceremonies cannot consume either reservation. After successful credential verification, the first reservation admits the Primary Owner; the second is usable only by that verified Primary Owner for initial `space.create`. Thus exhaustion of any ordinary pool cannot prevent the Primary Owner from signing in and reaching `space.create` within the window. `exhaustion_state_effect: none`; reset authority is `local prototype operator / restore counter service only`; notification is uniform and content-safe; verify `FX-266-LOCKOUT-RECOVERY`, `FX-266-PRIMARY-OWNER-BOOTSTRAP-RESERVATION`, `VT-94-066`, and `VT-94-068`. |
+
+#### 4.7.3 Capacity basis, sources, and approval projection
+
+The capacity values below are deliberately low planning estimates, not
+measurements. `capacity_basis.measured_at` is the decision-date planning
+snapshot `2026-09-13T00:00:00-04:00`, not a claim that a load test ran. Their
+evidence locator is
+`CBD266-PROTOTYPE-DEFAULTS-001 / single-local-process planning basis`, their
+measurement status is `not measured - Product estimate dated 2026-09-13`, their
+reviewer role is `Product; ME-94-010 specialist review pending`, and their
+failure budget is zero uncounted protected effects when the store is unavailable
+or uncertain.
+
+| Record set | Sustained-capacity estimate | Peak assumption and headroom | Workload assumptions | `source_requirements` |
+| --- | --- | --- | --- | --- |
+| `proto-public-health-v1` | 20 requests/second in one local process | At most 70 requests in 60 seconds; at least 94% request-rate headroom against the estimate | One developer, one process, loopback/local traffic, no replicas, no hosted probes | `RL-92-001`, `RL-92-002`, `RL-92-007`, `EP-92-001`-`EP-92-015` catalog coverage, `SR-94-037`, `ME-94-010`, `CBD266-PROTOTYPE-DEFAULTS-001` |
+| `proto-authenticated-read-v1` | 10 requests/second in one local process | At most 70 requests in 60 seconds; at least 88% request-rate headroom against the estimate | One developer, one process, local data, no background consumers, no hosted traffic | `RL-92-001`, `RL-92-002`, `RL-92-007`, applicable section 5 `EP-92-*` row, `SR-94-037`, `ME-94-010`, `CBD266-PROTOTYPE-DEFAULTS-001` |
+| `proto-mutation-v1` | 2 requests/second in one local process | At most 15 requests in 60 seconds; at least 87% request-rate headroom against the estimate | One developer, one process, local data, serialized prototype writes, no provider calls | `RL-92-001`, `RL-92-002`, `RL-92-007`, applicable section 5 `EP-92-*` row, `SR-94-037`, `ME-94-010`, `CBD266-PROTOTYPE-DEFAULTS-001` |
+| `proto-bootstrap-v1` | 1 request/second in one local process | At most 8 ordinary units plus two isolated completion units in 600 seconds; more than 99% request-rate headroom against the estimate | One local Primary Owner ceremony, one process, one initial space, no concurrent bootstrap or hosted traffic | `RL-92-001`, `RL-92-002`, `RL-92-007`, `EP-92-001`, `EP-92-003`, `SR-94-037`, `ME-94-010`, `CBD266-PROTOTYPE-DEFAULTS-001` |
+
+For each projected record, `product_owner_approval.status` is `approved`,
+`approval_id` is `CBD266-PROTOTYPE-DEFAULTS-001`, `decided_at` is the decision
+date 2026-09-13, `conditions` contains `prototype-only` and `revisit before any
+hosted environment`, and `expires_at` is null because the environment boundary,
+not elapsed time, ends the approval. `approved_by_actor_id` and the exact digest
+fields must be populated by the authenticated decision-projection mechanism;
+this prose does not invent actor identity or placeholder hashes. The human-
+readable approval field remains the exact value stated at the start of this
+section.
+
 ## 5. Surface catalog
 
 The catalog below is the closed classification target for executable business
@@ -389,12 +480,13 @@ single stricter separately approved surface before protected lookup.
 | `surf-266-secret-rotate` | `EP-92-015` | Secret/key rotation |
 | `surf-266-secret-revoke-recover` | `EP-92-015` | Secret/key revocation or recovery |
 
-This document establishes the classes, not their value records. The initial
-parameter registry is therefore empty and every bounded row is
-`OPEN-266-VALUES`: its own story must add a complete pending record, obtain the
-Product Owner decision bound to its digest, and only then publish an approved
-release set. An empty registry is a valid review artifact and an unusable
-runtime release set; all bounded execution denies.
+Section 4.7 establishes four approved class-level planning sets for the local
+prototype. The executable parameter registry remains empty until implementation
+projects the applicable set into a complete exact-surface record and computes
+its digests. An empty registry is a valid review artifact and an unusable
+runtime release set; all bounded execution denies. Surfaces outside the four
+prototype classes retain their own unresolved value and approval work, and no
+section 4.7 approval extends to hosted use.
 
 ## 6. Executable-surface registration
 
@@ -621,8 +713,8 @@ denied; rollback is not authority to revive it.
 
 | ID | Open item | Owner / unblock condition |
 | --- | --- | --- |
-| `OPEN-266-VALUES` | Concrete window, threshold, burst, key, store, quota, anti-lockout, and capacity values for every catalog surface | Each surface story; Reliability and Architecture/Security evidence under `ME-94-010` |
-| `OPEN-266-APPROVALS` | Product Owner approval for every exact record digest | Product Owner; **all are pending and none is granted by this document** |
+| `OPEN-266-VALUES` | **Resolved for the four local-prototype classes by `CBD266-PROTOTYPE-DEFAULTS-001` and section 4.7.** Exact projection is implementation work; all other surfaces and every hosted environment remain open. | Reopen before any hosted environment or when prototype scope/capacity changes; Reliability and Architecture/Security evidence under `ME-94-010` remains a release gate. |
+| `OPEN-266-APPROVALS` | **Resolved for the four local-prototype record sets as a whole by `CBD266-PROTOTYPE-DEFAULTS-001`.** | Approval is prototype-only. Exact digest projection must preserve the approved set without value changes; any hosted or changed set requires a new decision. |
 | `OPEN-266-RESPONSE` | Uniform external status/body/header/timing and `Retry-After` contract | Security-owned `PR-94-003` |
 | `OPEN-266-KEY-CATALOG` | Exact safe key-component catalog, keyed derivation, secret custody, normalization, and rotation behavior | Security/Architecture implementation review |
 | `OPEN-266-STORE` | Concrete distributed counter store and measured capacity evidence | Reliability/Architecture; no external provider activation follows from this proposal |
@@ -638,7 +730,7 @@ bounded surface.
 
 | CBD-266 criterion | Contract evidence | Delivery status |
 | --- | --- | --- |
-| `CBD-266-AC01` | Sections 4.1-4.5 require window, threshold, burst, safe counting key, counter store, quota, anti-lockout rule, capacity basis, and Product Owner approval in every record. Section 4.6 defines the exhaustive missing-field fixture. | **Architecture contract delivered; executable validator and fixture pending because this assignment permits no code.** |
+| `CBD-266-AC01` | Sections 4.1-4.5 require window, threshold, burst, safe counting key, counter store, quota, anti-lockout rule, capacity basis, and Product Owner approval in every record. Section 4.6 defines the exhaustive missing-field fixture; section 4.7 supplies the four prototype-only value sets. | **Prototype values and set approval delivered; executable exact-surface records, validator, and fixture remain pending because this assignment permits no code.** |
 | `CBD-266-AC02` | Sections 5 and 6 define the closed catalog, exact route/job registration, current baseline inventory, discovery-based build output, and nonzero failure rules. | **Architecture contract delivered; route/job declarations and build check pending implementation.** |
 | `CBD-266-AC03` | Sections 7-9 define default denial for missing/unapproved records, API/worker ordering, no-effect behavior, and both unregistered route and job negative fixtures. | **Architecture contract delivered; middleware and negative execution/build evidence pending implementation.** |
 | `CBD-266-AC04` | Section 14 defines completion evidence fields and fixture identities. | **Partially applicable now: proposal PR/commit can be recorded; merge SHA and implementation run IDs cannot exist before Manager integration and later code work.** |
@@ -669,17 +761,18 @@ Done.
 | --- | --- |
 | CBD-92 `RL-92-001` | Closed bounded-surface catalog, absent-surface denial, explicit coverage of named ceremonies/actions/jobs |
 | CBD-92 `RL-92-002` | Per-surface records; global limiter rejected |
-| CBD-92 `RL-92-007` | Concrete values and verification left to surface stories and CBD-94 evidence |
+| CBD-92 `RL-92-007` | Section 4.7 supplies conservative local-prototype values; hosted values and verification still require surface-story and CBD-94 evidence |
 | CBD-92 section 3.3 `EP-92-001`-`EP-92-015` | Every entry-point family maps to at least one closed surface class |
 | CBD-103 `TD-103-013` | Per-surface edge enforcement, uniform denial, no remaining-quota headers |
 | CBD-103 `OI-103-003` | No bounded surface releases until `PR-94-002` concrete values exist |
 | CBD-94 `SR-94-037` | Complete schema includes values, store/consistency, quotas/resource dimensions, approval, and capacity basis |
 | CBD-94 `ME-94-010` | Required review/evidence package for values, keys, distributed counter, response/timing, anti-lockout, and capacity |
-| CBD-94 `PR-94-002` | Product Owner decision remains open per exact record digest |
+| CBD-94 `PR-94-002` | `CBD266-PROTOTYPE-DEFAULTS-001` approves the four prototype sets as a whole; implementation must preserve the approved values in exact digest projections, and hosted approval remains open |
 | CBD-236 v0.4 section 7 / `OQ-236-003` | Surface gate precedes authorization metadata/policy after prerequisite verification; one coordinator audits the earliest decisive denial |
 
 ## 16. Change history
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.2 | September 13, 2026 | Added the four conservative local-prototype parameter-record sets approved as a whole by `CBD266-PROTOTYPE-DEFAULTS-001`; resolved `OPEN-266-VALUES` and `OPEN-266-APPROVALS` only for that prototype scope; retained implementation, review, evidence, and hosted-environment gates |
 | 0.1 | September 13, 2026 | Initial Architecture proposal for CBD-266; no parameter value or Product Owner approval granted |
