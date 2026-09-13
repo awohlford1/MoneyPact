@@ -417,17 +417,17 @@ Recorded on 2026-09-12 against Docker Desktop 29.4.2 (Linux engine), image
   stands: `CREATE INDEX CONCURRENTLY` cannot be used as written.
 - Two runners at once remain safe but not live, as recorded above.
 
-### Deferred identity foreign keys (CBD-231)
+### Deferred identity foreign keys (CBD-231) — closed
 
-The 2026-09-13 CBD-231 migrations (`create_budget_space`,
-`create_budget_space_membership`, and `create_budget_creation_operation`)
-store `created_by_subject_id`, `account_subject_id`, and `profile_id` as plain
-`uuid` columns with no foreign key, by Manager ruling on `CBD231-IMPL-001`:
-CBD-212's identity/profile schema is not implemented yet (CBD-190
-unimplemented), so there is nothing yet to reference. Each such column carries
-a comment pointing back here. A follow-up migration, to be named
-`create_budget_space_identity_foreign_keys`, must add the deferred foreign
-keys once CBD-212's schema lands; until then, DB-231-007's "composite
-subject/profile validation" is enforced only as far as the plain columns
-allow (orphan-subject and cross-profile rejection are not yet database
-guarantees).
+`20260913T100100Z__create_budget_space_identity_foreign_keys.sql`
+(CBD190-SCHEMA-001) adds the foreign keys this note used to defer, now that
+CBD-190/CBD-212's `account_subject` and `financial_profile` tables exist
+(`20260913T100000Z__create_identity_and_profile_schema.sql`):
+`budget_space.created_by_subject_id`, `budget_space_membership.
+account_subject_id`, `budget_space_membership.profile_id`,
+`budget_space_membership.created_by_subject_id`, `budget_creation_operation.
+account_subject_id`, `budget_creation_operation.profile_id`, and
+`budget_creation_idempotency.account_subject_id` are now real, `DEFERRABLE
+INITIALLY DEFERRED` foreign keys, so DB-231-007's orphan-subject and
+cross-profile rejection is a database guarantee rather than a plain-column
+limitation.

@@ -46,6 +46,12 @@ export const PRODUCTION_TABLE_CATALOG: TableCatalog = {
   budget_creation_idempotency: "budget-space",
   budget_creation_audit: "budget-space",
   budget_creation_success: "budget-space",
+  // CBD-190/CBD-212 (CBD190-SCHEMA-001), 20260913T100000Z.
+  account_subject: "identity",
+  identity_binding: "identity",
+  identity_callback: "identity",
+  identity_session_handoff: "identity",
+  financial_profile: "financial-profile",
 };
 
 export function isTenantTable(catalog: TableCatalog, table: string): boolean {
