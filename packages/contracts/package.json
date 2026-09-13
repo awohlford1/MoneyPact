@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Configuration and types shared by the API and worker. No I/O beyond reading the environment, no framework, no persistence, no provider SDK.",
   "exports": {
+    "./authorization": "./src/authorization/index.ts",
     "./config": "./src/config/index.ts",
     "./health": "./src/health/index.ts",
     "./telemetry": "./src/telemetry/index.ts"
