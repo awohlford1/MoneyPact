@@ -31,7 +31,9 @@ export interface TableCatalog {
 
 export const TENANT_SCOPE: TableScope = "budget-space";
 
-/** Scopes `platformSelect`/`platformInsert`/`platformUpdate`/`platformDelete` may reach. `financial-profile` is deliberately excluded until a dedicated seam for it exists. */
+export const PROFILE_SCOPE: TableScope = "financial-profile";
+
+/** Scopes `platformSelect`/`platformInsert`/`platformUpdate`/`platformDelete` may reach. `financial-profile` is deliberately excluded because it has a dedicated subject-scoped seam. */
 const PLATFORM_SCOPES: readonly TableScope[] = ["identity", "platform"];
 
 export const PRODUCTION_TABLE_CATALOG: TableCatalog = {
@@ -48,6 +50,10 @@ export const PRODUCTION_TABLE_CATALOG: TableCatalog = {
 
 export function isTenantTable(catalog: TableCatalog, table: string): boolean {
   return catalog[table] === TENANT_SCOPE;
+}
+
+export function isProfileTable(catalog: TableCatalog, table: string): boolean {
+  return catalog[table] === PROFILE_SCOPE;
 }
 
 export function isPlatformTable(catalog: TableCatalog, table: string): boolean {
