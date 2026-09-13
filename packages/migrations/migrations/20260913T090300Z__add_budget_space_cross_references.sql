@@ -70,6 +70,18 @@ BEGIN
             USING ERRCODE = '23514';
     END IF;
 
+    -- BSL-231-005 / SS3.1: "current_schedule_version_id ... equals
+    -- initial_schedule_version_id at creation." Nothing in this migration
+    -- set gives a budget a second schedule version, so this contract holds
+    -- unconditionally today; a future approved schedule-rollover migration
+    -- owns any relaxation of it.
+    IF NEW.current_schedule_version_id IS DISTINCT FROM NEW.initial_schedule_version_id THEN
+        RAISE EXCEPTION
+            'budget_space %: current_schedule_version_id % must equal initial_schedule_version_id % at creation',
+            NEW.budget_space_id, NEW.current_schedule_version_id, NEW.initial_schedule_version_id
+            USING ERRCODE = '23514';
+    END IF;
+
     SELECT status INTO v_period_status
         FROM budget_space_period
         WHERE budget_space_id = NEW.budget_space_id
@@ -96,3 +108,48 @@ CREATE CONSTRAINT TRIGGER budget_space_creation_invariants
     DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW
     EXECUTE FUNCTION check_budget_space_creation_invariants();
+
+-- DB-231-005/006 (referenced-side half). The trigger above only re-fires
+-- when budget_space's own reference columns change; it never fires when the
+-- currently-referenced period itself is mutated in place (its status moved
+-- off 'active'). Without this trigger, `UPDATE budget_space_period SET
+-- status = 'planned'` on the row a budget currently points to as its
+-- current_period_id commits cleanly and leaves that budget referencing an
+-- inactive period, which is exactly the state DB-231-005/006 exist to make
+-- unreachable at every committed state, not only immediately after
+-- creation. budget_space_period's identity columns (period_id,
+-- budget_space_id, schedule_version_id) are already immutable
+-- (20260913T090200Z), so status is the only column that can move a
+-- currently-referenced row out of compliance.
+CREATE FUNCTION check_budget_space_period_reference_invariant() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_referencing_budget uuid;
+BEGIN
+    IF NEW.status IS NOT DISTINCT FROM OLD.status THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT budget_space_id INTO v_referencing_budget
+        FROM budget_space
+        WHERE budget_space_id = NEW.budget_space_id
+          AND current_schedule_version_id = NEW.schedule_version_id
+          AND current_period_id = NEW.period_id;
+
+    IF v_referencing_budget IS NOT NULL AND NEW.status IS DISTINCT FROM 'active' THEN
+        RAISE EXCEPTION
+            'budget_space %: current_period_id % can no longer be updated to status % because it is the active current period',
+            v_referencing_budget, NEW.period_id, NEW.status
+            USING ERRCODE = '23514';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER budget_space_period_reference_invariant
+    AFTER UPDATE OF status
+    ON budget_space_period
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW
+    EXECUTE FUNCTION check_budget_space_period_reference_invariant();

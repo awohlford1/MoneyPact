@@ -42,7 +42,16 @@ CREATE TABLE budget_creation_operation (
     UNIQUE (proposal_id),
     -- DB-231-008: "operation-to-budget unique" -- at most one operation per
     -- candidate budget.
-    UNIQUE (budget_space_id)
+    UNIQUE (budget_space_id),
+    -- Composite unique target for budget_creation_success's deferred
+    -- (operation_id, budget_space_id) foreign key (BSL-231-010): binding
+    -- both columns together, rather than trusting two independent foreign
+    -- keys, is what makes it impossible for a success row to bind an
+    -- operation from one budget to a different budget. UNIQUE(operation_id)
+    -- above already makes this composite unique on its own, but it is
+    -- declared explicitly because it is the referenced side of that
+    -- composite foreign key.
+    UNIQUE (operation_id, budget_space_id)
 );
 
 COMMENT ON TABLE budget_creation_operation IS
@@ -156,12 +165,8 @@ REVOKE DELETE ON budget_creation_audit FROM cobudget_worker, cobudget_api;
 CREATE TABLE budget_creation_success (
     success_id         uuid        NOT NULL DEFAULT gen_random_uuid(),
 
-    operation_id        uuid        NOT NULL
-                                    REFERENCES budget_creation_operation (operation_id)
-                                    DEFERRABLE INITIALLY DEFERRED,
-    budget_space_id       uuid        NOT NULL
-                                    REFERENCES budget_space (budget_space_id)
-                                    DEFERRABLE INITIALLY DEFERRED,
+    operation_id        uuid        NOT NULL,
+    budget_space_id       uuid        NOT NULL,
 
     response_payload     jsonb       NOT NULL,
     created_at            timestamptz NOT NULL DEFAULT now(),
@@ -172,7 +177,22 @@ CREATE TABLE budget_creation_success (
     -- at most one terminal success per operation and per budget
     -- (BSL-231-008).
     UNIQUE (operation_id),
-    UNIQUE (budget_space_id)
+    UNIQUE (budget_space_id),
+
+    -- BSL-231-010 tenant coherence: a single composite foreign key, not two
+    -- independent ones, so a success row cannot bind the operation from one
+    -- budget to a different budget_space_id. Two independent foreign keys
+    -- (each individually satisfiable) would let a success row name
+    -- (operation A, budget B) whenever operation A really belongs to budget
+    -- A and budget B is separately valid; this composite reference to
+    -- budget_creation_operation's own (operation_id, budget_space_id)
+    -- forces the pair to agree with the operation that actually produced
+    -- it. It also transitively guarantees budget_space_id names a real
+    -- budget_space row, since budget_creation_operation.budget_space_id
+    -- already carries that foreign key.
+    FOREIGN KEY (operation_id, budget_space_id)
+        REFERENCES budget_creation_operation (operation_id, budget_space_id)
+        DEFERRABLE INITIALLY DEFERRED
 );
 
 COMMENT ON TABLE budget_creation_success IS
