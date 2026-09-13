@@ -1,0 +1,23 @@
+{
+  "name": "@cobudget/sessions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CBD-191 opaque application sessions and two-way revocation: selector/verifier resolution, per-session version and subject revocation epoch, rotation, application- and provider-initiated revocation, and the local Cognito-shaped provider-event adapter. No framework; persistence goes through @cobudget/data-access.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cobudget/data-access": "*"
+  },
+  "devDependencies": {
+    "@typescript-eslint/parser": "^8.70.0",
+    "eslint": "^9.39.5",
+    "typescript": "^5.9.0"
+  }
+}

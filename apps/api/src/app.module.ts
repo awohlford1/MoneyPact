@@ -12,6 +12,7 @@ import { HealthController } from "./health.controller.js";
 import { ShutdownReporter } from "./shutdown-reporter.js";
 import type { ReliabilitySink } from "./telemetry.js";
 import { API_CONFIG, RELIABILITY_SINK } from "./tokens.js";
+export { buildSessionFactSourceAdapter } from "./sessions/index.js"; // CBD-191 (CBD191-IMPL-001): re-export only; apps/api/src/authorization and application.ts own register()'s authorization wiring.
 
 @Module({})
 export class AppModule {

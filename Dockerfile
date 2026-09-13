@@ -14,6 +14,7 @@ COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/data-access/package.json packages/data-access/package.json
 COPY packages/migrations/package.json packages/migrations/package.json
 COPY packages/rate-limit/package.json packages/rate-limit/package.json
+COPY packages/sessions/package.json packages/sessions/package.json
 RUN PUPPETEER_SKIP_DOWNLOAD=true npm ci
 
 COPY tsconfig.base.json ./
@@ -25,6 +26,7 @@ COPY packages/contracts packages/contracts
 COPY packages/data-access packages/data-access
 COPY packages/migrations packages/migrations
 COPY packages/rate-limit packages/rate-limit
+COPY packages/sessions packages/sessions
 RUN npm run build --workspace=@cobudget/api \
     && npm run build --workspace=@cobudget/worker
 
@@ -44,6 +46,7 @@ COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/data-access/package.json packages/data-access/package.json
 COPY packages/migrations/package.json packages/migrations/package.json
 COPY packages/rate-limit/package.json packages/rate-limit/package.json
+COPY packages/sessions/package.json packages/sessions/package.json
 RUN npm ci --omit=dev \
     --workspace=@cobudget/api \
     --workspace=@cobudget/worker \
@@ -51,6 +54,7 @@ RUN npm ci --omit=dev \
     --workspace=@cobudget/data-access \
     --workspace=@cobudget/migrations \
     --workspace=@cobudget/rate-limit \
+    --workspace=@cobudget/sessions \
     && rm -rf node_modules/@scarf
 
 FROM node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df AS runtime
@@ -73,6 +77,7 @@ COPY --from=build --chown=node:node /workspace/packages/migrations packages/migr
 COPY --from=build --chown=node:node /workspace/packages/rate-limit packages/rate-limit
 # The rate-limit registry imports its checked-in records from config/rate-limit.
 COPY --from=build --chown=node:node /workspace/config/rate-limit config/rate-limit
+COPY --from=build --chown=node:node /workspace/packages/sessions packages/sessions
 
 # The processes invoke Node directly. Remove npm and its documentation from the
 # runtime image so build-only tooling and credential-shaped examples cannot ship.
