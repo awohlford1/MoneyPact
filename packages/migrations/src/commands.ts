@@ -19,6 +19,7 @@ import type { Executor } from "./executor.ts";
 import { buildFileName, formatOrdinal, toSlug } from "./naming.ts";
 import { parseAppliedRows, planApply, readAppliedScript } from "./plan.ts";
 import type { Policy } from "./policy.ts";
+import { mismatchMessage, parseServerVersion, serverVersionScript } from "./version.ts";
 
 export type Io = { readonly out: (line: string) => void; readonly err: (line: string) => void };
 
@@ -31,6 +32,8 @@ export type Deps = {
   readonly directory: string;
   /** Absolute path to the package whose manifest the AC06 rule reads. */
   readonly packageRoot: string;
+  /** The PostgreSQL major pinned in compose.yaml (CBD-117-AC03). */
+  readonly pinnedMajor: number;
 };
 
 export const OK = 0;
@@ -50,6 +53,33 @@ function reportFindings(deps: Deps): number {
 
 export function check(deps: Deps): number {
   return reportFindings(deps);
+}
+
+/**
+ * CBD-117-AC03: nothing touches a server whose major differs from the pin.
+ *
+ * Runs before the ledger is read, so the first thing a mismatched server
+ * hears is a read-only SELECT of two settings, and the first thing the
+ * operator reads is a message naming both versions.
+ */
+function guardServerVersion(deps: Deps): boolean {
+  const result = deps.executor.run(serverVersionScript, "server version");
+  if (result.status !== 0) {
+    deps.io.err(`could not read the server version: ${result.stderr.trim() || `psql exited ${result.status}`}`);
+    return false;
+  }
+  let server;
+  try {
+    server = parseServerVersion(result.stdout);
+  } catch (error) {
+    deps.io.err(error instanceof Error ? error.message : String(error));
+    return false;
+  }
+  if (server.major !== deps.pinnedMajor) {
+    deps.io.err(mismatchMessage(server, deps.pinnedMajor));
+    return false;
+  }
+  return true;
 }
 
 type LedgerRead = { readonly rows: ReturnType<typeof parseAppliedRows> } | { readonly failure: string };
@@ -77,6 +107,7 @@ export function apply(deps: Deps): number {
     return FAILED;
   }
 
+  if (!guardServerVersion(deps)) return FAILED;
   const catalog = readCatalog(deps.directory, deps.policy);
   const ledger = readLedger(deps);
   if ("failure" in ledger) {
@@ -112,6 +143,7 @@ export function apply(deps: Deps): number {
 }
 
 export function status(deps: Deps): number {
+  if (!guardServerVersion(deps)) return FAILED;
   const catalog = readCatalog(deps.directory, deps.policy);
   const ledger = readLedger(deps);
   if ("failure" in ledger) {
@@ -191,6 +223,7 @@ export function reset(deps: Deps, flags: readonly string[]): number {
     return FAILED;
   }
 
+  if (!guardServerVersion(deps)) return FAILED;
   const probe = deps.executor.run("SELECT current_database();", "identify database");
   if (probe.status !== 0) {
     deps.io.err(`could not identify the database: ${probe.stderr.trim() || `psql exited ${probe.status}`}`);

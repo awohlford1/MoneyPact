@@ -46,11 +46,26 @@ const PSQL_ARGUMENTS = [
   "--variable=ON_ERROR_STOP=1",
 ];
 
-export function psqlExecutor(command = "psql"): Executor {
+/**
+ * `command` is the program to run and `prefix` the arguments that come before
+ * psql's own. For the hosted path that is `psql` and nothing; for the local
+ * database it is `docker compose ... exec -T db psql -U <role> -d <db>`, so
+ * the same executor carries bytes into a container without the PostgreSQL
+ * client being installed on the host (CBD-117-AC01). `hint` is appended to a
+ * launch failure so the message says what to do, not only what went wrong.
+ */
+export function psqlExecutor(
+  command = "psql",
+  prefix: readonly string[] = [],
+  hint = "Install the PostgreSQL client, or use the local database commands, which run psql inside the container.",
+): Executor {
+  const describe = prefix.length === 0
+    ? `${command} (connection from the standard libpq environment)`
+    : `${command} ${prefix.join(" ")}`;
   return {
-    describe: `${command} (connection from the standard libpq environment)`,
+    describe,
     run(sql: string): ExecutionResult {
-      const result = spawnSync(command, PSQL_ARGUMENTS, {
+      const result = spawnSync(command, [...prefix, ...PSQL_ARGUMENTS], {
         input: sql,
         encoding: "utf8",
         maxBuffer: 64 * 1024 * 1024,
@@ -59,8 +74,7 @@ export function psqlExecutor(command = "psql"): Executor {
         return {
           status: 127,
           stdout: "",
-          stderr: `could not run ${command}: ${result.error.message}\n`
-            + "Install the PostgreSQL client, or set the psql command in config/migrations.json.",
+          stderr: `could not run ${command}: ${result.error.message}\n${hint}\n`,
         };
       }
       return { status: result.status ?? 1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };

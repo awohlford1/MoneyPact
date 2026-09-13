@@ -26,6 +26,49 @@ npm run dev
 
 Then open `http://localhost:3000`.
 
+## Run the local database
+
+Docker Desktop (or another Docker engine with Compose) is the only database
+prerequisite. PostgreSQL and `psql` run inside the pinned container; do not
+install either on the host.
+
+From the repository root, start and migrate the database, then run the current
+seed hook:
+
+```sh
+npm run db:up --workspace=@cobudget/migrations
+npm run db:migrate --workspace=@cobudget/migrations
+npm run db:seed --workspace=@cobudget/migrations
+```
+
+`db:seed` currently loads zero rows because no customer schema exists. Check
+migration state and verify the pinned major and role separation with:
+
+```sh
+npm run db:status --workspace=@cobudget/migrations
+npm run db:verify --workspace=@cobudget/migrations
+```
+
+To recover a broken schema, reset it and reapply every forward migration:
+
+```sh
+npm run db:reset --workspace=@cobudget/migrations
+```
+
+Stop while keeping data, or remove the disposable container and volume:
+
+```sh
+npm run db:stop --workspace=@cobudget/migrations
+npm run db:destroy --workspace=@cobudget/migrations
+```
+
+The defaults in `.env.example` are obvious local-only values and the port is
+bound to `127.0.0.1`. Copy the template to the untracked `.env.local` only when
+you need an override, such as `COBUDGET_DB_PORT=5433`. The local commands load
+and validate these values through the shared environment contract. See
+[`packages/migrations/README.md`](../packages/migrations/README.md) for the
+pin decision, role grants, failure behavior, and full operational detail.
+
 ## Run the API application
 
 Copy the safe local configuration template once, then adjust it if needed:
