@@ -1,0 +1,23 @@
+{
+  "name": "@cobudget/budget-application",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Application layer for versioned budget-creation proposals and schedule previews (CBD-232). No I/O, no framework, no persistence, no provider SDK; consumes @cobudget/budget-domain/schedule only.",
+  "exports": {
+    "./creation-proposals": "./src/creation-proposals/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cobudget/budget-domain": "*"
+  },
+  "devDependencies": {
+    "@typescript-eslint/parser": "^8.70.0",
+    "eslint": "^9.39.5",
+    "typescript": "^5.9.0"
+  }
+}
