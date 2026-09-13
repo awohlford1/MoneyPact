@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Proposed — architecture contract for implementation and independent Security review** |
+| Status | **Approved — Product Owner, September 13, 2026 (PO-CONTRACT-APPROVALS-001); open questions and residuals stay recorded and open** |
 | Document version | 0.2.2 |
 | Jira subtask | [CBD-191](https://cobudget.atlassian.net/browse/CBD-191) |
 | Parent | [CBD-21](https://cobudget.atlassian.net/browse/CBD-21) |
@@ -704,6 +704,7 @@ retain configuration or provider evidence named above.
 
 | Version | Date | Author | Change | Disposition |
 | --- | --- | --- | --- | --- |
+| 0.2.2 (approval) | September 13, 2026 | Manager, in the merge lane | Product Owner approval recorded (PO-CONTRACT-APPROVALS-001). Status Proposed → Approved at the same version; no decision, identifier or contract text changed. | Approved. |
 | 0.2.2 | September 13, 2026 | Manager, in the merge lane | Executive decisions applied: `OQ-191-001` decided as branch B (`CBD191-ZERO-MEMBERSHIP-001`); `OQ-191-003` conditionally accepted (`CBD191-PROVIDER-BOUND-001`). Question text and both branches retained; no mechanism changed. | Proposed. |
 | 0.2.1 | September 13, 2026 | Manager, in the merge lane | Review closures on v0.2: the `authentication` rotation cause requires the current row's subject to equal the resolved subject, a mismatch forcing `account_switch` (Security `MQ-191-SEC-006`, answered: force the explicit switch, never silently end a foreign row); the same rule added to §5.3's fence; the bound-context branch marked v0.3-blocked exactly like `recovery` so §11 AC03 reads consistently (Reviewer clarity finding). No other text changed. | Proposed; Reviewer approve and Security remediate-closed at this revision. |
 | 0.2 | September 12, 2026 | Architecture specialist, dispatched under `CBD191-ARCH-002 v1` | Correction round for Review `CBD191-REVIEW-001` and Security `CBD191-SECURITY-001`: finding-to-line map follows this table. | Proposed; fresh independent Review and Security review required. |
