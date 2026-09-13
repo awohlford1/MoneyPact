@@ -53,5 +53,7 @@ export type {
   TenantSelectQuery,
   TenantUpdateQuery,
 } from "./tenant.ts";
-export { statementLogLine, StatementFailedError, wrapDriverError } from "./logging.ts";
+export { statementLogLine, StatementFailedError, wrapDriverError, isRetryableSqlState } from "./logging.ts";
 export type { LogFields } from "./logging.ts";
+
+export type { TransactionOptions } from "./client.ts";

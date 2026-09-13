@@ -12,18 +12,8 @@
  * worker's `WorkerDataAccessClient` deliberately does not. Neither surface
  * has a member that reaches the underlying `Pool`.
  */
-import type { Pool } from "./driver.ts";
+import { bindClient } from "./binding.ts";
 import { createApiConnection, createWorkerConnection } from "./connection.ts";
-import {
-  platformDelete,
-  platformInsert,
-  platformSelect,
-  platformUpdate,
-  tenantDelete,
-  tenantInsert,
-  tenantSelect,
-  tenantUpdate,
-} from "./tenant.ts";
 import type {
   PlatformDeleteQuery,
   PlatformInsertQuery,
@@ -35,10 +25,14 @@ import type {
   TenantUpdateQuery,
 } from "./tenant.ts";
 import type { QueryResult } from "./driver.ts";
-import { profileDelete, profileInsert, profileSelect, profileUpdate } from "./profile.ts";
 import type { ProfileDeleteQuery, ProfileInsertQuery, ProfileSelectQuery, ProfileUpdateQuery } from "./profile.ts";
 
+export interface TransactionOptions {
+  readonly isolation?: "serializable" | "read committed";
+}
+
 export interface DataAccessClient {
+  readonly transaction: <T>(options: TransactionOptions, work: (scoped: DataAccessClient) => Promise<T>) => Promise<T>;
   readonly tenantSelect: (query: TenantSelectQuery) => Promise<QueryResult>;
   readonly tenantInsert: (query: TenantInsertQuery) => Promise<QueryResult>;
   readonly tenantUpdate: (query: TenantUpdateQuery) => Promise<QueryResult>;
@@ -64,35 +58,12 @@ export interface ApiDataAccessClient extends DataAccessClient {
 /** Worker client surface: the common statement operations with every profile member absent. */
 export type WorkerDataAccessClient = Omit<DataAccessClient, "profileSelect" | "profileInsert" | "profileUpdate" | "profileDelete">;
 
-function bindWorkerClient(pool: Pool): WorkerDataAccessClient {
-  return {
-    tenantSelect: (query) => tenantSelect(pool, query),
-    tenantInsert: (query) => tenantInsert(pool, query),
-    tenantUpdate: (query) => tenantUpdate(pool, query),
-    tenantDelete: (query) => tenantDelete(pool, query),
-    platformSelect: (query) => platformSelect(pool, query),
-    platformInsert: (query) => platformInsert(pool, query),
-    platformUpdate: (query) => platformUpdate(pool, query),
-    platformDelete: (query) => platformDelete(pool, query),
-  };
-}
-
-function bindApiClient(pool: Pool): ApiDataAccessClient {
-  const client = bindWorkerClient(pool);
-  return Object.defineProperties(client, {
-    profileSelect: { value: (query: ProfileSelectQuery) => profileSelect(pool, query) },
-    profileInsert: { value: (query: ProfileInsertQuery) => profileInsert(pool, query) },
-    profileUpdate: { value: (query: ProfileUpdateQuery) => profileUpdate(pool, query) },
-    profileDelete: { value: (query: ProfileDeleteQuery) => profileDelete(pool, query) },
-  }) as ApiDataAccessClient;
-}
-
 /** The API application's data-access client. Backed by the api role's pool only -- never worker's, never migration's. */
 export function createApiClient(): ApiDataAccessClient {
-  return bindApiClient(createApiConnection());
+  return bindClient(createApiConnection(), true) as ApiDataAccessClient;
 }
 
 /** The worker application's data-access client. Backed by the worker role's pool only -- never api's, never migration's. */
 export function createWorkerClient(): WorkerDataAccessClient {
-  return bindWorkerClient(createWorkerConnection());
+  return bindClient(createWorkerConnection(), false);
 }

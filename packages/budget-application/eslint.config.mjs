@@ -19,6 +19,8 @@ const CLOCK_MESSAGE =
   "ports instead of Date.now(), new Date(), or Math.random().";
 
 const INFRASTRUCTURE_PATTERNS = [
+  "@cobudget/data-access",
+  "@cobudget/data-access/*",
   "pg",
   "pg-*",
   "postgres",
@@ -77,6 +79,16 @@ export default defineConfig([
           message: CLOCK_MESSAGE,
         },
       ],
+    },
+  },
+
+  {
+    files: ["src/persistence/**/*.ts"],
+    rules: {
+      "no-restricted-imports": ["error", { patterns: [{
+        group: INFRASTRUCTURE_PATTERNS.filter((pattern) => !pattern.startsWith("@cobudget/data-access")),
+        message: BOUNDARY_MESSAGE,
+      }] }],
     },
   },
 
