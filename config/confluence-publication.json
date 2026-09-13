@@ -1607,6 +1607,13 @@
       "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
     },
     {
+      "path": "docs/cbd-232-budget-creation-proposal-contract.md",
+      "disposition": "unpublished",
+      "rationale": "CBD-232 proposal contract is held repository-only because no approved Confluence target is registered for it; this change does not create pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy, matching the docs/cbd-168-budget-domain-consumption-contract.md precedent in this manifest.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
       "path": "docs/cbd-270-platform-safety-operating-model.md",
       "disposition": "unpublished",
       "rationale": "CBD-270 operating model held repository-only at merge because no approved Confluence target exists for it and this change does not create pages; CBD-270-AC04 requires publication after merge as a separate authorized step.",
