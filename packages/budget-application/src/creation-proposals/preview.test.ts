@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import type { CadenceDefinition } from "@cobudget/budget-domain/schedule";
-import { addDays, toISODate } from "@cobudget/budget-domain/shared";
+import { addCalendarDays as addDays, isoDate as toISODate } from "./date.ts";
 import { computeSchedulePreview } from "./preview.ts";
 
 function assertChronologyAndContiguity(periods: readonly { start: string; end: string }[]): void {

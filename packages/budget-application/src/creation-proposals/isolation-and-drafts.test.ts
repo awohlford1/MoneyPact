@@ -10,7 +10,7 @@ import { describe, it } from "node:test";
 
 import { createOrRegenerateProposal, invalidateForContextChange, invalidateForSessionEnd, readProposal } from "./application.ts";
 import type { InMemoryProposalStore } from "./in-memory-store.ts";
-import { testAuthContext, testPorts } from "./test-support.ts";
+import { testAuthContext, testPorts } from "./support.ts";
 import type { AuthenticatedSubjectContext, ProposalContextKey } from "./ports.ts";
 
 const VALID_BODY = {

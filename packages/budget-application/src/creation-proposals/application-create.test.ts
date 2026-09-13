@@ -12,7 +12,7 @@ import { canonicalBindingEnvelope } from "./binding.ts";
 import { digestOf } from "./canonical-json.ts";
 import { createOrRegenerateProposal } from "./application.ts";
 import { PROPOSAL_CONTRACT_VERSION } from "./constants.ts";
-import { FakeClock, FakeCurrencyContextReader, testAuthContext, testPorts } from "./test-support.ts";
+import { FakeClock, FakeCurrencyContextReader, testAuthContext, testPorts } from "./support.ts";
 
 const VALID_BODY = {
   name: "Groceries",

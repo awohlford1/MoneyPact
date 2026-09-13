@@ -8,51 +8,37 @@ import {
   buildPaycheckSchedule,
   customBoundaries,
   describeCadence,
-  parseCadenceDefinition,
   periodLengthInDays,
   setupPreview,
   weeklyMonthlyBoundaries,
 } from "@cobudget/budget-domain/schedule";
 import type { CadenceDefinition } from "@cobudget/budget-domain/schedule";
-import { addDays, compareDates, type ISODate } from "@cobudget/budget-domain/shared";
+import type { ISODate } from "@cobudget/budget-domain/shared";
+import { addCalendarDays, compareCalendarDates } from "./date.ts";
 import type { PreviewAdjustment, PreviewPeriod, PreviewWarning, SchedulePreview } from "./ports.ts";
 
 const PAYCHECK_BACKWARD_MARGIN_DAYS = 60;
 const PAYCHECK_FORWARD_MARGIN_DAYS = 420;
 
 /**
- * Re-validate a schedule already accepted by request validation.
+ * Assemble a preview from a schedule already accepted by request validation.
  *
  * `parseCadenceDefinition` is called exactly once per §6.1 for a live HTTP
- * request; this application module is also handed already-validated
- * `CadenceDefinition` values on the regeneration path (a stored proposal's
- * `normalizedInputs.schedule`), which carry no validation brand once they
- * cross a serialization boundary. Re-parsing a definition this module itself
- * produced can only fail if the domain package's own invariants are broken,
- * so a failure here is a defensive throw, not a user-facing validation error.
+ * request. Preview assembly consumes that normalized definition directly and
+ * does not invoke the parser a second time.
  */
-function revalidate(definition: CadenceDefinition) {
-  const result = parseCadenceDefinition(definition);
-  if (!result.ok) {
-    throw new Error(
-      `Internal error: previously-normalized schedule failed re-validation: ${JSON.stringify(result.issues)}`,
-    );
-  }
-  return result.value;
-}
-
 export function computeSchedulePreview(
   definition: CadenceDefinition,
   budgetDate: ISODate,
   timeZone: string,
 ): SchedulePreview {
-  const validated = revalidate(definition);
+  const validated = definition;
   const periods: PreviewPeriod[] = [];
   const adjustments: PreviewAdjustment[] = [];
   const warnings: PreviewWarning[] = [];
 
   if (validated.cadence === "weekly" || validated.cadence === "monthly") {
-    const boundaries = weeklyMonthlyBoundaries(validated);
+    const boundaries = weeklyMonthlyBoundaries(validated as Parameters<typeof weeklyMonthlyBoundaries>[0]);
     const generated = setupPreview(boundaries, budgetDate);
     generated.forEach((period, index) => {
       periods.push(toPreviewPeriod(period, index));
@@ -69,15 +55,15 @@ export function computeSchedulePreview(
       }
     });
   } else if (validated.cadence === "custom-fixed-length") {
-    const boundaries = customBoundaries(validated);
+    const boundaries = customBoundaries(validated as Parameters<typeof customBoundaries>[0]);
     const generated = setupPreview(boundaries, budgetDate);
     generated.forEach((period, index) => periods.push(toPreviewPeriod(period, index)));
   } else {
     const horizon = {
-      from: addDays(budgetDate, -PAYCHECK_BACKWARD_MARGIN_DAYS),
-      through: addDays(budgetDate, PAYCHECK_FORWARD_MARGIN_DAYS),
+      from: addCalendarDays(budgetDate, -PAYCHECK_BACKWARD_MARGIN_DAYS),
+      through: addCalendarDays(budgetDate, PAYCHECK_FORWARD_MARGIN_DAYS),
     };
-    const paycheckSchedule = buildPaycheckSchedule(validated, horizon);
+    const paycheckSchedule = buildPaycheckSchedule(validated as Parameters<typeof buildPaycheckSchedule>[0], horizon);
     const generated = setupPreview(paycheckSchedule.boundaries, budgetDate);
     generated.forEach((period, index) => periods.push(toPreviewPeriod(period, index)));
 
@@ -87,8 +73,8 @@ export function computeSchedulePreview(
       for (const occurrence of paycheckSchedule.occurrences) {
         if (occurrence.adjustment.reason === null) continue;
         if (
-          compareDates(occurrence.adjustedDate, previewStart) < 0 ||
-          compareDates(occurrence.adjustedDate, previewEnd) > 0
+          compareCalendarDates(occurrence.adjustedDate, previewStart) < 0 ||
+          compareCalendarDates(occurrence.adjustedDate, previewEnd) > 0
         ) {
           continue;
         }

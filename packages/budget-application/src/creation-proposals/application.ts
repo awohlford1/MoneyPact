@@ -7,10 +7,10 @@
  * types to the §4 HTTP contract; that binding is out of this packet's scope.
  */
 
-import { addDays } from "@cobudget/budget-domain/shared";
 import { canonicalBindingEnvelope } from "./binding.ts";
 import { digestOf } from "./canonical-json.ts";
 import { EXPIRY_TIME_LIMIT_MS, PERIOD_CONTRACT_VERSION, PROPOSAL_CONTRACT_VERSION } from "./constants.ts";
+import { addCalendarDays } from "./date.ts";
 import type { FieldError } from "./errors.ts";
 import { validateCreateProposalRequest } from "./normalize.ts";
 import { calendarDataVersionFor, computeSchedulePreview } from "./preview.ts";
@@ -51,7 +51,7 @@ export type CreateProposalOutcome =
 function computeExpiry(now: Date, timeZone: string): { expiresAt: string; expiryReason: ExpiredReason } {
   const timeLimit = new Date(now.getTime() + EXPIRY_TIME_LIMIT_MS);
   const budgetDate = localDateOf(now, timeZone);
-  const nextLocalDay = addDays(budgetDate, 1);
+  const nextLocalDay = addCalendarDays(budgetDate, 1);
   const nextMidnight = localMidnightInstant(nextLocalDay, timeZone);
   if (nextMidnight.getTime() <= timeLimit.getTime()) {
     return { expiresAt: nextMidnight.toISOString(), expiryReason: "local_midnight" };
@@ -83,6 +83,8 @@ function buildDependencyFingerprint(input: {
   readonly governingVersions: GoverningVersions;
   readonly budgetDate: string;
   readonly constraintVersion: string | null;
+  readonly currencyContextCompatible: boolean;
+  readonly bindingVersion: string;
 }): string {
   return digestOf({
     environment: input.context.environment,
@@ -94,6 +96,8 @@ function buildDependencyFingerprint(input: {
     governingVersions: input.governingVersions,
     budgetDate: input.budgetDate,
     constraintVersion: input.constraintVersion,
+    currencyContextCompatible: input.currencyContextCompatible,
+    bindingVersion: input.bindingVersion,
   });
 }
 
@@ -154,6 +158,11 @@ export async function createOrRegenerateProposal(
     governingVersions,
     budgetDate,
     constraintVersion,
+    currencyContextCompatible: ports.currencyContextReader.isCompatibleWithContext(
+      normalizedInputs.currencyCode,
+      command.subjectContext,
+    ),
+    bindingVersion: ports.bindingKeyring.bindingVersion,
   });
 
   // Validated non-empty and well-formed by validateCreateProposalRequest above.
@@ -321,6 +330,17 @@ export async function readProposal(
     governingVersions: currentGoverningVersions,
     budgetDate: currentBudgetDate,
     constraintVersion: currentConstraintVersion,
+    currencyContextCompatible: ports.currencyContextReader.isCompatibleWithContext(
+      record.normalizedInputs.currencyCode,
+      {
+        environment: record.environment,
+        subjectId: record.subjectId,
+        accountId: record.accountId,
+        profileId: record.profileId,
+        sessionGeneration: record.sessionGeneration,
+      },
+    ),
+    bindingVersion: ports.bindingKeyring.bindingVersion,
   });
 
   const lifecycle = computeLifecycle(record, now, currentDependencyFingerprint);

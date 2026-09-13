@@ -10,7 +10,7 @@ import { describe, it } from "node:test";
 
 import { createOrRegenerateProposal, discardProposal, readProposal } from "./application.ts";
 import type { InMemoryProposalStore } from "./in-memory-store.ts";
-import { FakeClock, FakeCurrencyContextReader, testAuthContext, testPorts } from "./test-support.ts";
+import { FakeClock, FakeCurrencyContextReader, testAuthContext, testPorts } from "./support.ts";
 
 const VALID_BODY = {
   name: "Groceries",

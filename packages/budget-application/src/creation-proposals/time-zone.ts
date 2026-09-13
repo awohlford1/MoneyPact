@@ -18,7 +18,8 @@
  * rejects bare abbreviations, `UTC`, and fixed-offset strings alike.
  */
 
-import { toISODate, type ISODate } from "@cobudget/budget-domain/shared";
+import type { ISODate } from "@cobudget/budget-domain/shared";
+import { isoDate } from "./date.ts";
 
 const NAMED_ZONE_PATTERN = /^[A-Za-z_+\-]+(?:\/[A-Za-z_+\-0-9]+)+$/u;
 
@@ -106,7 +107,7 @@ export function localDateOf(now: Date, timeZone: string): ISODate {
   for (const part of parts) {
     if (part.type !== "literal") map[part.type] = part.value;
   }
-  return toISODate(`${map["year"]}-${map["month"]}-${map["day"]}`);
+  return isoDate(`${map["year"]}-${map["month"]}-${map["day"]}`);
 }
 
 /** The UTC instant of local midnight (00:00:00) at the start of `date` in `timeZone`. */

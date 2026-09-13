@@ -67,6 +67,13 @@ function normalizeName(value: unknown): { value?: string; errors: FieldError[] }
 }
 
 function normalizeTimeZone(value: unknown): { value?: string; errors: FieldError[] } {
+  if (value === undefined) {
+    return {
+      errors: [
+        { code: "time-zone.required", path: "timeZone", message: "Enter a named IANA time zone." },
+      ],
+    };
+  }
   if (typeof value !== "string") {
     return {
       errors: [
@@ -110,6 +117,13 @@ function normalizeCurrency(
   context: AuthenticatedSubjectContext,
   currencyContextReader: CurrencyContextReader,
 ): { value?: string; errors: FieldError[] } {
+  if (value === undefined) {
+    return {
+      errors: [
+        { code: "currency.required", path: "currencyCode", message: "Enter a currency code." },
+      ],
+    };
+  }
   if (typeof value !== "string") {
     return {
       errors: [
@@ -236,9 +250,15 @@ function detectUnknownFields(body: Record<string, unknown>): FieldError[] {
   if (!isRecord(schedule)) return errors;
 
   const cadence = schedule["cadence"];
-  if (typeof cadence !== "string") return errors;
+  if (typeof cadence !== "string") {
+    errors.push(...unknownFieldsIn(schedule, ["cadence"], "schedule"));
+    return errors;
+  }
   const scheduleAllowed = SCHEDULE_KEYS[cadence];
-  if (scheduleAllowed === undefined) return errors;
+  if (scheduleAllowed === undefined) {
+    errors.push(...unknownFieldsIn(schedule, ["cadence"], "schedule"));
+    return errors;
+  }
 
   errors.push(...unknownFieldsIn(schedule, scheduleAllowed, "schedule"));
 
@@ -261,7 +281,11 @@ function detectUnknownFields(body: Record<string, unknown>): FieldError[] {
             errors.push(...unknownAnchorFields(anchor, `schedule.pattern.anchors.${index}`));
           });
         }
+      } else {
+        errors.push(...unknownFieldsIn(pattern, ["kind"], "schedule.pattern"));
       }
+    } else {
+      errors.push(...unknownFieldsIn(pattern, ["kind"], "schedule.pattern"));
     }
   }
 

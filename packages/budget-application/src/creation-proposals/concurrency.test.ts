@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { createOrRegenerateProposal } from "./application.ts";
-import { testAuthContext, testPorts } from "./test-support.ts";
+import { testAuthContext, testPorts } from "./support.ts";
 
 const VALID_BODY = {
   name: "Groceries",

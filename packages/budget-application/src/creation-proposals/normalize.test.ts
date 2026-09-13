@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { validateCreateProposalRequest, validateIdempotencyKeyHeader } from "./normalize.ts";
-import { FakeCurrencyContextReader, testAuthContext } from "./test-support.ts";
+import { FakeCurrencyContextReader, testAuthContext } from "./support.ts";
 
 const deps = () => ({
   currencyContextReader: new FakeCurrencyContextReader(),
