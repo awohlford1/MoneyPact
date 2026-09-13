@@ -5,7 +5,7 @@
 -- reset and re-migrate.
 --
 -- The three roles exist before this runs: locally they are created by
--- packages/migrations/local/initdb/010-roles.sql on first start, hosted by
+-- packages/migrations/local/initdb/010-roles.sh on first start, hosted by
 -- provisioning (CBD-119). This migration is what makes their grants the same
 -- in both places, because it is the same text applied by the same command.
 --

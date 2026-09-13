@@ -24,6 +24,7 @@ executor.
 | Apply every migration, from empty or from anywhere | `npm run db:migrate --workspace=@cobudget/migrations` | `npm run migrate --workspace=@cobudget/migrations` |
 | Show what is applied and what is pending | `npm run db:status --workspace=@cobudget/migrations` | `npm run migrate:status --workspace=@cobudget/migrations` |
 | Recovery: drop everything and re-apply | `npm run db:reset --workspace=@cobudget/migrations` | `npm run migrate:reset --workspace=@cobudget/migrations -- --confirm-destroys-all-data` |
+| Load seed data (currently zero rows) | `npm run db:seed --workspace=@cobudget/migrations` | — |
 | Prove version, roles, and grants | `npm run db:verify --workspace=@cobudget/migrations` | — |
 | Stop, keeping the data | `npm run db:stop --workspace=@cobudget/migrations` | — |
 | Remove the container and its data | `npm run db:destroy --workspace=@cobudget/migrations` | — |
@@ -234,6 +235,7 @@ only: no hosted resource is created, referenced, or paid for
 npm ci
 npm run db:up --workspace=@cobudget/migrations
 npm run db:migrate --workspace=@cobudget/migrations
+npm run db:seed --workspace=@cobudget/migrations
 ```
 
 That is the whole path from clone to a running, migrated database. Nothing is
@@ -243,17 +245,17 @@ check, then `psql` *inside* the container as the migration role, over the
 container's Unix socket. The PostgreSQL client is not needed on the host and
 no password crosses it.
 
-There is no seed step yet. The schema today is the ledger and the role grants;
-the first domain migration arrives with the story that needs it, and seeding
-follows that. Until then `db:migrate` is the whole seed.
+`db:seed` is the stable seed hook required by `CBD117-SEED-001`. The schema
+today contains no customer tables, so it verifies the running server and loads
+zero rows. Later schema tickets populate the hook without changing the command.
 
 `db:stop` stops the container and keeps every row. `db:up` starts it again.
 `db:destroy` removes the container and the volume; the next `db:up` runs
 `initdb` again, which is the only time the roles are created.
 
 The container listens on `127.0.0.1:5432` and nowhere else. If that port is
-taken, `COBUDGET_DB_PORT=5433 npm run db:up ...` moves the host side; compose
-interpolates it and nothing in the repository reads it.
+taken, set `COBUDGET_DB_PORT=5433` in the untracked `.env.local`; the shared
+configuration loader validates it before Compose inherits it.
 
 `compose.yaml` fixes the compose project name to `cobudget`, so every checkout
 and worktree of this repository shares one database, one volume, and one port,
@@ -281,9 +283,11 @@ role, `CREATE` on it; `db:verify` passes in both states.
 The PostgreSQL major version is written in exactly one place: the
 `image: postgres:<major>` line of `compose.yaml`. That is the line the server
 starts from, so it cannot drift from what runs. `src/version.ts` reads that
-same line, and every command that reaches a database — `apply`, `status`,
-`reset`, `db up`, `db verify`, with or without `--local` — asks the server for
-`server_version_num` first and refuses if the major differs, naming both:
+same line, and every command that reaches a database asks the server for
+`server_version_num` and refuses if the major differs, naming both. `db:up`
+first probes an already-running container before Compose can recreate it; an
+absent or stopped container proceeds through `compose up --wait`, then is
+probed before migration is suggested:
 
 ```
 refusing to continue: the server is PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) (major 17)
@@ -292,13 +296,12 @@ npm run db:up --workspace=@cobudget/migrations) or the host moved and the pin
 must move with it.
 ```
 
-**Why 17, and what is assumed.** CBD-108 selected Cloud SQL for PostgreSQL
-(C1) on 2026-09-02, so the pin is the Cloud SQL major. No CBD-105 or CBD-108
-document states which major the evaluation ran against — version-page
-confirmation of each candidate's PostgreSQL is `OQ-105-003`, still open — so
-the current Cloud SQL for PostgreSQL default major, 17, is taken and recorded
-here as an assumption. When `OQ-105-003` closes, or when CBD-119 creates the
-first hosted instance, the pin either already matches or moves in one line.
+**Why 17.** CBD-108 selected Cloud SQL for PostgreSQL (C1) on 2026-09-02, and
+Executive decision `CBD117-PG-MAJOR-001` records 17 as the intended managed
+PostgreSQL major and closes `OQ-105-003` by decision. CBD-117-AC03 is assessed
+against that record; this is no longer an implementation assumption. If later
+Cloud SQL activation forces a different major, the decision's revisit condition
+moves the pin in one line.
 Moving it to 18 or later also moves the volume target in `compose.yaml`; the
 comment on the pin says how.
 
@@ -308,33 +311,26 @@ deliberately, which is the point.
 
 ### Credentials (AC04)
 
-The container's credentials are constants that are obviously local: the
-bootstrap superuser is `postgres` / `local-only-superuser`, the three roles
-below have passwords of the form `local-only-<role>`, all are shorter than any
-secret scanner's threshold, and the server is bound to the loopback interface.
-`src/local.test.ts` asserts every one of those properties, so a value that
-could be mistaken for a production credential fails the build.
+The local database connection is declared in the CBD-113 environment inventory:
+`COBUDGET_DB_PORT`, `COBUDGET_DB_NAME`, `COBUDGET_DB_SUPERUSER`, and the four
+role passwords. `src/local-config.ts` declares their typed schema and reads them
+only through the shared loader in `@cobudget/contracts`; the environment guard
+registers that consumer and rejects a direct environment read. Every `db:*`
+script loads the optional untracked `.env.local` before the schema is validated.
 
-No variable is read by this package. The environment contract's guard
-(`scripts/check-environment.mjs`) forbids environment access anywhere but the
-shared loaders, this package has none, and `psql` inside the container needs
-none. The migration role reaches the server over the Unix socket, where the
-official image trusts local connections.
-
-What this does *not* yet deliver, and why: the ticket asks that credentials
-flow through the environment contract with CBD-113 inventory rows. The host
-side of that — `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` for the
-api and worker processes — is CBD-246's role wiring, and adding the rows needs
-`config/environment-inventory.json`, `.env.example`, and a consumer the guard
-can observe, which today means only the api and worker schemas or a Python
-`load_tool_config` group. All three are outside this package. The rows are
-specified in the CBD-117 result for whoever owns that change; until then the
-values a host process needs are the constants in `compose.yaml` and
-`local/initdb/010-roles.sql`.
+The committed `.env.example` values are intentionally not secrets. The
+bootstrap default is `postgres` / `local-only-superuser`; each application-role
+password is `local-only-<role>`. Compose consumes the same names, passes the role
+passwords to the quoted `psql` variables in the first-volume init hook, and
+binds the server to loopback. Omission uses those same safe defaults. These
+values are only for the disposable local container and must never be reused in
+a hosted environment. API and worker runtime connection schemas remain owned
+by the tickets that introduce their database clients; this deliverable supplies
+the local Compose and migration-psql contract they will target.
 
 ### The three roles (AC05)
 
-`DP-105-003` names them; `local/initdb/010-roles.sql` creates them the first
+`DP-105-003` names them; `local/initdb/010-roles.sh` creates them the first
 time the volume is initialised, as the bootstrap superuser, and makes the
 migration role the owner of `cobudget_dev`:
 
@@ -399,6 +395,8 @@ Recorded on 2026-09-12 against Docker Desktop 29.4.2 (Linux engine), image
 - **Stop and start.** `db:stop`, then `status` reported
   `service "db" is not running` with the hint to run `db:up`; `db:up` again;
   `status` listed both migrations as applied.
+- **Seed.** `db:seed` verified PostgreSQL 17 and reported `0 rows loaded`, as
+  required while no customer schema exists (`CBD117-SEED-001`).
 
 ### Fixtures
 
@@ -406,7 +404,7 @@ Recorded on 2026-09-12 against Docker Desktop 29.4.2 (Linux engine), image
 | --- | --- |
 | `cbd-117-fx-01` | AC03 — a server one major below the pin stops `apply`, `status`, and `reset` before the ledger is read, naming both versions (built in `commands.test.ts`) |
 | `cbd-117-fx-02` | AC03 — a compose file pinning no major, two majors, or an implausible one is refused |
-| `cbd-117-fx-03` | AC03 — `db up` fails startup on a mismatched server, naming both |
+| `cbd-117-fx-03` | AC03 — `db up` probes an already-running mismatched server before Compose and names both versions |
 | `cbd-117-fx-04` | AC05 — a missing role fails `db verify` |
 | `cbd-117-fx-05` | AC05 — an application role holding `CREATE` on `public` fails `db verify` |
 | `cbd-117-fx-06` | AC05 — an application role allowed DDL fails `db verify` |
@@ -415,10 +413,6 @@ Recorded on 2026-09-12 against Docker Desktop 29.4.2 (Linux engine), image
 
 ### Limitations
 
-- `docs/development.md` (AC06) is not updated by this package's change; the
-  section it needs is in the CBD-117 result for the documentation lane.
-- The environment-contract rows (AC04) are specified, not delivered; see
-  *Credentials* above.
 - The one-transaction limitation recorded under *How a migration is applied*
   stands: `CREATE INDEX CONCURRENTLY` cannot be used as written.
 - Two runners at once remain safe but not live, as recorded above.

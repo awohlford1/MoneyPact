@@ -14,11 +14,9 @@
  * there, and it connects over the Unix socket as the role it is asked for,
  * with no password crossing the host at all.
  *
- * Why no environment variable is read here: the environment contract's guard
- * (scripts/check-environment.mjs) forbids reading the environment anywhere
- * but the shared loaders, and this package has none. Everything the local
- * database needs is a constant in the compose file or below; the only knob,
- * the host port, is interpolated by compose itself.
+ * Local connection values are validated by local-config.ts through the shared
+ * environment loader before this module runs. Compose inherits those values;
+ * omitted values resolve to the matching obvious local-only defaults.
  */
 
 import { spawnSync } from "node:child_process";
@@ -85,6 +83,7 @@ export function runCompose(args: readonly string[]): ExecutionResult {
 export type LocalDeps = {
   readonly io: Io;
   readonly pinnedMajor: number;
+  readonly databaseName: string;
   readonly compose: (args: readonly string[]) => ExecutionResult;
   readonly executorFor: (role: Role) => Executor;
 };
@@ -106,15 +105,17 @@ function fail(deps: LocalDeps, message: string): number {
  * exist by the time this returns.
  */
 export function dbUp(deps: LocalDeps): number {
+  const existingVersion = verifyVersion(deps);
+  if (existingVersion.kind === "mismatch") return fail(deps, existingVersion.message);
   const started = deps.compose(["up", "--detach", "--wait"]);
   if (started.status !== 0) {
     return fail(deps, `could not start the local database (docker compose exited ${started.status}). `
       + `${started.stderr.trim()}`.trim());
   }
   const version = verifyVersion(deps);
-  if (version !== undefined) return fail(deps, version);
+  if (version.kind !== "match") return fail(deps, version.message);
   deps.io.out(`local database is up: PostgreSQL major ${deps.pinnedMajor} as pinned in compose.yaml, `
-    + `database ${localDatabaseName}, loopback only`);
+    + `database ${deps.databaseName}, loopback only`);
   deps.io.out("next: npm run db:migrate --workspace=@cobudget/migrations");
   return OK;
 }
@@ -135,15 +136,22 @@ export function dbDestroy(deps: LocalDeps): number {
   return OK;
 }
 
-/** Undefined when the server's major matches the pin; otherwise the refusal. */
-function verifyVersion(deps: LocalDeps): string | undefined {
+/** Classify a server-version probe without exposing any connection value. */
+type VersionProbe =
+  | { readonly kind: "match" }
+  | { readonly kind: "mismatch"; readonly message: string }
+  | { readonly kind: "unavailable"; readonly message: string };
+
+function verifyVersion(deps: LocalDeps): VersionProbe {
   const result = deps.executorFor("migration").run(serverVersionScript, "server version");
-  if (result.status !== 0) return `could not read the server version: ${result.stderr.trim()}`;
+  if (result.status !== 0) return { kind: "unavailable", message: `could not read the server version: ${result.stderr.trim()}` };
   try {
     const server = parseServerVersion(result.stdout);
-    return server.major === deps.pinnedMajor ? undefined : mismatchMessage(server, deps.pinnedMajor);
+    return server.major === deps.pinnedMajor
+      ? { kind: "match" }
+      : { kind: "mismatch", message: mismatchMessage(server, deps.pinnedMajor) };
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    return { kind: "unavailable", message: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -183,7 +191,7 @@ const DDL_PROBES: readonly { readonly what: string; readonly sql: string }[] = [
  */
 export function dbVerify(deps: LocalDeps): number {
   const version = verifyVersion(deps);
-  if (version !== undefined) return fail(deps, version);
+  if (version.kind !== "match") return fail(deps, version.message);
   const migration = deps.executorFor("migration");
 
   const roleRows = migration.run(
@@ -242,7 +250,15 @@ export function dbVerify(deps: LocalDeps): number {
   return OK;
 }
 
-export const localCommandNames = ["up", "stop", "destroy", "verify"] as const;
+/** Stable seed hook. CBD117-SEED-001 says it intentionally loads no rows yet. */
+export function dbSeed(deps: LocalDeps): number {
+  const version = verifyVersion(deps);
+  if (version.kind !== "match") return fail(deps, version.message);
+  deps.io.out("local database seed complete: 0 rows loaded; no customer schema exists yet (CBD117-SEED-001)");
+  return OK;
+}
+
+export const localCommandNames = ["up", "stop", "destroy", "verify", "seed"] as const;
 
 export function localUsage(): string {
   return [
@@ -252,6 +268,7 @@ export function localUsage(): string {
     "  npm run db:migrate --workspace=@cobudget/migrations   apply every migration inside the container",
     "  npm run db:status --workspace=@cobudget/migrations    applied and pending",
     "  npm run db:reset --workspace=@cobudget/migrations     drop everything and re-migrate",
+    "  npm run db:seed --workspace=@cobudget/migrations      load seed data (currently zero rows)",
     "  npm run db:verify --workspace=@cobudget/migrations    version, roles, and grants",
     "  npm run db:stop --workspace=@cobudget/migrations      stop; data kept",
     "  npm run db:destroy --workspace=@cobudget/migrations   remove container and volume",
@@ -272,6 +289,8 @@ export function dispatchLocal(deps: LocalDeps, argv: readonly string[]): number 
       return dbDestroy(deps);
     case "verify":
       return dbVerify(deps);
+    case "seed":
+      return dbSeed(deps);
     default:
       if (command !== undefined) deps.io.err(`unknown db command "${command}"`);
       deps.io.out(localUsage());

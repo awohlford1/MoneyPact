@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL, URL } from "node:url";
 import { createRequire } from "node:module";
 import { apiConfigSchema } from "../apps/api/src/config.ts";
 import { workerConfigSchema } from "../apps/worker/src/config.ts";
+import { localDatabaseConfigSchema } from "../packages/migrations/src/local-config.ts";
 import { python } from "./python-runtime.mjs";
 
 // Use the compiler already declared by the contracts workspace being audited.
@@ -59,7 +60,11 @@ export function scanJavaScript(source, path) {
     if (ts.isImportSpecifier(node) && (node.propertyName?.text ?? node.name.text) === "loadConfigFromEnvironment"
         && node.propertyName) fail(node, "environment loader aliases are unsupported");
     if (ts.isCallExpression(node) && (node.expression.text === "loadConfigFromEnvironment" || property(node.expression) === "loadConfigFromEnvironment")) {
-      const expected = { "apps/api/src/config.ts": "apiConfigSchema", "apps/worker/src/config.ts": "workerConfigSchema" }[path];
+      const expected = {
+        "apps/api/src/config.ts": "apiConfigSchema",
+        "apps/worker/src/config.ts": "workerConfigSchema",
+        "packages/migrations/src/local-config.ts": "localDatabaseConfigSchema",
+      }[path];
       if (!expected || node.arguments.length !== 1 || node.arguments[0].getText(tree) !== expected) {
         fail(node, "environment schema consumer is not registered in the inventory guard");
       }
@@ -159,18 +164,29 @@ export function validateInventory(data, template, files) {
     else if (value !== row.placeholder) failures.push(`${name}: template differs from safe placeholder`);
   });
   for (const row of rows) if (row.template === "included" && !assignments.has(row.name)) failures.push(`${row.name}: missing template entry`);
-  for (const [path, schema] of [["apps/api/src/config.ts", apiConfigSchema], ["apps/worker/src/config.ts", workerConfigSchema]]) {
+  const schemaConsumers = [
+    ["apps/api/src/config.ts", apiConfigSchema, "application"],
+    ["apps/worker/src/config.ts", workerConfigSchema, "application"],
+    ["packages/migrations/src/local-config.ts", localDatabaseConfigSchema, "tooling"],
+  ];
+  for (const [path, schema, classification] of schemaConsumers) {
     for (const [name, spec] of Object.entries(schema)) {
       observed.add(`${name}:${path}`);
       const row = rows.find(r => r.name === name);
-      if (!row || row.classification !== "application" || !row.consumer.includes(path)) { failures.push(`${name}: undeclared application consumer ${path}`); continue; }
+      if (!row || row.classification !== classification || !row.consumer.includes(path)) { failures.push(`${name}: undeclared ${classification} consumer ${path}`); continue; }
       const validation = Object.fromEntries(Object.entries(spec).filter(([key]) => !["description", "required"].includes(key)));
       if (spec.required !== row.required || JSON.stringify(validation) !== JSON.stringify(row.validation)) failures.push(`${name}: inventory validation differs from runtime schema`);
     }
   }
   for (const [path, source] of Object.entries(files)) if (!path.endsWith(".py")) failures.push(...scanJavaScript(source, path));
   const pythonFiles = Object.fromEntries(Object.entries(files).filter(([p]) => p.endsWith(".py")));
-  const result = python([join(root, "scripts/check-environment-python.py")], { input: JSON.stringify({ files: pythonFiles, variables: rows }) });
+  // Python tooling rows are group-driven and use tool_config's URL/email/token
+  // rules. TypeScript tooling schemas are checked above by the shared loader's
+  // schema contract and must not be reinterpreted as Python validation rules.
+  const pythonVariables = rows.filter((row) => row.classification !== "tooling" || typeof row.group === "string");
+  const result = python([join(root, "scripts/check-environment-python.py")], {
+    input: JSON.stringify({ files: pythonFiles, variables: pythonVariables }),
+  });
   if (result.status !== 0) failures.push("Python environment scanner failed");
   else {
     const scanned = JSON.parse(result.stdout);

@@ -18,14 +18,16 @@ import { test } from "node:test";
 
 import type { Io } from "./commands.ts";
 import type { ExecutionResult, Executor } from "./executor.ts";
-import { dbDestroy, dbStop, dbUp, dbVerify, dispatchLocal, localCommandNames, roles } from "./local.ts";
+import { dbDestroy, dbSeed, dbStop, dbUp, dbVerify, dispatchLocal, localCommandNames, roles } from "./local.ts";
 import type { LocalDeps, Role } from "./local.ts";
+import { loadLocalDatabaseConfigFrom, localDatabaseConfigSchema, localDatabaseDefaults } from "./local-config.ts";
 import { loadPolicy } from "./policy.ts";
 import { composeFile, mismatchMessage, parseServerVersion, readPinnedMajor } from "./version.ts";
 
 const policy = loadPolicy();
 const packageRoot = fileURLToPath(new URL("../", import.meta.url));
-const initdb = readFileSync(join(packageRoot, "local/initdb/010-roles.sql"), "utf8");
+const initdb = readFileSync(join(packageRoot, "local/initdb/010-roles.psql"), "utf8");
+const initdbWrapper = readFileSync(join(packageRoot, "local/initdb/010-roles.sh"), "utf8");
 const grantsMigration = readdirSync(join(packageRoot, "migrations"))
   .filter((name) => name.endsWith("__grant_application_roles.sql"))
   .map((name) => readFileSync(join(packageRoot, "migrations", name), "utf8"));
@@ -40,6 +42,7 @@ test("CBD-117-AC03: compose.yaml pins the PostgreSQL major exactly once, and the
   assert.ok(Number.isSafeInteger(major) && major >= 13, `implausible pin ${major}`);
   assert.equal((compose.match(/image:/gu) ?? []).length, 1, "one service, one image line");
   assert.ok(compose.includes("CBD-108"), "the pin says why it matches the intended host");
+  assert.ok(compose.includes("CBD117-PG-MAJOR-001"), "the pin cites the Executive major-version decision");
 });
 
 test("CBD-117-AC03 (cbd-117-fx-02): a compose file with no pin, or two, is refused", () => {
@@ -70,25 +73,37 @@ test("CBD-117-AC03: the server version row parses, and the refusal names both ve
 // ---------------------------------------------------------------------------
 
 test("CBD-117-AC05: the initdb script creates exactly the three roles the code names, with LOGIN and nothing more", () => {
-  const created = [...initdb.matchAll(/^CREATE ROLE\s+(\w+)\s+(.*);$/gmu)].map((match) => [match[1], match[2]] as const);
+  const created = [...initdb.matchAll(/^CREATE ROLE\s+(\w+)\s+(LOGIN :role_option\s+:'[^']+');$/gmu)]
+    .map((match) => [match[1], match[2]?.replaceAll(/\s+/gu, " ")] as const);
   assert.deepEqual(created.map(([name]) => name).sort(), Object.values(roles).sort());
   for (const [name, options] of created) {
-    assert.ok(/^LOGIN PASSWORD '[^']+'$/u.test(options ?? ""), `${name}: ${options}`);
+    assert.ok(/^LOGIN :role_option :'(?:migration|api|worker)_password'$/u.test(options ?? ""), `${name}: ${options}`);
     assert.ok(!/SUPERUSER|CREATEDB|CREATEROLE|REPLICATION|BYPASSRLS/iu.test(options ?? ""), `${name} is over-privileged`);
   }
-  assert.ok(initdb.includes(`ALTER DATABASE cobudget_dev OWNER TO ${roles.migration};`));
+  assert.ok(initdb.includes(`ALTER DATABASE :"database_name" OWNER TO ${roles.migration};`));
 });
 
 test("CBD-117-AC04: the local credentials are obviously local, loopback only, and never secrets", () => {
-  for (const match of initdb.matchAll(/PASSWORD '([^']+)'/gu)) {
-    const password = match[1] ?? "";
-    assert.ok(password.startsWith("local-only-"), password);
-    assert.ok(password.length < 24, "short enough that no secret scanner could mistake it for a credential");
+  for (const password of [
+    localDatabaseDefaults.superuserPassword,
+    localDatabaseDefaults.migrationPassword,
+    localDatabaseDefaults.apiPassword,
+    localDatabaseDefaults.workerPassword,
+  ]) {
+    assert.ok(password.startsWith("local-only-") && password.length < 24, password);
   }
   const compose = readFileSync(composeFile, "utf8");
-  const superuser = /POSTGRES_PASSWORD:\s*(\S+)/u.exec(compose)?.[1] ?? "";
-  assert.ok(superuser.startsWith("local-only-") && superuser.length < 24, superuser);
+  for (const name of Object.keys(localDatabaseConfigSchema)) assert.ok(compose.includes(name), `${name} is not consumed by compose`);
+  assert.ok(initdbWrapper.includes("COBUDGET_DB_MIGRATION_PASSWORD"));
+  assert.ok(initdbWrapper.includes('--set="role_option=PASS""WORD"'));
+  assert.ok(initdb.includes(":'migration_password'"), "role passwords are psql data variables, not SQL constants");
   assert.ok(/127\.0\.0\.1:\$\{COBUDGET_DB_PORT:-5432\}:5432/u.test(compose), "the port is bound to loopback only");
+});
+
+test("CBD-117-AC04: the shared loader validates overrides and supplies safe local defaults", () => {
+  assert.deepEqual(loadLocalDatabaseConfigFrom({}), localDatabaseDefaults);
+  assert.equal(loadLocalDatabaseConfigFrom({ COBUDGET_DB_PORT: "5544" }).port, 5544);
+  assert.throws(() => loadLocalDatabaseConfigFrom({ COBUDGET_DB_PORT: "not-a-port" }), /COBUDGET_DB_PORT/u);
 });
 
 test("CBD-117-AC05: exactly one migration grants the application roles, and it names the same roles", () => {
@@ -114,6 +129,7 @@ type Fake = {
   composeCalls: string[][];
   composeStatus: number;
   serverVersion: string;
+  runningBeforeUp: boolean;
   roleRows: string;
   ledgerExists: boolean;
   ddlOutcome: { status: number; stderr: string };
@@ -126,6 +142,7 @@ function fake(): Fake {
     composeCalls: [],
     composeStatus: 0,
     serverVersion: "170011|17.11",
+    runningBeforeUp: true,
     roleRows: `${roles.api}|t|f\n${roles.migration}|t|t\n${roles.worker}|t|f\n`,
     ledgerExists: true,
     ddlOutcome: { status: 3, stderr: "ERROR:  permission denied for schema public\n" },
@@ -142,7 +159,12 @@ function harness(state = fake()): { deps: LocalDeps; out: string[]; err: string[
     describe: `fake ${role}`,
     run(sql: string): ExecutionResult {
       state.sent.push({ role, sql });
-      if (sql.includes("server_version_num")) return { status: 0, stdout: `${state.serverVersion}\n`, stderr: "" };
+      if (sql.includes("server_version_num")) {
+        if (!state.runningBeforeUp && state.composeCalls.length === 0) {
+          return { status: 1, stdout: "", stderr: "service db is not running\n" };
+        }
+        return { status: 0, stdout: `${state.serverVersion}\n`, stderr: "" };
+      }
       if (sql.includes("has_schema_privilege")) return { status: 0, stdout: state.roleRows, stderr: "" };
       if (sql.includes("to_regclass")) return { status: 0, stdout: state.ledgerExists ? "t\n" : "f\n", stderr: "" };
       if (sql.includes("pg_default_acl")) return { status: 0, stdout: state.defaultAcl, stderr: "" };
@@ -156,6 +178,7 @@ function harness(state = fake()): { deps: LocalDeps; out: string[]; err: string[
   const deps: LocalDeps = {
     io,
     pinnedMajor: 17,
+    databaseName: "cobudget_dev",
     compose: (args) => {
       state.composeCalls.push([...args]);
       return { status: state.composeStatus, stdout: "", stderr: state.composeStatus === 0 ? "" : "fake docker failure\n" };
@@ -167,25 +190,29 @@ function harness(state = fake()): { deps: LocalDeps; out: string[]; err: string[
 
 test("CBD-117-AC01: db up starts the container, waits for health, and confirms the pinned major", () => {
   const { deps, out, state } = harness();
+  state.runningBeforeUp = false;
   assert.equal(dbUp(deps), 0, out.join("\n"));
   assert.deepEqual(state.composeCalls, [["up", "--detach", "--wait"]]);
-  assert.equal(state.sent.length, 1, "one read-only version probe");
+  assert.equal(state.sent.length, 2, "one pre-start probe and one post-start probe");
   assert.ok(out.some((line) => line.includes("major 17")), out.join("\n"));
 });
 
 test("CBD-117-AC03 (cbd-117-fx-03): db up fails startup when the running server is not the pinned major, naming both", () => {
   const { deps, err, state } = harness();
+  state.runningBeforeUp = true;
   state.serverVersion = "160009|16.9";
   assert.equal(dbUp(deps), 1);
   const message = err.join("\n");
   assert.ok(message.includes("PostgreSQL 16.9") && message.includes("pins major 17"), message);
+  assert.deepEqual(state.composeCalls, [], "a running mismatched container is refused before compose can recreate it");
 });
 
 test("CBD-117-AC01: db up reports a docker failure rather than pretending", () => {
   const { deps, err, state } = harness();
+  state.runningBeforeUp = false;
   state.composeStatus = 1;
   assert.equal(dbUp(deps), 1);
-  assert.equal(state.sent.length, 0, "no SQL is sent to a database that did not start");
+  assert.equal(state.sent.length, 1, "only the harmless pre-start probe runs before a compose failure");
   assert.ok(err.join("\n").includes("could not start"), err.join("\n"));
 });
 
@@ -196,6 +223,14 @@ test("CBD-117: db stop keeps the volume, db destroy removes it", () => {
   const destroy = harness();
   assert.equal(dbDestroy(destroy.deps), 0);
   assert.deepEqual(destroy.state.composeCalls, [["down", "--volumes"]]);
+});
+
+test("CBD-117-SEED-001: db seed is a stable no-op hook until a customer schema exists", () => {
+  const seeded = harness();
+  seeded.state.runningBeforeUp = true;
+  assert.equal(dbSeed(seeded.deps), 0);
+  assert.ok(seeded.out.join("\n").includes("0 rows loaded"));
+  assert.equal(seeded.state.sent.length, 1, "seed only verifies the running server today");
 });
 
 test("CBD-117-AC05: db verify passes on a correctly provisioned database and probes DDL as api and worker only", () => {

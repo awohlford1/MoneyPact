@@ -232,6 +232,127 @@
       "group": "publication-checkpoint"
     },
     {
+      "name": "COBUDGET_DB_PORT",
+      "classification": "tooling",
+      "consumer": [
+        "packages/migrations/src/local-config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "environment, then untracked .env.local, then local-only default",
+      "validation": {
+        "kind": "integer",
+        "min": 1,
+        "max": 65535
+      },
+      "template": "included",
+      "placeholder": "5432",
+      "description": "Loopback host port for the local PostgreSQL container."
+    },
+    {
+      "name": "COBUDGET_DB_NAME",
+      "classification": "tooling",
+      "consumer": [
+        "packages/migrations/src/local-config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "environment, then untracked .env.local, then local-only default",
+      "validation": {
+        "kind": "string"
+      },
+      "template": "included",
+      "placeholder": "cobudget_dev",
+      "description": "Database created by the local PostgreSQL container."
+    },
+    {
+      "name": "COBUDGET_DB_SUPERUSER",
+      "classification": "tooling",
+      "consumer": [
+        "packages/migrations/src/local-config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "environment, then untracked .env.local, then local-only default",
+      "validation": {
+        "kind": "string"
+      },
+      "template": "included",
+      "placeholder": "postgres",
+      "description": "Bootstrap superuser for the loopback-only local PostgreSQL container."
+    },
+    {
+      "name": "COBUDGET_DB_SUPERUSER_PASSWORD",
+      "classification": "tooling",
+      "consumer": [
+        "packages/migrations/src/local-config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "environment, then untracked .env.local, then local-only default",
+      "validation": {
+        "kind": "string"
+      },
+      "template": "included",
+      "placeholder": "local-only-superuser",
+      "description": "Non-secret bootstrap password for the loopback-only local PostgreSQL container."
+    },
+    {
+      "name": "COBUDGET_DB_MIGRATION_PASSWORD",
+      "classification": "tooling",
+      "consumer": [
+        "packages/migrations/src/local-config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "environment, then untracked .env.local, then local-only default",
+      "validation": {
+        "kind": "string"
+      },
+      "template": "included",
+      "placeholder": "local-only-migration",
+      "description": "Non-secret local password for the migration role."
+    },
+    {
+      "name": "COBUDGET_DB_API_PASSWORD",
+      "classification": "tooling",
+      "consumer": [
+        "packages/migrations/src/local-config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "environment, then untracked .env.local, then local-only default",
+      "validation": {
+        "kind": "string"
+      },
+      "template": "included",
+      "placeholder": "local-only-api",
+      "description": "Non-secret local password for the API role."
+    },
+    {
+      "name": "COBUDGET_DB_WORKER_PASSWORD",
+      "classification": "tooling",
+      "consumer": [
+        "packages/migrations/src/local-config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "environment, then untracked .env.local, then local-only default",
+      "validation": {
+        "kind": "string"
+      },
+      "template": "included",
+      "placeholder": "local-only-worker",
+      "description": "Non-secret local password for the worker role."
+    },
+    {
       "name": "CI",
       "classification": "platform",
       "consumer": [

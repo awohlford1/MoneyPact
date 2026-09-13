@@ -18,6 +18,7 @@ import type { Deps, Io } from "./commands.ts";
 import { psqlExecutor } from "./executor.ts";
 import { dispatchLocal, localExecutor, runCompose } from "./local.ts";
 import type { LocalDeps } from "./local.ts";
+import { loadLocalDatabaseConfig } from "./local-config.ts";
 import { loadPolicy, repositoryRoot } from "./policy.ts";
 import { loadPinnedMajor } from "./version.ts";
 
@@ -53,17 +54,24 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
   const policy = loadPolicy();
   const io: Io = { out: (line) => console.log(line), err: (line) => console.error(line) };
   const pinnedMajor = loadPinnedMajor();
+  const localConfig = loadLocalDatabaseConfig();
   const argv = process.argv.slice(2);
   const local = argv.includes(LOCAL_FLAG);
   const rest = argv.filter((argument) => argument !== LOCAL_FLAG);
 
   if (rest[0] === "db") {
-    const localDeps: LocalDeps = { io, pinnedMajor, compose: runCompose, executorFor: localExecutor };
+    const localDeps: LocalDeps = {
+      io,
+      pinnedMajor,
+      databaseName: localConfig.database,
+      compose: runCompose,
+      executorFor: (role) => localExecutor(role, localConfig.database),
+    };
     process.exitCode = dispatchLocal(localDeps, rest.slice(1));
   } else {
     const deps: Deps = {
       policy,
-      executor: local ? localExecutor("migration") : psqlExecutor(),
+      executor: local ? localExecutor("migration", localConfig.database) : psqlExecutor(),
       io,
       now: () => new Date(),
       directory: join(repositoryRoot, policy.migrationsDirectory),
