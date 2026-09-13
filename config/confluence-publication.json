@@ -1626,6 +1626,13 @@
       "rationale": "CBD-236 v0.4 architecture proposal held repository-only because no approved Confluence target is registered for it and this change does not create pages; the document is a proposal awaiting Security, Product, and independent review, not an approved record.",
       "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy, matching the docs/cbd-168-budget-domain-consumption-contract.md precedent in this manifest.",
       "reopen_when": "The Product Owner and Security approve exact v0.4, independent review is complete, and a verified existing Confluence target is registered in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-190-identity-ceremony-and-mapping-contract.md",
+      "disposition": "unpublished",
+      "rationale": "CBD-190 architecture contract v0.3 held repository-only because no approved Confluence target is registered for it; this change does not create pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy, matching the docs/cbd-168-budget-domain-consumption-contract.md precedent in this manifest.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
     }
   ],
   "retained_pages": []
