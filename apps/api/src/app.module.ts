@@ -20,7 +20,7 @@ export class AppModule {
     assertPolicyCompatibility(history);
     return {
       module: AppModule,
-      imports: [DiscoveryModule],
+      imports: [DiscoveryModule, ...(authorization?.modules ?? [])],
       controllers: [HealthController],
       providers: [
         { provide: API_AUTHORIZATION, useValue: authorization ?? unavailableApiAuthorization(() => sink({ service: "api", version: config.SERVICE_VERSION, operation: "request", outcome: "error" })) },

@@ -316,17 +316,12 @@ export interface BudgetCreationProposalStore {
   ): Promise<void>;
 }
 
-/**
- * The proposed confirmation unit of work (§9, §4.4, §10.2). CBD-232 does not
- * implement the confirmation transaction itself — that is CBD-233's proposed
- * seam — but declares the port here as part of "the complete port set" the
- * contract lists, and the in-memory adapter implements it so tests can
- * exercise predecessor-eligibility rules against a genuinely confirmed
- * proposal rather than an unreachable state.
- */
+/** Transaction-bound confirmation seam, amended by CBD-233 section 8. */
 export interface BudgetCreationConfirmationUnitOfWork {
-  claimCurrentProposal(key: ProposalContextKey, binding: string): Promise<ProposalRecord>;
-  recordConfirmed(proposalId: string, authoritativeBudgetSpaceId: string): Promise<void>;
+  /** Available only inside the confirmation transaction callback. */
+  claimCurrentProposal(key: ProposalContextKey, binding: string, expectedLifecycleRevision: number): Promise<ProposalRecord>;
+  recordConfirmed(command: { readonly context: ProposalContextKey; readonly authoritativeBudgetSpaceId: string;
+    readonly confirmationOutcomeId: string; readonly expectedLifecycleRevision: number; readonly bindingDigest: string }): Promise<void>;
 }
 
 export interface Ports {

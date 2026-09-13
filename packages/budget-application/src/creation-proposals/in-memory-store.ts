@@ -1,6 +1,6 @@
 import { IDEMPOTENCY_RETENTION_MS } from "./constants.ts";
 import type {
-  BudgetCreationConfirmationUnitOfWork, BudgetCreationProposalResponse, BudgetCreationProposalStore,
+  BudgetCreationProposalResponse, BudgetCreationProposalStore,
   CreateOrReplayResult, CreateProposalRecord, IdempotencyConflictResponse, IdempotencyRecord,
   InvalidatedReason, ProposalContextKey, ProposalRecord, ReplaceProposalRecord, ReplaceProposalResult,
 } from "./ports.ts";
@@ -27,8 +27,9 @@ type ExistingOutcome =
   | { readonly kind: "idempotency_conflict"; readonly conflict: IdempotencyConflictResponse }
   | { readonly kind: "replayed"; readonly response: BudgetCreationProposalResponse };
 
-/** In-process reference adapter. Durable atomicity belongs to CBD-246. */
-export class InMemoryProposalStore implements BudgetCreationProposalStore, BudgetCreationConfirmationUnitOfWork {
+/** Proposal test adapter. Legacy claim/confirm helpers model fixtures only;
+ * they deliberately do not implement the transaction-bound CBD-233 port. */
+export class InMemoryProposalStore implements BudgetCreationProposalStore {
   // Environment and subject are traversed before a proposal identifier can be considered.
   readonly #recordsByEnvironment = new Map<string, Map<string, Map<string, ProposalRecord>>>();
   readonly #idempotencyByScope = new Map<string, IdempotencyRecord>();

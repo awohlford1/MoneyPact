@@ -10,6 +10,7 @@ COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY apps/worker/package.json apps/worker/package.json
 COPY packages/budget-domain/package.json packages/budget-domain/package.json
+COPY packages/budget-application/package.json packages/budget-application/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/data-access/package.json packages/data-access/package.json
 COPY packages/migrations/package.json packages/migrations/package.json
@@ -22,6 +23,8 @@ COPY config/authorization-policy-release-history.json config/authorization-polic
 COPY config/rate-limit config/rate-limit
 COPY apps/api apps/api
 COPY apps/worker apps/worker
+COPY packages/budget-domain packages/budget-domain
+COPY packages/budget-application packages/budget-application
 COPY packages/contracts packages/contracts
 COPY packages/data-access packages/data-access
 COPY packages/migrations packages/migrations
@@ -42,6 +45,7 @@ COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY apps/worker/package.json apps/worker/package.json
 COPY packages/budget-domain/package.json packages/budget-domain/package.json
+COPY packages/budget-application/package.json packages/budget-application/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/data-access/package.json packages/data-access/package.json
 COPY packages/migrations/package.json packages/migrations/package.json
@@ -50,6 +54,8 @@ COPY packages/sessions/package.json packages/sessions/package.json
 RUN npm ci --omit=dev \
     --workspace=@cobudget/api \
     --workspace=@cobudget/worker \
+    --workspace=@cobudget/budget-domain \
+    --workspace=@cobudget/budget-application \
     --workspace=@cobudget/contracts \
     --workspace=@cobudget/data-access \
     --workspace=@cobudget/migrations \
@@ -68,6 +74,8 @@ COPY --from=build --chown=node:node /workspace/apps/api/package.json apps/api/pa
 COPY --from=build --chown=node:node /workspace/apps/api/dist apps/api/dist
 COPY --from=build --chown=node:node /workspace/apps/worker/package.json apps/worker/package.json
 COPY --from=build --chown=node:node /workspace/apps/worker/dist apps/worker/dist
+COPY --from=build --chown=node:node /workspace/packages/budget-domain packages/budget-domain
+COPY --from=build --chown=node:node /workspace/packages/budget-application packages/budget-application
 COPY --from=build --chown=node:node /workspace/packages/contracts packages/contracts
 # The authorization startup guard walks up from the process directory to find
 # the released policy history; without it every process fails closed.

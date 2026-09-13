@@ -10,6 +10,7 @@ import { Test } from "@nestjs/testing";
 import { AppModule } from "../app.module.js";
 import { loadApiConfigFrom } from "../config.js";
 import { Authorization } from "./http.js";
+import { RouteFailure } from "./http.js";
 import { Authorize } from "./http.js";
 import { ApiAuthorizationBoundary } from "./http.js";
 import type { EffectContext } from "./boundary.js";
@@ -18,13 +19,15 @@ import type { TestState } from "./test-support.js";
 
 const config = loadApiConfigFrom({ API_PORT: "3001", LOG_LEVEL: "info", NODE_ENV: "test", SERVICE_VERSION: "authorization-test", COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local", COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: Buffer.alloc(32, 7).toString("base64"), COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1" });
 let handlerCalls = 0;
+let replayCalls = 0;
+let replayResult: import("./http.js").RouteReplay | RouteFailure = { kind: "absent" };
 @Controller("protected")
 class ProtectedController {
   @Get("missing")
   missing(): unknown { handlerCalls++; return { secret: "never-return" }; }
 
   @Post("bootstrap")
-  @Authorize({ action: "space.create", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default" }) })
+  @Authorize({ action: "space.create", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default" }), replay: async () => { replayCalls++; if (replayResult instanceof RouteFailure) throw replayResult; return replayResult; } })
   create(@Authorization() effect: EffectContext): unknown {
     handlerCalls++;
     (effect.transaction as TestState).spaces.push(effect.input.bootstrap!.candidateSpaceId);
@@ -119,3 +122,43 @@ describe("API enforcement installation", () => {
     assert.throws(() => AppModule.register(config, () => undefined, undefined, [{ ...testHistory[0], digest: "0".repeat(64) }]), /policy_version_unsupported/);
   });
 });
+
+describe("CBD233-REPLAY-001 authenticated pre-policy replay", () => {
+  for (const kind of ["committed", "conflict", "absent", "unauthenticated"] as const) {
+    it(kind, async () => {
+      const h = new Harness(); handlerCalls = 0; replayCalls = 0;
+      replayResult = kind === "committed" ? { kind, response: { budgetSpaceId: "original" } }
+        : kind === "conflict" ? { kind } : { kind: "absent" };
+      let authorizations = 0;
+      const authorize = h.boundary.authorize.bind(h.boundary);
+      h.boundary.authorize = async (...args) => { authorizations++; return authorize(...args); };
+      const app = await application(h);
+      try {
+        await app.init(); await app.getHttpAdapter().getInstance().ready();
+        const response = await app.inject({ method: "POST", url: "/protected/bootstrap",
+          ...(kind === "unauthenticated" ? {} : { headers: { cookie: "opaque" } }) });
+        assert.equal(replayCalls, kind === "unauthenticated" ? 0 : 1);
+        assert.equal(authorizations, kind === "absent" ? 1 : 0);
+        assert.equal(handlerCalls, kind === "absent" ? 1 : 0);
+        assert.equal(response.statusCode, kind === "conflict" ? 409 : kind === "unauthenticated" ? 403 : 201);
+        if (kind === "committed") assert.deepEqual(response.json(), { budgetSpaceId: "original" });
+        if (kind !== "absent") assert.equal(h.state.spaces.length, 0);
+      } finally { replayResult = { kind: "absent" }; await app.close(); }
+    });
+  }
+});
+
+for (const stage of ["precheck", "rolled-back"] as const) {
+  it("preserves the application conflict status at " + stage, async () => {
+    const h = new Harness(); const failure = new RouteFailure(409, "proposal_not_current");
+    if (stage === "precheck") replayResult = failure;
+    else h.boundary.execute = async <T>() => failure as T;
+    const app = await application(h);
+    try {
+      await app.init(); await app.getHttpAdapter().getInstance().ready();
+      const response = await app.inject({ method: "POST", url: "/protected/bootstrap", headers: { cookie: "opaque" } });
+      assert.equal(response.statusCode, 409); assert.deepEqual(response.json(), { error: "proposal_not_current" });
+      assert.equal(h.state.spaces.length, 0); assert.equal(h.state.memberships.length, 0);
+    } finally { replayResult = { kind: "absent" }; await app.close(); }
+  });
+}
