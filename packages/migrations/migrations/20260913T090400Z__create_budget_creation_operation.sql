@@ -84,9 +84,7 @@ CREATE TABLE budget_creation_idempotency (
     request_digest                   text        NOT NULL,
     committed_response               jsonb       NOT NULL,
 
-    operation_id                     uuid        NOT NULL
-                                                REFERENCES budget_creation_operation (operation_id)
-                                                DEFERRABLE INITIALLY DEFERRED,
+    operation_id                     uuid        NOT NULL,
     budget_space_id                   uuid        NOT NULL
                                                 REFERENCES budget_space (budget_space_id)
                                                 DEFERRABLE INITIALLY DEFERRED,
@@ -94,6 +92,14 @@ CREATE TABLE budget_creation_idempotency (
     created_at                        timestamptz NOT NULL DEFAULT now(),
 
     PRIMARY KEY (idempotency_id),
+
+    -- DB-231-008: the pair must agree with the operation that produced it
+    -- (CBD231-REVIEW-IMPL-001 finding 3, extended to this table): a
+    -- composite reference forbids binding operation A's idempotency row to
+    -- another budget.
+    FOREIGN KEY (operation_id, budget_space_id)
+        REFERENCES budget_creation_operation (operation_id, budget_space_id)
+        DEFERRABLE INITIALLY DEFERRED,
 
     -- DB-231-008: "idempotency scope" -- (environment, account_subject_id,
     -- confirmation_idempotency_key) owns at most one committed response
@@ -123,12 +129,15 @@ REVOKE DELETE ON budget_creation_idempotency FROM cobudget_worker, cobudget_api;
 CREATE TABLE budget_creation_audit (
     audit_id          uuid        NOT NULL DEFAULT gen_random_uuid(),
 
-    operation_id       uuid        NOT NULL
-                                   REFERENCES budget_creation_operation (operation_id)
-                                   DEFERRABLE INITIALLY DEFERRED,
+    operation_id       uuid        NOT NULL,
     budget_space_id      uuid        NOT NULL
                                    REFERENCES budget_space (budget_space_id)
                                    DEFERRABLE INITIALLY DEFERRED,
+    -- DB-231-008: composite reference so the audit row cannot bind operation
+    -- A to another budget (CBD231-REVIEW-IMPL-001 finding 3, extended).
+    FOREIGN KEY (operation_id, budget_space_id)
+        REFERENCES budget_creation_operation (operation_id, budget_space_id)
+        DEFERRABLE INITIALLY DEFERRED,
 
     event_type          text        NOT NULL
                                    CHECK (event_type = 'budget.created'),
