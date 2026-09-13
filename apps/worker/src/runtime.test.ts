@@ -5,7 +5,10 @@ import type { ReadinessReport } from "@cobudget/contracts/health";
 import type { ReliabilityEvent } from "@cobudget/contracts/telemetry";
 
 import { loadWorkerConfigFrom } from "./config.js";
-import { startWorker } from "./runtime.js";
+import { startWorker as startRuntime } from "./runtime.js";
+import { testHistory } from "./authorization/test-support.js";
+
+const startWorker = (config: Parameters<typeof startRuntime>[0], sink: Parameters<typeof startRuntime>[1]) => startRuntime(config, sink, undefined, testHistory);
 
 const config = loadWorkerConfigFrom({
   LOG_LEVEL: "info",

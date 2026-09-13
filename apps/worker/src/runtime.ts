@@ -1,4 +1,7 @@
 import { readinessReport } from "@cobudget/contracts/health";
+import { assertPolicyCompatibility } from "./authorization/compatibility.js";
+import { unavailableJobs } from "./authorization/jobs.js";
+import type { AuthorizedJobs } from "./authorization/jobs.js";
 
 import type { WorkerConfig } from "./config.js";
 import type { WorkerEventSink } from "./telemetry.js";
@@ -14,7 +17,9 @@ export interface WorkerRuntime {
  * Starts an intentionally idle worker. The timer is only a process-lifetime
  * handle: CBD-111 introduces no polling, queue, scheduler, database, or job.
  */
-export function startWorker(config: WorkerConfig, sink: WorkerEventSink): WorkerRuntime {
+export function startWorker(config: WorkerConfig, sink: WorkerEventSink, jobs?: AuthorizedJobs, history?: unknown): WorkerRuntime & { readonly jobs: AuthorizedJobs } {
+  assertPolicyCompatibility(history);
+  const authorizedJobs = jobs ?? unavailableJobs(() => sink.reliability({ service: "worker", version: config.SERVICE_VERSION, operation: "job", outcome: "error" }));
   const idleHandle = setInterval(() => undefined, MAXIMUM_TIMER_DELAY_MILLISECONDS);
   try {
     sink.reliability({
@@ -38,6 +43,7 @@ export function startWorker(config: WorkerConfig, sink: WorkerEventSink): Worker
   });
 
   return {
+    jobs: authorizedJobs,
     closed,
     stop: () => {
       if (stopping) {
