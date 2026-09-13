@@ -1647,6 +1647,13 @@
       "rationale": "CBD-190 architecture contract v0.3 held repository-only because no approved Confluence target is registered for it; this change does not create pages.",
       "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy, matching the docs/cbd-168-budget-domain-consumption-contract.md precedent in this manifest.",
       "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-191-session-and-revocation-contract.md",
+      "disposition": "unpublished",
+      "rationale": "CBD-191 architecture proposal v0.2 held repository-only because no approved Confluence target is registered for it and this change does not create pages; the corrected document awaits fresh Security and independent review and is not an approved record.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy, matching the docs/cbd-168-budget-domain-consumption-contract.md precedent in this manifest.",
+      "reopen_when": "The Product Owner and Security approve this exact document and a verified existing Confluence target is registered in a focused merged change."
     }
   ],
   "retained_pages": []
