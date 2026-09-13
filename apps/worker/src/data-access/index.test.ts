@@ -40,6 +40,7 @@ void test("CBD246-SECURITY-001 finding 2: the worker data-access client exposes 
       "tenantInsert",
       "tenantSelect",
       "tenantUpdate",
+      "transaction",
     ].sort(),
   );
 });
