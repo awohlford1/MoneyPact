@@ -68,13 +68,17 @@ it("limits lifecycle test launchers to release fixtures and a signal-only proces
   }
 });
 it("real API and worker processes start on the released policy p1 and refuse an empty history", () => {
+  // The two real processes are spawned under tsx while the rest of the workspace
+  // suites run in parallel; 15 s was not enough on a loaded machine and the
+  // test flaked for three separate agents. The processes exit on their own
+  // (the fixture only asserts the startup line), so a wide deadline costs nothing.
   // CBD236-P1-RELEASE-001 released p1, so the checked-in history now admits
   // startup; the fail-closed branch is proven through the injected history in
   // the process fixture and the unit tests above.
   const root = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
   for (const app of ["api", "worker"]) {
     const result = spawnSync(process.execPath, ["--import=tsx", "src/main.ts"], {
-      cwd: join(root, "apps", app), timeout: 15_000, encoding: "utf8", killSignal: "SIGTERM",
+      cwd: join(root, "apps", app), timeout: 60_000, encoding: "utf8", killSignal: "SIGTERM",
       env: { NODE_ENV: "test", LOG_LEVEL: "info", SERVICE_VERSION: "released-policy-test", API_PORT: "3001", COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local", COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: Buffer.alloc(32, 7).toString("base64"), COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1" },
     });
     assert.equal(result.error?.name === "Error" && (result.error as NodeJS.ErrnoException).code !== "ETIMEDOUT" ? result.error : undefined, undefined, app);
