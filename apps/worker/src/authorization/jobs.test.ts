@@ -1,3 +1,4 @@
+import { invocation } from "../../../../packages/rate-limit/src/index.ts";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { decide, expectedProvenance, generateLocalSigningKeyPair, ordinaryFixture, serviceFixture, signLocalDecision } from "@cobudget/contracts/authorization";
@@ -17,6 +18,9 @@ function envelopeFor(input: PolicyInput): JobEnvelope {
 function optionsFor(h: Harness): WorkerAuthorizationOptions {
   return {
     boundary: h.boundary,
+    // Synthetic surface approval keeps this suite focused on CBD-236 behavior.
+    rateLimit: { evidence: (job) => invocation('job:worker:' + job + ':1', "worker_job", "test-only", "test-only"),
+      enforce: async () => ({ outcome: "allow", provenance: "test-only", release: async () => undefined }) },
     jobs: { "test-job": { action: h.input.request.action, purpose: h.input.request.purpose, queueContractRef: "test-only-queue-contract", run: async ({ transaction }) => { (transaction as TestState).effects.push("effect"); return "done"; } } },
     authenticateProducer: async () => "verified-test-producer",
     consumeTransport: async ({ transaction }, envelope) => { const state = transaction as TestState; if (state.consumed.includes(envelope.oneUseId)) return false; state.consumed.push(envelope.oneUseId); return true; },
@@ -39,6 +43,14 @@ function serviceHarness(): Harness {
 }
 
 describe("worker fail-closed job chain", () => {
+  it("FX-266-UNREGISTERED-WORKER-JOB inventories and terminally denies a new consumer before facts and effect", async () => {
+    const h = serviceHarness(); const options = optionsFor(h); delete options.rateLimit;
+    const jobs = new AuthorizedJobs(options); assert.equal(jobs.inventory().length, 1);
+    assert.deepEqual(await jobs.run(envelopeFor(h.input)), { outcome: "denied", terminal: true });
+    assert.deepEqual(h.reads, []); assert.deepEqual(h.state.effects, []); assert.equal(h.state.audits.length, 1);
+    const event = h.state.audits[0] as unknown as { enforcement: { earliest_decisive_gate: string; authorization_evaluation: string } };
+    assert.equal(event.enforcement.earliest_decisive_gate, "surface"); assert.equal(event.enforcement.authorization_evaluation, "not_run");
+  });
   it("denies unregistered and malformed jobs before producer or fact lookups", async () => {
     const h = serviceHarness(); let calls = 0;
     const jobs = new AuthorizedJobs({ ...optionsFor(h), authenticateProducer: async () => { calls++; return "producer"; } });

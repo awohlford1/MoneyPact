@@ -1,3 +1,5 @@
+import { apiIdentity, invocation } from "../../../../packages/rate-limit/src/index.ts";
+import { installedRoutes } from "../rate-limit/inventory.js";
 import "reflect-metadata";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -34,6 +36,12 @@ async function application(h: Harness, protectedControllers = true): Promise<Nes
   const module = await Test.createTestingModule({
     imports: [AppModule.register(config, () => undefined, {
       boundary: h.boundary, surfaceApproved: async () => true,
+      // This suite isolates CBD-236 policy behavior with a synthetic surface approval.
+      rateLimit: {
+        evidence: (request) => invocation(apiIdentity(request.method, request.routeOptions.url!), "api_route", "test-only", "test-only"),
+        enforce: async (request) => ["/health", "/protected/bootstrap"].includes(request.routeOptions.url!)
+          ? { outcome: "allow", provenance: "test-only", release: async () => undefined } : { outcome: "deny_unregistered" },
+      },
       sessionLocator: (request) => request.headers.cookie,
       deny: (response) => { throw new HttpException(response, 403); }, // Synthetic response contract for this test only.
     }, testHistory)],
@@ -42,6 +50,28 @@ async function application(h: Harness, protectedControllers = true): Promise<Nes
   return module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { logger: false });
 }
 describe("API enforcement installation", () => {
+  it("FX-266-UNREGISTERED-API-ROUTE discovers and denies a real new route before facts, policy or effect", async () => {
+    handlerCalls = 0; const h = new Harness();
+    const module = await Test.createTestingModule({ imports: [AppModule.register(config, () => undefined, {
+      boundary: h.boundary, surfaceApproved: async () => assert.fail("later surface callback"), sessionLocator: (request) => request.headers.cookie,
+      deny: (response) => { throw new HttpException(response, 403); },
+    }, testHistory)], controllers: [ProtectedController] }).compile();
+    const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { logger: false });
+    try {
+      await app.init(); await app.getHttpAdapter().getInstance().ready();
+      assert.ok(installedRoutes(app.getHttpAdapter().getInstance()).some((r) => r.id === "api:POST:/protected/bootstrap"));
+      const before = structuredClone(h.state);
+      const response = await app.inject({ method: "POST", url: "/protected/bootstrap", headers: { cookie: "opaque" }, payload: { actorId: "forged" } });
+      assert.equal(response.statusCode, 403); assert.equal(handlerCalls, 0);
+      assert.deepEqual(h.reads.map((r) => r.source), ["session_store"]);
+      assert.deepEqual({ ...h.state, audits: [] }, { ...before, audits: [] });
+      assert.equal(h.state.audits.length, 1);
+      const audit = h.state.audits[0] as unknown as { enforcement: { earliest_decisive_gate: string; authorization_evaluation: string } };
+      assert.equal(audit.enforcement.earliest_decisive_gate, "surface"); assert.equal(audit.enforcement.authorization_evaluation, "not_run");
+      assert.equal((await app.inject({ method: "GET", url: "/health" })).statusCode, 200);
+      assert.equal((await app.inject({ method: "HEAD", url: "/health" })).statusCode, 200);
+    } finally { await app.close(); }
+  });
   it("keeps health public and denies routes without decisions, including raw Fastify routes", async () => {
     handlerCalls = 0; const h = new Harness(); const app = await application(h);
     try {
@@ -49,6 +79,7 @@ describe("API enforcement installation", () => {
       server.get("/raw", async () => { handlerCalls++; return "never-return"; });
       await app.init(); await server.ready();
       assert.equal((await app.inject({ method: "GET", url: "/health" })).statusCode, 200);
+      assert.equal((await app.inject({ method: "HEAD", url: "/health" })).statusCode, 200);
       for (const url of ["/protected/missing", "/raw"]) {
         const response = await app.inject({ method: "GET", url });
         assert.equal(response.statusCode, 403); assert.deepEqual(response.json(), { outcome: "deny", reason: "denied" });

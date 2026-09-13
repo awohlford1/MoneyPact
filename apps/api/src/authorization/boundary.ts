@@ -1,3 +1,4 @@
+import type { EnforcementEvidence, EnforcementOutcome } from "../../../../packages/rate-limit/src/index.ts";
 import { randomUUID } from "node:crypto";
 import { decide, externalDenial, sha256 } from "@cobudget/contracts/authorization";
 import type { AuthorizedEffect, Obligation, PolicyDecision, PolicyInput, ReasonClass } from "@cobudget/contracts/authorization";
@@ -34,7 +35,7 @@ export interface EffectContext extends AuthorizedContext {
   readonly effect: AuthorizedEffect;
   readonly transaction: unknown;
 }
-interface PrivateContext { lookup: FactLookup; input: PolicyInput; decision: PolicyDecision; correlationId: string }
+interface PrivateContext { lookup: FactLookup; input: PolicyInput; decision: PolicyDecision; correlationId: string; enforcement?: EnforcementEvidence }
 
 function freeze<T>(value: T): T {
   if (value && typeof value === "object") { Object.freeze(value); for (const child of Object.values(value)) freeze(child); }
@@ -58,32 +59,43 @@ export class AuthorizationBoundary {
   constructor(assembler: FactAssembler, store: AuthorizationTransactionStore, audit?: RestrictedAudit, failure: () => void = () => undefined) {
     this.#assembler = assembler; this.#store = store; this.#audit = audit; this.#failure = failure;
   }
-  async #recordDeny(decision: PolicyDecision, input: PolicyInput | undefined, correlationId: string): Promise<never> {
+  async #recordDeny(decision: PolicyDecision, input: PolicyInput | undefined, correlationId: string, enforcement?: EnforcementEvidence, evaluated = true): Promise<never> {
     try {
       if (!this.#audit) throw new Error("audit_unavailable");
-      await this.#audit.emit(decision, input, correlationId);
+      if (enforcement && !evaluated) await this.#audit.emitEnforcement({ ...enforcement, earliest_decisive_gate: "authorization", safe_reason_class: "authorization_denied", authorization_evaluation: "not_run", outcome: "deny", timestamp: new Date().toISOString(), counter_store_evidence: "not_consumed" });
+      else await this.#audit.emit(decision, input, correlationId, undefined, enforcement);
     } catch { try { this.#failure(); } catch { /* An operations sink cannot allow. */ } }
+    throw new AuthorizationDenied();
+  }
+  async resolveSession(credential: unknown): Promise<string> { return this.#assembler.resolveSession(credential); }
+  /** Adapter coordinator owns pre-policy denials; never fabricate a policy evaluation. */
+  async rejectEnforcement(outcome: EnforcementOutcome): Promise<never> {
+    try {
+      if (!this.#audit) throw new Error("audit_unavailable");
+      await this.#audit.emitEnforcement(outcome);
+    } catch { try { this.#failure(); } catch { /* Remains denied. */ } }
     throw new AuthorizationDenied();
   }
   async reject(reason: ReasonClass = "input_invalid"): Promise<never> {
     return this.#recordDeny(deny(reason), undefined, randomUUID());
   }
-  async authorize(lookup: FactLookup): Promise<AuthorizedContext> {
-    const correlationId = randomUUID();
+  async authorize(lookup: FactLookup, enforcement?: EnforcementEvidence): Promise<AuthorizedContext> {
+    const correlationId = enforcement?.correlation_id ?? randomUUID();
+    let evaluated = false;
     let input: PolicyInput | undefined;
     let decision = deny("input_invalid");
     try {
       const privateLookup: FactLookup = { ...structuredClone(lookup), ...(lookup.operation.action === "space.create" ? { candidates: this.#assembler.candidates() } : {}) };
       input = await this.#assembler.assemble(privateLookup);
-      decision = decide(input);
+      decision = decide(input); evaluated = true;
       if (decision.outcome === "allow" && this.#audit) {
         const context = freeze({ input: structuredClone(input), decision: structuredClone(decision) });
-        this.#contexts.set(context, { lookup: privateLookup, input: structuredClone(input), decision: structuredClone(decision), correlationId });
+        this.#contexts.set(context, { lookup: privateLookup, input: structuredClone(input), decision: structuredClone(decision), correlationId, ...(enforcement ? { enforcement: structuredClone(enforcement) } : {}) });
         return context;
       }
       if (decision.outcome === "allow") decision = deny("input_invalid");
     } catch (error) { decision = deny(error instanceof FactFailure ? error.reason : "input_invalid"); }
-    return this.#recordDeny(decision, input, correlationId);
+    return this.#recordDeny(decision, input, correlationId, enforcement, evaluated);
   }
 
   /** Reject forged, reused or expired tokens at the lower-level write adapter. */
@@ -124,14 +136,14 @@ export class AuthorizationBoundary {
           this.assertEffect(effect, transaction, input);
           const result = await work({ input, decision: frozenDecision, effect, transaction });
           if (!await this.#store.verify(transaction, current, decision.obligations)) throw new AuthorizationDenied();
-          await this.#audit.emit(decision, current, captured.correlationId, transaction);
+          await this.#audit.emit(decision, current, captured.correlationId, transaction, captured.enforcement);
           return result;
         } finally { this.#effects.delete(effect); }
       });
     } catch {
       // transaction() must have rolled back before the separate attempt record.
       if (decision.outcome === "allow") decision = deny("input_invalid");
-      return this.#recordDeny(decision, current, captured.correlationId);
+      return this.#recordDeny(decision, current, captured.correlationId, captured.enforcement);
     }
   }
 }

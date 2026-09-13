@@ -1,0 +1,42 @@
+[
+  {
+    "registration_id": "api:GET:/health",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/health.controller.ts#HealthController.getReadiness",
+    "surface_id": "surf-266-public-health",
+    "parameter_record_id": null,
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-266",
+    "authorization_metadata_id": null
+  },
+  {
+    "registration_id": "api:GET:/openapi.json",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/application.ts#createApiApplication",
+    "surface_id": "surf-266-public-openapi-json",
+    "parameter_record_id": null,
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-266",
+    "authorization_metadata_id": null
+  },
+  {
+    "registration_id": "api:HEAD:/health",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/health.controller.ts#HealthController.getReadiness",
+    "surface_id": "surf-266-public-health",
+    "parameter_record_id": null,
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-266",
+    "authorization_metadata_id": null
+  },
+  {
+    "registration_id": "api:HEAD:/openapi.json",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/application.ts#createApiApplication",
+    "surface_id": "surf-266-public-openapi-json",
+    "parameter_record_id": null,
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-266",
+    "authorization_metadata_id": null
+  }
+]
