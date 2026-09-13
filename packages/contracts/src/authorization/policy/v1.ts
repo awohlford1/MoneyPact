@@ -39,7 +39,7 @@ const rows = [
   ["34", "request_space_deletion|cancel_space_deletion", "lifecycle", "space"], ["35", "archive_space|restore_space", "lifecycle", "space"],
 ] as const satisfies readonly (readonly [string, string, EffectClass, ResourceType])[];
 
-const notation: Readonly<Record<string, CellNotation>> = Object.freeze({ "1": "Read", "10": "Deny", "11b": "Own", "11c": "Own", "11d": "Deny", "13": "Not applicable", "14": "Read", "15": "Read", "16": "Read", "20b": "Primary", "27": "Primary", "28": "Deny", "29": "Primary", "32": "Authorizer", "33": "Authorizer", "34": "Primary", "35": "Primary" });
+const notation: Readonly<Record<string, CellNotation>> = Object.freeze({ "1": "Read", "10": "Deny", "23": "Deny", "11b": "Own", "11c": "Own", "11d": "Deny", "13": "Not applicable", "14": "Read", "15": "Read", "16": "Read", "20b": "Primary", "27": "Primary", "28": "Deny", "29": "Primary", "32": "Authorizer", "33": "Authorizer", "34": "Primary", "35": "Primary" });
 const obligations: Readonly<Record<string, readonly string[]>> = Object.freeze({
   "2a": ["preserve"], "2b": ["confirm"], "3": ["confirm", "preserve"], "4": ["preserve"], "7": ["preserve", "invalidate"],
   "8": ["preserve", "invalidate"], "9": ["confirm", "preserve", "invalidate"], "14": ["mask", "bind_cache_key"],

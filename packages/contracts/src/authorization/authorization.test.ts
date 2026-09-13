@@ -67,6 +67,34 @@ describe("CBD-236 acceptance criteria", () => {
     assert.deepEqual(effects, { rowVersions: 0, derivedRecomputations: 0, notifications: 0 });
   });
 
+  // Independent oracle transcribed from docs/cbd-236-authorization-policy-contract.md
+  // section 8.3 (itself CBD-72). It is deliberately NOT derived from v1.ts, so a
+  // cell that silently defaults in the policy map is caught here rather than
+  // by manual review (review finding F1: permission 23 defaulted to Allow).
+  const CONTRACT_NOTATION: Readonly<Record<string, string>> = Object.freeze({
+    "1": "Read", "2a": "Allow", "2b": "Allow", "3": "Allow", "4": "Allow", "5": "Allow",
+    "6a": "Allow", "6b": "Allow", "6c": "Allow", "6d": "Allow", "6e": "Allow", "7": "Allow",
+    "8": "Allow", "9": "Allow", "10": "Deny", "11a": "Allow", "11b": "Own", "11c": "Own",
+    "11d": "Deny", "12": "Allow", "13": "Not applicable", "14": "Read", "15": "Read",
+    "16": "Read", "17": "Allow", "18": "Allow", "19": "Allow", "20a": "Allow", "20b": "Primary",
+    "21": "Allow", "22": "Allow", "23": "Deny", "24": "Allow", "25": "Allow", "26": "Allow",
+    "27": "Primary", "28": "Deny", "29": "Primary", "30": "Allow",
+    // Section 8.3 row 31 reads "Allow (self-consent)"; the p1 schema carries no
+    // self-consent fact yet, so the cell is plain Allow (review note F3).
+    "31": "Allow", "32": "Authorizer", "33": "Authorizer", "34": "Primary", "35": "Primary",
+  });
+
+  it("AC04 every p1 user cell carries the notation the contract's section 8.3 table states", () => {
+    const seen = new Set<string>();
+    for (const cell of USER_CELLS.filter((item) => item.action !== "space.create")) {
+      assert.ok(cell.permission in CONTRACT_NOTATION, `${cell.permission} is not a section 8.3 row`);
+      assert.equal(cell.notation, CONTRACT_NOTATION[cell.permission], `${cell.action} notation`);
+      seen.add(cell.permission);
+    }
+    for (const permission of Object.keys(CONTRACT_NOTATION)) assert.ok(seen.has(permission), `no cell implements permission ${permission}`);
+    assert.equal(decide(ordinaryFixture("23.change_partner_partial_visibility")).outcome, "deny", "permission 23 is Deny for every role, Primary Owner included");
+  });
+
   it("AC04 maps every p1 Primary Owner cell and denies every other role", () => {
     assert.equal(USER_CELLS.length, ACTION_DEFINITIONS.filter((item) => item.permission !== "reserved" && item.permission !== "SA-92-002").length);
     for (const cell of USER_CELLS.filter((item) => item.action !== "space.create")) {
