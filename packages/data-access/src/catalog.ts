@@ -53,6 +53,12 @@ export const PRODUCTION_TABLE_CATALOG: TableCatalog = {
   identity_callback: "identity",
   identity_session_handoff: "identity",
   financial_profile: "financial-profile",
+  // CBD-191 sessions (CBD191-IMPL-001), 20260913T1100xxZ.
+  account_subject_authority: "identity",
+  account_session: "identity",
+  session_delivery_result: "identity",
+  provider_security_event: "identity",
+  revocation_outbox: "identity",
 };
 
 export function isTenantTable(catalog: TableCatalog, table: string): boolean {
