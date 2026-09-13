@@ -3,10 +3,13 @@ import { afterEach, describe, it } from "node:test";
 
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 
-import { createApiApplication } from "./application.js";
+import { createApiApplication as createRuntimeApplication } from "./application.js";
+import { testHistory } from "./authorization/test-support.js";
 import { loadApiConfigFrom } from "./config.js";
 import { HTTP_LIMITS } from "./http-security.js";
 import type { ReliabilitySink } from "./telemetry.js";
+
+const createApiApplication = (config: Parameters<typeof createRuntimeApplication>[0], sink: ReliabilitySink) => createRuntimeApplication(config, sink, testHistory);
 
 const config = loadApiConfigFrom({
   API_PORT: "3001",

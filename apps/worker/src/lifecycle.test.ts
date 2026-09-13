@@ -13,7 +13,8 @@ interface ProcessResult {
   readonly stdout: string;
 }
 
-const sourceEntry = resolve(dirname(fileURLToPath(import.meta.url)), "main.ts");
+// Same entrypoint logic, with an explicit synthetic release row for lifecycle tests.
+const sourceEntry = resolve(dirname(fileURLToPath(import.meta.url)), "authorization/process-fixture.ts");
 const validEnvironment = {
   LOG_LEVEL: "info",
   NODE_ENV: "test",

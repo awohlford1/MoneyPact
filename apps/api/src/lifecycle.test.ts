@@ -14,7 +14,8 @@ interface ProcessResult {
   readonly stdout: string;
 }
 
-const sourceEntry = resolve(dirname(fileURLToPath(import.meta.url)), "main.ts");
+// Same entrypoint logic, with an explicit synthetic release row for lifecycle tests.
+const sourceEntry = resolve(dirname(fileURLToPath(import.meta.url)), "authorization/process-fixture.ts");
 
 // A cold Windows checkout can spend more than ten seconds starting the tsx
 // loader from a synced filesystem. Keep the Linux/CI watchdog tight while

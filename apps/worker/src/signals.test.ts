@@ -3,8 +3,10 @@ import { EventEmitter } from "node:events";
 import { describe, it } from "node:test";
 
 import { loadWorkerConfigFrom } from "./config.js";
-import { startWorker } from "./runtime.js";
+import { startWorker as startRuntime } from "./runtime.js";
+import { testHistory } from "./authorization/test-support.js";
 import type { WorkerRuntime } from "./runtime.js";
+const startWorker = (config: Parameters<typeof startRuntime>[0], sink: Parameters<typeof startRuntime>[1]) => startRuntime(config, sink, undefined, testHistory);
 import {
   createShutdownCoordinator,
   ShutdownTimeoutError,
