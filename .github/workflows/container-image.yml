@@ -1,0 +1,76 @@
+name: Container image
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-image-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  container-image:
+    name: Container image build and digest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: "true"
+      SCARF_ANALYTICS: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prove container policy guards
+        run: node --test scripts/check-container-image.test.mjs
+
+      - name: Reject mutable deployment references
+        run: node scripts/check-container-image.mjs repository
+
+      - name: Build the shared API and worker image
+        run: docker buildx build --load --tag cobudget-ci:${{ github.sha }} --metadata-file container-metadata.json .
+
+      - name: Record the immutable image digest
+        run: |
+          node -e "const fs=require('node:fs');const m=JSON.parse(fs.readFileSync('container-metadata.json','utf8'));const d=m['containerimage.digest'];if(!/^sha256:[0-9a-f]{64}$/.test(d??''))throw new Error('Build did not report an immutable sha256 digest');fs.writeFileSync('container-image-digest.txt',d+'\n');fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,'## Container image digest\n\n'+d+'\n');console.log('Container image digest: '+d)"
+
+      - name: Export the image filesystem
+        run: |
+          docker create --name cobudget-image-scan cobudget-ci:${{ github.sha }}
+          docker export --output container-filesystem.tar cobudget-image-scan
+          docker rm cobudget-image-scan
+
+      - name: Scan image content
+        run: node scripts/check-container-image.mjs image-tar container-filesystem.tar
+
+      - name: Start and probe the API entrypoint
+        run: |
+          docker run --detach --name cobudget-api --publish 3000:3000 --env API_PORT=3000 --env LOG_LEVEL=info --env SERVICE_VERSION=${{ github.sha }} cobudget-ci:${{ github.sha }}
+          for attempt in $(seq 1 30); do curl --fail --silent http://127.0.0.1:3000/health && break; sleep 1; done
+          curl --fail --silent http://127.0.0.1:3000/health
+          docker logs cobudget-api
+          docker stop --time 10 cobudget-api
+
+      - name: Start and observe the worker entrypoint
+        run: |
+          docker run --detach --name cobudget-worker --env LOG_LEVEL=info --env SERVICE_VERSION=${{ github.sha }} cobudget-ci:${{ github.sha }} apps/worker/dist/main.js
+          for attempt in $(seq 1 30); do docker logs cobudget-worker 2>&1 | grep --fixed-strings '"status":"ready"' && break; sleep 1; done
+          docker logs cobudget-worker 2>&1 | grep --fixed-strings '"status":"ready"'
+          docker stop --time 10 cobudget-worker
