@@ -1,5 +1,45 @@
 # Accessibility record
 
+## Prototype journey verification — 13 September 2026
+
+Assignment PROTO-WEB-JOURNEY-001 revision 2 adds the authenticated routes.
+`npm run test --workspace=@cobudget/web` passed 60 tests, including the real
+Next development server and headless installed Chrome. The native output is
+in `.verification/web-tests-r2.log` in the assigned worktree. The browser suite
+uses the existing Puppeteer and axe-core installations.
+
+The walkthrough opened a protected route, followed sign-in, submitted an
+invalid name, reviewed four server-generated periods, confirmed, opened the
+category plan, added a category, saved a base target, reloaded the computed
+period target, and signed out. It also exercised loading, empty, stale,
+partial, denied, recoverable-error, terminal-error, refreshed and success
+states, and discarded a delayed response after navigation.
+
+Automated WCAG A/AA assertions found no violations in the tested main content.
+After dashboard navigation, focus was on `app-main`; a real Tab key moved to
+an interactive element. The page title identified the dashboard. At a 320px
+viewport, document width did not exceed viewport width and the same axe
+assertions passed. The Next development indicator initially covered the plan
+link; the supported `devIndicators: false` setting removed that obstruction.
+
+Revision 2 verifies one main landmark, the named Budgets navigation, the
+dashboard title and status announcements. The keyboard recovery walkthrough
+injects a 503 response, focuses main, presses Tab until Try again receives
+focus, then presses Enter and observes Budget refreshed. Axe reports no
+violations at 320 CSS pixels and at the 400%-equivalent layout of a 1280x900
+display (320x225 CSS pixels, device scale factor 4). This emulates zoom reflow;
+it does not operate Chrome's browser-menu zoom control.
+
+Refresh, restored draft, back/forward and copied sessionStorage in a duplicate
+tab each obtain new proposal identities. Restored storage contains raw inputs,
+never proposal bindings. These tests exposed and now cover an initial-effect
+storage overwrite and Next hidden-route preview retention.
+
+These are automated browser and keyboard observations, not a manual screen
+reader or operating-system zoom certification. An independent keyboard,
+screen-reader, browser-menu zoom and both-theme walkthrough remains for QA.
+The earlier component/public-page records below retain their original scope.
+
 The verification behind CBD-126's claims, so that each is something someone did rather than something someone believed. Update this file when the component set changes; the contrast half updates itself.
 
 ## Review provenance

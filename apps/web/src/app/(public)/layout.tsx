@@ -23,6 +23,7 @@ export default function PublicLayout({ children }: Readonly<{ children: ReactNod
             {brandFoundation.brand}
           </NextLink>
           <nav aria-label="Site">
+            <NextLink href="/sign-in" className="mr-4 rounded-sm font-semibold text-interactive underline underline-offset-4">Sign in</NextLink>
             <NextLink
               href="/mission"
               className="rounded-sm font-semibold text-interactive underline decoration-1 underline-offset-4 hover:decoration-2"

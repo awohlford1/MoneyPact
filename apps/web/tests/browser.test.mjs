@@ -1,0 +1,181 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { createServer } from "node:net";
+import { fileURLToPath } from "node:url";
+import puppeteer from "puppeteer";
+
+const root = fileURLToPath(new URL("../", import.meta.url));
+const axeSource = readFileSync(fileURLToPath(import.meta.resolve("axe-core/axe.min.js")), "utf8");
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function freePort() {
+  const server = createServer(); await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port; await new Promise(resolve => server.close(resolve)); return port;
+}
+test("authenticated web journey, dashboard states, stale responses, keyboard and accessibility", { timeout: 240000 }, async t => {
+  const port = await freePort(); const origin = `http://localhost:${port}`;
+  const server = spawn(process.execPath, [fileURLToPath(import.meta.resolve("next/dist/bin/next")), "dev", "--port", String(port)], { cwd: root, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  let output = ""; server.stdout.on("data", data => { output = (output + data).slice(-12000); }); server.stderr.on("data", data => { output = (output + data).slice(-12000); });
+  let browser;
+  t.after(async () => {
+    await browser?.close();
+    server.kill("SIGTERM");
+    server.stdout.destroy(); server.stderr.destroy(); server.unref();
+  });
+  for (let attempt = 0; attempt < 120; attempt++) {
+    if (server.exitCode !== null) assert.fail(`Development server failed: ${output}`);
+    try { if ((await fetch(`${origin}/sign-in`)).ok) break; } catch { /* Wait for startup. */ }
+    await pause(500);
+    if (attempt === 119) assert.fail(`Development server not ready: ${output}`);
+  }
+  const executablePath = ["C:/Program Files/Google/Chrome/Application/chrome.exe", "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"].find(existsSync);
+  browser = await puppeteer.launch({ ...(executablePath ? { executablePath } : {}), headless: true, args: ["--no-sandbox"] });
+  const page = await browser.newPage(); page.setDefaultTimeout(20000);
+  const errors = []; page.on("pageerror", error => errors.push(error.message));
+  const text = async () => page.$eval("main", node => node.textContent);
+  const waitText = async value => {
+    try { await page.waitForFunction(value => document.querySelector("main")?.textContent.includes(value), {}, value); }
+    catch { await page.screenshot({ path: `${root}/.next/journey-failure.png`, fullPage: true }); assert.fail(`Expected ${value}; route ${new URL(page.url()).pathname}; visible synthetic test content: ${await text()}`); }
+  };
+  async function clickText(label) {
+    const handles = await page.$$("button, a");
+    for (const handle of handles) if ((await handle.evaluate(node => node.textContent.trim())) === label) {
+      await handle.scrollIntoView();
+      await handle.click(); return;
+    }
+    assert.fail(`Missing control: ${label}`);
+  }
+  async function accessibility() {
+    await page.evaluate(axeSource);
+    const violations = await page.evaluate(async () => (await window.axe.run(document.querySelector("main"), { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa"] } })).violations.map(item => ({ id: item.id, nodes: item.nodes.map(node => node.target) })));
+    assert.deepEqual(violations, []);
+  }
+  await t.test("PROTO-SIGNIN-01: protected route redirects and API ceremony returns", async () => {
+    await page.goto(`${origin}/budgets`); await page.waitForFunction(() => location.pathname === "/sign-in");
+    await clickText("Continue to sign in"); await waitText("No budgets yet");
+    assert.equal(new URL(page.url()).pathname, "/budgets"); await accessibility();
+  });
+  let budgetId;
+  await t.test("CBD-242-AC06: refresh, restored draft, back/forward and duplicate tab require new previews", async () => {
+    const issued = [];
+    const capture = async response => {
+      if (response.request().method() === "POST" && response.url().endsWith("/budget-creation-proposals") && response.ok()) issued.push(await response.json());
+    };
+    page.on("response", capture);
+    await clickText("Create a budget"); await waitText("Budget and schedule");
+    await page.type('[id="field-name"]', "Restored draft"); await waitText("Complete current period");
+    await page.waitForFunction(() => [...document.querySelectorAll("button")].some(node => node.textContent === "Confirm and create budget" && !node.disabled));
+    const first = issued.at(-1).proposalId;
+    await page.reload(); await waitText("Complete current period");
+    assert.equal(await page.$eval('[id="field-name"]', node => node.value), "Restored draft");
+    assert.notEqual(issued.at(-1).proposalId, first);
+    const refreshed = issued.at(-1).proposalId;
+    await clickText("Your budgets"); await waitText("No budgets yet");
+    await page.goBack(); await waitText("Complete current period");
+    assert.notEqual(issued.at(-1).proposalId, refreshed);
+    await page.goForward(); await waitText("No budgets yet");
+    await page.goBack(); await waitText("Complete current period");
+    const copiedStorage = await page.evaluate(() => Object.entries(sessionStorage));
+    assert.equal(copiedStorage.some(([, value]) => value.includes("confirmationBinding") || value.includes("proposalId")), false);
+    const duplicate = await browser.newPage();
+    await duplicate.evaluateOnNewDocument(entries => { for (const [key, value] of entries) sessionStorage.setItem(key, value); }, copiedStorage);
+    const newProposal = duplicate.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith("/budget-creation-proposals") && response.ok());
+    await duplicate.goto(`${origin}/budgets/new`);
+    const duplicated = await (await newProposal).json();
+    assert.notEqual(duplicated.proposalId, issued.at(-1).proposalId);
+    assert.equal(duplicated.supersedesProposalId, null);
+    await duplicate.close();
+    await page.bringToFront(); await waitText("Budget and schedule");
+    page.off("response", capture);
+    await clickText("Your budgets"); await waitText("No budgets yet");
+    await page.evaluate(() => { for (const key of Object.keys(sessionStorage)) if (key.startsWith("cobudget.draft.creation.")) sessionStorage.removeItem(key); });
+  });
+  await t.test("CBD-242-AC01/AC02/AC03/AC04: field errors, server review, bound confirm", async () => {
+    await clickText("Create a budget"); await waitText("Budget and schedule");
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll("button")].find(node => node.textContent === "Confirm and create budget")?.disabled), true);
+    await clickText("Preview schedule"); await waitText("Enter a budget name.");
+    assert.equal(await page.$eval('[id="field-timeZone"]', node => node.value), "America/New_York");
+    assert.equal(await page.$eval('[id="field-name"]', node => node.getAttribute("aria-invalid")), "true");
+    await page.type('[id="field-name"]', "Our household"); await waitText("Complete current period");
+    await page.waitForFunction(() => [...document.querySelectorAll("button")].find(node => node.textContent === "Confirm and create budget")?.disabled === false);
+    assert.equal(await page.$$eval("ol li", nodes => nodes.length), 4); await accessibility();
+    const confirmationRequest = page.waitForRequest(request => request.url().endsWith("/confirm") && request.method() === "POST");
+    await clickText("Confirm and create budget");
+    const request = await confirmationRequest;
+    assert.deepEqual(Object.keys(JSON.parse(request.postData())), ["confirmationBinding"]);
+    await waitText("No categories yet"); budgetId = new URL(page.url()).pathname.split("/").at(-1);
+  });
+  await t.test("CBD-218-AC01: plan editing persists across reload and uses server identities", async () => {
+    assert.ok((await text()).includes(budgetId));
+    await clickText("Edit category plan"); await waitText("Add category");
+    await page.type("#category-name", "Groceries"); await clickText("Add category"); await waitText("Base target for Groceries");
+    const input = await page.$('[id^="target-"]'); await input.click({ clickCount: 3 }); await input.type("450.00"); await clickText("Save target");
+    await waitText("Period target: 450.00 USD"); await page.reload(); await waitText("Period target: 450.00 USD"); await accessibility();
+  });
+  const detailResponse = await page.evaluate(async id => (await fetch(`/api/mock/v1/budget-spaces/${id}`)).json(), budgetId);
+  let scenario = null;
+  await page.setRequestInterception(true);
+  page.on("request", request => {
+    if (scenario && new URL(request.url()).pathname === `/api/mock/v1/budget-spaces/${budgetId}`) {
+      const selected = scenario;
+      void (async () => {
+        if (selected.delay) await pause(selected.delay);
+        try { await request.respond({ status: selected.status ?? 200, contentType: "application/json", body: JSON.stringify(selected.body ?? detailResponse) }); } catch { /* A cancelled navigation discards this response. */ }
+      })();
+    } else void request.continue();
+  });
+  for (const [label, body, expected] of [
+    ["empty", { ...detailResponse, activePeriod: null }, "No active period"],
+    ["stale", { ...detailResponse, freshness: "stale" }, "Saved budget snapshot"],
+    ["partial", { ...detailResponse, completeness: "partial" }, "Budget details are incomplete"],
+  ]) await t.test(`CBD-218-AC02/AC03: ${label}`, async () => {
+    scenario = { body }; await clickText("Refresh budget"); await waitText(expected); await accessibility();
+    if (label !== "empty") assert.equal(await page.$("#plan-heading"), null);
+  });
+  for (const [label, status, expected] of [["denied", 403, "Access unavailable"], ["recoverable", 503, "Unable to load this budget"], ["terminal", 404, "Budget unavailable"]]) await t.test(`CBD-218-AC02: ${label}`, async () => {
+    scenario = { status, body: { error: label } }; await clickText("Refresh budget"); await waitText(expected); await accessibility();
+  });
+  await t.test("CBD-218-AC02: loading, refreshed and success", async () => {
+    scenario = { delay: 1000 }; await clickText("Refresh budget"); await waitText("Loading the active budget period");
+    await waitText("Budget refreshed."); scenario = null; await page.reload(); await waitText("The active budget period is ready.");
+  });
+  await t.test("CBD-218-AC04: navigation discards a slow response from another budget", async () => {
+    scenario = { delay: 1200, body: { ...detailResponse, name: "Stale response marker" } };
+    await clickText("Refresh budget"); await waitText("Loading the active budget period");
+    await clickText("Your budgets"); await waitText("Create a budget"); await pause(1400);
+    assert.equal((await text()).includes("Stale response marker"), false); scenario = null;
+  });
+  await t.test("CBD-218-AC05: keyboard, title, main focus, 320px reflow", async () => {
+    await clickText("Our household"); await waitText("The active budget period is ready.");
+    assert.ok((await page.title()).includes("Budget dashboard"));
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "app-main");
+    assert.equal(await page.$$eval("main", nodes => nodes.length), 1);
+    assert.ok(await page.$('nav[aria-label="Budgets"]'));
+    assert.ok((await page.$$eval('[role="status"]', nodes => nodes.map(node => node.textContent))).some(value => value.includes("active budget period is ready")));
+    await page.keyboard.press("Tab"); assert.notEqual(await page.evaluate(() => document.activeElement?.tagName), "BODY");
+    await page.setViewport({ width: 320, height: 800 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true); await accessibility();
+    // 1280x900 physical pixels at 400%: 320x225 CSS pixels, including media queries.
+    await page.setViewport({ width: 320, height: 225, deviceScaleFactor: 4 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true); await accessibility();
+    await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
+    scenario = { status: 503, body: { error: "recoverable" } };
+    await clickText("Refresh budget"); await waitText("Unable to load this budget");
+    await page.evaluate(() => document.getElementById("app-main").focus());
+    for (let step = 0; step < 30; step++) {
+      await page.keyboard.press("Tab");
+      if (await page.evaluate(() => document.activeElement?.textContent === "Try again")) break;
+    }
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Try again");
+    scenario = null; await page.keyboard.press("Enter"); await waitText("Budget refreshed.");
+  });
+  await t.test("PROTO-SIGNIN-01: sign-out returns to public landing and denies refresh", async () => {
+    await clickText("Sign out"); await page.waitForFunction(() => location.pathname === "/");
+    await page.goto(`${origin}/budgets`); await page.waitForFunction(() => location.pathname === "/sign-in");
+    await page.goto(`${origin}/identity/result?outcome=untrusted-provider-detail`);
+    await waitText("Sign-in did not complete");
+    assert.equal((await text()).includes("untrusted-provider-detail"), false); await accessibility();
+  });
+  assert.deepEqual(errors, []);
+});
