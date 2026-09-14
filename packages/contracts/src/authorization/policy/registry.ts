@@ -4,7 +4,7 @@ import * as v2 from "./v2.ts";
 
 /** The deployed version. Release step: docs/cbd-236-p2-release-step.md flips this to "p2" only after
  * the release-history row carrying both approvals exists (PC-236-011, CBD236-POLICY-APPROVAL-001). */
-export const CURRENT_POLICY_VERSION = "p1" as const;
+export const CURRENT_POLICY_VERSION = "p2" as const;
 
 function serialization<V extends string>(version: V, set: { actionDefinitions: readonly v1.ActionDefinition[]; userCells: readonly v2.P2UserCell[]; serviceCells: readonly v1.ServiceCell[] }) {
   return Object.freeze({ version, schemaVersion: 1, actionDefinitions: set.actionDefinitions, userCells: set.userCells, serviceCells: set.serviceCells });
