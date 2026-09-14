@@ -6,6 +6,7 @@ ENV CI=true \
     SCARF_ANALYTICS=false
 
 COPY package.json package-lock.json ./
+COPY .agent-workflow/vendor/agent-workflow-cli-0.1.6.tgz .agent-workflow/vendor/agent-workflow-cli-0.1.6.tgz
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY apps/worker/package.json apps/worker/package.json
@@ -41,6 +42,7 @@ ENV CI=true \
     SCARF_ANALYTICS=false
 
 COPY package.json package-lock.json ./
+COPY .agent-workflow/vendor/agent-workflow-cli-0.1.6.tgz .agent-workflow/vendor/agent-workflow-cli-0.1.6.tgz
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY apps/worker/package.json apps/worker/package.json

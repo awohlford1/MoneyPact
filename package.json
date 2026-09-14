@@ -5,13 +5,7 @@
   "description": "Collaborative budgeting for individuals, partners, and families.",
   "workspaces": [
     "apps/*",
-    "packages/budget-application",
-    "packages/budget-domain",
-    "packages/contracts",
-    "packages/data-access",
-    "packages/migrations",
-    "packages/rate-limit",
-    "packages/sessions"
+    "packages/*"
   ],
   "scripts": {
     "dev": "npm run dev --workspace=@cobudget/web",
