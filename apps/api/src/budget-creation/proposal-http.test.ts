@@ -4,8 +4,8 @@
  * `proposal.regenerate` with the predecessor as the subject-owned target row -- loaded by the
  * datastore for the acting subject, its lifecycle revision captured at precheck and rechecked at
  * commit -- and audited as such; without the field it stays `proposal.create`. A predecessor owned
- * by another subject, an absent row, a stale revision and a malformed locator all deny before the
- * handler runs.
+ * by another subject, an absent row and a stale revision all deny before the handler runs; a
+ * malformed locator (PROTO-QA-FIXES-001 F2) names no row and is reported by the canonical validation.
  */
 import "reflect-metadata";
 import assert from "node:assert/strict";
@@ -118,13 +118,31 @@ describe("PROTO-ACTIVATION-001 A5: server-selected regenerate action", () => {
     } finally { await app.close(); }
   });
 
-  it("a malformed predecessor locator is refused as not found; a selected action outside the route's closed set is impossible", async () => {
+  it("PROTO-QA-FIXES-001 F2: a malformed predecessor locator is not a target row; it selects proposal.create and the canonical field error is returned with every other field error preserved in section 5.1 order", async () => {
+    const h = new Harness(subjectFixture("proposal.create"));
+    const { app, post } = await application(h);
+    try {
+      const alone = await post({ name: "Plan", timeZone: "America/New_York", currencyCode: "USD", schedule: { cadence: "monthly", anchor: { kind: "day-of-month", day: 1 } }, supersedesProposalId: "not-a-proposal" });
+      assert.equal(alone.statusCode, 400, alone.body);
+      assert.deepEqual(alone.json().fieldErrors.map((e: { path: string; code: string }) => [e.path, e.code]), [["supersedesProposalId", "supersedes-proposal-id.invalid"]]);
+      assert.equal(h.state.audits.find((event) => event.outcome === "allow")?.actionCode, "proposal.create", "no target row was named: the request is the subject-self create action");
+      const together = await post({ name: "", timeZone: "America/New_York", currencyCode: "USD", schedule: { cadence: "monthly", anchor: { kind: "day-of-month", day: 1 } }, supersedesProposalId: "not-a-proposal" });
+      assert.equal(together.statusCode, 400, together.body);
+      assert.deepEqual(together.json().fieldErrors.map((e: { path: string; code: string }) => [e.path, e.code]), [["name", "name.required"], ["supersedesProposalId", "supersedes-proposal-id.invalid"]], "the other field error is preserved, in catalog order");
+      const wrongType = await post({ name: "Plan", timeZone: "America/New_York", currencyCode: "USD", schedule: { cadence: "monthly", anchor: { kind: "day-of-month", day: 1 } }, supersedesProposalId: 7 });
+      assert.equal(wrongType.statusCode, 400, wrongType.body);
+      assert.deepEqual(wrongType.json().fieldErrors.map((e: { code: string }) => e.code), ["supersedes-proposal-id.expected-string"]);
+      assert.ok(!h.state.audits.some((event) => event.actionCode === "proposal.regenerate"), "a malformed locator never reaches the regenerate cell");
+    } finally { await app.close(); }
+  });
+
+  it("PROTO-QA-FIXES-001 F2: a well-formed but unknown predecessor keeps the uniform 404 (the datastore finds no such row for the subject)", async () => {
     const h = new Harness(regenerateFixture());
     const { app, post } = await application(h);
     try {
-      const response = await post({ name: "Plan", supersedesProposalId: "not-a-proposal" });
-      assert.equal(response.statusCode, 404); assert.deepEqual(response.json(), { error: "proposal_not_found" });
-      assert.ok(!h.order.includes("begin"), "no transaction was opened");
+      const response = await post({ name: "Plan", timeZone: "America/New_York", currencyCode: "USD", schedule: { cadence: "monthly", anchor: { kind: "day-of-month", day: 1 } }, supersedesProposalId: PREDECESSOR });
+      assert.equal(response.statusCode, 404, response.body); assert.deepEqual(response.json(), { error: "proposal_not_found" });
+      assert.equal(h.state.audits.find((event) => event.outcome === "allow")?.actionCode, "proposal.regenerate");
     } finally { await app.close(); }
   });
 });

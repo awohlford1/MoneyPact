@@ -94,3 +94,45 @@ it("public health and openapi exceptions stay reachable when the release set car
   const protectedDecision = await engine.decide({ registrationId: "api:POST:/new", surfaceId: "surf-266-budget-mutation", parameterRecordId: "missing", releaseSetDigest: registry.releaseSetDigest, requestOrJobUnit: 1, verifiedContext: { localCaller: true } });
   assert.notEqual(protectedDecision.outcome, "allow");
 });
+it("PROTO-QA-FIXES-001 F1: a consumed reserved unit is refunded exactly once, only to its own reservation; ordinary units are never refunded", async () => {
+  let time = 0; const store = new InProcessCounterStore(() => time); const base = input(records[3]!);
+  // The reserved initial space.create unit: consumed, refunded (the next consume is admitted again), and a second refund is a no-op.
+  const first = await store.consume({ ...base, bootstrapStage: "initial_space_create" });
+  assert.equal(first.outcome, "accepted"); if (first.outcome !== "accepted") return;
+  assert.equal((await store.consume({ ...base, bootstrapStage: "initial_space_create" })).outcome, "exhausted", "one reserved unit per ceremony");
+  assert.equal(await first.refund(), true, "the denied effect returns its reserved unit");
+  assert.equal(await first.refund(), false, "the refund is single-use");
+  time = 1;
+  const second = await store.consume({ ...base, bootstrapStage: "initial_space_create" });
+  assert.equal(second.outcome, "accepted", "the corrected attempt is admitted on the same ceremony"); if (second.outcome !== "accepted") return;
+  assert.equal(await first.refund(), false, "a stale decision cannot refund the reservation a later consume placed");
+  assert.equal((await store.consume({ ...base, bootstrapStage: "initial_space_create" })).outcome, "exhausted", "the committed effect keeps exactly one unit consumed");
+  // The other reserved stage is untouched by the refund of this one.
+  assert.equal((await store.consume({ ...base, bootstrapStage: "first_sign_in" })).outcome, "accepted");
+  // Ordinary units (bootstrap ordinary sub-pool and every non-bootstrap record) are counted regardless of the effect's fate.
+  const ordinary = await store.consume({ ...base, bootstrapStage: "ordinary" });
+  assert.equal(ordinary.outcome, "accepted"); if (ordinary.outcome !== "accepted") return;
+  assert.equal(await ordinary.refund(), false);
+  const mutation = await store.consume(input(records[2]!));
+  assert.equal(mutation.outcome, "accepted"); if (mutation.outcome !== "accepted") return;
+  assert.equal(await mutation.refund(), false);
+  await mutation.release();
+  // The refund also returns the unit from the eight-unit ceiling: after 6 ordinary + 2 reserved the ceiling is reached;
+  // refunding the reserved unit frees exactly one slot for that stage, never for ordinary traffic.
+  const fresh = new InProcessCounterStore(() => 0); const key = "c".repeat(64);
+  for (let i = 0; i < 6; i++) assert.equal((await fresh.consume({ ...input(records[3]!, key), bootstrapStage: "ordinary" })).outcome, "accepted");
+  const signIn = await fresh.consume({ ...input(records[3]!, key), bootstrapStage: "first_sign_in" });
+  const create = await fresh.consume({ ...input(records[3]!, key), bootstrapStage: "initial_space_create" });
+  assert.equal(signIn.outcome, "accepted"); assert.equal(create.outcome, "accepted"); if (create.outcome !== "accepted") return;
+  assert.equal((await fresh.consume({ ...input(records[3]!, key), bootstrapStage: "ordinary" })).outcome, "exhausted", "8-unit ceiling reached");
+  assert.equal(await create.refund(), true);
+  assert.equal((await fresh.consume({ ...input(records[3]!, key), bootstrapStage: "ordinary" })).outcome, "exhausted", "a refunded reserved unit is not ordinary capacity (the ordinary sub-pool is separately full)");
+  assert.equal((await fresh.consume({ ...input(records[3]!, key), bootstrapStage: "initial_space_create" })).outcome, "accepted", "the refunded reserved unit is usable again by its stage");
+});
+it("PROTO-QA-FIXES-001 F1: the engine surfaces the store's refund on an allow decision", async () => {
+  const runtime = syntheticRuntime(new InProcessCounterStore());
+  const decision = await runtime.decide();
+  assert.equal(decision.outcome, "allow"); if (decision.outcome !== "allow") return;
+  assert.equal(typeof decision.refund, "function");
+  assert.equal(await decision.refund!(), false, "an ordinary recovery unit is never refunded");
+});

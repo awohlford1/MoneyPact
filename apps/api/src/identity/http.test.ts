@@ -327,6 +327,38 @@ describe("PROTO-WIRE-01/02 identity routes through the real Fastify instance", (
     } finally { await app.close(); }
   });
 
+  it("PROTO-QA-FIXES-001 F4: a callback from which no ceremony resolves is denied by the real surface gate with nothing consumed and no session, and answered by the same accessible 303 result navigation as every other malformed callback", async () => {
+    const db = new FakeIdentityDatabase();
+    const { app, runtime } = await createComposedApiApplication(localConfig(), () => undefined, testHistory, { client: createFakeIdentityClient(db), scheduler: null });
+    const b = await browser(app);
+    try {
+      type Enforcement = { earliest_decisive_gate: string; safe_reason_class: string; counter_store_evidence: string; parameter_record_id: string | null };
+      const audits = () => runtime.audit!.snapshot().length;
+      for (const [name, path] of [["missing query", "/v1/identity/callback"], ["unknown state", `/v1/identity/callback?code=${"c".repeat(43)}&state=${"s".repeat(43)}`]] as const) {
+        const before = audits();
+        const response = await b.inject("GET", path, { "sec-fetch-mode": "navigate" });
+        assert.equal(response.statusCode, 303, `${name}: ${response.statusCode} ${response.body}`);
+        assert.equal(response.headers.location, `${APPLICATION_ORIGIN}/identity/result?outcome=invalid_or_expired`, name);
+        assert.equal(response.headers["set-cookie"], undefined, name);
+        assert.equal(response.body, "", name);
+        assert.equal(audits(), before + 1, `${name}: the surface denial is still recorded`);
+        const enforcement = (runtime.audit!.snapshot().at(-1) as { enforcement?: Enforcement }).enforcement;
+        assert.equal(enforcement?.earliest_decisive_gate, "surface", name);
+        assert.equal(enforcement?.safe_reason_class, "deny_input_invalid", name);
+        assert.equal(enforcement?.counter_store_evidence, "not_consumed", `${name}: no counter was touched`);
+      }
+      // A JSON-shaped fetch of the same unresolvable callback is answered identically: the route is a navigation surface.
+      const fetched = await b.inject("GET", "/v1/identity/callback", { accept: "application/json" });
+      assert.equal(fetched.statusCode, 303);
+      assert.equal(db.count("account_subject"), 0);
+      assert.equal(db.count("account_session"), 0);
+      // The genuine ceremony still completes afterwards (nothing of its pool was spent by the unresolvable requests).
+      const committed = await signIn(b);
+      assert.equal(committed.statusCode, 303, committed.body);
+      assert.ok(b.cookies[SESSION_COOKIE_NAME]);
+    } finally { await app.close(); }
+  });
+
   it("PROTO-WIRE-02: the explicit unavailable provider keeps the fail-closed boundary; startup resolves identity and session configuration before any application effect", async () => {
     const unavailable = composeApiRuntime(loadApiConfigFrom(localEnvironment({ COBUDGET_IDENTITY_PROVIDER: "unavailable" })), () => undefined);
     assert.equal(unavailable.runtime, undefined);

@@ -68,7 +68,25 @@ export const Authorize = (metadata: RouteAuthorization): MethodDecorator => SetM
  * surface cannot require an existing session. Surface enforcement still runs first with
  * pre-authentication counting keys; no policy is evaluated and no transaction is opened. The
  * marker is explicit so the route is inventoried like any other and never a silent bypass. */
-export const PreAuthenticationSurface = (): MethodDecorator => SetMetadata(PRE_AUTHENTICATION, true);
+export interface PreAuthenticationSurfaceOptions {
+  /**
+   * PROTO-QA-FIXES-001 F4: a navigation surface (the identity callback) that the surface gate denies as
+   * `deny_input_invalid` -- no ceremony resolves from the request, so no counter is touched -- answers
+   * with a 303 to the location this returns (the application-owned result page with a closed outcome)
+   * instead of the uniform JSON denial, so a person landing there reaches the same accessible result
+   * page every other malformed callback receives. The enforcement audit is recorded exactly as before,
+   * nothing is consumed and no session exists; `undefined` keeps the JSON denial. Exhaustion and every
+   * other denial class are unchanged.
+   */
+  readonly deniedNavigation?: (request: FastifyRequest) => string | undefined;
+}
+export const PreAuthenticationSurface = (options: PreAuthenticationSurfaceOptions = {}): MethodDecorator => SetMetadata(PRE_AUTHENTICATION, Object.freeze({ ...options }));
+/** PROTO-QA-FIXES-001 F1: the closed set of effect denials that return the ceremony's reserved unit. A confirm
+ * that passed the session gate, the replay lookup, the locator and the policy but was denied inside its effect
+ * (expired or superseded proposal, altered binding) committed nothing, so the reserved initial `space.create`
+ * unit it was admitted on goes back to the ceremony and the corrected confirm is admitted on the same session.
+ * Ordinary units and committed effects are never refunded (CBD-266 section 4.7 `proto-bootstrap-v1`). */
+const REFUNDABLE_EFFECT_DENIALS: ReadonlySet<string> = new Set(["proposal_not_current", "confirmation_stale"]);
 /**
  * PROTO-ACTIVATION-001: a session-authenticated surface with no policy cell.
  * The released p2 matrix (CBD-236 section 8.5) carries `profile.read` for the
@@ -126,6 +144,9 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
   readonly #replays = new WeakMap<object, RouteReplay>();
   readonly #registered = new Set<string>();
   readonly #preAuthentication = new Set<string>();
+  readonly #deniedNavigation = new Map<string, NonNullable<PreAuthenticationSurfaceOptions["deniedNavigation"]>>();
+  /** F1: the refund of a reserved unit consumed for this request, applied at most once on an effect denial. */
+  readonly #refunds = new WeakMap<object, () => Promise<boolean>>();
   readonly #missing: string[] = [];
   readonly #leases = new WeakMap<object, () => Promise<void>>();
   readonly #surfacePassed = new WeakSet<object>();
@@ -152,7 +173,7 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
         if (typeof prefix !== "string" || typeof path !== "string") { this.#missing.push(`${wrapper.name}.${name}`); continue; }
         const key = `${RequestMethod[method]} /${[prefix, path].join("/").split("/").filter(Boolean).join("/")}`;
         const authMetadata = this.#reflector.get<RouteAuthorization | undefined>(METADATA, handler);
-        const preAuthentication = this.#reflector.get<true | undefined>(PRE_AUTHENTICATION, handler);
+        const preAuthentication = this.#reflector.get<PreAuthenticationSurfaceOptions | undefined>(PRE_AUTHENTICATION, handler);
         const sessionAuthenticated = this.#reflector.get<true | undefined>(SESSION_AUTHENTICATED, handler);
         if (wrapper.metatype === HealthController && handler === HealthController.prototype.getReadiness) this.#registered.add(key);
         else if (sessionAuthenticated) {
@@ -165,6 +186,7 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
           if (authMetadata) throw new Error(`authorization startup: "${key}" carries both @Authorize and @PreAuthenticationSurface`);
           if (!ELIGIBLE_PRE_AUTHENTICATION_SURFACES.has(key)) throw new Error(`authorization startup: "${key}" is marked @PreAuthenticationSurface but is not an eligible pre-authentication surface`);
           this.#registered.add(key); this.#preAuthentication.add(key);
+          if (preAuthentication.deniedNavigation) this.#deniedNavigation.set(key, preAuthentication.deniedNavigation);
         }
         else if (authMetadata) this.#registered.add(key);
         else this.#missing.push(key);
@@ -188,7 +210,17 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
         // before its effect; canActivate consumes it after the CSRF check, the replay lookup and the locator validation.
         if (actor !== undefined && await this.#rateLimit.reserved?.(request, actor)) { this.#deferred.set(request, actor); return; }
         const decision = await this.#rateLimit.enforce(request, actor);
-        if (decision.outcome !== "allow") return await this.#options.boundary.rejectEnforcement(surfaceOutcome(evidence, decision.outcome));
+        if (decision.outcome !== "allow") {
+          // F4: an unresolvable request on a navigation surface is denied the same way (audited, nothing consumed) and answered by navigation.
+          const navigation = decision.outcome === "deny_input_invalid" ? this.#deniedNavigation.get(`${request.method} ${request.routeOptions.url}`)?.(request) : undefined;
+          if (navigation) {
+            // Only the expected denial is absorbed; an audit-writer failure falls to the outer catch and the uniform denial (RF-1).
+            try { await this.#options.boundary.rejectEnforcement(surfaceOutcome(evidence, decision.outcome)); }
+            catch (error) { if (!(error instanceof AuthorizationDenied)) throw error; }
+            return reply.code(303).header("location", navigation).send();
+          }
+          return await this.#options.boundary.rejectEnforcement(surfaceOutcome(evidence, decision.outcome));
+        }
         this.#leases.set(request, decision.release); this.#surfacePassed.add(request);
       } catch (error) {
         if (!(error instanceof AuthorizationDenied)) {
@@ -199,6 +231,7 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
       }
     });
     server.addHook("onResponse", async (request) => {
+      this.#refunds.delete(request);
       const release = this.#leases.get(request); this.#leases.delete(request);
       if (release) { try { await release(); } catch { /* Failure cannot reset a ceiling or admit work. */ } }
     });
@@ -222,7 +255,7 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
     try {
       if (!this.#surfacePassed.has(request) && !this.#deferred.has(request)) return await this.#options.boundary.reject();
       if (!await this.#options.surfaceApproved(request)) return await this.#options.boundary.rejectEnforcement(surfaceOutcome(this.#rateLimit.evidence(request), "deny_policy_unavailable"));
-      if (this.#reflector.get<true | undefined>(PRE_AUTHENTICATION, context.getHandler())) return true;
+      if (this.#reflector.get<PreAuthenticationSurfaceOptions | undefined>(PRE_AUTHENTICATION, context.getHandler())) return true;
       // A1: every cookie-authenticated non-safe request proves Origin, fetch metadata and the CSRF value before any
       // replay lookup, policy evaluation or effect; a failure is the uniform denial at the session gate.
       if (!SAFE_METHODS.has(request.method.toUpperCase()) && !await this.#options.csrf(request)) {
@@ -252,6 +285,7 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
         this.#deferred.delete(request);
         if (decision.outcome !== "allow") return await this.#options.boundary.rejectEnforcement(surfaceOutcome(this.#rateLimit.evidence(request), decision.outcome));
         this.#leases.set(request, decision.release); this.#surfacePassed.add(request);
+        if (decision.refund) this.#refunds.set(request, decision.refund);
       }
       const authorized = await this.#options.boundary.authorize({ operation, credential: this.#options.sessionLocator(request) }, this.#rateLimit.evidence(request));
       this.#pending.set(request, authorized);
@@ -267,9 +301,13 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
       return this.#options.deny(externalDenial());
     }
   }
+  async #refund(request: object): Promise<void> {
+    const refund = this.#refunds.get(request); this.#refunds.delete(request);
+    if (refund) { try { await refund(); } catch { /* A failed refund leaves the unit consumed; it never admits work. */ } }
+  }
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getClass() === HealthController && context.getHandler() === HealthController.prototype.getReadiness) return next.handle();
-    if (this.#reflector.get<true | undefined>(PRE_AUTHENTICATION, context.getHandler())) return next.handle();
+    if (this.#reflector.get<PreAuthenticationSurfaceOptions | undefined>(PRE_AUTHENTICATION, context.getHandler())) return next.handle();
     if (this.#reflector.get<true | undefined>(SESSION_AUTHENTICATED, context.getHandler())) {
       // No policy, no transaction: the route's own failures still travel as HTTP statuses, never as a 500.
       return from((async () => {
@@ -296,7 +334,11 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
         if (result instanceof RouteFailure) throw result;
         return result;
       } catch (error) {
-        if (error instanceof RouteFailure) throw new HttpException(error.response, error.status);
+        if (error instanceof RouteFailure) {
+          // F1: the effect was denied after the surface decision and committed nothing; return the reserved unit once.
+          if (REFUNDABLE_EFFECT_DENIALS.has(error.response.error)) await this.#refund(request);
+          throw new HttpException(error.response, error.status);
+        }
         return this.#options.deny(externalDenial());
       }
     })());

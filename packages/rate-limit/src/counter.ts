@@ -15,7 +15,11 @@ export interface ConsumeInput {
   record: ParameterRecord; releaseSetDigest: string; keys: readonly string[]; unit: 1;
   bootstrapStage?: "ordinary" | "first_sign_in" | "initial_space_create";
 }
-export type CounterResult = { outcome: "accepted"; provenance: string; release(): Promise<void> } | { outcome: "exhausted" };
+/** PROTO-QA-FIXES-001 F1: `refund` returns a consumed *reserved* bootstrap unit to its ceremony, exactly once,
+ * when the effect the unit admitted was denied after the surface decision; it resolves false (and returns
+ * nothing) for an ordinary unit, for a second call, or once the window that held the reservation has ended.
+ * Committed effects are never refunded: the caller invokes it only on a post-policy effect denial. */
+export type CounterResult = { outcome: "accepted"; provenance: string; release(): Promise<void>; refund(): Promise<boolean> } | { outcome: "exhausted" };
 export interface CounterStore {
   /** One atomic operation across window, burst, quota, reservations and concurrency.
    * A timeout/unknown result must never be retried as a fresh consume. */
@@ -63,8 +67,15 @@ export class InProcessCounterStore implements CounterStore {
       if (bucket.tokens < 1) return { outcome: "exhausted" }; bucket.tokens--;
     }
     bucket.accepted.push(now); const lease = randomUUID(); bucket.inFlight.add(lease);
-    const captured = bucket;
-    return { outcome: "accepted", provenance: "single-process-linearizable:consume-v1", release: async () => { captured.inFlight.delete(lease); } };
+    const captured = bucket; const reserved = bootstrap && stage !== "ordinary"; let refunded = false;
+    return { outcome: "accepted", provenance: "single-process-linearizable:consume-v1", release: async () => { captured.inFlight.delete(lease); },
+      refund: async () => {
+        // Single-use and keyed to this consumption: only the reservation this call placed (same stage, same instant) is returned.
+        if (!reserved || refunded || captured.reservations.get(stage) !== now) return false;
+        refunded = true; captured.reservations.delete(stage);
+        const index = captured.accepted.indexOf(now); if (index !== -1) captured.accepted.splice(index, 1);
+        return true;
+      } };
   }
 }
 
@@ -144,7 +155,7 @@ export class RateLimitEngine {
       new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error("counter_deadline")), this.#timeoutMs); })]);
       if (result.outcome === "exhausted") return { outcome: "deny_exhausted" };
       if (result.outcome !== "accepted" || result.provenance !== "single-process-linearizable:consume-v1" || typeof result.release !== "function") return { outcome: "deny_counter_unavailable" };
-      return { outcome: "allow", provenance: result.provenance, release: result.release };
+      return { outcome: "allow", provenance: result.provenance, release: result.release, ...(typeof result.refund === "function" ? { refund: result.refund } : {}) };
     } catch { return { outcome: "deny_counter_unavailable" }; } finally { clearTimeout(timer); }
   }
 }

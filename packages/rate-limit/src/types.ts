@@ -16,7 +16,9 @@ export interface Registration {
   parameter_record_id: string | null; registration_lifecycle: "active" | "retired"; introduced_by: string; authorization_metadata_id: string | null;
 }
 export type Denial = "deny_exhausted" | "deny_unregistered" | "deny_policy_unavailable" | "deny_counter_unavailable" | "deny_input_invalid";
-export type Decision = { outcome: "allow"; provenance: string; release: () => Promise<void> } | { outcome: Denial };
+/** `refund` (PROTO-QA-FIXES-001 F1) is present only when the admitted unit is a reserved bootstrap unit the
+ * store can return once; see `CounterResult`. */
+export type Decision = { outcome: "allow"; provenance: string; release: () => Promise<void>; refund?: () => Promise<boolean> } | { outcome: Denial };
 export interface ApprovalEvidence {
   approvalId: string; actorId: string; candidateDigests: readonly string[]; conditions: readonly string[];
   decidedAt: string; expiresAt: string | null; revoked: boolean;
