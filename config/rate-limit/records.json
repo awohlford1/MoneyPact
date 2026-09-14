@@ -97,10 +97,10 @@
     "created_at": "2026-09-13T04:00:00Z",
     "supersedes_record_id": null,
     "product_owner_approval": {
-      "status": "pending",
+      "status": "approved",
       "approval_id": "CBD266-PROTOTYPE-DEFAULTS-001",
-      "approved_by_actor_id": null,
-      "decided_at": null,
+      "approved_by_actor_id": "atlassian:5cffa74b92e6c70c53499977",
+      "decided_at": "2026-09-13T00:00:00Z",
       "candidate_digest": "f614588b769507f009a31712c0f74c2e490b966f7f1d750e05cf0416381c5669",
       "conditions": [
         "prototype-only",
@@ -108,7 +108,7 @@
       ],
       "expires_at": null
     },
-    "record_digest": "50c06276595291a59d41abeaf2d61551d0d1be1260deb200ee0934cd23a54f6b"
+    "record_digest": "a2b7c2ffd38ad0868af428a5d149277356f54c4b31f561a960b1367c6e9a3286"
   },
   {
     "schema_version": 1,
@@ -195,10 +195,10 @@
     "created_at": "2026-09-13T04:00:00Z",
     "supersedes_record_id": null,
     "product_owner_approval": {
-      "status": "pending",
+      "status": "approved",
       "approval_id": "CBD266-PROTOTYPE-DEFAULTS-001",
-      "approved_by_actor_id": null,
-      "decided_at": null,
+      "approved_by_actor_id": "atlassian:5cffa74b92e6c70c53499977",
+      "decided_at": "2026-09-13T00:00:00Z",
       "candidate_digest": "19562bd15bc72a98ec25edd8c16b27da369f0c4f07c19b7d852acb720416c73b",
       "conditions": [
         "prototype-only",
@@ -206,7 +206,7 @@
       ],
       "expires_at": null
     },
-    "record_digest": "86a48e55593320a972b8f53503c7e853dbad1191c19166ee976f31ecf81bbebb"
+    "record_digest": "9aeb73301c230383ea7a2b939523719f35a2d5d3c2538ca41f9c4889f3ddffd8"
   },
   {
     "schema_version": 1,
@@ -295,10 +295,10 @@
     "created_at": "2026-09-13T04:00:00Z",
     "supersedes_record_id": null,
     "product_owner_approval": {
-      "status": "pending",
+      "status": "approved",
       "approval_id": "CBD266-PROTOTYPE-DEFAULTS-001",
-      "approved_by_actor_id": null,
-      "decided_at": null,
+      "approved_by_actor_id": "atlassian:5cffa74b92e6c70c53499977",
+      "decided_at": "2026-09-13T00:00:00Z",
       "candidate_digest": "7156536964425ab726cfd0387ce67c96e4eec0488a7f058ea3d22c320e2faeb9",
       "conditions": [
         "prototype-only",
@@ -306,7 +306,7 @@
       ],
       "expires_at": null
     },
-    "record_digest": "d7887b608676c8d8d1e6968ab829a57f0828d1f307d775ee529f579fcf884d55"
+    "record_digest": "e2510e56689ca896d4ada15b0b85b0e95d879a40051b0f16f9fb0080f77e3bec"
   },
   {
     "schema_version": 1,
@@ -400,10 +400,10 @@
     "created_at": "2026-09-13T04:00:00Z",
     "supersedes_record_id": null,
     "product_owner_approval": {
-      "status": "pending",
+      "status": "approved",
       "approval_id": "CBD266-PROTOTYPE-DEFAULTS-001",
-      "approved_by_actor_id": null,
-      "decided_at": null,
+      "approved_by_actor_id": "atlassian:5cffa74b92e6c70c53499977",
+      "decided_at": "2026-09-13T00:00:00Z",
       "candidate_digest": "a846bd73057f182c8b0850c5c71e735cd87adddcd387f17cc80dcdbd64e688ed",
       "conditions": [
         "prototype-only",
@@ -411,6 +411,104 @@
       ],
       "expires_at": null
     },
-    "record_digest": "90c3ed8ffdfeaa17f2e5c4ef074f04b22f1e3e74e4396381a455ef673f9aea47"
+    "record_digest": "789a841ced120fe1550feac9882a09d44cc465b284445eac908bc86e5f24c85c"
+  },
+  {
+    "schema_version": 1,
+    "record_id": "rlp-266-recovery-v1",
+    "surface_id": "surf-266-recovery",
+    "window": {
+      "duration_ms": 60000,
+      "kind": "sliding",
+      "anchor": "request_time"
+    },
+    "threshold": 60,
+    "burst": {
+      "additional_units": 10,
+      "refill_units": 1,
+      "refill_interval_ms": 6000
+    },
+    "safe_counting_key": {
+      "phase": "post_authentication",
+      "components": [
+        "verified_actor_id_v1",
+        "exact_surface_id"
+      ],
+      "derivation_version": "hmac-sha256-v1",
+      "normalization": "verified-id-v1",
+      "rotation_behavior": "dual-read/single-write for at least 120000 ms; carry forward the greater count",
+      "privacy_basis": "Actor from verified server context only; correlation limited to actor plus exact surface; no shared space dimension.",
+      "subject_bound_after_authentication": true
+    },
+    "counter_store": {
+      "binding": "LOCAL_PROTOTYPE_COUNTER_STORE",
+      "namespace": "cbd266:prototype:recovery:v1",
+      "atomic_operation": "one process-linearizable atomic consume",
+      "consistency": "single-process-linearizable",
+      "region": "local-process",
+      "ttl_ms": 120000,
+      "clock_source": "monotonic process clock",
+      "failure_mode": "deny"
+    },
+    "quota": {
+      "unit": "request",
+      "ceiling": 70,
+      "scope": "verified actor plus exact surface",
+      "reset": "sliding expiry plus burst refill",
+      "resource_dimensions": []
+    },
+    "anti_lockout_rule": {
+      "attackable_dimensions": [],
+      "victim_bound_dimensions": [
+        "verified_actor_id_v1"
+      ],
+      "independent_recovery_surface_id": null,
+      "pool_isolation": "| `proto-recovery-v1` | `attackable_dimensions: []`; `victim_bound_dimensions: [verified_actor_id_v1]`; `independent_recovery_surface_id: null`; unauthenticated and other authenticated actors cannot consume the verified actor's terminal recovery pool; its namespace and exact surface key are separate from ordinary traffic (`FX-266-LOCKOUT-RECOVERY`); `exhaustion_state_effect: none`; reset authority is `local prototype operator / restore counter service only`; notification is uniform and reveals neither existence nor remaining quota; verify `FX-266-AUTHENTICATED-ACTOR-ISOLATION`, `FX-266-LOCKOUT-RECOVERY`, and `VT-94-066`. |",
+      "exhaustion_state_effect": "none",
+      "reset_authority": "local prototype operator / restore counter service only",
+      "notification_behavior": "uniform, content-safe; neither existence nor remaining quota",
+      "rationale": "| `proto-recovery-v1` | `attackable_dimensions: []`; `victim_bound_dimensions: [verified_actor_id_v1]`; `independent_recovery_surface_id: null`; unauthenticated and other authenticated actors cannot consume the verified actor's terminal recovery pool; its namespace and exact surface key are separate from ordinary traffic (`FX-266-LOCKOUT-RECOVERY`); `exhaustion_state_effect: none`; reset authority is `local prototype operator / restore counter service only`; notification is uniform and reveals neither existence nor remaining quota; verify `FX-266-AUTHENTICATED-ACTOR-ISOLATION`, `FX-266-LOCKOUT-RECOVERY`, and `VT-94-066`. |",
+      "verification_cases": [
+        "FX-266-AUTHENTICATED-ACTOR-ISOLATION",
+        "FX-266-LOCKOUT-RECOVERY",
+        "VT-94-066"
+      ]
+    },
+    "capacity_basis": {
+      "evidence_locator": "CBD266-PROTOTYPE-DEFAULTS-001 / single-local-process planning basis",
+      "measured_at": "2026-09-13T00:00:00-04:00",
+      "sustained_capacity": "10 requests/second in one local process; not measured - Product estimate dated 2026-09-13",
+      "peak_assumption": "At most 70 requests in 60 seconds; at least 88% request-rate headroom against the estimate",
+      "headroom": "At most 70 requests in 60 seconds; at least 88% request-rate headroom against the estimate",
+      "failure_budget": "zero uncounted protected effects when the store is unavailable or uncertain",
+      "workload_assumptions": [
+        "One developer, one process, local data, no background consumers, no hosted traffic"
+      ],
+      "reviewer_role": "Product; ME-94-010 specialist review pending"
+    },
+    "source_requirements": [
+      "RL-92-001",
+      "RL-92-002",
+      "RL-92-007",
+      "EP-92-003",
+      "SR-94-037",
+      "ME-94-010",
+      "CBD266-RECOVERY-RECORD-001"
+    ],
+    "created_at": "2026-09-14T01:17:29Z",
+    "supersedes_record_id": null,
+    "product_owner_approval": {
+      "status": "approved",
+      "approval_id": "CBD266-RECOVERY-RECORD-001",
+      "approved_by_actor_id": "atlassian:5cffa74b92e6c70c53499977",
+      "decided_at": "2026-09-14T01:17:29Z",
+      "candidate_digest": "bb87eb794361478068031786de7de009d4050d8d1af9c84af7950f56747149ba",
+      "conditions": [
+        "prototype-only",
+        "revisit before any hosted environment"
+      ],
+      "expires_at": null
+    },
+    "record_digest": "e25664c9cbdc86c2d6543e81936d82d15255f5c31389e5b155d2d68b55287f45"
   }
 ]

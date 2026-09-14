@@ -50,8 +50,9 @@ export function validateRegistry(input: unknown, context: ApprovalContext): Regi
     if (!r.capacity_basis.sustained_capacity.includes("estimate") || !r.capacity_basis.failure_budget.includes("zero")) invalid("/capacity_basis");
     for (const component of r.safe_counting_key.components) if (!KEY_COMPONENTS[component]?.phases.includes(r.safe_counting_key.phase)) invalid("/safe_counting_key/components");
     const recovery = r.anti_lockout_rule.independent_recovery_surface_id;
-    if (r.safe_counting_key.subject_bound_after_authentication && (!["post_authentication", "compound"].includes(r.safe_counting_key.phase) || !recovery)) invalid("/safe_counting_key/subject_bound_after_authentication");
-    if (r.anti_lockout_rule.victim_bound_dimensions.length && !recovery) invalid("/anti_lockout_rule/independent_recovery_surface_id");
+    const terminalRecovery = r.surface_id === "surf-266-recovery" && recovery === null;
+    if (r.safe_counting_key.subject_bound_after_authentication && (!["post_authentication", "compound"].includes(r.safe_counting_key.phase) || (!recovery && !terminalRecovery))) invalid("/safe_counting_key/subject_bound_after_authentication");
+    if (r.anti_lockout_rule.victim_bound_dimensions.length && !recovery && !terminalRecovery) invalid("/anti_lockout_rule/independent_recovery_surface_id");
     if (recovery && (!SURFACE_CATALOG[recovery] || recovery === r.surface_id)) invalid("/anti_lockout_rule/independent_recovery_surface_id");
     if (candidateDigest(r) !== r.product_owner_approval.candidate_digest) invalid("/product_owner_approval/candidate_digest");
     if (recordDigest(r) !== r.record_digest) invalid("/record_digest");
@@ -65,6 +66,7 @@ export function validateRegistry(input: unknown, context: ApprovalContext): Regi
       && evidence.candidateDigests.includes(a.candidate_digest) && canonical(evidence.conditions) === canonical(a.conditions)
       && evidence.decidedAt === a.decided_at && evidence.expiresAt === a.expires_at && Date.parse(a.decided_at!) <= Date.parse(context.now)
       && (!a.expires_at || Date.parse(a.expires_at) > Date.parse(context.now))) approved.set(id, r);
+    if (a.status === "approved" && !approved.has(id)) add(id, "approval_evidence_invalid", "/product_owner_approval");
   }
   const ids = new Set<string>(); const digests = new Set<string>(); const surfaces = new Set<string>();
   for (const r of records) {
@@ -81,7 +83,7 @@ export function validateRegistry(input: unknown, context: ApprovalContext): Regi
   // An unavailable independent recovery pool cannot be represented as runtime approval.
   for (const [id, r] of approved) {
     const recovery = r.anti_lockout_rule.independent_recovery_surface_id;
-    if (recovery && ![...approved.values()].some((other) => other.surface_id === recovery && other.counter_store.namespace !== r.counter_store.namespace && canonical(other.safe_counting_key.components) !== canonical(r.safe_counting_key.components))) approved.delete(id);
+    if (recovery && ![...approved.values()].some((other) => other.surface_id === recovery && other.counter_store.namespace !== r.counter_store.namespace && (canonical(other.safe_counting_key.components) !== canonical(r.safe_counting_key.components) || (other.surface_id !== r.surface_id && other.safe_counting_key.components.includes("exact_surface_id") && r.safe_counting_key.components.includes("exact_surface_id"))))) approved.delete(id);
   }
   diagnostics.sort((a, b) => `${a.recordId}:${a.pointer}:${a.code}`.localeCompare(`${b.recordId}:${b.pointer}:${b.code}`));
   if (diagnostics.length) approved.clear();
@@ -92,6 +94,7 @@ export function validateRegistry(input: unknown, context: ApprovalContext): Regi
         return context.environment === "local-prototype" && context.singleProcess && a.status === "approved" && !!e && !e.revoked
           && e.actorId === a.approved_by_actor_id && e.approvalId === a.approval_id && e.candidateDigests.includes(candidateDigest(r))
           && canonical(e.conditions) === canonical(a.conditions) && e.decidedAt === a.decided_at && e.expiresAt === a.expires_at
+          && instant(e.decidedAt) && Date.parse(e.decidedAt) <= Date.now()
           && (!e.expiresAt || Date.parse(e.expiresAt) > Date.now());
       } catch { return false; }
     } };

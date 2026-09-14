@@ -65,7 +65,7 @@ it("never partially accepts duplicate IDs, ambiguous surfaces, broken supersessi
   }
 });
 it("checked-in actor-bound projections stay closed without independent approved recovery", () => {
-  for (const pendingRecord of loadPrototypeRegistry().records.slice(1)) {
+  for (const pendingRecord of loadPrototypeRegistry().records.filter((r) => r.anti_lockout_rule.independent_recovery_surface_id)) {
     const { record, context } = syntheticApproval(pendingRecord);
     assert.equal(validateRegistry([record], context).approved.size, 0);
   }
