@@ -8,6 +8,12 @@ import { fileURLToPath } from "node:url";
 import { ConfigError, undocumentedVariables } from "@cobudget/contracts/config";
 
 import { apiConfigSchema, loadApiConfigFrom, resolveApiListenAddress } from "./config.js";
+import { sessionConfigSchema } from "./config.js";
+import { identityConfigSchema } from "./identity/config.ts";
+
+// Every CBD-191 session and CBD-190 identity variable is optional at the schema level (required only under
+// COBUDGET_IDENTITY_PROVIDER=local, enforced by loadApiConfigFrom); absent means `undefined`, never a default.
+const OPTIONAL_IDENTITY_VARIABLES = Object.fromEntries(Object.keys({ ...sessionConfigSchema, ...identityConfigSchema }).map((name) => [name, undefined]));
 
 // Generated at test time (never a literal) so no fixture value in this file
 // shapes like a key/token for scripts/secret_scanner.py's generic-api-key rule.
@@ -52,6 +58,7 @@ describe("API configuration", () => {
   });
   it("loads through the shared typed configuration contract", () => {
     assert.deepEqual(loadApiConfigFrom(validEnvironment), {
+      ...OPTIONAL_IDENTITY_VARIABLES,
       API_PORT: 3001,
       API_LISTEN_ADDRESS: undefined,
       LOG_LEVEL: "info",
@@ -67,6 +74,7 @@ describe("API configuration", () => {
     assert.deepEqual(
       loadApiConfigFrom({ ...validEnvironment, API_LISTEN_ADDRESS: "0.0.0.0" }),
       {
+        ...OPTIONAL_IDENTITY_VARIABLES,
         API_PORT: 3001,
         API_LISTEN_ADDRESS: "0.0.0.0",
         LOG_LEVEL: "info",

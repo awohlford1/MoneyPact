@@ -1,6 +1,7 @@
 import type { ReliabilitySink } from "./telemetry.js";
 import type { ApiConfig } from "./config.js";
 import { resolveApiListenAddress } from "./config.js";
+import { resolveApiIdentityConfiguration } from "./sessions/runtime.ts";
 
 interface StartupApplication {
   enableShutdownHooks(signals: string[], options: { useProcessExit: boolean }): unknown;
@@ -19,6 +20,16 @@ export interface StartupDependencies {
    * so the return type is deliberately opaque here.
    */
   resolveEncryptionProvider(config: ApiConfig): unknown;
+  /**
+   * Resolves the CBD-190 identity configuration and, under the local
+   * adapter, the CBD-191 session pepper and delivery-envelope key
+   * (PROTO-IDENTITY-API-001, CBD-190-AC05). Pre-effect like the encryption
+   * provider: a cross-environment value, a local selection outside
+   * NODE_ENV=development/test, or missing session material fails startup
+   * before any application or listener effect. Defaults to the real resolver
+   * so `main.ts` and its derived process fixture stay unchanged.
+   */
+  resolveIdentityConfiguration?: ((config: ApiConfig) => unknown) | undefined;
   createApplication(config: ApiConfig, sink: ReliabilitySink): Promise<StartupApplication>;
   sink: ReliabilitySink;
 }
@@ -27,6 +38,7 @@ export interface StartupDependencies {
 export async function runApiBootstrap(dependencies: StartupDependencies): Promise<void> {
   const config = dependencies.loadConfig();
   dependencies.resolveEncryptionProvider(config);
+  (dependencies.resolveIdentityConfiguration ?? resolveApiIdentityConfiguration)(config);
   const app = await dependencies.createApplication(config, dependencies.sink);
   app.enableShutdownHooks(["SIGINT", "SIGTERM"], { useProcessExit: true });
   await app.listen(config.API_PORT, resolveApiListenAddress(config));
