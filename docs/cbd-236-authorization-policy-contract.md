@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | **Approved at v0.4 — Product Owner, September 13, 2026 (PO-CONTRACT-APPROVALS-001)**; the v0.5 policy-version-2 amendment (§4.4, §8.5, §9.4) is approved and `p2` is released (§8.5.4, `PO-P2-APPROVAL-001`, `PROTO-POLICY-V2-SEC-001`); open questions and residuals stay recorded and open |
-| Document version | 0.6 |
+| Document version | 0.7 |
 | Decision | `PC-236-001` through `PC-236-020`; questions `OQ-236-001` through `OQ-236-010`, with `OQ-236-007` and `OQ-236-008` closed |
 | Owner | Alexander Wohlford |
 | Jira subtask | [CBD-236](https://cobudget.atlassian.net/browse/CBD-236) |
@@ -621,7 +621,7 @@ On the CBD-82 §13 precedent, `RF-92-001` should therefore be narrowed rather th
 | `HO-236-05` | CBD-232, CBD-233, CBD-23 | `space.create` and its atomic sole-Primary obligation; after the §8.5.4 release, the `p2` subject-scoped cells and the §4.4 assembler predicate | Profile create/preference authority until `OQ-236-006` is answered by an approved source; any proposal authority before `p2` is released; any other creation-time authority |
 | `HO-236-06` | CBD-266 | That the policy chain expects a surface decision with a uniform denial | The hook order, until `OQ-236-003` is answered |
 | `HO-236-07` | Later role and matrix work under CBD-72 | That adding a role is a new policy version populated from an approved matrix row | Any cell value; those are CBD-72's |
-| `HO-236-08` | `apps/api` and `apps/worker` inventory guard (v0.5) | That `decideUnderRegisteredVersion` is a fixture seam and `decide` is the only production entry point | Whether an adapter may import the seam; the guard should reject it mechanically |
+| `HO-236-08` | `apps/api` and `apps/worker` inventory guard (v0.5); **closed v0.7** — guard implemented at `apps/api/src/authorization/inventory.test.ts` (covers both apps; named, namespace, re-export, dynamic-import and require forms of `decideUnderRegisteredVersion`; tests and `test-support` excepted) | That `decideUnderRegisteredVersion` is a fixture seam and `decide` is the only production entry point | Whether an adapter may import the seam; the guard should reject it mechanically |
 
 ## 17. Acceptance-criteria traceability
 
@@ -642,6 +642,7 @@ Each row names the section that delivers the criterion at the design level and w
 
 | Version | Date | Author | Change | Approval |
 | --- | --- | --- | --- | --- |
+| 0.7 | September 14, 2026 | Guard, `PROTO-GUARD-HO236-08-001` | `HO-236-08` closed (§16): mechanical guard added to `apps/api/src/authorization/inventory.test.ts` rejecting every import form (named, namespace, re-export, dynamic `import()`, `require`) of `decideUnderRegisteredVersion` from `@cobudget/contracts` in production code of `apps/api` and `apps/worker`, while tests and `test-support` remain permitted; proven by a deliberate-violation run (fails then passes) and wired into `npm run check` via the existing `npm run test` stage. No cell, digest, decision identifier, or policy text changed. | Executed under `PROTOTYPE-SLICE-001`/`PROVIDERS-LOCAL-001`; Manager to sweep on merge |
 | 0.6 | September 14, 2026 | Manager, applying `docs/cbd-236-p2-release-step.md` v0.2 | `p2` released at commit `c4aac07b133e50ece1c0de327c8e1c634c19617f` under `PO-P2-APPROVAL-001` and `PROTO-POLICY-V2-SEC-001`. §8.5.3 status sentence and the §12 CBD-232/CBD-233 row updated from "registered and not released" to released; no cell, digest, or decision identifier changed. | Approved; released. |
 | 0.5.1 | September 14, 2026 | Architecture under `PROTO-POLICY-V2-001`, remediation of `PROTO-POLICY-V2-SEC-001` | `SEC-P2-F5` → forbidden sections rejected explicitly for the subject-scoped variant, empty objects included, and an empty object is a present leaf in every variant (§4.4); per-cell regressions in §9.4. `SEC-P2-F6` → §8.5.4 and the release step state which tests the flip changes and which `p1` literals stay. No cell, digest, or decision identifier changed. | Proposed; Product Owner approval of §8.5.1 and Security re-review required before release |
 | 0.5 | September 13, 2026 | Architecture under `PROTO-POLICY-V2-001` (`PROTO-POLICY-V2-DECISION-001`) | Policy version 2 registered, not released. New subject-scoped input variant and `runtime_configuration` provenance (§4.1–§4.2), the subject-scoped resource and assembler predicate (§4.4), `subject` cellRef and `SubjectScopedCapturedVersions` (§5.1, §6.1), `decide` bound to `CURRENT_POLICY_VERSION` with the grep-able `decideUnderRegisteredVersion` fixture seam (§6), reason-class and obligation wording for the new predicates (§5.2–§5.3), `p2` cells, predicates, digest, and release step (§8.1–§8.2, §8.5), the p2 negative families (§9.4), the subject audit variant (§11), the CBD-232/CBD-233 and assembler interface rows (§12), the `OQ-236-006` interim disposition (§14), and `HO-236-05`/`HO-236-08` (§16). No decision identifier changed; no `p1` cell changed; no release-history row added. | Proposed; Product Owner approval of §8.5.1 and Security review (`PROTO-POLICY-V2-SEC-001`) required before release |

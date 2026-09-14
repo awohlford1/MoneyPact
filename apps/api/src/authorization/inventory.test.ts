@@ -86,3 +86,128 @@ it("real API and worker processes start on the released policy p2 and refuse an 
     assert.equal(result.stdout.includes('policy_version_unsupported'), false, app);
   }
 });
+
+// --- HO-236-08: decideUnderRegisteredVersion is a fixture seam for evaluating a
+// registered-but-not-current policy version. It must never reach a request path,
+// so production code in apps/api and apps/worker may not reach it through any
+// import form; tests and test-support may. Begin delimited block. ---
+const BANNED_SYMBOL = "decideUnderRegisteredVersion";
+const BANNED_SPECIFIER = /^@cobudget\/contracts(?:\/|$)/;
+
+function registeredVersionViolations(source: string): string[] {
+  const result: string[] = [];
+  const ast = ts.createSourceFile("inventory.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const namespaceBindings = new Set<string>();
+
+  function isBannedSpecifier(expr: ts.Expression): boolean {
+    return ts.isStringLiteralLike(expr) && BANNED_SPECIFIER.test(expr.text);
+  }
+  function bindingPatternHasBannedSymbol(name: ts.BindingName): boolean {
+    if (ts.isObjectBindingPattern(name)) {
+      return name.elements.some((element) => (element.propertyName ?? element.name).getText() === BANNED_SYMBOL);
+    }
+    return false;
+  }
+  function registerNamespaceIfIdentifier(name: ts.BindingName): void {
+    if (ts.isIdentifier(name)) namespaceBindings.add(name.text);
+  }
+
+  function visit(node: ts.Node): void {
+    // Named import: import { decideUnderRegisteredVersion [as x] } from "@cobudget/contracts..."
+    if (ts.isImportDeclaration(node) && ts.isStringLiteralLike(node.moduleSpecifier) && isBannedSpecifier(node.moduleSpecifier) && node.importClause?.namedBindings) {
+      const bindings = node.importClause.namedBindings;
+      if (ts.isNamedImports(bindings) && bindings.elements.some((el) => (el.propertyName ?? el.name).text === BANNED_SYMBOL)) {
+        result.push(`named import: ${BANNED_SYMBOL}`);
+      }
+      // Namespace import: import * as ns from "@cobudget/contracts..." — track ns for later property access.
+      if (ts.isNamespaceImport(bindings)) namespaceBindings.add(bindings.name.text);
+    }
+    // Re-export: export { decideUnderRegisteredVersion } / export * / export * as ns from "@cobudget/contracts..."
+    if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier) && isBannedSpecifier(node.moduleSpecifier)) {
+      if (!node.exportClause) result.push("blanket re-export: export *");
+      else if (ts.isNamedExports(node.exportClause) && node.exportClause.elements.some((el) => (el.propertyName ?? el.name).text === BANNED_SYMBOL)) result.push(`re-export: ${BANNED_SYMBOL}`);
+      else if (ts.isNamespaceExport(node.exportClause)) result.push(`namespace re-export: export * as ${node.exportClause.name.text}`);
+    }
+    // require("@cobudget/contracts...")
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "require" && node.arguments[0] && isBannedSpecifier(node.arguments[0])) {
+      const parent = node.parent;
+      if (ts.isVariableDeclaration(parent)) {
+        if (bindingPatternHasBannedSymbol(parent.name)) result.push(`require destructure: ${BANNED_SYMBOL}`);
+        else registerNamespaceIfIdentifier(parent.name);
+      } else if (ts.isPropertyAccessExpression(parent) && parent.name.text === BANNED_SYMBOL) {
+        result.push(`require(...).${BANNED_SYMBOL}`);
+      }
+    }
+    // Dynamic import: await import("@cobudget/contracts...") / import(...).then(...)
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments[0] && isBannedSpecifier(node.arguments[0])) {
+      let parent: ts.Node = node.parent;
+      if (ts.isAwaitExpression(parent)) parent = parent.parent;
+      if (ts.isVariableDeclaration(parent)) {
+        if (bindingPatternHasBannedSymbol(parent.name)) result.push(`dynamic import destructure: ${BANNED_SYMBOL}`);
+        else registerNamespaceIfIdentifier(parent.name);
+      } else if (ts.isPropertyAccessExpression(parent) && parent.name.text === BANNED_SYMBOL) {
+        result.push(`dynamic import member: ${BANNED_SYMBOL}`);
+      } else if (ts.isPropertyAccessExpression(parent) && parent.name.text === "then" && ts.isCallExpression(parent.parent)) {
+        const callback = parent.parent.arguments[0];
+        if (callback && (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback))) {
+          const first = callback.parameters[0];
+          if (first) {
+            if (bindingPatternHasBannedSymbol(first.name)) result.push(`dynamic import .then destructure: ${BANNED_SYMBOL}`);
+            else registerNamespaceIfIdentifier(first.name);
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(ast);
+
+  function visitAccess(node: ts.Node): void {
+    if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && namespaceBindings.has(node.expression.text) && node.name.text === BANNED_SYMBOL) {
+      result.push(`namespace access: ${node.expression.text}.${BANNED_SYMBOL}`);
+    }
+    if (ts.isElementAccessExpression(node) && ts.isIdentifier(node.expression) && namespaceBindings.has(node.expression.text) && ts.isStringLiteralLike(node.argumentExpression) && node.argumentExpression.text === BANNED_SYMBOL) {
+      result.push(`namespace access: ${node.expression.text}["${BANNED_SYMBOL}"]`);
+    }
+    if (ts.isVariableDeclaration(node) && node.initializer && ts.isIdentifier(node.initializer) && namespaceBindings.has(node.initializer.text) && bindingPatternHasBannedSymbol(node.name)) {
+      result.push(`namespace destructure: ${BANNED_SYMBOL}`);
+    }
+    ts.forEachChild(node, visitAccess);
+  }
+  visitAccess(ast);
+
+  return result;
+}
+
+it("rejects every import form of decideUnderRegisteredVersion from production code in apps/api and apps/worker", () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
+  for (const app of ["api", "worker"]) {
+    const src = join(root, "apps", app, "src");
+    for (const file of files(src)) {
+      const name = relative(src, file).replaceAll("\\", "/");
+      if (name.endsWith(".test.ts") || name.endsWith("test-support.ts") || name.includes("/test-support/") || name.includes("/fixtures/")) continue;
+      assert.deepEqual(registeredVersionViolations(readFileSync(file, "utf8")), [], name);
+    }
+  }
+});
+
+it("deliberately rejects every named, namespace, re-export, dynamic-import and require form of decideUnderRegisteredVersion", () => {
+  for (const source of [
+    `import { decideUnderRegisteredVersion } from "@cobudget/contracts/authorization"`,
+    `import { decideUnderRegisteredVersion as decide2 } from "@cobudget/contracts/authorization"`,
+    `import * as contracts from "@cobudget/contracts/authorization"; contracts.decideUnderRegisteredVersion(v, i)`,
+    `import * as contracts from "@cobudget/contracts/authorization"; const { decideUnderRegisteredVersion } = contracts`,
+    `export { decideUnderRegisteredVersion } from "@cobudget/contracts/authorization"`,
+    `export * from "@cobudget/contracts/authorization"`,
+    `export * as contracts from "@cobudget/contracts/authorization"`,
+    `const { decideUnderRegisteredVersion } = await import("@cobudget/contracts/authorization")`,
+    `const mod = await import("@cobudget/contracts/authorization"); mod.decideUnderRegisteredVersion(v, i)`,
+    `import("@cobudget/contracts/authorization").then((m) => m.decideUnderRegisteredVersion(v, i))`,
+    `const { decideUnderRegisteredVersion } = require("@cobudget/contracts/authorization")`,
+    `require("@cobudget/contracts/authorization").decideUnderRegisteredVersion(v, i)`,
+  ]) assert.ok(registeredVersionViolations(source).length > 0, source);
+  // Everything else from the same module stays allowed.
+  assert.deepEqual(registeredVersionViolations('import { decide, sha256 } from "@cobudget/contracts/authorization"'), []);
+  assert.deepEqual(registeredVersionViolations('import * as contracts from "@cobudget/contracts/authorization"; contracts.decide(i)'), []);
+});
+// --- End HO-236-08 delimited block ---
