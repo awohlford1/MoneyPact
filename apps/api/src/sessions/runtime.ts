@@ -43,8 +43,9 @@ import type { ApiConfig } from "../config.js";
 import { ChallengeStore } from "../identity/challenge.ts";
 import { IdentityCeremony } from "../identity/ceremony.ts";
 import type { IdentityEvidence, IdentityEvidenceSink } from "../identity/ceremony.ts";
-import { resolveIdentityConfig } from "../identity/config.ts";
+import { IDENTITY_CALLBACK_PATH, resolveIdentityConfig } from "../identity/config.ts";
 import type { IdentityConfig, LocalIdentityConfig } from "../identity/config.ts";
+import { extractStateForTermination, parseCallbackEnvelope } from "../identity/envelope.ts";
 import { identityHttp } from "../identity/http.ts";
 import type { IdentityHttp, IdentityRuntime } from "../identity/http.ts";
 import { LocalIssuer } from "../identity/local-issuer.ts";
@@ -208,18 +209,44 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
   });
   const runtime: IdentityRuntime = { ceremony, localIssuer: overrides.transport ? (overrides.transport instanceof LocalIssuer ? overrides.transport : undefined) : localIssuer, sessionPepper: session.pepper };
   const identity = identityHttp(runtime);
+  // PROTO-GUARD-STAGES-SEC-001 SEC-STAGES-F01: origin evaluation the callback context check shares
+  // (identity/http.ts's private observedOrigin, replicated here -- ceremonyContext has no access to that
+  // module's unexported helper and identity/http.ts is outside this packet's write scope). A hosted
+  // deployment needs its own reviewed proxy trust; unchanged from the controller's own logic.
+  const LOOPBACK_IPS: readonly string[] = ["127.0.0.1", "::1", "::ffff:127.0.0.1"];
+  const observedOrigin = (request: import("fastify").FastifyRequest): string => {
+    const forwardedHost = request.headers["x-forwarded-host"];
+    const host = typeof forwardedHost === "string" ? forwardedHost : undefined;
+    if (host && LOOPBACK_IPS.includes(request.ip) && /^[a-z0-9.-]+(?::\d{1,5})?$/iu.test(host)) {
+      const forwardedProto = request.headers["x-forwarded-proto"];
+      return `${forwardedProto === "https" ? "https" : "http"}://${host}`;
+    }
+    return `${request.protocol}://${request.host}`;
+  };
   /**
-   * A7; CBD266-SURFACE-STAGES-001: ceremony context for the whole authentication surface, which now carries
-   * two approved records with disjoint stages -- `rlp-266-identity-ceremony-v1` for the `ordinary` stage
-   * (registered for authorize, chooser and callback) and `rlp-266-bootstrap-v1` for the two reserved stages
-   * it alone owns. `begin` has no ceremony yet (the challenge is issued by its handler), so it counts on the
-   * bootstrap record's own ordinary sub-pool; authorize and chooser always count ordinary on the ceremony
-   * record. `callback` is the one route that can complete a ceremony: while its challenge is still `pending`
-   * (not yet taken by the handler), this is an eligible completing attempt and reserves the first-sign-in
-   * unit on the bootstrap record (R2-01, SEC-ACT-R2-F03) exactly once -- the same challenge's later replay,
-   * or any other callback, resolves to `pending` no longer (or to no known state) and counts ordinary on the
-   * ceremony record instead, so a flood of invalid or duplicate callbacks cannot touch the reservation. The
-   * initial `space.create` reservation is unchanged: taken by the ceremony that signed the acting subject in.
+   * A7; CBD266-SURFACE-STAGES-001; PROTO-GUARD-STAGES-SEC-001 (SEC-STAGES-F01, SEC-STAGES-F02): ceremony
+   * context for the whole authentication surface, which now carries two approved records with disjoint
+   * stages -- `rlp-266-identity-ceremony-v1` for the `ordinary` stage (registered for authorize, chooser
+   * and callback) and `rlp-266-bootstrap-v1` for the two reserved stages it alone owns. `begin` has no
+   * ceremony yet (the challenge is issued by its handler), so it counts on the bootstrap record's own
+   * ordinary sub-pool; authorize and chooser always count ordinary on the ceremony record, and a request on
+   * either surface route that resolves no ceremony at all (unknown or missing state) returns no context, so
+   * the rate-limit gate denies it before touching any counter -- it can never draw from the ordinary pool a
+   * valid ceremony's own authorize/chooser/callback traffic shares (SEC-STAGES-F02; a flood of unresolvable
+   * requests cannot exhaust the pool a real, in-flight ceremony needs).
+   *
+   * `callback` is the one route that can complete a ceremony. SEC-STAGES-F01: a known, still-`pending`
+   * challenge is necessary but not sufficient -- the reserved first-sign-in unit is eligible only for a
+   * request that could actually reach credential verification, so this mirrors the same envelope and
+   * context checks `IdentityCeremony#complete` itself applies before ever calling the token exchange
+   * (well-formed `code`+`state` -- never malformed, duplicated, or a provider-error shape -- the exact GET
+   * method, the exact callback path, and the observed origin matching the challenge's own callback URI and
+   * environment). A garbage, missing or duplicate `code`, or a wrong origin, therefore counts ordinary on
+   * the ceremony record like any other non-completing traffic, never the reservation; only a request that
+   * clears every one of those checks reserves the first-sign-in unit on the bootstrap record, exactly once
+   * (the same challenge's later replay, or any other callback, is no longer `pending` and also counts
+   * ordinary). The initial `space.create` reservation is unchanged: taken by the ceremony that signed the
+   * acting subject in.
    */
   const ceremonyContext = async (request: import("fastify").FastifyRequest, actorId: string | undefined) => {
     const query = (request.query ?? {}) as Record<string, unknown>;
@@ -229,10 +256,22 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
     if (url === "/v1/identity/local/choose") { const state = runtime.localIssuer?.stateOf(text(query.request) ?? ""); const id = ceremony.ceremonyIdForState(state); return id ? { ceremonyId: id, bootstrapStage: "ordinary" as const } : {}; }
     if (url === "/v1/identity/local/authorize") { const id = ceremony.ceremonyIdForState(text(query.state)); return id ? { ceremonyId: id, bootstrapStage: "ordinary" as const } : {}; }
     if (url === "/v1/identity/callback") {
-      const state = text(query.state);
-      const id = ceremony.ceremonyIdForState(state);
+      const rawQuery = request.url.includes("?") ? request.url.slice(request.url.indexOf("?") + 1) : undefined;
+      // Resolving *which* ceremony this names tolerates an otherwise-malformed callback (the same narrow,
+      // safe `state`-only extraction §7 termination uses, envelope.ts's own precedent): a garbage or
+      // duplicate `code` still counts as this ceremony's ordinary traffic, not an unresolvable request.
+      const candidateState = extractStateForTermination(rawQuery);
+      const id = candidateState ? ceremony.ceremonyIdForState(candidateState) : undefined;
       if (!id) return {};
-      const eligible = state !== undefined && challenges.find(state)?.status === "pending";
+      // Eligibility for the reservation itself needs the full envelope and context IdentityCeremony#complete
+      // checks before ever calling the token exchange (SEC-STAGES-F01): the complete success shape (never
+      // malformed, duplicated, or a provider-error shape), the exact method/path, the observed origin
+      // matching this challenge's own callback URI and environment, and the challenge still `pending`.
+      const envelope = parseCallbackEnvelope(rawQuery);
+      const known = challenges.find(candidateState!);
+      const eligible = envelope.kind === "success" && envelope.state === candidateState && request.method === "GET"
+        && known?.status === "pending" && known.environmentId === identityConfig.environmentId
+        && `${observedOrigin(request)}${IDENTITY_CALLBACK_PATH}` === known.callbackUri;
       return eligible ? { ceremonyId: id, bootstrapStage: "first_sign_in" as const, credentialVerified: true } : { ceremonyId: id, bootstrapStage: "ordinary" as const };
     }
     if (url === "/v1/budget-creation-proposals/:proposalId/confirm" && actorId) { const id = ceremony.ceremonyIdForSubject(actorId); return id ? { ceremonyId: id, bootstrapStage: "initial_space_create" as const, primaryOwnerVerified: true } : {}; }
