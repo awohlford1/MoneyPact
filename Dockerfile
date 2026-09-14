@@ -21,6 +21,12 @@ RUN PUPPETEER_SKIP_DOWNLOAD=true npm ci
 COPY tsconfig.base.json ./
 COPY config/authorization-policy-release-history.json config/authorization-policy-release-history.json
 COPY config/rate-limit config/rate-limit
+# The consent disclosure registry: the API startup guard reads the registry and
+# the approved content it pins, and the api test suite type-checks against the
+# build-time guard script (apps/api/src/budget-creation/consent-registry.test.ts).
+COPY config/consent-disclosure-registry.json config/consent-disclosure-registry.json
+COPY docs/consent-disclosures docs/consent-disclosures
+COPY scripts/check-consent-disclosure-registry.mjs scripts/check-consent-disclosure-registry.d.mts scripts/
 COPY apps/api apps/api
 COPY apps/worker apps/worker
 COPY packages/budget-domain packages/budget-domain
@@ -85,6 +91,10 @@ COPY --from=build --chown=node:node /workspace/packages/migrations packages/migr
 COPY --from=build --chown=node:node /workspace/packages/rate-limit packages/rate-limit
 # The rate-limit registry imports its checked-in records from config/rate-limit.
 COPY --from=build --chown=node:node /workspace/config/rate-limit config/rate-limit
+# The consent startup guard walks up from the process directory to find the
+# disclosure registry and the content it pins; without them the API refuses to start.
+COPY --from=build --chown=node:node /workspace/config/consent-disclosure-registry.json config/consent-disclosure-registry.json
+COPY --from=build --chown=node:node /workspace/docs/consent-disclosures docs/consent-disclosures
 COPY --from=build --chown=node:node /workspace/packages/sessions packages/sessions
 
 # The processes invoke Node directly. Remove npm and its documentation from the

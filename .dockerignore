@@ -23,3 +23,4 @@ playwright-report
 *.pem
 *.key
 docs
+!docs/consent-disclosures
