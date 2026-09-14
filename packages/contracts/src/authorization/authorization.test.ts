@@ -7,7 +7,7 @@ import { ACTION_DEFINITIONS, SERVICE_CELLS, USER_CELLS } from "./policy/v1.ts";
 import { ACTION_DEFINITIONS as P2_ACTION_DEFINITIONS, SERVICE_CELLS as P2_SERVICE_CELLS, SUBJECT_ACTION_DEFINITIONS, SUBJECT_CELLS, USER_CELLS as P2_USER_CELLS } from "./policy/v2.ts";
 import { CURRENT_POLICY_VERSION, P1_DIGEST, P2_DIGEST, POLICY_VERSIONS, policyCompatibility } from "./policy/registry.ts";
 import type { RegisteredPolicyVersion } from "./policy/registry.ts";
-import { NEGATIVE_FAMILIES, NEGATIVE_FIXTURES, P1_FIXTURES, P2_FIXTURES, P2_NEGATIVE_FIXTURES, SUBJECT_ENVIRONMENT, bootstrapFixture, ordinaryFixture, serviceFixture, subjectFixture } from "./fixtures/index.ts";
+import { FORBIDDEN_SUBJECT_SECTIONS, NEGATIVE_FAMILIES, NEGATIVE_FIXTURES, P1_FIXTURES, P2_FIXTURES, P2_NEGATIVE_FIXTURES, SUBJECT_ENVIRONMENT, bootstrapFixture, ordinaryFixture, serviceFixture, subjectFixture } from "./fixtures/index.ts";
 import { generateLocalSigningKeyPair, signLocalDecision, verifyLocalDecision } from "./transport.ts";
 import type { PolicyInput } from "./input.ts";
 
@@ -219,12 +219,27 @@ describe("policy version p2: subject-scoped cells, registered and not current", 
   });
 
   it("POLICY-V2-02 denies another subject, a wrong environment, a stale session, service authority and the other families inertly (PC-236-018)", () => {
-    const required = ["another_subject", "wrong_environment", "stale_session_version", "service_authority", "inactive_subject", "inactive_profile", "wrong_target_shape", "space_bound_shape", "worker_adapter"];
+    const required = ["another_subject", "wrong_environment", "stale_session_version", "service_authority", "inactive_subject", "inactive_profile", "wrong_target_shape", "space_bound_shape", "worker_adapter", "forbidden_section_empty", "forbidden_section_populated"];
     for (const cell of SUBJECT_CELLS) {
       const families = P2_NEGATIVE_FIXTURES.filter((item) => item.action === cell.action).map((item) => String(item.family));
       for (const family of required) assert.ok(families.includes(family), `${cell.action} lacks the ${family} negative`);
     }
     for (const fixture of P2_NEGATIVE_FIXTURES) denyIsInert(fixture.input, fixture.reason, "p2");
+    // SEC-P2-F5 regression, per cell and per forbidden section, in both the empty-object and populated forms.
+    for (const cell of SUBJECT_CELLS) {
+      const positive = subjectFixture(cell.action);
+      for (const section of Object.keys(FORBIDDEN_SUBJECT_SECTIONS)) {
+        assert.ok(P2_NEGATIVE_FIXTURES.some((item) => item.id === `p2.subject.${cell.action}.forbidden_section_empty.${section}`), `${cell.action} ${section} empty`);
+        assert.ok(P2_NEGATIVE_FIXTURES.some((item) => item.id === `p2.subject.${cell.action}.forbidden_section_populated.${section}`), `${cell.action} ${section} populated`);
+        denyIsInert(restamp({ ...positive, [section]: {} }), "input_invalid", "p2");
+        denyIsInert({ ...positive, [section]: {} }, "input_invalid", "p2");
+      }
+      denyIsInert(restamp({ ...positive, subject: { ...positive.subject, delegationRef: "delegation-1", delegationVersion: 1 } }), "input_invalid", "p2");
+    }
+    // The empty-object leaf rule also closes the same gap for the p1 variants.
+    const ordinary = ordinaryFixture("1.view_space");
+    for (const section of ["serviceSource", "environment", "bootstrap"]) denyIsInert(restamp({ ...ordinary, [section]: {} }), undefined);
+    denyIsInert(restamp({ ...bootstrapFixture(), space: {} }), undefined);
     // A subject-target cell never allows the identifier alone: the owning subject and environment are row facts, not locators.
     const read = subjectFixture("proposal.read");
     denyIsInert(restamp({ ...read, resource: { ...read.resource!, owningSubjectId: "subject-2", environmentId: "env-other" } }), "scope_mismatch", "p2");
@@ -242,15 +257,27 @@ describe("policy version p2: subject-scoped cells, registered and not current", 
     }
   });
 
-  it("POLICY-V2-03 keeps p1 current: a p2 input denies policy_version_unsupported and a p2-only action denies input_unsupported exactly as today", () => {
-    assert.equal(CURRENT_POLICY_VERSION, "p1");
+  it("POLICY-V2-03 the registered non-current version denies through decide, and the current version carries its production behaviour", () => {
     assert.deepEqual(Object.keys(POLICY_VERSIONS), ["p1", "p2"]);
-    for (const cell of SUBJECT_CELLS) denyIsInert(subjectFixture(cell.action), "policy_version_unsupported");
-    for (const action of [...p2Only, "profile.read"]) denyIsInert(restamp({ ...ordinaryFixture("1.view_space"), request: { action, purpose: "user_delegated", fieldSet: "default" } }), "input_unsupported");
+    for (const version of NOT_CURRENT) {
+      denyIsInert(ordinaryFixture("1.view_space", "primary_owner", version), "policy_version_unsupported");
+      assert.equal(policyCompatibility(version, POLICY_VERSIONS[version].digest, 1), false);
+    }
+    if (CURRENT_POLICY_VERSION === "p1") {
+      // Before the section 8.5.4 release: every p2 input denies through decide and a p2-only action is unsupported exactly as before p2 existed.
+      for (const cell of SUBJECT_CELLS) denyIsInert(subjectFixture(cell.action), "policy_version_unsupported");
+      for (const action of [...p2Only, "profile.read"]) denyIsInert(restamp({ ...ordinaryFixture("1.view_space"), request: { action, purpose: "user_delegated", fieldSet: "default" } }), "input_unsupported");
+    } else {
+      // After the release: the subject-scoped cells allow through decide and a p1-versioned input denies.
+      for (const cell of SUBJECT_CELLS) assert.deepEqual(decide(subjectFixture(cell.action)).cellRef, { kind: "subject", action: cell.action });
+      for (const fixture of P2_NEGATIVE_FIXTURES) denyIsInert(fixture.input, fixture.reason);
+      denyIsInert(bootstrapFixture("p1"), "policy_version_unsupported");
+    }
+    // Historical p1 coverage that never depends on the current version.
     for (const action of p2Only) assert.ok(!ACTION_DEFINITIONS.some((item) => item.action === action), `${action} must be absent from p1`);
     assert.equal(ACTION_DEFINITIONS.find((item) => item.action === "profile.read")?.permission, "reserved");
-    for (const version of NOT_CURRENT) denyIsInert(ordinaryFixture("1.view_space", "primary_owner", version), "policy_version_unsupported");
-    assert.equal(policyCompatibility("p2", P2_DIGEST, 1), false);
+    for (const cell of SUBJECT_CELLS) denyIsInert(subjectFixture(cell.action, "p1"), "input_unsupported", "p1");
+    for (const action of [...p2Only, "profile.read"]) denyIsInert(restamp({ ...ordinaryFixture("1.view_space", "primary_owner", "p1"), request: { action, purpose: "user_delegated", fieldSet: "default" } }), "input_unsupported", "p1");
   });
 
   it("AC07 for p2: every non-reserved p2 action is reached by a p2 fixture and the catalog evaluates as expected", () => {

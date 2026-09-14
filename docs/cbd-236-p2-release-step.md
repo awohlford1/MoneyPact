@@ -3,8 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Status | **Ready to apply after approvals** — not applied; `p2` is registered and not released |
-| Document version | 0.1 |
-| Governing contract | [`docs/cbd-236-authorization-policy-contract.md`](./cbd-236-authorization-policy-contract.md) v0.5 §6 `PC-236-011`, `PC-236-013`, §8.5 |
+| Document version | 0.2 |
+| Governing contract | [`docs/cbd-236-authorization-policy-contract.md`](./cbd-236-authorization-policy-contract.md) v0.5.1 §6 `PC-236-011`, `PC-236-013`, §8.5 |
 | Governing decisions | `CBD236-POLICY-APPROVAL-001` (Product Owner and Security sign-off cited in every released row); `PROTO-POLICY-V2-DECISION-001` (add `p2` through an Architecture packet and a following Security review; release requires both approvals as separate records) |
 | Jira subtask | [CBD-236](https://cobudget.atlassian.net/browse/CBD-236) |
 | Written by | Architecture, assignment `PROTO-POLICY-V2-001`, September 13, 2026 |
@@ -101,11 +101,30 @@ A cleaner follow-up is to derive these literals from `CURRENT_POLICY_VERSION` wh
 it (`facts.ts`, `test-support.ts`, `jobs.ts`); `compatibility.ts` must keep its literal pin by `PC-236-013`.
 That refactor is outside this step.
 
-### 4.4 Tests that need no edit
+### 4.4 Tests the flip changes, and the historical `p1` literals that stay
 
-The contracts tests default fixtures to `CURRENT_POLICY_VERSION`, evaluate each versioned catalog under its
-own version, and derive "registered but not current" from the registry, so they pass on either side of the
-flip. `boundary.test.ts` and `jobs.test.ts` read `SUPPORTED_POLICY_TUPLES[0]` and `testHistory`.
+The contracts suite is version-derived and needs **no edit**: with `CURRENT_POLICY_VERSION` flipped to `p2` on the
+branch (history row absent, contracts only) `npm test --workspace=@cobudget/contracts` passed 46/46. Its
+`POLICY-V2-03` test branches on the current version: before the flip it proves every `p2` input denies
+`policy_version_unsupported` through `decide`; after the flip it proves the subject-scoped cells allow through
+`decide`, every `P2_NEGATIVE_FIXTURES` entry denies inertly through `decide`, and a `p1`-versioned input denies.
+Historical `p1` coverage (the `p1` catalog under `decideUnderRegisteredVersion("p1")`, the `P1_DIGEST` literal
+`488d4673…1f22`, `profile.read` reserved in `p1`, the p2-only codes absent from `p1`) never depends on the current
+version and stays as written.
+
+The application suites are not version-derived where they pin the release history, so the flip must edit them
+(api and worker copies of `test-support.ts` stay byte-identical; `boundary.test.ts` and `jobs.test.ts` are
+app-specific):
+
+| File | Today | Required change at the flip |
+| --- | --- | --- |
+| `apps/api/src/authorization/boundary.test.ts` (test "rejects mismatched registry digest/schema and missing independent release history") | `assert.equal(released.length, 1, "exactly one released policy row")`; `released[0]` asserted as `p1` with `PO-CONTRACT-APPROVALS-001` / `CBD236-SECURITY-001`; `assert.doesNotThrow(() => assertPolicyCompatibility(released))` | assert `released.length === 2`; keep every `released[0]` (`p1`) assertion unchanged as historical coverage; add `released[1]` assertions: `version` `p2`, `digest` `374e0b4d2ae86d53afe3fdf02a9d91e52d7b95b2e67df75b975bb54b4163d322`, `schemaVersion` 1, `productApprovalRef` and `securityApprovalRef` equal to the two approved record ids, non-empty `releaseCommit`; keep `assertPolicyCompatibility(released)` — it now proves the `p2` tuple against both immutable rows |
+| same test, mismatch cases | `[{ version: "p1", expectedDigest, schemaVersion: 99 }]` and `SUPPORTED_POLICY_TUPLES[0]` | the `SUPPORTED_POLICY_TUPLES[0]` cases follow the new tuple with no edit; the literal `version: "p1"` case stays unchanged as a historical literal (after the flip it fails on the version, which is still `policy_version_unsupported`); add one `{ version: "p2", expectedDigest: P2 digest, schemaVersion: 99 }` case so schema mismatch is still exercised against the current version |
+| `apps/api/src/authorization/test-support.ts` and the worker copy | `testHistory = [{ version: "p1", digest: SUPPORTED_POLICY_TUPLES[0]!.expectedDigest, ... }]` | `version: "p2"` (listed in §4.3); the digest already follows the tuple |
+| `apps/worker/src/authorization/jobs.test.ts` (test "rejects startup mismatches ...") | derives its tuple from `SUPPORTED_POLICY_TUPLES[0]` and `testHistory` | no edit |
+| `apps/api/src/authorization/inventory.test.ts` ("real API and worker processes start on the released policy p1 ...") | reads the checked-in history through the real processes | no edit to the assertion; the test name may be renamed to say `p2`; the checked-in history now carries two rows and both processes must start on `p2` |
+
+Historical `p1` literals that must **stay unchanged** after the flip: the `p1` row in the release history (append-only guard), the `p1` assertions on `released[0]`, the `P1_DIGEST` literal in the contracts tests, `CBD236-P1-RELEASE-001` and `CBD236-SECURITY-001` references, and the `version: "p1"` mismatch literal above.
 
 ## 5. Verification after applying, before pushing
 
@@ -132,4 +151,5 @@ unpublished manifest entry for this document may be reopened only in a focused c
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 0.2 | September 14, 2026 | Architecture under `PROTO-POLICY-V2-001`, remediation of `SEC-P2-F6` | §4.4 rewritten: the contracts suite is version-derived and proven to pass under a simulated flip; every application test change the flip requires is listed with the historical `p1` literals that stay. |
 | 0.1 | September 13, 2026 | Architecture under `PROTO-POLICY-V2-001` | Initial ready-to-apply release step with the reproducible `p2` digest, the exact history row, the registry flip, and every application literal that pins `p1`. Not applied. |

@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | **Approved at v0.4 — Product Owner, September 13, 2026 (PO-CONTRACT-APPROVALS-001)**; the v0.5 policy-version-2 amendment (§4.4, §8.5, §9.4) is proposed under `PROTO-POLICY-V2-DECISION-001` and awaits Product Owner approval and Security review before `p2` is released (§8.5.4); open questions and residuals stay recorded and open |
-| Document version | 0.5 |
+| Document version | 0.5.1 |
 | Decision | `PC-236-001` through `PC-236-020`; questions `OQ-236-001` through `OQ-236-010`, with `OQ-236-007` and `OQ-236-008` closed |
 | Owner | Alexander Wohlford |
 | Jira subtask | [CBD-236](https://cobudget.atlassian.net/browse/CBD-236) |
@@ -15,7 +15,7 @@
 | Scope record | CBD-76 approved v1.0.1 — `INC-76-007`, `PRO-76-001`, `PRO-76-008`; CBD-95 `FU-95-006` |
 | Milestone | `PROTOTYPE-SLICE-001` and `PROVIDERS-LOCAL-001` (Executive, September 12, 2026) |
 | Repository baseline | `cfb7063` on `main` (v0.5); `8ac588f` for v0.1–v0.4 |
-| Last updated | September 13, 2026 |
+| Last updated | September 14, 2026 |
 
 > **Authority.** CBD-72 decides what each role may do and CBD-82 decides who holds authority over a profile, a connection, and a link. This document decides neither. It decides the single server-side path through which those decisions are evaluated, the shape of what goes in and what comes out, how a decision is versioned and rechecked at commit, and where the code lives. Where this document appears to widen or narrow an approved permission, the approved source wins and this document is wrong.
 
@@ -191,7 +191,7 @@ The only caller- or envelope-contributed values are intent and locators in the m
 
 Policy version 2 (§8.5) authorizes actions a subject performs before, or independently of, any budget-space membership: creating, regenerating, and reading a budget-creation proposal (CBD-232), listing the caller's own memberships, and reading the caller's own profile. These have no acting space, so the ordinary variant's `owningSpaceId` predicate cannot bind them. `ApiSubjectScopedUserPolicyInput` binds them to two facts instead:
 
-1. **The acting subject**, resolved by the session store exactly as for every other API variant, with the subject and profile rows loaded from the datastore by that subject. A subject-scoped input never carries a membership, consent, space, or bootstrap section; their presence is a malformed input (`input_invalid`).
+1. **The acting subject**, resolved by the session store exactly as for every other API variant, with the subject and profile rows loaded from the datastore by that subject. A subject-scoped input never carries a membership, consent, space, bootstrap, or service-source section, nor a delegation reference; `decide` rejects each explicitly before any subject cell can allow, and an empty object counts as present (`input_invalid`; `SEC-P2-F5`). More generally, an empty object at any section path is a present leaf with no producer and fails provenance validation in every variant.
 2. **The configured environment**, `environment.environmentId`, stamped from the receiving process's trusted runtime configuration (`runtime_configuration`), the same configuration that names the developer environment for the §5.1 replay relation and that CBD-232 §8.1 requires every proposal store operation to be keyed by. It is never read from the request, the session cookie, or a row.
 
 A subject-scoped cell is one of two kinds, fixed by whether its `ACTION_DEFINITIONS` entry names a `resourceType`:
@@ -455,7 +455,7 @@ Universal input validation and provenance (§4.2); the requested version equals 
 
 #### 8.5.4 Release step
 
-The exact follow-up that releases `p2` — the history row with both approval references, the `CURRENT_POLICY_VERSION` flip, and every application pin that names `p1` — is written as one ready-to-apply change in [`docs/cbd-236-p2-release-step.md`](./cbd-236-p2-release-step.md). It may be applied only after Product Owner approval of the §8.5.1 cells and Security clearance of this amendment (`PROTO-POLICY-V2-SEC-001`), both cited in the row (`CBD236-POLICY-APPROVAL-001`). Until then CBD-232 proposal routes and the identity `me` route remain unavailable, exactly as §12 recorded before v0.5; the proposals stream may implement handlers behind the `p2` action names, which deny under `p1`.
+The exact follow-up that releases `p2` — the history row with both approval references, the `CURRENT_POLICY_VERSION` flip, and every application pin that names `p1` — is written as one ready-to-apply change in [`docs/cbd-236-p2-release-step.md`](./cbd-236-p2-release-step.md). It may be applied only after Product Owner approval of the §8.5.1 cells and Security clearance of this amendment (`PROTO-POLICY-V2-SEC-001`), both cited in the row (`CBD236-POLICY-APPROVAL-001`). The contracts suite is version-derived and passes on either side of the flip; the application suites pin the released history and the release step lists every test change the flip requires together with the historical `p1` literals that stay (`SEC-P2-F6`). Until then CBD-232 proposal routes and the identity `me` route remain unavailable, exactly as §12 recorded before v0.5; the proposals stream may implement handlers behind the `p2` action names, which deny under `p1`.
 
 ## 9. Negative cases the acceptance criteria name
 
@@ -515,6 +515,7 @@ The implementation must prove “no customer-data effect”: every negative fixt
 | Wrong target shape | target row absent → `input_invalid`; wrong `resource.type` → `scope_mismatch` | a target row present → `input_invalid` |
 | Space-bound shape | the ordinary variant naming the cell → `input_invalid` | same |
 | Worker adapter | `evaluation.adapter` `worker` → `input_invalid` | same |
+| Forbidden section (`SEC-P2-F5`) | each of `space`, `membership`, `consent`, `bootstrap`, `serviceSource` injected as `{}` and as a populated row, and a delegation reference on the subject → `input_invalid` | same |
 | Not current | any `p2` input through `decide` while `p1` is current → `policy_version_unsupported` | same |
 | Client-restamped fact | every provenance leaf restamped from another source → `input_invalid` (AC05 for the new variant) | same |
 
@@ -641,6 +642,7 @@ Each row names the section that delivers the criterion at the design level and w
 
 | Version | Date | Author | Change | Approval |
 | --- | --- | --- | --- | --- |
+| 0.5.1 | September 14, 2026 | Architecture under `PROTO-POLICY-V2-001`, remediation of `PROTO-POLICY-V2-SEC-001` | `SEC-P2-F5` → forbidden sections rejected explicitly for the subject-scoped variant, empty objects included, and an empty object is a present leaf in every variant (§4.4); per-cell regressions in §9.4. `SEC-P2-F6` → §8.5.4 and the release step state which tests the flip changes and which `p1` literals stay. No cell, digest, or decision identifier changed. | Proposed; Product Owner approval of §8.5.1 and Security re-review required before release |
 | 0.5 | September 13, 2026 | Architecture under `PROTO-POLICY-V2-001` (`PROTO-POLICY-V2-DECISION-001`) | Policy version 2 registered, not released. New subject-scoped input variant and `runtime_configuration` provenance (§4.1–§4.2), the subject-scoped resource and assembler predicate (§4.4), `subject` cellRef and `SubjectScopedCapturedVersions` (§5.1, §6.1), `decide` bound to `CURRENT_POLICY_VERSION` with the grep-able `decideUnderRegisteredVersion` fixture seam (§6), reason-class and obligation wording for the new predicates (§5.2–§5.3), `p2` cells, predicates, digest, and release step (§8.1–§8.2, §8.5), the p2 negative families (§9.4), the subject audit variant (§11), the CBD-232/CBD-233 and assembler interface rows (§12), the `OQ-236-006` interim disposition (§14), and `HO-236-05`/`HO-236-08` (§16). No decision identifier changed; no `p1` cell changed; no release-history row added. | Proposed; Product Owner approval of §8.5.1 and Security review (`PROTO-POLICY-V2-SEC-001`) required before release |
 | 0.4 (approval) | September 13, 2026 | Manager, in the merge lane | Product Owner approval recorded (PO-CONTRACT-APPROVALS-001). Status Proposed → Approved at the same version; no decision, identifier or contract text changed. | Approved. |
 | 0.1 | September 12, 2026 | Claude with Alexander Wohlford as Product Owner | Initial complete proposal under `CBD236-ARCH-001`: entry point and placement (`PC-236-001`–`PC-236-006`), policy input schema with provenance and the space-creation exception (`PC-236-007`), decision output with closed reason classes and obligations (`PC-236-008`–`PC-236-010`), immutable versioning, startup compatibility guard, and the commit-time re-evaluation rule with the `AuthorizedEffect` token (`PC-236-011`–`PC-236-015`), the fail-closed API and worker chains (`PC-236-016`), the matrix adapter and policy version 1 cells (`PC-236-017`), the negative-case families (`PC-236-018`), the generated fixture catalog and property tests (`PC-236-019`), the audit and telemetry allowlists (`PC-236-020`), affected interfaces, rejected alternatives, ten open questions, and the `RF-92-001` disposition. No code. | Proposed; Security and Product review required |

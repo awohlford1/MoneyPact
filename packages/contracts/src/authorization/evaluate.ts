@@ -47,9 +47,11 @@ function add(target: Record<string, FactSource>, source: FactSource, ...paths: s
   for (const path of paths) target[path] = source;
 }
 function leafPaths(value: unknown, prefix = ""): string[] {
-  if (Array.isArray(value) || !isRecord(value)) return prefix === "" ? [] : [prefix];
+  // An empty object is itself a present leaf (SEC-P2-F5): a section such as `space: {}` has no producer and must not vanish from the comparison.
+  if (Array.isArray(value) || !isRecord(value) || (prefix !== "" && Object.keys(value).length === 0)) return prefix === "" ? [] : [prefix];
   return Object.entries(value).flatMap(([key, item]) => key === "provenance" ? [] : leafPaths(item, prefix === "" ? key : `${prefix}.${key}`));
 }
+const forbiddenInSubjectVariant = ["space", "membership", "consent", "bootstrap", "serviceSource"] as const;
 
 export function expectedProvenance(input: PolicyInput): FactProvenance {
   const result: Record<string, FactSource> = {};
@@ -203,6 +205,9 @@ function shapeValid(input: PolicyInput): boolean {
     && input.bootstrap.spaceState === "absent" && input.bootstrap.primaryMembershipState === "absent"
     && [input.subject.sessionVersion].every(isPositiveInteger);
   if (isSubjectScoped(input)) {
+    // Forbidden sections are rejected explicitly, empty objects included, before any subject cell can allow (SEC-P2-F5).
+    if (forbiddenInSubjectVariant.some((section) => (input as unknown as UnknownRecord)[section] !== undefined)) return false;
+    if (input.subject.delegationRef !== undefined || input.subject.delegationVersion !== undefined) return false;
     if (input.evaluation.adapter !== "api" || !isRecord(input.environment) || !nonEmpty(input.environment.environmentId) || !isPositiveInteger(input.subject.sessionVersion)) return false;
     if (input.resource === undefined) return true;
     return isRecord(input.resource) && nonEmpty(input.resource.type) && nonEmpty(input.resource.id) && input.resource.owningSpaceId === "none"

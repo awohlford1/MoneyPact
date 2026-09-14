@@ -123,7 +123,15 @@ export const NEGATIVE_FIXTURES = Object.freeze([
  * inertly with the stated reason. `another_subject` and `wrong_environment` are row predicates for a subject-target
  * cell; a subject-self cell has no target row, so the same two families reduce to the provenance rule (NC-236-06):
  * a subject or environment fact not sourced from the session store or runtime configuration is malformed. */
-export type SubjectNegativeFamily = "another_subject" | "wrong_environment" | "stale_session_version" | "service_authority" | "inactive_subject" | "inactive_profile" | "wrong_target_shape" | "wrong_target_type" | "space_bound_shape" | "worker_adapter";
+export type SubjectNegativeFamily = "another_subject" | "wrong_environment" | "stale_session_version" | "service_authority" | "inactive_subject" | "inactive_profile" | "wrong_target_shape" | "wrong_target_type" | "space_bound_shape" | "worker_adapter" | "forbidden_section_empty" | "forbidden_section_populated";
+/** SEC-P2-F5: sections the subject-scoped variant forbids, each injected both as an empty object and as a populated row. */
+export const FORBIDDEN_SUBJECT_SECTIONS = Object.freeze({
+  space: { spaceId: "space-1", lifecycle: "live", lifecycleVersion: 1, primaryOwnerMembershipId: "membership-1" },
+  membership: { membershipId: "membership-1", role: "primary_owner", status: "active", authorizationVersion: 1 },
+  consent: { consentId: "consent-1", disclosureVersion: 1, state: "current" },
+  bootstrap: { candidateSpaceId: "candidate-space-1", candidatePrimaryMembershipId: "candidate-membership-1", spaceState: "absent", primaryMembershipState: "absent" },
+  serviceSource: { scheduleConfigurationVersion: 1, ruleReferenceDataVersion: 1, sourceState: "current" },
+} as const);
 export interface SubjectNegativeFixture { readonly id: string; readonly action: string; readonly family: SubjectNegativeFamily; readonly input: unknown; readonly reason: string }
 function subjectNegatives(action: string): SubjectNegativeFixture[] {
   const positive = subjectFixture(action);
@@ -149,6 +157,10 @@ function subjectNegatives(action: string): SubjectNegativeFixture[] {
     ...(target ? [entry("wrong_target_type" as const, stamp({ ...positive, resource: { ...positive.resource!, type: "profile" } }), "scope_mismatch")] : []),
     entry("space_bound_shape", stamp({ ...ordinaryFixture("1.view_space", "primary_owner", "p2"), request: { action, purpose: "user_delegated", fieldSet: "default" } }), "input_invalid"),
     entry("worker_adapter", stamp({ ...positive, evaluation: { ...positive.evaluation, adapter: "worker" } }), "input_invalid"),
+    ...Object.entries(FORBIDDEN_SUBJECT_SECTIONS).flatMap(([section, row]) => [
+      { ...entry("forbidden_section_empty", stamp({ ...positive, [section]: {} }), "input_invalid"), id: `${id("forbidden_section_empty")}.${section}` },
+      { ...entry("forbidden_section_populated", stamp({ ...positive, [section]: row }), "input_invalid"), id: `${id("forbidden_section_populated")}.${section}` },
+    ]),
   ];
 }
 export const P2_NEGATIVE_FIXTURES: readonly SubjectNegativeFixture[] = Object.freeze(SUBJECT_CELLS.flatMap((cell) => subjectNegatives(cell.action)));
