@@ -18,6 +18,7 @@ export type Obligation =
 export type CellRef =
   | { kind: "user"; permission: string; role: Role }
   | { kind: "bootstrap"; action: "space.create" }
+  | { kind: "subject"; action: string }
   | { kind: "service"; purpose: ServicePurpose; operation: string };
 export interface PolicyDecision {
   outcome: "allow" | "deny"; effectClass?: EffectClass; reasonClass: ReasonClass; policyVersion: PolicyVersion;

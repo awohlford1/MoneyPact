@@ -1,10 +1,10 @@
 import type { Obligation, PolicyDecision } from "./decision.ts";
-import type { ApiBootstrapUserPolicyInput, ApiOrdinaryUserPolicyInput, CapturedVersions, FactProvenance, FactSource, PolicyInput, PolicyVersion, WorkerServicePolicyInput, WorkerUserDelegatedPolicyInput } from "./input.ts";
+import type { ApiBootstrapUserPolicyInput, ApiOrdinaryUserPolicyInput, ApiSubjectScopedUserPolicyInput, CapturedVersions, FactProvenance, FactSource, PolicyInput, PolicyVersion, WorkerServicePolicyInput, WorkerUserDelegatedPolicyInput } from "./input.ts";
 import { INPUT_SCHEMA_VERSION } from "./input.ts";
 import type { ReasonClass } from "./reason.ts";
 import { sha256 } from "./canonical.ts";
-import { ACTION_DEFINITIONS, SERVICE_CELLS, USER_CELLS } from "./policy/v1.ts";
-import { P1_DIGEST, POLICY_VERSIONS } from "./policy/registry.ts";
+import { CURRENT_POLICY, POLICY_VERSIONS } from "./policy/registry.ts";
+import type { RegisteredPolicy, RegisteredPolicyVersion } from "./policy/registry.ts";
 
 type UnknownRecord = Record<string, unknown>;
 const audit: Obligation = { kind: "audit", eventClass: "policy_decision" };
@@ -13,9 +13,11 @@ const protectedPermissions = new Set(["20a", "20b", "27", "29", "34", "35"]);
 function isRecord(value: unknown): value is UnknownRecord { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function isPositiveInteger(value: unknown): value is number { return Number.isSafeInteger(value) && (value as number) >= 0; }
 function validTimestamp(value: unknown): value is string { return typeof value === "string" && Number.isFinite(Date.parse(value)); }
+function nonEmpty(value: unknown): value is string { return typeof value === "string" && value.length > 0; }
 function isService(input: PolicyInput): input is WorkerServicePolicyInput { return input.authority.mode === "service"; }
 function isBootstrap(input: PolicyInput): input is ApiBootstrapUserPolicyInput { return "bootstrap" in input && input.bootstrap !== undefined; }
-function isWorkerUser(input: PolicyInput): input is WorkerUserDelegatedPolicyInput { return !isService(input) && !isBootstrap(input) && input.evaluation.adapter === "worker"; }
+function isSubjectScoped(input: PolicyInput): input is ApiSubjectScopedUserPolicyInput { return !isService(input) && !isBootstrap(input) && "environment" in input && input.environment !== undefined; }
+function isWorkerUser(input: PolicyInput): input is WorkerUserDelegatedPolicyInput { return !isService(input) && !isBootstrap(input) && !isSubjectScoped(input) && input.evaluation.adapter === "worker"; }
 
 function comparable(input: UnknownRecord): UnknownRecord {
   const copy = structuredClone(input);
@@ -27,14 +29,14 @@ function comparable(input: UnknownRecord): UnknownRecord {
   return copy;
 }
 
-function baseDecision(input: unknown, reasonClass: ReasonClass, effectClass?: PolicyDecision["effectClass"]): PolicyDecision {
+function baseDecision(input: unknown, policy: RegisteredPolicy, reasonClass: ReasonClass, effectClass?: PolicyDecision["effectClass"]): PolicyDecision {
   const record = isRecord(input) ? input : {};
   const versions = isRecord(record.versions) ? record.versions : {};
   const evaluation = isRecord(record.evaluation) ? record.evaluation : {};
-  const policyVersion = typeof versions.policyVersion === "string" && /^p\d+$/.test(versions.policyVersion) ? versions.policyVersion as PolicyVersion : "p1";
+  const policyVersion = typeof versions.policyVersion === "string" && /^p\d+$/.test(versions.policyVersion) ? versions.policyVersion as PolicyVersion : policy.version;
   const inputDigest = sha256(comparable(record));
   return {
-    outcome: "deny", reasonClass, policyVersion, policyDigest: policyVersion === "p1" ? P1_DIGEST : "",
+    outcome: "deny", reasonClass, policyVersion, policyDigest: policyVersion === policy.version ? policy.digest : "",
     inputDigest, obligations: [audit], decisionId: sha256({ policyVersion, inputDigest }).slice(0, 32),
     evaluatedAt: typeof evaluation.evaluatedAt === "string" ? evaluation.evaluatedAt : "1970-01-01T00:00:00.000Z",
     ...(effectClass === undefined ? {} : { effectClass }),
@@ -52,6 +54,7 @@ function leafPaths(value: unknown, prefix = ""): string[] {
 export function expectedProvenance(input: PolicyInput): FactProvenance {
   const result: Record<string, FactSource> = {};
   const bootstrap = isBootstrap(input);
+  const subjectScoped = isSubjectScoped(input);
   const worker = input.evaluation.adapter === "worker";
   if (!isService(input)) {
     add(result, worker ? "delegation_store" : "session_store", "subject.accountSubjectId");
@@ -64,6 +67,13 @@ export function expectedProvenance(input: PolicyInput): FactProvenance {
   if (isBootstrap(input)) {
     add(result, "server_identifier_allocator", "bootstrap.candidateSpaceId", "bootstrap.candidatePrimaryMembershipId");
     add(result, "datastore", "bootstrap.spaceState", "bootstrap.primaryMembershipState");
+  } else if (isSubjectScoped(input)) {
+    // Section 4.4: the configured environment is a runtime fact; a subject-owned row carries its owner and environment from the datastore.
+    add(result, "runtime_configuration", "environment.environmentId");
+    if (input.resource !== undefined) {
+      add(result, "route_metadata", "resource.type"); add(result, "request_locator", "resource.id");
+      add(result, "datastore", "resource.owningSpaceId", "resource.version", "resource.lifecycle", "resource.owningSubjectId", "resource.environmentId");
+    }
   } else {
     add(result, "datastore", "space.spaceId", "space.lifecycle", "space.lifecycleVersion", "space.primaryOwnerMembershipId");
     add(result, "envelope_locator", "resource.type", "resource.id");
@@ -93,7 +103,7 @@ export function expectedProvenance(input: PolicyInput): FactProvenance {
   } else if (worker) add(result, "delegation_store", "authority.mode", "request.purpose");
   else add(result, "route_metadata", "authority.mode", "request.purpose");
   add(result, worker ? "envelope_locator" : "route_metadata", "request.action");
-  add(result, worker ? "envelope_locator" : bootstrap ? "route_metadata" : "request_locator", "request.fieldSet");
+  add(result, worker ? "envelope_locator" : bootstrap || (subjectScoped && input.resource === undefined) ? "route_metadata" : "request_locator", "request.fieldSet");
   add(result, "contracts_package", "evaluation.adapter", "evaluation.inputSchemaVersion");
   add(result, "assembler_clock", "evaluation.evaluatedAt");
   return result;
@@ -114,8 +124,8 @@ function provenanceValid(input: PolicyInput): boolean {
   }
 }
 
-function capturedVersions(input: PolicyInput): CapturedVersions {
-  const common = { policyVersion: "p1" as const, policyDigest: P1_DIGEST, inputSchemaVersion: INPUT_SCHEMA_VERSION };
+function capturedVersions(input: PolicyInput, policy: RegisteredPolicy): CapturedVersions {
+  const common = { policyVersion: policy.version, policyDigest: policy.digest, inputSchemaVersion: INPUT_SCHEMA_VERSION };
   if (isService(input)) return {
     workloadIdentityVersion: input.authority.workloadIdentityVersion, servicePolicyVersion: input.authority.servicePolicyVersion,
     sourceVersion: input.authority.sourceVersion, scheduleConfigurationVersion: input.serviceSource.scheduleConfigurationVersion,
@@ -124,6 +134,10 @@ function capturedVersions(input: PolicyInput): CapturedVersions {
   };
   if (isBootstrap(input)) return {
     sessionVersion: input.subject.sessionVersion, subjectVersion: input.subject.subjectVersion, profileVersion: input.profile.profileVersion, ...common,
+  };
+  if (isSubjectScoped(input)) return {
+    sessionVersion: input.subject.sessionVersion, subjectVersion: input.subject.subjectVersion, profileVersion: input.profile.profileVersion,
+    environmentId: input.environment.environmentId, ...(input.resource === undefined ? {} : { targetVersion: input.resource.version }), ...common,
   };
   const userCommon = {
     subjectVersion: input.subject.subjectVersion, profileVersion: input.profile.profileVersion,
@@ -137,10 +151,13 @@ function capturedVersions(input: PolicyInput): CapturedVersions {
 }
 
 function obligation(kind: string, input: PolicyInput): Obligation {
-  if (kind === "fresh_assurance") return { kind, actionClass: input.request.action, spaceId: "space" in input && input.space ? input.space.spaceId : input.bootstrap.candidateSpaceId };
+  if (kind === "fresh_assurance") return { kind, actionClass: input.request.action, spaceId: "space" in input && input.space ? input.space.spaceId : "bootstrap" in input && input.bootstrap ? input.bootstrap.candidateSpaceId : "" };
   if (kind === "create_primary_owner_membership") return { kind };
   if (kind === "mask") return { kind, fieldSet: input.request.fieldSet };
-  if (kind === "bind_cache_key") return { kind, dimensions: ["spaceId", "authorizationVersion", "policyVersion"] };
+  if (kind === "bind_cache_key") {
+    if (isSubjectScoped(input)) return { kind, dimensions: ["environmentId", "accountSubjectId", "subjectVersion", "profileVersion", ...(input.resource === undefined ? [] : ["targetVersion"]), "policyVersion"] };
+    return { kind, dimensions: ["spaceId", "authorizationVersion", "policyVersion"] };
+  }
   if (kind === "notify") return { kind, class: "safe_authorization_change" };
   if (kind === "confirm") return { kind, targetDescriptor: "authorized_target", consequenceClass: "governed_change" };
   if (kind === "invalidate") return { kind, artifactClasses: ["derived_surfaces", "open_work"] };
@@ -148,8 +165,8 @@ function obligation(kind: string, input: PolicyInput): Obligation {
   return { kind: "secure_package", allowlist: "authorized_fields", recipientBinding: "acting_subject", retentionClass: "policy_defined" };
 }
 
-function finishAllow(input: PolicyInput, decision: PolicyDecision, cellRef: NonNullable<PolicyDecision["cellRef"]>, names: readonly string[]): PolicyDecision {
-  const captured = capturedVersions(input);
+function finishAllow(input: PolicyInput, policy: RegisteredPolicy, decision: PolicyDecision, cellRef: NonNullable<PolicyDecision["cellRef"]>, names: readonly string[]): PolicyDecision {
+  const captured = capturedVersions(input, policy);
   const obligations: Obligation[] = [audit, ...names.map((name) => obligation(name, input))];
   if (decision.effectClass !== "read") obligations.push({ kind: "recheck_at_commit", capturedVersions: captured });
   return { ...decision, outcome: "allow", reasonClass: "allowed_by_cell", cellRef, capturedVersions: captured, obligations };
@@ -185,6 +202,13 @@ function shapeValid(input: PolicyInput): boolean {
   if (isBootstrap(input)) return input.evaluation.adapter === "api" && input.request.action === "space.create"
     && input.bootstrap.spaceState === "absent" && input.bootstrap.primaryMembershipState === "absent"
     && [input.subject.sessionVersion].every(isPositiveInteger);
+  if (isSubjectScoped(input)) {
+    if (input.evaluation.adapter !== "api" || !isRecord(input.environment) || !nonEmpty(input.environment.environmentId) || !isPositiveInteger(input.subject.sessionVersion)) return false;
+    if (input.resource === undefined) return true;
+    return isRecord(input.resource) && nonEmpty(input.resource.type) && nonEmpty(input.resource.id) && input.resource.owningSpaceId === "none"
+      && isPositiveInteger(input.resource.version) && nonEmpty(input.resource.lifecycle)
+      && nonEmpty(input.resource.owningSubjectId) && nonEmpty(input.resource.environmentId);
+  }
   if (!input.membership || !input.consent || !input.space || !input.resource) return false;
   return ["primary_owner", "co_owner", "collaborator", "viewer", "accountability_partner"].includes(input.membership.role)
     && ["active", "pending", "revoked", "expired", "inactive"].includes(input.membership.status)
@@ -194,25 +218,34 @@ function shapeValid(input: PolicyInput): boolean {
     && (isWorkerUser(input) ? isPositiveInteger(input.subject.delegationVersion) : isPositiveInteger((input as ApiOrdinaryUserPolicyInput).subject.sessionVersion));
 }
 
-export function decide(input: PolicyInput): PolicyDecision {
-  if (!safeInput(input)) return baseDecision(input, "input_invalid");
-  const actionDefinition = ACTION_DEFINITIONS.find((candidate) => candidate.action === input.request.action);
-  const initial = baseDecision(input, "input_invalid", actionDefinition?.effectClass);
-  if (!(input.versions.policyVersion in POLICY_VERSIONS)) return { ...initial, reasonClass: "policy_version_unsupported", policyDigest: "" };
+/** PC-236-001: the one production entry point. It evaluates only CURRENT_POLICY_VERSION; an input naming any
+ * other version, registered or not, denies `policy_version_unsupported` (PC-236-011, PC-236-013). */
+export function decide(input: PolicyInput): PolicyDecision { return evaluate(input, CURRENT_POLICY); }
+
+/** The same evaluator bound to an explicitly named registered version. It exists so a registered-but-unreleased
+ * version's fixture catalog is executable before release (PC-236-019). Application code calls `decide`; the
+ * name is deliberately grep-able so a review can reject any adapter import of it. */
+export function decideUnderRegisteredVersion(version: RegisteredPolicyVersion, input: PolicyInput): PolicyDecision { return evaluate(input, POLICY_VERSIONS[version]); }
+
+function evaluate(input: PolicyInput, policy: RegisteredPolicy): PolicyDecision {
+  if (!safeInput(input)) return baseDecision(input, policy, "input_invalid");
+  const actionDefinition = policy.actionDefinitions.find((candidate) => candidate.action === input.request.action);
+  const initial = baseDecision(input, policy, "input_invalid", actionDefinition?.effectClass);
+  if (input.versions.policyVersion !== policy.version) return { ...initial, reasonClass: "policy_version_unsupported", policyDigest: "" };
   if (input.evaluation.inputSchemaVersion !== INPUT_SCHEMA_VERSION || !shapeValid(input) || !provenanceValid(input)) return initial;
   if (!actionDefinition || actionDefinition.permission === "reserved") return { ...initial, reasonClass: "input_unsupported" };
   if (!actionDefinition.authorityModes.includes(input.authority.mode)) return { ...initial, reasonClass: "authority_mode_unsupported" };
-  if (input.versions.capturedAtPrecheck !== undefined && sha256(input.versions.capturedAtPrecheck) !== sha256(capturedVersions(input))) return { ...initial, reasonClass: "stale_version" };
+  if (input.versions.capturedAtPrecheck !== undefined && sha256(input.versions.capturedAtPrecheck) !== sha256(capturedVersions(input, policy))) return { ...initial, reasonClass: "stale_version" };
 
   if (isService(input)) {
     if (input.request.purpose !== input.authority.servicePurpose) return { ...initial, reasonClass: "service_purpose_not_listed" };
     if (input.authority.servicePurpose !== "SA-92-002") return { ...initial, reasonClass: "service_purpose_not_listed" };
-    const cell = SERVICE_CELLS.find((candidate) => candidate.action === input.request.action);
+    const cell = policy.serviceCells.find((candidate) => candidate.action === input.request.action);
     if (!cell) return { ...initial, reasonClass: "service_purpose_not_listed" };
     if (input.serviceSource.sourceState !== "current" || input.space.lifecycle !== "live") return { ...initial, reasonClass: "lifecycle_blocked" };
     if (input.resource.owningSpaceId !== input.space.spaceId || input.resource.type !== actionDefinition.resourceType) return { ...initial, reasonClass: "scope_mismatch" };
     if (![input.authority.workloadIdentityVersion, input.authority.servicePolicyVersion, input.authority.sourceVersion, input.serviceSource.scheduleConfigurationVersion, input.serviceSource.ruleReferenceDataVersion, input.space.lifecycleVersion, input.resource.version].every(isPositiveInteger)) return initial;
-    return finishAllow(input, initial, { kind: "service", purpose: cell.purpose, operation: cell.operation }, cell.obligations);
+    return finishAllow(input, policy, initial, { kind: "service", purpose: cell.purpose, operation: cell.operation }, cell.obligations);
   }
 
   if (!isRecord(input.subject) || !isRecord(input.profile) || !isRecord(input.assurance)) return initial;
@@ -220,13 +253,29 @@ export function decide(input: PolicyInput): PolicyDecision {
   if (input.request.action === "space.create") {
     if (!("bootstrap" in input) || !isRecord(input.bootstrap) || input.evaluation.adapter !== "api") return initial;
     if (input.bootstrap.spaceState !== "absent" || input.bootstrap.primaryMembershipState !== "absent") return { ...initial, reasonClass: "stale_version" };
-    return finishAllow(input, initial, { kind: "bootstrap", action: "space.create" }, ["create_primary_owner_membership"]);
+    return finishAllow(input, policy, initial, { kind: "bootstrap", action: "space.create" }, ["create_primary_owner_membership"]);
   }
+  if (actionDefinition.permission === "subject") {
+    // Section 8.5 subject-scoped cells: the acting subject and the configured environment are the scope.
+    if (!isSubjectScoped(input) || input.evaluation.adapter !== "api") return initial;
+    const cell = policy.userCells.find((candidate) => candidate.action === input.request.action);
+    if (!cell || cell.permission !== "subject") return { ...initial, reasonClass: "input_unsupported" };
+    if (actionDefinition.resourceType === undefined) {
+      if (input.resource !== undefined) return initial;
+    } else {
+      if (input.resource === undefined) return initial;
+      if (input.resource.type !== actionDefinition.resourceType || input.resource.owningSpaceId !== "none") return { ...initial, reasonClass: "scope_mismatch" };
+      if (input.resource.owningSubjectId !== input.subject.accountSubjectId || input.resource.environmentId !== input.environment.environmentId) return { ...initial, reasonClass: "scope_mismatch" };
+    }
+    return finishAllow(input, policy, initial, { kind: "subject", action: cell.action }, cell.obligations);
+  }
+  if (isSubjectScoped(input)) return initial;
   if (!("membership" in input) || !input.membership || !input.consent || !input.space || !input.resource) return initial;
   if (input.membership.status !== "active") return { ...initial, reasonClass: "membership_not_active" };
   if (input.consent.state !== "current") return { ...initial, reasonClass: "consent_not_current" };
-  const cell = USER_CELLS.find((candidate) => candidate.action === input.request.action);
+  const cell = policy.userCells.find((candidate) => candidate.action === input.request.action);
   if (!cell) return { ...initial, reasonClass: "input_unsupported" };
+  if (cell.permission === "subject") return initial;
   if (input.membership.role !== "primary_owner" || cell.notation === "Deny" || cell.notation === "Not applicable") return { ...initial, reasonClass: "role_not_permitted" };
   if (input.resource.type !== actionDefinition.resourceType || input.resource.owningSpaceId !== input.space.spaceId) return { ...initial, reasonClass: "scope_mismatch" };
   if (cell.notation === "Primary" && input.membership.membershipId !== input.space.primaryOwnerMembershipId) return { ...initial, reasonClass: "role_not_permitted" };
@@ -239,5 +288,5 @@ export function decide(input: PolicyInput): PolicyDecision {
     if (input.assurance.level !== "fresh") return { ...initial, reasonClass: "assurance_required" };
     if (input.assurance.boundAction !== input.request.action || input.assurance.boundSpaceId !== input.space.spaceId || Date.parse(input.assurance.expiresAt) <= Date.parse(input.evaluation.evaluatedAt)) return { ...initial, reasonClass: "assurance_insufficient" };
   }
-  return finishAllow(input, initial, { kind: "user", permission: cell.permission, role: input.membership.role }, cell.obligations);
+  return finishAllow(input, policy, initial, { kind: "user", permission: cell.permission, role: input.membership.role }, cell.obligations);
 }

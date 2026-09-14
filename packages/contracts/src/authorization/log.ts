@@ -22,6 +22,7 @@ const common = [
 const variants = {
   ordinary: ["accountSubjectId", "membershipId", "role", "spaceId", "resourceType", "targetRef"],
   bootstrap: ["accountSubjectId", "bootstrapAttemptRef"],
+  subject: ["accountSubjectId", "resourceType", "targetRef"],
   service: ["servicePurpose", "spaceId", "resourceType", "targetRef"],
 } as const;
 

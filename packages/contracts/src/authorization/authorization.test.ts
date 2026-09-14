@@ -1,17 +1,21 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { decide, expectedProvenance } from "./evaluate.ts";
+import { decide, decideUnderRegisteredVersion, expectedProvenance } from "./evaluate.ts";
 import { externalDenial } from "./reason.ts";
 import { policyAuditEvent } from "./log.ts";
-import { ACTION_DEFINITIONS, USER_CELLS } from "./policy/v1.ts";
-import { P1_DIGEST, POLICY_VERSIONS, policyCompatibility } from "./policy/registry.ts";
-import { NEGATIVE_FAMILIES, NEGATIVE_FIXTURES, P1_FIXTURES, bootstrapFixture, ordinaryFixture, serviceFixture } from "./fixtures/index.ts";
+import { ACTION_DEFINITIONS, SERVICE_CELLS, USER_CELLS } from "./policy/v1.ts";
+import { ACTION_DEFINITIONS as P2_ACTION_DEFINITIONS, SERVICE_CELLS as P2_SERVICE_CELLS, SUBJECT_ACTION_DEFINITIONS, SUBJECT_CELLS, USER_CELLS as P2_USER_CELLS } from "./policy/v2.ts";
+import { CURRENT_POLICY_VERSION, P1_DIGEST, P2_DIGEST, POLICY_VERSIONS, policyCompatibility } from "./policy/registry.ts";
+import type { RegisteredPolicyVersion } from "./policy/registry.ts";
+import { NEGATIVE_FAMILIES, NEGATIVE_FIXTURES, P1_FIXTURES, P2_FIXTURES, P2_NEGATIVE_FIXTURES, SUBJECT_ENVIRONMENT, bootstrapFixture, ordinaryFixture, serviceFixture, subjectFixture } from "./fixtures/index.ts";
 import { generateLocalSigningKeyPair, signLocalDecision, verifyLocalDecision } from "./transport.ts";
 import type { PolicyInput } from "./input.ts";
 
+const CURRENT_DIGEST = POLICY_VERSIONS[CURRENT_POLICY_VERSION].digest;
+const NOT_CURRENT = (Object.keys(POLICY_VERSIONS) as RegisteredPolicyVersion[]).filter((version) => version !== CURRENT_POLICY_VERSION);
 function restamp<T>(input: T): T { return { ...input, provenance: expectedProvenance(input as PolicyInput) }; }
-function denyIsInert(input: unknown, reason?: string): void {
-  const decision = decide(input as PolicyInput);
+function denyIsInert(input: unknown, reason?: string, version?: RegisteredPolicyVersion): void {
+  const decision = version === undefined ? decide(input as PolicyInput) : decideUnderRegisteredVersion(version, input as PolicyInput);
   assert.equal(decision.outcome, "deny");
   if (reason) assert.equal(decision.reasonClass, reason);
   assert.equal(decision.cellRef, undefined);
@@ -26,7 +30,7 @@ describe("CBD-236 acceptance criteria", () => {
     const first = decide(input); const second = decide(structuredClone(input));
     assert.deepEqual(first, second);
     assert.equal(first.outcome, "allow"); assert.equal(first.reasonClass, "allowed_by_cell");
-    assert.equal(first.policyVersion, "p1"); assert.equal(first.policyDigest, P1_DIGEST);
+    assert.equal(first.policyVersion, CURRENT_POLICY_VERSION); assert.equal(first.policyDigest, CURRENT_DIGEST);
     assert.deepEqual(first.cellRef, { kind: "bootstrap", action: "space.create" });
     assert.ok(first.obligations.some((item) => item.kind === "create_primary_owner_membership"));
     assert.ok(first.obligations.some((item) => item.kind === "recheck_at_commit"));
@@ -57,7 +61,7 @@ describe("CBD-236 acceptance criteria", () => {
       [restamp({ ...base, subject: { ...base.subject, subjectState: "deleted" } }), "subject_not_active"],
       [restamp({ ...base, membership: { ...base.membership, status: "revoked" } }), "membership_not_active"],
       [restamp({ ...base, membership: { ...base.membership, status: "expired" } }), "membership_not_active"],
-      [restamp({ ...staleBase, versions: { policyVersion: "p1", capturedAtPrecheck: { ...precheck.capturedVersions, targetVersion: 99 } } }), "stale_version"],
+      [restamp({ ...staleBase, versions: { policyVersion: CURRENT_POLICY_VERSION, capturedAtPrecheck: { ...precheck.capturedVersions, targetVersion: 99 } } }), "stale_version"],
       [restamp({ ...base, resource: { ...base.resource, owningSpaceId: "other-space" } }), "scope_mismatch"],
       [{ ...base, versions: { policyVersion: "p99" }, provenance: { ...base.provenance } }, "policy_version_unsupported"],
     ];
@@ -102,7 +106,9 @@ describe("CBD-236 acceptance criteria", () => {
       assert.equal(decide(ordinaryFixture(cell.action)).outcome, expected, cell.action);
       for (const role of ["co_owner", "collaborator", "viewer", "accountability_partner"] as const) denyIsInert(ordinaryFixture(cell.action, role));
     }
-    for (const action of ["profile.create", "profile.read", "preference.update"]) denyIsInert(restamp({ ...ordinaryFixture("1.view_space"), request: { action, purpose: "user_delegated", fieldSet: "default" } }), "input_unsupported");
+    const reserved = POLICY_VERSIONS[CURRENT_POLICY_VERSION].actionDefinitions.filter((item) => item.permission === "reserved").map((item) => item.action);
+    assert.ok(reserved.length >= 2, "the reserved profile-domain codes stay reserved until an approved CBD-22 source");
+    for (const action of reserved) denyIsInert(restamp({ ...ordinaryFixture("1.view_space"), request: { action, purpose: "user_delegated", fieldSet: "default" } }), "input_unsupported");
   });
 
   it("AC05 rejects every client-restamped authority fact and the wrong authority mode", () => {
@@ -115,17 +121,22 @@ describe("CBD-236 acceptance criteria", () => {
   });
 
   it("AC06 binds the immutable registry tuple and rejects mismatches", () => {
-    assert.equal(policyCompatibility("p1", P1_DIGEST, 1), true);
-    assert.equal(policyCompatibility("p1", "0".repeat(64), 1), false);
-    assert.equal(policyCompatibility("p1", P1_DIGEST, 2), false);
+    assert.equal(policyCompatibility(CURRENT_POLICY_VERSION, CURRENT_DIGEST, 1), true);
+    assert.equal(policyCompatibility(CURRENT_POLICY_VERSION, "0".repeat(64), 1), false);
+    assert.equal(policyCompatibility(CURRENT_POLICY_VERSION, CURRENT_DIGEST, 2), false);
     assert.equal(POLICY_VERSIONS.p1.digest, P1_DIGEST);
+    // The released p1 digest is pinned independently in config/authorization-policy-release-history.json; it must never move.
+    assert.equal(P1_DIGEST, "488d46739bee379870f6649a6b51aaccc97b4bfdec9519fae5ed93b581ce1f22");
+    for (const version of NOT_CURRENT) assert.equal(policyCompatibility(version, POLICY_VERSIONS[version].digest, 1), false, `${version} is registered but not current`);
   });
 
   it("AC07 generates fixtures for every action and covers required negative families", () => {
     const fixtureActions = new Set(P1_FIXTURES.map((fixture) => fixture.input.request.action));
     for (const action of ACTION_DEFINITIONS.filter((item) => item.permission !== "reserved")) assert.ok(fixtureActions.has(action.action), action.action);
     assert.deepEqual(new Set(NEGATIVE_FAMILIES.map(([id]) => id)), new Set(Array.from({ length: 15 }, (_, index) => `NC-236-${String(index + 1).padStart(2, "0")}`)));
-    for (const fixture of P1_FIXTURES) assert.equal(decide(fixture.input).outcome, fixture.expected, fixture.id);
+    for (const fixture of P1_FIXTURES) assert.equal(decideUnderRegisteredVersion("p1", fixture.input).outcome, fixture.expected, fixture.id);
+    const currentCatalog = CURRENT_POLICY_VERSION === "p1" ? P1_FIXTURES : P2_FIXTURES;
+    for (const fixture of currentCatalog) assert.equal(decide(fixture.input).outcome, fixture.expected, `${fixture.id} through decide`);
     const crossSpace = serviceFixture();
     denyIsInert(restamp({ ...crossSpace, resource: { ...crossSpace.resource, owningSpaceId: "other-space" } }), "scope_mismatch");
     const wrongTarget = ordinaryFixture("1.view_space");
@@ -138,10 +149,119 @@ describe("CBD-236 acceptance criteria", () => {
 
   it("AC08 filters every prohibited audit field from all variants", () => {
     const prohibited = { financialContent: 10, hiddenResource: true, credential: "x", providerSecret: "x", sessionRef: "x", delegationRef: "x", email: "a@b.test", stack: "x", requestPath: "/space/secret" };
-    for (const variant of ["ordinary", "bootstrap", "service"] as const) {
+    for (const variant of ["ordinary", "bootstrap", "subject", "service"] as const) {
       const filtered = policyAuditEvent({ eventId: "event-1", outcome: "deny", ...prohibited }, variant);
       assert.deepEqual(filtered, { eventId: "event-1", outcome: "deny" });
     }
+  });
+});
+
+describe("policy version p2: subject-scoped cells, registered and not current", () => {
+  const subjectActions = SUBJECT_CELLS.map((cell) => cell.action);
+  const p2Only = subjectActions.filter((action) => !ACTION_DEFINITIONS.some((item) => item.action === action));
+
+  it("POLICY-V2-01 carries every p1 user cell, service cell and action definition byte-identical, and the p1 digest is unchanged", () => {
+    assert.deepEqual(P2_USER_CELLS.slice(0, USER_CELLS.length), USER_CELLS);
+    assert.deepEqual(P2_USER_CELLS.slice(USER_CELLS.length), SUBJECT_CELLS);
+    assert.deepEqual(P2_SERVICE_CELLS, SERVICE_CELLS);
+    for (const definition of ACTION_DEFINITIONS) {
+      const p2 = P2_ACTION_DEFINITIONS.find((item) => item.action === definition.action);
+      assert.ok(p2, `${definition.action} is absent from p2`);
+      if (definition.action === "profile.read") {
+        // The one enabled reserved code: PROTO-POLICY-V2-DECISION-001 makes it a subject-self read.
+        assert.equal(definition.permission, "reserved"); assert.equal(p2.permission, "subject"); assert.equal(p2.resourceType, undefined);
+        const { resourceType: _p1ResourceType, ...p1Rest } = definition;
+        assert.deepEqual({ ...p1Rest, permission: "subject" }, p2);
+      } else assert.deepEqual(p2, definition);
+    }
+    assert.equal(P2_ACTION_DEFINITIONS.length, ACTION_DEFINITIONS.length + p2Only.length);
+    assert.deepEqual(p2Only, ["proposal.create", "proposal.regenerate", "proposal.read", "membership.list_own"]);
+    assert.equal(P1_DIGEST, "488d46739bee379870f6649a6b51aaccc97b4bfdec9519fae5ed93b581ce1f22");
+    assert.match(P2_DIGEST, /^[a-f0-9]{64}$/); assert.notEqual(P2_DIGEST, P1_DIGEST);
+    assert.equal(POLICY_VERSIONS.p2.digest, P2_DIGEST); assert.equal(POLICY_VERSIONS.p2.schemaVersion, 1);
+    assert.equal(P2_USER_CELLS.length, P2_ACTION_DEFINITIONS.filter((item) => item.permission !== "reserved" && item.permission !== "SA-92-002").length);
+    assert.equal(P2_USER_CELLS.filter((cell) => cell.permission === "subject").length, 5);
+  });
+
+  it("POLICY-V2-01 evaluates every p1 catalog entry identically under p2", () => {
+    for (const fixture of P1_FIXTURES) {
+      const under = P2_FIXTURES.find((item) => item.id === fixture.id.replace(/^p1\./, "p2."));
+      assert.ok(under, fixture.id);
+      const p1 = decideUnderRegisteredVersion("p1", fixture.input); const p2 = decideUnderRegisteredVersion("p2", under.input);
+      assert.equal(p2.outcome, p1.outcome, fixture.id); assert.deepEqual(p2.cellRef, p1.cellRef, fixture.id);
+      assert.deepEqual(p2.obligations.filter((item) => item.kind !== "recheck_at_commit"), p1.obligations.filter((item) => item.kind !== "recheck_at_commit"), fixture.id);
+    }
+  });
+
+  it("POLICY-V2-02 allows the owning subject for every subject-scoped cell with the subject cellRef and the read obligations", () => {
+    for (const cell of SUBJECT_CELLS) {
+      const definition = SUBJECT_ACTION_DEFINITIONS.find((item) => item.action === cell.action)!;
+      const input = subjectFixture(cell.action);
+      const decision = decideUnderRegisteredVersion("p2", input);
+      assert.equal(decision.outcome, "allow", cell.action); assert.equal(decision.reasonClass, "allowed_by_cell");
+      assert.equal(decision.policyVersion, "p2"); assert.equal(decision.policyDigest, P2_DIGEST);
+      assert.deepEqual(decision.cellRef, { kind: "subject", action: cell.action });
+      assert.equal(decision.effectClass, definition.effectClass);
+      assert.deepEqual(decision.capturedVersions, {
+        sessionVersion: 1, subjectVersion: 1, profileVersion: 1, environmentId: SUBJECT_ENVIRONMENT,
+        ...(definition.resourceType === undefined ? {} : { targetVersion: 1 }), policyVersion: "p2", policyDigest: P2_DIGEST, inputSchemaVersion: 1,
+      }, cell.action);
+      const kinds = decision.obligations.map((item) => item.kind);
+      assert.equal(kinds[0], "audit");
+      if (definition.effectClass === "read") {
+        assert.ok(kinds.includes("bind_cache_key") && !kinds.includes("recheck_at_commit"), cell.action);
+        const cache = decision.obligations.find((item) => item.kind === "bind_cache_key");
+        assert.deepEqual(cache, { kind: "bind_cache_key", dimensions: ["environmentId", "accountSubjectId", "subjectVersion", "profileVersion", ...(definition.resourceType === undefined ? [] : ["targetVersion"]), "policyVersion"] });
+      } else assert.ok(kinds.includes("recheck_at_commit") && !kinds.includes("bind_cache_key"), cell.action);
+      assert.ok(!kinds.includes("fresh_assurance") && !kinds.includes("create_primary_owner_membership"), cell.action);
+      assert.deepEqual(decideUnderRegisteredVersion("p2", structuredClone(input)), decision, "deterministic");
+    }
+  });
+
+  it("POLICY-V2-02 denies another subject, a wrong environment, a stale session, service authority and the other families inertly (PC-236-018)", () => {
+    const required = ["another_subject", "wrong_environment", "stale_session_version", "service_authority", "inactive_subject", "inactive_profile", "wrong_target_shape", "space_bound_shape", "worker_adapter"];
+    for (const cell of SUBJECT_CELLS) {
+      const families = P2_NEGATIVE_FIXTURES.filter((item) => item.action === cell.action).map((item) => String(item.family));
+      for (const family of required) assert.ok(families.includes(family), `${cell.action} lacks the ${family} negative`);
+    }
+    for (const fixture of P2_NEGATIVE_FIXTURES) denyIsInert(fixture.input, fixture.reason, "p2");
+    // A subject-target cell never allows the identifier alone: the owning subject and environment are row facts, not locators.
+    const read = subjectFixture("proposal.read");
+    denyIsInert(restamp({ ...read, resource: { ...read.resource!, owningSubjectId: "subject-2", environmentId: "env-other" } }), "scope_mismatch", "p2");
+    denyIsInert({ ...read, provenance: { ...read.provenance, "resource.owningSubjectId": "request_locator" } }, "input_invalid", "p2");
+    denyIsInert({ ...read, provenance: { ...read.provenance, "resource.environmentId": "request_locator" } }, "input_invalid", "p2");
+    // A p1 space cell presented in the subject-scoped shape is malformed, not a subject cell.
+    denyIsInert(restamp({ ...subjectFixture("membership.list_own"), request: { action: "1.view_space", purpose: "user_delegated", fieldSet: "default" } }), "input_invalid", "p2");
+    // Every subject-scoped positive restamped from any client source denies (AC05 discipline for the new variant).
+    for (const cell of SUBJECT_CELLS) {
+      const base = subjectFixture(cell.action);
+      for (const path of Object.keys(base.provenance)) {
+        const wrongSource = base.provenance[path] === "request_locator" ? "datastore" : "request_locator";
+        denyIsInert({ ...base, provenance: { ...base.provenance, [path]: wrongSource } }, "input_invalid", "p2");
+      }
+    }
+  });
+
+  it("POLICY-V2-03 keeps p1 current: a p2 input denies policy_version_unsupported and a p2-only action denies input_unsupported exactly as today", () => {
+    assert.equal(CURRENT_POLICY_VERSION, "p1");
+    assert.deepEqual(Object.keys(POLICY_VERSIONS), ["p1", "p2"]);
+    for (const cell of SUBJECT_CELLS) denyIsInert(subjectFixture(cell.action), "policy_version_unsupported");
+    for (const action of [...p2Only, "profile.read"]) denyIsInert(restamp({ ...ordinaryFixture("1.view_space"), request: { action, purpose: "user_delegated", fieldSet: "default" } }), "input_unsupported");
+    for (const action of p2Only) assert.ok(!ACTION_DEFINITIONS.some((item) => item.action === action), `${action} must be absent from p1`);
+    assert.equal(ACTION_DEFINITIONS.find((item) => item.action === "profile.read")?.permission, "reserved");
+    for (const version of NOT_CURRENT) denyIsInert(ordinaryFixture("1.view_space", "primary_owner", version), "policy_version_unsupported");
+    assert.equal(policyCompatibility("p2", P2_DIGEST, 1), false);
+  });
+
+  it("AC07 for p2: every non-reserved p2 action is reached by a p2 fixture and the catalog evaluates as expected", () => {
+    const fixtureActions = new Set(P2_FIXTURES.map((fixture) => fixture.input.request.action));
+    for (const action of P2_ACTION_DEFINITIONS.filter((item) => item.permission !== "reserved")) assert.ok(fixtureActions.has(action.action), action.action);
+    for (const fixture of P2_FIXTURES) assert.equal(decideUnderRegisteredVersion("p2", fixture.input).outcome, fixture.expected, fixture.id);
+  });
+
+  it("AC08 for p2: the subject audit variant carries only the allowlisted subject fields", () => {
+    const event = policyAuditEvent({ eventId: "event-1", outcome: "allow", accountSubjectId: "subject-1", resourceType: "proposal", targetRef: "ref-1", membershipId: "m", role: "primary_owner", spaceId: "s", sessionRef: "x", email: "a@b.test" }, "subject");
+    assert.deepEqual(event, { eventId: "event-1", outcome: "allow", accountSubjectId: "subject-1", resourceType: "proposal", targetRef: "ref-1" });
   });
 });
 
