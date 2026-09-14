@@ -264,6 +264,24 @@ describe("CBD-190-AC04 deterministic safe outcomes (CT-190-006..011)", () => {
     assert.equal(success(await h.deliver(fresh.callbackUrl)).firstDelivery, true, "positive control: an untouched challenge still completes");
   });
 
+  it("PROTO-IDENTITY-API-001 RC-03: an oversized malformed callback with a valid state at the start still terminates its own, independently fresh known challenge", async () => {
+    const h = buildHarness();
+    const { callbackUrl } = await h.callbackFor("subject-a");
+    const url = new URL(callbackUrl);
+    const state = url.searchParams.get("state")!;
+    const code = url.searchParams.get("code")!;
+    // state appears complete well within the first 8,192 characters; the query is oversized only
+    // because of the trailing duplicate 9,000-character code.
+    const oversized = `state=${state}&code=${code}&code=${"z".repeat(9_000)}`;
+    assert.ok(oversized.length > 8_192);
+    const result = await h.ceremony.complete({ rawQuery: oversized, method: "GET", observedOrigin: url.origin, path: url.pathname, receiptTime: new Date() });
+    assert.equal(outcome(result), "invalid_or_expired");
+    zeroRows(h);
+    // Before RC-03, extractStateForTermination refused the entire oversized query, so the known
+    // challenge stayed usable and this replay of the original, well-formed callback would succeed.
+    assert.equal(outcome(await h.deliver(callbackUrl)), "invalid_or_expired", "the known challenge named at the start of the oversized query is terminated, not still usable");
+  });
+
   it("CT-190-010 verification pending, cancelled and denied are non-enumerating safe outcomes with no effect", async () => {
     const h = buildHarness();
     assert.equal(outcome(await h.signIn("verification-pending")), "verification_pending");
@@ -424,6 +442,20 @@ describe("identity view and logout", () => {
     assert.equal(h.db.count("revocation_outbox", [{ column: "cause", value: "logout" }]), 1);
     assert.equal(await h.ceremony.view(undefined), undefined);
     assert.equal(await h.ceremony.view("not-a-cookie"), undefined);
+  });
+
+  it("PROTO-IDENTITY-API-001 RC-06: the raw CSRF bootstrap value is delivered exactly once per issuance", async () => {
+    const h = buildHarness();
+    const signedIn = success(await h.signIn("subject-a"));
+    const cookie = cookieValueFrom(signedIn.setCookie, SESSION_COOKIE_NAME)!;
+    const first = await h.ceremony.view(cookie);
+    assert.ok(first?.csrfValue, "the first bootstrap read still returns the raw value");
+    // Before RC-06, every repeated view()/`/me` call kept returning the same raw value forever.
+    const second = await h.ceremony.view(cookie);
+    assert.ok(second, "the session itself is still resolvable");
+    assert.equal(second.csrfValue, undefined, "a second bootstrap read no longer repeats the already-delivered raw value");
+    const third = await h.ceremony.view(cookie);
+    assert.equal(third?.csrfValue, undefined, "consumption is permanent, not merely single-flight");
   });
 
   it("begin refuses a foreign origin, an unknown ceremony and an unknown destination before creating any challenge", async () => {

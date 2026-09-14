@@ -93,4 +93,28 @@ describe("PROTO-IDENTITY-API-001 C3: audit failure cannot outrun a database comm
     assert.equal(audit.length, 1, "capacity was never exceeded");
     assert.equal(audit.reserved, 0);
   });
+
+  it("PROTO-IDENTITY-API-001 RC-02: a throwing event builder aborts the transaction before commit; zero rows persist and zero events append", async () => {
+    const db = new FakeIdentityDatabase();
+    const client = createFakeIdentityClient(db);
+    const audit = new InProcessRestrictedAuditStore(100);
+    const store = new ApiTransactionStore(client, audit);
+
+    const throwingBuild = (): Record<string, unknown> => { throw new Error("malformed_event_content"); };
+
+    await assert.rejects(
+      store.transaction(async (transaction) => {
+        await insertMarker(transaction, "s1");
+        await audit.append(throwingBuild, transaction);
+        return "unreachable";
+      }),
+      /malformed_event_content/,
+    );
+
+    // Before RC-02, the builder ran for the first time inside `commit()` -- after the database
+    // COMMIT already resolved -- so a throwing builder produced committedRows=1, auditEvents=0.
+    assert.equal(db.count("provider_security_event"), 0, "the builder failure aborted the scoped work before any statement committed");
+    assert.equal(audit.length, 0, "no event was ever appended to the chain");
+    assert.equal(audit.reserved, 0, "the failed reservation left no residue");
+  });
 });

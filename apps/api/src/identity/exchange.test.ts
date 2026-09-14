@@ -160,6 +160,21 @@ describe("CBD-190-AC02 bounded exchange state machine (section 10.1, CT-190-016 
     assert.deepEqual(prepared.issuer.familyCounts(), { issued: 1, revoked: 1 });
   });
 
+  it("PROTO-IDENTITY-API-001 RC-01: a timeout during JWKS/validation (after tokens were received) still revokes the received family exactly once", async () => {
+    const prepared = prepare("subject-a");
+    const hangingJwks: ProviderTransport = {
+      exchange: (input) => prepared.issuer.exchange(input),
+      revoke: (input) => prepared.issuer.revoke(input),
+      jwks: () => new Promise(() => undefined), // never resolves: validation hangs until the shared deadline fires.
+    };
+    const outcome = await exchange(prepared, { transport: hangingJwks, maxLifetimeMs: 30 });
+    assert.equal(outcome.status, "rejected");
+    assert.equal(outcome.status === "rejected" && outcome.rejection, "exchange_timeout");
+    assert.equal(outcome.evidence.buffersZeroed, true);
+    assert.equal(prepared.issuer.revocations.length, 1, "the family received before the JWKS timeout still gets exactly one cleanup revocation");
+    assert.deepEqual(prepared.issuer.familyCounts(), { issued: 1, revoked: 1 }, "no unrevoked family survives a validation-stage timeout");
+  });
+
   it("key rotation: a token signed by a freshly rotated key is accepted after one bounded JWKS refresh; a retired key fails closed", async () => {
     const issuer = new LocalIssuer({ issuer: ISSUER, clientId: CLIENT_ID, callbackUri: CALLBACK_URI });
     const stale = (await issuer.jwks())!.keys;

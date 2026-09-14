@@ -119,6 +119,26 @@ export class ChallengeStore {
     }
   }
 
+  /**
+   * Correction round 3 RC-04 (security S04 residual): the full `#sweep`
+   * above only ever ran from `issue()`, so a challenge nobody re-issued
+   * against (looked up only through `find()`/`findByChallengeId()`, or
+   * simply left alone) stayed `pending` and kept its live PKCE verifier
+   * buffer past its own deadline until some unrelated `begin()` elsewhere
+   * happened to sweep the whole store. Every read path now expires a
+   * single slot in place, in O(1), the instant it is touched past its
+   * deadline -- so an expired pending challenge is never returned as
+   * still-pending and its verifier is zeroed at the deadline, independent
+   * of any other traffic. A store-wide timer sweep was deliberately not
+   * added: it would need lifecycle ownership (start/stop, leak-free on
+   * shutdown) disproportionate to a single-process prototype whose every
+   * real access path already expires on touch here.
+   */
+  #expireIfDue(slot: Slot | undefined, now: Date): Slot | undefined {
+    if (slot && slot.record.status === "pending" && slot.record.expiresAt.getTime() <= now.getTime()) this.terminate(slot.record.challengeId);
+    return slot;
+  }
+
   issue(input: {
     readonly environmentId: string;
     readonly ceremony: Ceremony;
@@ -157,13 +177,13 @@ export class ChallengeStore {
     return { record, state, nonce, codeChallenge: pkceChallenge(verifier) };
   }
 
-  /** Looks a callback's raw state up by its one-way digest without changing state. */
+  /** Looks a callback's raw state up by its one-way digest without changing state, other than expiring it in place past its own deadline (RC-04). */
   find(state: string): ChallengeRecord | undefined {
-    return this.#byState[oneWayDigest(state)]?.record;
+    return this.#expireIfDue(this.#byState[oneWayDigest(state)], this.#now())?.record;
   }
 
   findByChallengeId(challengeId: string): ChallengeRecord | undefined {
-    return this.#byChallenge[challengeId]?.record;
+    return this.#expireIfDue(this.#byChallenge[challengeId], this.#now())?.record;
   }
 
   /**
@@ -172,12 +192,8 @@ export class ChallengeStore {
    * terminated or expired (an expired pending challenge is terminated here).
    */
   take(state: string, now: Date = this.#now()): TakenChallenge | undefined {
-    const slot = this.#byState[oneWayDigest(state)];
+    const slot = this.#expireIfDue(this.#byState[oneWayDigest(state)], now);
     if (!slot || slot.record.status !== "pending") return undefined;
-    if (slot.record.expiresAt.getTime() <= now.getTime()) {
-      this.terminate(slot.record.challengeId);
-      return undefined;
-    }
     const verifier = slot.verifier;
     slot.verifier = undefined;
     if (!verifier) return undefined;

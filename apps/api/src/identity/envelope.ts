@@ -88,12 +88,31 @@ export function parseCallbackEnvelope(rawQuery: string | undefined): CallbackEnv
  * envelope itself (the caller still returns `invalid_or_expired` either
  * way) and it refuses to guess when the `state` field is itself ambiguous
  * (duplicated with a different value) or invalid in shape.
+ *
+ * Correction round 3 RC-03 (review R05 residual): an oversized query (over
+ * the same 8,192-byte bound `parseCallbackEnvelope` enforces) previously
+ * returned `undefined` for the *whole* query even when a valid, unique
+ * `state` appeared complete at the very start -- so an oversized malformed
+ * callback left its known, still-pending challenge usable for a later,
+ * well-formed replay. Parsing now stays bounded (it never scans more than
+ * the first 8,192 characters, so cost cannot grow with an attacker-supplied
+ * tail) but no longer refuses the whole input outright: it scans only the
+ * complete `&`-separated pairs inside that bounded prefix, discarding a
+ * trailing pair that the truncation may have cut in half.
  */
 export function extractStateForTermination(rawQuery: string | undefined): string | undefined {
-  if (rawQuery === undefined || rawQuery.length === 0 || rawQuery.length > 8_192) return undefined;
+  if (rawQuery === undefined || rawQuery.length === 0) return undefined;
   const withoutFragment = rawQuery.split("#")[0] ?? "";
+  const PREFIX_BOUND = 8_192;
+  let bounded = withoutFragment;
+  if (bounded.length > PREFIX_BOUND) {
+    const prefix = bounded.slice(0, PREFIX_BOUND);
+    const lastCompleteBoundary = prefix.lastIndexOf("&");
+    // No complete pair fits in the bounded prefix at all (one enormous pair): nothing safe to parse.
+    bounded = lastCompleteBoundary === -1 ? "" : prefix.slice(0, lastCompleteBoundary);
+  }
   let candidate: string | undefined;
-  for (const pair of withoutFragment.split("&")) {
+  for (const pair of bounded.split("&")) {
     if (pair.length === 0) continue;
     const separator = pair.indexOf("=");
     const rawKey = separator === -1 ? pair : pair.slice(0, separator);

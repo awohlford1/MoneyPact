@@ -84,11 +84,19 @@ export class InProcessRestrictedAuditStore implements AuditStore {
 
   async append(build: Build, transaction?: unknown): Promise<void> {
     if (transaction !== undefined && transaction !== null && typeof transaction === "object") {
-      // C3 (R03/S03): reserve the slot and validate the chain now, before the
-      // caller's database transaction can commit -- not later at `commit()`,
-      // which would be after the commit already happened.
+      // C3/RC-02 (R03/S03): reserve the slot, validate the chain, and dry-run the builder now,
+      // before the caller's database transaction can commit -- not later at `commit()`, which
+      // runs after the commit already happened. `#appendNow` (called from `commit()`) still
+      // computes the *real* sequence/previousEventDigest at actual append time, since a
+      // concurrent transaction may commit first and change this transaction's true position in
+      // the chain; the dry run below uses placeholder-but-well-shaped values (a valid sequence
+      // and hex digest) solely to catch a builder that throws for structural reasons -- e.g. a
+      // fault-injection test, or malformed event content -- so that failure aborts the database
+      // transaction here rather than surfacing only after `commit()` (RC-02: a throwing builder
+      // previously produced committedRows=1, auditEvents=0).
       await this.#serialize(async () => {
         this.#checkAdmissible();
+        build(1, "0".repeat(64));
         this.#reserved += 1;
         const pending = this.#pending.get(transaction) ?? [];
         pending.push(build);

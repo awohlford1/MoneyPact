@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parseCallbackEnvelope } from "./envelope.ts";
+import { extractStateForTermination, parseCallbackEnvelope } from "./envelope.ts";
 
 const STATE = "a".repeat(43);
 const CODE = "b".repeat(43);
@@ -23,5 +23,26 @@ describe("CBD-190 section 4.2 callback envelope (CT-190-009)", () => {
       `code=${CODE}&state=${STATE}&nonce=x`, `code=${CODE}&state=${STATE}&redirect_uri=x`, "x".repeat(9_000),
     ];
     for (const query of malformed) assert.deepEqual(parseCallbackEnvelope(query), { kind: "malformed" }, String(query));
+  });
+
+  describe("PROTO-IDENTITY-API-001 RC-03: extractStateForTermination stays bounded without refusing the whole oversized query", () => {
+    it("still finds a valid, unique state that appears complete inside the first 8,192 characters of an oversized query", () => {
+      const oversized = `state=${STATE}&code=${CODE}&code=${"z".repeat(9_000)}`;
+      assert.ok(oversized.length > 8_192);
+      assert.equal(extractStateForTermination(oversized), STATE);
+    });
+
+    it("returns undefined when the query is oversized and no complete pair fits in the bounded prefix", () => {
+      assert.equal(extractStateForTermination(`code=${"z".repeat(9_000)}`), undefined);
+    });
+
+    it("returns undefined when the only state pair is truncated out of the bounded prefix", () => {
+      const oversized = `code=${"z".repeat(9_000)}&state=${STATE}`;
+      assert.equal(extractStateForTermination(oversized), undefined);
+    });
+
+    it("still refuses an ambiguous or malformed state even when oversized", () => {
+      assert.equal(extractStateForTermination(`state=${STATE}&state=${"b".repeat(43)}&code=${"z".repeat(9_000)}`), undefined);
+    });
   });
 });

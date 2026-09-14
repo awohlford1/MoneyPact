@@ -43,4 +43,26 @@ describe("PROTO-IDENTITY-API-001 C4: abandoned pending challenges recover capaci
     assert.equal(known.status, "terminated");
     assert.equal(store.take(issued.state), undefined, "a terminated challenge is never consumable");
   });
+
+  it("PROTO-IDENTITY-API-001 RC-04: find() alone expires a due pending challenge and zeroes its verifier, with no other traffic at all", () => {
+    let now = new Date("2026-01-01T00:00:00.000Z");
+    const store = new ChallengeStore(() => now, 10);
+    const issued = store.issue(BASE_INPUT);
+    now = new Date(now.getTime() + 120_000); // well past the 1s lifetime; no second issue(), no take(), no terminate().
+    // Before RC-04, this find() alone left the record "pending" forever, still holding its verifier.
+    const found = store.find(issued.state);
+    assert.ok(found, "still resolvable as a tombstone within the 60s grace window");
+    assert.equal(found.status, "terminated", "find() expired the due pending record in place");
+    assert.equal(store.take(issued.state), undefined, "the verifier is gone: an expired challenge is never consumable, even immediately after find()");
+  });
+
+  it("PROTO-IDENTITY-API-001 RC-04: findByChallengeId() alone expires a due pending challenge the same way", () => {
+    let now = new Date("2026-01-01T00:00:00.000Z");
+    const store = new ChallengeStore(() => now, 10);
+    const issued = store.issue(BASE_INPUT);
+    now = new Date(now.getTime() + 120_000);
+    const found = store.findByChallengeId(issued.record.challengeId);
+    assert.ok(found);
+    assert.equal(found.status, "terminated");
+  });
 });
