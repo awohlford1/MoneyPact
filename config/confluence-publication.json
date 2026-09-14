@@ -1675,6 +1675,13 @@
       "rationale": "CBD-212 financial-profile persistence contract v0.2 held repository-only because no approved Confluence target is registered for it and this change does not create pages; the document is a proposal awaiting repeat independent and Security review, not an approved record.",
       "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy, matching the docs/cbd-168-budget-domain-consumption-contract.md precedent in this manifest.",
       "reopen_when": "The Product Owner and Security approve this exact document and a verified existing Confluence target is registered in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-236-consent-facts-proposal.md",
+      "disposition": "unpublished",
+      "rationale": "CBD-236 consent-facts proposal (v0.1) is held repository-only because no approved Confluence target is registered for it and this change does not create pages; it proposes an Executive decision that is not yet recorded and grants no consent semantics by itself.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy, matching the docs/cbd-236-p2-release-step.md precedent in this manifest.",
+      "reopen_when": "The Executive records CBD236-CONSENT-SEMANTICS-001, the Product Owner and Security approve this exact document, and a verified existing Confluence target is registered in a focused merged change."
     }
   ],
   "retained_pages": []
