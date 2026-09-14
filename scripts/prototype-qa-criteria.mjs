@@ -159,6 +159,7 @@ class Browser {
     if (navigate) { request.headers["sec-fetch-mode"] = "navigate"; request.headers.accept = "text/html"; } else request.headers.accept = "application/json";
     const target = new URL(path.startsWith("http") ? path : `${ORIGIN}${path}`);
     request.headers.host = host ?? target.host;
+    if (CEREMONY_SURFACE.test(`${target.pathname}${target.search}`)) ceremonyRequests.push(Date.now());
     const response = await fetch(`http://127.0.0.1:${PORT}${target.pathname}${target.search}`, request);
     const setCookies = response.headers.getSetCookie?.() ?? [];
     for (const header of setCookies) {
@@ -172,10 +173,26 @@ class Browser {
 }
 /** The approved bootstrap record admits six ceremonies per process per ten minutes: restart the API (same key material, sessions survive) before the seventh. */
 let currentApi; let currentOverrides = {}; let begins = 0; let restarts = 0;
+/** CBD266-SURFACE-STAGES-001 (main 5f906a5, merged after the round-2 candidate 9ed630c): authorize, chooser and
+ * callback now count on rlp-266-identity-ceremony-v1, one sliding 60 s window of 12 (+3 burst) requests per
+ * loopback cohort per process rather than the bootstrap record's per-ceremony buckets, so a process admits about
+ * five ceremonies per minute on that surface. Requests to those routes are timestamped here and a ceremony waits
+ * for the window to drain before it starts (never a restart: a restart would also drop every live ceremony's
+ * reservation, finding F3). */
+const ceremonyRequests = [];
+const CEREMONY_SURFACE = /^\/v1\/identity\/(local\/authorize|local\/choose|callback)(\?|$)/u;
+async function ensureCeremonySurfaceWindow(needed = 6) {
+  for (;;) {
+    const now = Date.now(); while (ceremonyRequests.length && ceremonyRequests[0] <= now - 60_000) ceremonyRequests.shift();
+    if (ceremonyRequests.length + needed <= 15) return;
+    const wait = ceremonyRequests[0] + 60_000 - now + 250;
+    console.log(`   (ceremony surface window: ${ceremonyRequests.length} requests in the last 60 s; waiting ${Math.ceil(wait / 1000)} s)`); await pause(wait);
+  }
+}
 async function ensureCeremonyCapacity() {
-  if (begins < 6) { begins += 1; return; }
+  if (begins < 6) { begins += 1; await ensureCeremonySurfaceWindow(); return; }
   await currentApi.stop(); currentApi = await startApi(currentOverrides); expect(currentApi.ready, `API restart failed: ${currentApi.output().slice(0, 1000)}`);
-  begins = 1; restarts += 1; mutationLog.clear(); console.log(`   (API process restarted for ceremony capacity: restart ${restarts})`);
+  begins = 1; ceremonyRequests.length = 0; restarts += 1; mutationLog.clear(); console.log(`   (API process restarted for ceremony capacity: restart ${restarts})`);
 }
 /** The ceremony up to the chooser; returns the exact callback navigation for `scenario` without following it. */
 async function ceremony(browser, scenario = "subject-a") {
@@ -256,7 +273,7 @@ async function startApi(overrides = {}, { expectFailure = false, port = PORT } =
   return { api, ready, exited, output: () => output, stop };
 }
 async function phase(name, fn, overrides = {}) {
-  currentPhase = name; mutationLog.clear(); begins = 0; currentOverrides = overrides;
+  currentPhase = name; mutationLog.clear(); begins = 0; ceremonyRequests.length = 0; currentOverrides = overrides;
   console.log(`\n== ${name} ==`);
   currentApi = await startApi(overrides);
   try {
@@ -485,6 +502,7 @@ async function phaseTargets() {
 // Phase 2: CBD-232 proposals
 // ---------------------------------------------------------------------------
 function rawPost(path, headers, body, cookie, port = PORT) {
+  if (port === PORT && CEREMONY_SURFACE.test(path)) ceremonyRequests.push(Date.now());
   return new Promise((resolve, reject) => {
     const request = http.request({ host: "127.0.0.1", port, path, method: "POST", headers: { host: `127.0.0.1:${PORT}`, origin: ORIGIN, "sec-fetch-site": "same-origin", "content-type": "application/json", accept: "application/json", cookie, ...headers } }, (response) => {
       let text = ""; response.on("data", (chunk) => { text += chunk; }); response.on("end", () => { let json; try { json = JSON.parse(text); } catch { json = undefined; } resolve({ status: response.statusCode, text, json }); });
