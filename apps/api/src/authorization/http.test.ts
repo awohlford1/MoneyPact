@@ -13,6 +13,7 @@ import { Authorization } from "./http.js";
 import { RouteFailure } from "./http.js";
 import { Authorize } from "./http.js";
 import { ApiAuthorizationBoundary } from "./http.js";
+import { PreAuthenticationSurface } from "./http.js";
 import type { EffectContext } from "./boundary.js";
 import { Harness, testHistory } from "./test-support.js";
 import type { TestState } from "./test-support.js";
@@ -146,6 +147,76 @@ describe("CBD233-REPLAY-001 authenticated pre-policy replay", () => {
       } finally { replayResult = { kind: "absent" }; await app.close(); }
     });
   }
+});
+
+describe("PROTO-IDENTITY-API-001 C7: @PreAuthenticationSurface is restricted to an explicit eligible surface set", () => {
+  it("fails startup when a route carries both @Authorize and @PreAuthenticationSurface", async () => {
+    @Controller("v1/identity")
+    class DualMarkerController {
+      @Post("begin")
+      @PreAuthenticationSurface()
+      @Authorize({ action: "space.create", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default" }) })
+      begin(): unknown { handlerCalls++; return { never: true }; }
+    }
+    const h = new Harness();
+    const module = await Test.createTestingModule({
+      imports: [AppModule.register(config, () => undefined, { boundary: h.boundary, surfaceApproved: async () => true, rateLimit: { evidence: (request) => invocation(apiIdentity(request.method, request.routeOptions.url!), "api_route", "test-only", "test-only"), enforce: async () => ({ outcome: "allow", provenance: "test-only", release: async () => undefined }) }, sessionLocator: () => undefined, deny: (response) => { throw new HttpException(response, 403); } }, testHistory)],
+      controllers: [DualMarkerController],
+    }).compile();
+    const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { logger: false });
+    await assert.rejects(app.init(), /carries both @Authorize and @PreAuthenticationSurface/);
+    await app.close();
+  });
+
+  it("fails startup when a route carries @PreAuthenticationSurface outside the eligible identity surface set", async () => {
+    @Controller("protected")
+    class IneligibleMarkerController {
+      @Get("not-eligible")
+      @PreAuthenticationSurface()
+      probe(): unknown { handlerCalls++; return { never: true }; }
+    }
+    const h = new Harness();
+    const module = await Test.createTestingModule({
+      imports: [AppModule.register(config, () => undefined, { boundary: h.boundary, surfaceApproved: async () => true, rateLimit: { evidence: (request) => invocation(apiIdentity(request.method, request.routeOptions.url!), "api_route", "test-only", "test-only"), enforce: async () => ({ outcome: "allow", provenance: "test-only", release: async () => undefined }) }, sessionLocator: () => undefined, deny: (response) => { throw new HttpException(response, 403); } }, testHistory)],
+      controllers: [IneligibleMarkerController],
+    }).compile();
+    const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { logger: false });
+    await assert.rejects(app.init(), /is not an eligible pre-authentication surface/);
+    await app.close();
+  });
+
+  it("a marked eligible route still passes the rate-limit gate and skips the session/policy gate", async () => {
+    @Controller("v1/identity")
+    class EligibleController {
+      @Post("begin")
+      @PreAuthenticationSurface()
+      begin(): unknown { handlerCalls++; return { ok: true }; }
+    }
+    handlerCalls = 0;
+    let enforced = 0;
+    const h = new Harness();
+    const module = await Test.createTestingModule({
+      imports: [AppModule.register(config, () => undefined, {
+        boundary: h.boundary, surfaceApproved: async () => true,
+        rateLimit: {
+          evidence: (request) => invocation(apiIdentity(request.method, request.routeOptions.url!), "api_route", "test-only", "test-only"),
+          enforce: async (request) => { enforced++; return request.routeOptions.url === "/v1/identity/begin" ? { outcome: "allow", provenance: "test-only", release: async () => undefined } : { outcome: "deny_unregistered" }; },
+        },
+        sessionLocator: () => undefined,
+        deny: (response) => { throw new HttpException(response, 403); },
+      }, testHistory)],
+      controllers: [EligibleController],
+    }).compile();
+    const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { logger: false });
+    try {
+      await app.init();
+      await app.getHttpAdapter().getInstance().ready();
+      const response = await app.inject({ method: "POST", url: "/v1/identity/begin" });
+      assert.equal(response.statusCode, 201, response.body);
+      assert.equal(handlerCalls, 1, "no session cookie was supplied, yet the eligible pre-authentication route still ran");
+      assert.equal(enforced, 1, "the rate-limit gate still ran for the eligible surface");
+    } finally { await app.close(); }
+  });
 });
 
 for (const stage of ["precheck", "rolled-back"] as const) {

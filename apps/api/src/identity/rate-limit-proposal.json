@@ -1,0 +1,302 @@
+{
+  "$comment": "PROPOSED CBD-266 registrations and parameter records for the CBD-190 identity routes (PROTO-IDENTITY-API-001). Not loaded at runtime: config/rate-limit/*.json is the executable registry and every bounded registration there must reference an approved record, which the merged baseline cannot produce yet (product_owner_approval.status stays pending for every prototype record and loadPrototypeRegistry resolves no approval evidence; CBD266-COMPLETION-001, OPEN-266-APPROVALS). Moving these into config/rate-limit and approving them is an Executive/Manager action; rate-limit-proposal.test.ts proves they are shape-valid, bound to the installed routes, and approvable.",
+  "records": [
+    {
+      "schema_version": 1,
+      "record_id": "rlp-266-identity-ceremony-v1",
+      "surface_id": "surf-266-authentication",
+      "window": {
+        "duration_ms": 60000,
+        "kind": "sliding",
+        "anchor": "request_time"
+      },
+      "threshold": 12,
+      "burst": {
+        "additional_units": 3,
+        "refill_units": 1,
+        "refill_interval_ms": 20000
+      },
+      "safe_counting_key": {
+        "phase": "pre_authentication",
+        "components": [
+          "privacy_network_cohort_v1",
+          "exact_surface_id"
+        ],
+        "derivation_version": "hmac-sha256-v1",
+        "normalization": "network-cohort-v1",
+        "rotation_behavior": "dual-read/single-write for at least 120000 ms; carry forward the greater count",
+        "privacy_basis": "No subject locator is used before authentication; the loopback transport cohort is the only counted dimension (AL-266-001).",
+        "subject_bound_after_authentication": false
+      },
+      "counter_store": {
+        "binding": "LOCAL_PROTOTYPE_COUNTER_STORE",
+        "namespace": "cbd266:prototype:identity-ceremony:v1",
+        "atomic_operation": "one process-linearizable atomic consume",
+        "consistency": "single-process-linearizable",
+        "region": "local-process",
+        "ttl_ms": 120000,
+        "clock_source": "monotonic process clock",
+        "failure_mode": "deny"
+      },
+      "quota": {
+        "unit": "request",
+        "ceiling": 15,
+        "scope": "counting key plus exact surface",
+        "reset": "sliding expiry plus burst refill",
+        "resource_dimensions": []
+      },
+      "anti_lockout_rule": {
+        "attackable_dimensions": [
+          "privacy_network_cohort_v1"
+        ],
+        "victim_bound_dimensions": [],
+        "independent_recovery_surface_id": null,
+        "pool_isolation": "Pre-authentication identity ceremony routes (begin, callback, local hosted ceremony) count by network cohort plus exact surface only; no claimed subject, e-mail or state value is a counting dimension, so an attacker cannot exhaust a victim pool by naming it (AL-266-001). The pool is isolated from every post-authentication pool and from the public health exception.",
+        "exhaustion_state_effect": "none",
+        "reset_authority": "local prototype operator / restore counter service only",
+        "notification_behavior": "uniform and content-safe; reveals neither existence nor remaining quota",
+        "rationale": "Pre-authentication identity ceremony routes (begin, callback, local hosted ceremony) count by network cohort plus exact surface only; no claimed subject, e-mail or state value is a counting dimension, so an attacker cannot exhaust a victim pool by naming it (AL-266-001). The pool is isolated from every post-authentication pool and from the public health exception.",
+        "verification_cases": [
+          "FX-266-PUBLIC-COHORT-ISOLATION",
+          "VT-94-065"
+        ]
+      },
+      "capacity_basis": {
+        "evidence_locator": "PROTO-IDENTITY-API-001 / single-local-process planning basis; PROPOSED, not approved",
+        "measured_at": "2026-09-13T00:00:00-04:00",
+        "sustained_capacity": "2 ceremonies/second in one local process; not measured - Implementation estimate dated 2026-09-13",
+        "peak_assumption": "At most 15 ceremony requests in 60 seconds per cohort; at least 87% request-rate headroom against the estimate",
+        "headroom": "At most 15 ceremony requests in 60 seconds per cohort; at least 87% request-rate headroom against the estimate",
+        "failure_budget": "zero uncounted protected effects when the store is unavailable or uncertain",
+        "workload_assumptions": [
+          "One developer, one process, loopback traffic, local Cognito-shaped adapter, no hosted provider"
+        ],
+        "reviewer_role": "Product; ME-94-010 specialist review pending"
+      },
+      "product_owner_approval": {
+        "status": "pending",
+        "approval_id": null,
+        "approved_by_actor_id": null,
+        "decided_at": null,
+        "candidate_digest": "2a21ca1d477e4c1d881fcaa981c1dee423f6155b733ed91b00c81881527805db",
+        "conditions": [
+          "prototype-only",
+          "revisit before any hosted environment"
+        ],
+        "expires_at": null
+      },
+      "source_requirements": [
+        "RL-92-001",
+        "RL-92-002",
+        "RL-92-007",
+        "EP-92-001",
+        "EP-92-005",
+        "SR-94-037",
+        "ME-94-010",
+        "TB-92-003"
+      ],
+      "created_at": "2026-09-13T00:00:00-04:00",
+      "supersedes_record_id": null,
+      "record_digest": "6f48018e0d23c4d1dd1bc2c7ea92159ed385d2afad62814118244e3f23e9ac70"
+    },
+    {
+      "schema_version": 1,
+      "record_id": "rlp-266-identity-session-v1",
+      "surface_id": "surf-266-session",
+      "window": {
+        "duration_ms": 60000,
+        "kind": "sliding",
+        "anchor": "request_time"
+      },
+      "threshold": 60,
+      "burst": {
+        "additional_units": 10,
+        "refill_units": 1,
+        "refill_interval_ms": 6000
+      },
+      "safe_counting_key": {
+        "phase": "post_authentication",
+        "components": [
+          "verified_actor_id_v1",
+          "exact_surface_id"
+        ],
+        "derivation_version": "hmac-sha256-v1",
+        "normalization": "verified-id-v1",
+        "rotation_behavior": "dual-read/single-write for at least 120000 ms; carry forward the greater count",
+        "privacy_basis": "The actor comes only from the resolved server session; correlation is limited to actor plus exact surface.",
+        "subject_bound_after_authentication": true
+      },
+      "counter_store": {
+        "binding": "LOCAL_PROTOTYPE_COUNTER_STORE",
+        "namespace": "cbd266:prototype:identity-session:v1",
+        "atomic_operation": "one process-linearizable atomic consume",
+        "consistency": "single-process-linearizable",
+        "region": "local-process",
+        "ttl_ms": 120000,
+        "clock_source": "monotonic process clock",
+        "failure_mode": "deny"
+      },
+      "quota": {
+        "unit": "request",
+        "ceiling": 70,
+        "scope": "verified actor plus exact surface",
+        "reset": "sliding expiry plus burst refill",
+        "resource_dimensions": []
+      },
+      "anti_lockout_rule": {
+        "attackable_dimensions": [],
+        "victim_bound_dimensions": [
+          "verified_actor_id_v1"
+        ],
+        "independent_recovery_surface_id": "surf-266-recovery",
+        "pool_isolation": "Session-authenticated identity routes (identity view, logout) count by the verified actor plus exact surface; unauthenticated and other actors cannot consume the actor pool, and recovery has a separate namespace/key (FX-266-LOCKOUT-RECOVERY).",
+        "exhaustion_state_effect": "none",
+        "reset_authority": "local prototype operator / restore counter service only",
+        "notification_behavior": "uniform and content-safe; reveals neither existence nor remaining quota",
+        "rationale": "Session-authenticated identity routes (identity view, logout) count by the verified actor plus exact surface; unauthenticated and other actors cannot consume the actor pool, and recovery has a separate namespace/key (FX-266-LOCKOUT-RECOVERY).",
+        "verification_cases": [
+          "FX-266-AUTHENTICATED-ACTOR-ISOLATION",
+          "FX-266-LOCKOUT-RECOVERY",
+          "VT-94-066"
+        ]
+      },
+      "capacity_basis": {
+        "evidence_locator": "PROTO-IDENTITY-API-001 / single-local-process planning basis; PROPOSED, not approved",
+        "measured_at": "2026-09-13T00:00:00-04:00",
+        "sustained_capacity": "10 requests/second in one local process; not measured - Implementation estimate dated 2026-09-13",
+        "peak_assumption": "At most 70 requests in 60 seconds; at least 88% request-rate headroom against the estimate",
+        "headroom": "At most 70 requests in 60 seconds; at least 88% request-rate headroom against the estimate",
+        "failure_budget": "zero uncounted protected effects when the store is unavailable or uncertain",
+        "workload_assumptions": [
+          "One developer, one process, local data, no background consumers, no hosted traffic"
+        ],
+        "reviewer_role": "Product; ME-94-010 specialist review pending"
+      },
+      "product_owner_approval": {
+        "status": "pending",
+        "approval_id": null,
+        "approved_by_actor_id": null,
+        "decided_at": null,
+        "candidate_digest": "98ea97305e8b986430fb85a96ff0f464aa550de9468450b186cae2a832ae091a",
+        "conditions": [
+          "prototype-only",
+          "revisit before any hosted environment"
+        ],
+        "expires_at": null
+      },
+      "source_requirements": [
+        "RL-92-001",
+        "RL-92-002",
+        "RL-92-007",
+        "EP-92-001",
+        "SR-94-037",
+        "ME-94-010"
+      ],
+      "created_at": "2026-09-13T00:00:00-04:00",
+      "supersedes_record_id": null,
+      "record_digest": "0ba7b1b2d7c3c92df75261ce6a8bb5c7d03453107fb45efdbdf58df639f6dddb"
+    }
+  ],
+  "registrations": [
+    {
+      "registration_id": "api:POST:/v1/identity/begin",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/identity/http.ts#IdentityController.begin",
+      "surface_id": "surf-266-authentication",
+      "parameter_record_id": "rlp-266-identity-ceremony-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-190",
+      "authorization_metadata_id": null
+    },
+    {
+      "registration_id": "api:GET:/v1/identity/callback",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/identity/http.ts#IdentityController.callback",
+      "surface_id": "surf-266-authentication",
+      "parameter_record_id": "rlp-266-identity-ceremony-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-190",
+      "authorization_metadata_id": null
+    },
+    {
+      "registration_id": "api:HEAD:/v1/identity/callback",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/identity/http.ts#IdentityController.callback",
+      "surface_id": "surf-266-authentication",
+      "parameter_record_id": "rlp-266-identity-ceremony-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-190",
+      "authorization_metadata_id": null
+    },
+    {
+      "registration_id": "api:GET:/v1/identity/local/authorize",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/identity/http.ts#IdentityController.localAuthorize",
+      "surface_id": "surf-266-authentication",
+      "parameter_record_id": "rlp-266-identity-ceremony-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-190",
+      "authorization_metadata_id": null
+    },
+    {
+      "registration_id": "api:HEAD:/v1/identity/local/authorize",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/identity/http.ts#IdentityController.localAuthorize",
+      "surface_id": "surf-266-authentication",
+      "parameter_record_id": "rlp-266-identity-ceremony-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-190",
+      "authorization_metadata_id": null
+    },
+    {
+      "registration_id": "api:GET:/v1/identity/local/choose",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/identity/http.ts#IdentityController.localChoose",
+      "surface_id": "surf-266-authentication",
+      "parameter_record_id": "rlp-266-identity-ceremony-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-190",
+      "authorization_metadata_id": null
+    },
+    {
+      "registration_id": "api:HEAD:/v1/identity/local/choose",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/identity/http.ts#IdentityController.localChoose",
+      "surface_id": "surf-266-authentication",
+      "parameter_record_id": "rlp-266-identity-ceremony-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-190",
+      "authorization_metadata_id": null
+    },
+    {
+      "registration_id": "api:GET:/v1/identity/me",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/identity/http.ts#IdentityController.me",
+      "surface_id": "surf-266-session",
+      "parameter_record_id": "rlp-266-identity-session-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-190",
+      "authorization_metadata_id": "identity.me"
+    },
+    {
+      "registration_id": "api:HEAD:/v1/identity/me",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/identity/http.ts#IdentityController.me",
+      "surface_id": "surf-266-session",
+      "parameter_record_id": "rlp-266-identity-session-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-190",
+      "authorization_metadata_id": "identity.me"
+    },
+    {
+      "registration_id": "api:POST:/v1/identity/logout",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/identity/http.ts#IdentityController.logout",
+      "surface_id": "surf-266-session",
+      "parameter_record_id": "rlp-266-identity-session-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-190",
+      "authorization_metadata_id": "identity.logout"
+    }
+  ]
+}

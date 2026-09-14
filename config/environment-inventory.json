@@ -115,7 +115,10 @@
       "source": "deployment environment",
       "validation": {
         "kind": "enum",
-        "values": ["local", "kms"]
+        "values": [
+          "local",
+          "kms"
+        ]
       },
       "template": "included",
       "placeholder": "local",
@@ -275,12 +278,16 @@
     {
       "name": "GH_TOKEN",
       "classification": "tooling",
-      "consumer": ["scripts/publication_transport.py"],
+      "consumer": [
+        "scripts/publication_transport.py"
+      ],
       "owner": "Engineering",
       "required": true,
       "sensitivity": "secret",
       "source": "read-only GitHub workflow token, checkpoint step only",
-      "validation": {"kind": "token"},
+      "validation": {
+        "kind": "token"
+      },
       "template": "included",
       "placeholder": "",
       "description": "Ephemeral read-only token to recover successful publication history; never used for Confluence writes.",
@@ -464,6 +471,483 @@
       "template": "excluded",
       "placeholder": null,
       "description": "Subprocess-only time-zone override proving deterministic date arithmetic."
+    },
+    {
+      "name": "COBUDGET_SESSION_PEPPER",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "string"
+      },
+      "template": "included",
+      "placeholder": "",
+      "description": "Base64-encoded server-side pepper (>= 32 bytes) for session verifier and CSRF digests (CBD-191 SC-191-001). Never stored in the database. Required under the local identity provider."
+    },
+    {
+      "name": "COBUDGET_SESSION_IDLE_TIMEOUT_SECONDS",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "integer",
+        "min": 1
+      },
+      "template": "included",
+      "placeholder": "900",
+      "description": "Idle session expiry in seconds (CBD-191 section 5.1). Required under the local identity provider."
+    },
+    {
+      "name": "COBUDGET_SESSION_ABSOLUTE_LIFETIME_SECONDS",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "integer",
+        "min": 1
+      },
+      "template": "included",
+      "placeholder": "28800",
+      "description": "Absolute session lifetime in seconds (CBD-191 section 5.1). Required under the local identity provider."
+    },
+    {
+      "name": "COBUDGET_SESSION_FRESH_ASSURANCE_WINDOW_SECONDS",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "integer",
+        "min": 1
+      },
+      "template": "included",
+      "placeholder": "300",
+      "description": "Fresh-assurance validity window in seconds (CBD-191 section 5.1). Required under the local identity provider."
+    },
+    {
+      "name": "COBUDGET_SESSION_REVOCATION_PROPAGATION_TARGET_SECONDS",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "integer",
+        "min": 1
+      },
+      "template": "included",
+      "placeholder": "60",
+      "description": "Revocation propagation deadline in seconds (CBD-191 section 6.1). Required under the local identity provider."
+    },
+    {
+      "name": "COBUDGET_SESSION_PROVIDER_MAX_FUTURE_SKEW_SECONDS",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "integer",
+        "min": 1
+      },
+      "template": "included",
+      "placeholder": "30",
+      "description": "Maximum accepted future skew of a provider event time in seconds (CBD-191 section 6.2). Required under the local identity provider."
+    },
+    {
+      "name": "COBUDGET_SESSION_REJECTION_TIMING_FLOOR_MS",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "integer",
+        "min": 1
+      },
+      "template": "included",
+      "placeholder": "20",
+      "description": "Minimum response bucket for a session rejection in milliseconds (CBD-191 SC-191-001A). Required under the local identity provider."
+    },
+    {
+      "name": "COBUDGET_SESSION_REJECTION_TIMING_JITTER_MS",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "integer",
+        "min": 1
+      },
+      "template": "included",
+      "placeholder": "10",
+      "description": "Random jitter added to a session rejection in milliseconds (CBD-191 SC-191-001A). Required under the local identity provider."
+    },
+    {
+      "name": "COBUDGET_SESSION_REJECTION_TIMING_SAMPLE_COUNT",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "integer",
+        "min": 1
+      },
+      "template": "included",
+      "placeholder": "50",
+      "description": "Minimum sample count for the rejection-timing differential test (CBD-191 CT-191-002A). Required under the local identity provider."
+    },
+    {
+      "name": "COBUDGET_SESSION_REJECTION_TIMING_TIMEOUT_BUCKET_MS",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "integer",
+        "min": 1
+      },
+      "template": "included",
+      "placeholder": "40",
+      "description": "Response bucket used when the session store times out, in milliseconds (CBD-191 SC-191-001A). Required under the local identity provider."
+    },
+    {
+      "name": "COBUDGET_SESSION_REJECTION_TIMING_MAX_DIFFERENTIAL_MS",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "integer",
+        "min": 1
+      },
+      "template": "included",
+      "placeholder": "15",
+      "description": "Maximum permitted timing differential between rejection classes in milliseconds (CBD-191 CT-191-002A). Required under the local identity provider."
+    },
+    {
+      "name": "COBUDGET_SESSION_ENVELOPE_KEY_PROVIDER",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "enum",
+        "values": [
+          "local",
+          "kms"
+        ]
+      },
+      "template": "included",
+      "placeholder": "local",
+      "description": "Delivery-envelope key provider for sealed session delivery results (CBD-191 section 3.1). \"local\" is refused outside NODE_ENV=development/test; \"kms\" is not yet available."
+    },
+    {
+      "name": "COBUDGET_SESSION_ENVELOPE_KEY",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "string"
+      },
+      "template": "included",
+      "placeholder": "",
+      "description": "Base64-encoded 32-byte key for the local delivery-envelope provider. Required when the envelope provider is \"local\". Separate custody from the session pepper and the field-encryption key."
+    },
+    {
+      "name": "COBUDGET_SESSION_ENVELOPE_KEY_VERSION",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "string"
+      },
+      "template": "included",
+      "placeholder": "local-dev-v1",
+      "description": "Key version recorded on sealed delivery envelopes. Required when the envelope provider is \"local\"."
+    },
+    {
+      "name": "COBUDGET_IDENTITY_PROVIDER",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "enum",
+        "values": [
+          "local",
+          "cognito",
+          "unavailable"
+        ]
+      },
+      "template": "included",
+      "placeholder": "local",
+      "description": "Identity adapter. \"local\" is the Cognito-shaped local adapter (development/test only); \"cognito\" stays refused until PROVIDERS-LOCAL-001 is superseded; \"unavailable\" (or absent) starts the API with the fail-closed authorization boundary and no sign-in."
+    },
+    {
+      "name": "COBUDGET_IDENTITY_ENVIRONMENT_ID",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "enum",
+        "values": [
+          "development",
+          "test",
+          "staging",
+          "production"
+        ]
+      },
+      "template": "included",
+      "placeholder": "development",
+      "description": "Identity environment row (CBD-190 section 3). Must equal NODE_ENV under the local adapter; a cross-environment value fails startup."
+    },
+    {
+      "name": "COBUDGET_IDENTITY_ISSUER",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "string"
+      },
+      "template": "included",
+      "placeholder": "http://127.0.0.1:3001/v1/identity/local",
+      "description": "Exact OIDC issuer. Under the local adapter it must be the ceremony origin plus /v1/identity/local, on loopback."
+    },
+    {
+      "name": "COBUDGET_IDENTITY_CLIENT_ID",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "string"
+      },
+      "template": "included",
+      "placeholder": "cobudget-local-web",
+      "description": "Exact OAuth client identifier the adapter sends and requires in the ID token audience. Not a secret; the client is public (PKCE only)."
+    },
+    {
+      "name": "COBUDGET_IDENTITY_APPLICATION_ORIGIN",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "string"
+      },
+      "template": "included",
+      "placeholder": "http://localhost:3000",
+      "description": "The one allowed initiating application origin (scheme://host[:port]). Callbacks navigate back to it; sign-in and logout requests must carry it as their Origin."
+    },
+    {
+      "name": "COBUDGET_IDENTITY_CEREMONY_ORIGIN",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "string"
+      },
+      "template": "included",
+      "placeholder": "http://127.0.0.1:3001",
+      "description": "Origin that serves the hosted ceremony. Must differ from the application origin (CBD-190 section 8); the local adapter serves it from the API origin."
+    },
+    {
+      "name": "COBUDGET_IDENTITY_CALLBACK_URI",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "string"
+      },
+      "template": "included",
+      "placeholder": "http://localhost:3000/v1/identity/callback",
+      "description": "Exact provider-registered callback URI; its path must be /v1/identity/callback. No prefix, suffix, query or fragment matching."
+    },
+    {
+      "name": "COBUDGET_IDENTITY_CHALLENGE_LIFETIME_SECONDS",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "integer",
+        "min": 1,
+        "max": 3600
+      },
+      "template": "included",
+      "placeholder": "600",
+      "description": "Lifetime of a begin challenge (state, PKCE, nonce). Required under the local adapter."
+    },
+    {
+      "name": "COBUDGET_IDENTITY_EXCHANGE_LIFETIME_MS",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "integer",
+        "min": 1,
+        "max": 60000
+      },
+      "template": "included",
+      "placeholder": "5000",
+      "description": "Maximum lifetime of one bounded token exchange, including issuer revocation (CBD-190 section 10.1). Required under the local adapter."
+    },
+    {
+      "name": "COBUDGET_IDENTITY_MAPPING_MAX_ATTEMPTS",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "integer",
+        "min": 1,
+        "max": 20
+      },
+      "template": "included",
+      "placeholder": "5",
+      "description": "Maximum whole-transaction attempts for the identity mapping (CBD-190 section 5.2). Required under the local adapter."
+    },
+    {
+      "name": "COBUDGET_IDENTITY_HANDOFF_LIFETIME_SECONDS",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "integer",
+        "min": 1,
+        "max": 3600
+      },
+      "template": "included",
+      "placeholder": "120",
+      "description": "Lifetime of a prepared session hand-off before it becomes terminal (CBD-190 section 6). Required under the local adapter."
+    },
+    {
+      "name": "COBUDGET_IDENTITY_CLOCK_SKEW_SECONDS",
+      "classification": "application",
+      "consumer": [
+        "apps/api/src/config.ts"
+      ],
+      "owner": "Engineering",
+      "required": false,
+      "sensitivity": "non-secret",
+      "source": "deployment environment",
+      "validation": {
+        "kind": "integer",
+        "min": 0,
+        "max": 300
+      },
+      "template": "included",
+      "placeholder": "30",
+      "description": "Accepted clock skew for provider token times (CBD-190 section 4.3). Required under the local adapter."
     }
   ]
 }

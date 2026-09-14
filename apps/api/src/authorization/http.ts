@@ -19,6 +19,7 @@ import { absentFactSource, FactAssembler } from "./facts.js";
 import type { Operation } from "./facts.js";
 
 const METADATA = Symbol("authorization.route");
+const PRE_AUTHENTICATION = Symbol("authorization.pre_authentication");
 export const API_AUTHORIZATION = Symbol("authorization.dependencies");
 /** A route-owned application failure, transported only after rollback. */
 export class RouteFailure extends Error {
@@ -44,6 +45,26 @@ export interface ApiAuthorizationOptions {
   deny(response: ExternalDenial): never;
 }
 export const Authorize = (metadata: RouteAuthorization): MethodDecorator => SetMetadata(METADATA, Object.freeze({ ...metadata }));
+/** CBD-266 section 8.1 / CBD-190 (PROTO-IDENTITY-API-001): a registration, authentication or recovery
+ * surface cannot require an existing session. Surface enforcement still runs first with
+ * pre-authentication counting keys; no policy is evaluated and no transaction is opened. The
+ * marker is explicit so the route is inventoried like any other and never a silent bypass. */
+export const PreAuthenticationSurface = (): MethodDecorator => SetMetadata(PRE_AUTHENTICATION, true);
+/**
+ * PROTO-IDENTITY-API-001 correction C7 (security S02): the marker previously
+ * bypassed policy on metadata alone with no restriction on which routes
+ * could carry it. `onModuleInit` now accepts it only on this explicit,
+ * closed set of identity pre-authentication surfaces (begin, the local
+ * hosted ceremony's authorize/choose, and the callback) and refuses at
+ * startup to install a route that carries both `@Authorize` and this
+ * marker, or that carries this marker outside the set.
+ */
+const ELIGIBLE_PRE_AUTHENTICATION_SURFACES: ReadonlySet<string> = new Set([
+  "POST /v1/identity/begin",
+  "GET /v1/identity/callback",
+  "GET /v1/identity/local/authorize",
+  "GET /v1/identity/local/choose",
+]);
 const active = new WeakMap<object, EffectContext>();
 export const Authorization = createParamDecorator((_data: unknown, context: ExecutionContext): EffectContext => {
   const effect = active.get(context.switchToHttp().getRequest<object>());
@@ -70,6 +91,7 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
   readonly #pending = new WeakMap<object, AuthorizedContext>();
   readonly #replays = new WeakMap<object, RouteReplay>();
   readonly #registered = new Set<string>();
+  readonly #preAuthentication = new Set<string>();
   readonly #missing: string[] = [];
   readonly #leases = new WeakMap<object, () => Promise<void>>();
   readonly #surfacePassed = new WeakSet<object>();
@@ -93,8 +115,16 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
         const path = this.#reflector.get<string>(PATH_METADATA, handler) ?? "";
         if (typeof prefix !== "string" || typeof path !== "string") { this.#missing.push(`${wrapper.name}.${name}`); continue; }
         const key = `${RequestMethod[method]} /${[prefix, path].join("/").split("/").filter(Boolean).join("/")}`;
+        const authMetadata = this.#reflector.get<RouteAuthorization | undefined>(METADATA, handler);
+        const preAuthentication = this.#reflector.get<true | undefined>(PRE_AUTHENTICATION, handler);
         if (wrapper.metatype === HealthController && handler === HealthController.prototype.getReadiness) this.#registered.add(key);
-        else if (this.#reflector.get<RouteAuthorization | undefined>(METADATA, handler)) this.#registered.add(key);
+        else if (preAuthentication) {
+          // C7: reject at startup rather than silently letting a policy-evaluated route skip policy, or an ineligible route skip the session gate.
+          if (authMetadata) throw new Error(`authorization startup: "${key}" carries both @Authorize and @PreAuthenticationSurface`);
+          if (!ELIGIBLE_PRE_AUTHENTICATION_SURFACES.has(key)) throw new Error(`authorization startup: "${key}" is marked @PreAuthenticationSurface but is not an eligible pre-authentication surface`);
+          this.#registered.add(key); this.#preAuthentication.add(key);
+        }
+        else if (authMetadata) this.#registered.add(key);
         else this.#missing.push(key);
       }
     }
@@ -106,7 +136,7 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
       const evidence = this.#rateLimit.evidence(request);
       let actor: string | undefined;
       try {
-        if (!PUBLIC_SURFACES[apiIdentity(request.method, request.routeOptions.url)]) {
+        if (!PUBLIC_SURFACES[apiIdentity(request.method, request.routeOptions.url)] && !this.#preAuthentication.has(`${request.method} ${request.routeOptions.url}`)) {
           try { actor = await this.#options.boundary.resolveSession(this.#options.sessionLocator(request)); }
           catch {
             return await this.#options.boundary.rejectEnforcement({ ...surfaceOutcome(evidence, "deny_input_invalid"), earliest_decisive_gate: "session", safe_reason_class: "not_authenticated" });
@@ -147,6 +177,7 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
     try {
       if (!this.#surfacePassed.has(request)) return await this.#options.boundary.reject();
       if (!await this.#options.surfaceApproved(request)) return await this.#options.boundary.rejectEnforcement(surfaceOutcome(this.#rateLimit.evidence(request), "deny_policy_unavailable"));
+      if (this.#reflector.get<true | undefined>(PRE_AUTHENTICATION, context.getHandler())) return true;
       const metadata = this.#reflector.get<RouteAuthorization | undefined>(METADATA, context.getHandler());
       if (!metadata || metadata.purpose !== "user_delegated") return await this.#options.boundary.reject();
       // Replay is authenticated independently and never evaluates creation policy.
@@ -172,6 +203,7 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
   }
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getClass() === HealthController && context.getHandler() === HealthController.prototype.getReadiness) return next.handle();
+    if (this.#reflector.get<true | undefined>(PRE_AUTHENTICATION, context.getHandler())) return next.handle();
     const request = context.switchToHttp().getRequest<FastifyRequest>();
     const replay = this.#replays.get(request);
     this.#replays.delete(request);

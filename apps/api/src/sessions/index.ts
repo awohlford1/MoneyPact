@@ -4,28 +4,19 @@
  * `buildSessionFactSourceAdapter` composes `@cobudget/sessions`'s store and
  * resolver behind `@cobudget/data-access`'s API-role client into the
  * `session_store` `FactSourceAdapter` `apps/api/src/authorization/facts.ts`
- * (not writable in this packet) already knows how to consume via its
- * `FactSourceAdapter` interface, and the shape `ApiAuthorizationOptions`
- * (`apps/api/src/authorization/http.ts`, also not writable) already expects
- * from `sessionLocator`+a `boundary` built with it.
- *
- * NOT DELIVERED HERE (see the final report's "not delivered because"): the
- * actual startup call that resolves `SessionConfig` from the real
- * environment and passes this adapter into `AppModule.register`'s
- * `authorization` option lives in `apps/api/src/config.ts`,
- * `apps/api/src/bootstrap.ts`, and `apps/api/src/application.ts` -- none of
- * which are in this packet's writable list (only `apps/api/src/sessions/**`
- * and one import/registration line in `app.module.ts`). This module is the
- * ready-to-wire seam; `app.module.ts` re-exports it (see that file's one
- * added line) so the integration that owns those three files can finish the
- * wiring without this packet also owning `apps/api/src/authorization/**`.
+ * consumes. PROTO-IDENTITY-API-001 finished the wiring CBD191-IMPL-001 left
+ * open: `runtime.ts` resolves `SessionConfig` and the envelope-key provider
+ * from the validated `ApiConfig`, builds this adapter (on an injectable
+ * client so tests never open a pool), composes it with the datastore and
+ * idp_evidence readers in `fact-source.ts`, and hands the result to
+ * `AppModule.register` from `application.ts`.
  */
 import { createApiClient } from "@cobudget/data-access";
+import type { DataAccessClient } from "@cobudget/data-access";
 import { createSessionFactSourceAdapter, createSessionStore } from "@cobudget/sessions";
 import type { MinimalFactSourceAdapter, SessionConfig } from "@cobudget/sessions";
 
-export function buildSessionFactSourceAdapter(config: SessionConfig, environmentId: string): MinimalFactSourceAdapter {
-  const client = createApiClient();
+export function buildSessionFactSourceAdapter(config: SessionConfig, environmentId: string, client: DataAccessClient = createApiClient()): MinimalFactSourceAdapter {
   const store = createSessionStore(client);
   return createSessionFactSourceAdapter(store, config, environmentId);
 }
@@ -36,3 +27,11 @@ export { resolveSessionEnvelopeKeyProvider } from "@cobudget/sessions";
 export type { SessionConfig, SessionConfigEnvironment } from "@cobudget/sessions";
 export type { EnvelopeKeyProvider } from "@cobudget/sessions";
 export type { EnvelopeKeyConfigEnvironment } from "@cobudget/sessions";
+export { composeApiRuntime } from "./runtime.ts";
+export { lazyDataAccessClient } from "./runtime.ts";
+export { resolveApiIdentityConfiguration } from "./runtime.ts";
+export { resolveApiSessionConfiguration } from "./runtime.ts";
+export type { ComposedApiRuntime, RuntimeOverrides } from "./runtime.ts";
+export { createApiFactSource } from "./fact-source.ts";
+export { ApiTransactionStore } from "./transaction-store.ts";
+export { InProcessRestrictedAuditStore } from "./audit.ts";

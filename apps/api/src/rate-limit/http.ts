@@ -2,6 +2,7 @@ import type { FastifyRequest } from "fastify";
 import { apiIdentity, InProcessCounterStore, loadPrototypeRegistry, loadRegistrations, RateLimitEngine, invocation } from "../../../../packages/rate-limit/src/index.ts";
 import type { Decision, EnforcementEvidence, Registration } from "../../../../packages/rate-limit/src/index.ts";
 
+const LOOPBACK: readonly string[] = ["127.0.0.1", "::1", "::ffff:127.0.0.1"];
 export interface ApiSurfaceGate {
   evidence(request: FastifyRequest): EnforcementEvidence;
   enforce(request: FastifyRequest, actorId: string | undefined): Promise<Decision>;
@@ -23,7 +24,9 @@ export class ApiRateLimits implements ApiSurfaceGate {
     const evidence = this.evidence(request);
     return this.#engine.decide({ registrationId: evidence.registration_id, surfaceId: evidence.surface_id ?? "", parameterRecordId: evidence.parameter_record_id,
       releaseSetDigest: evidence.release_set_digest, requestOrJobUnit: 1,
-      verifiedContext: { ...(actorId ? { actorId } : {}), localCaller: ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(request.ip) },
+      // The pre-authentication cohort is the direct loopback transport itself (never a forwarded header):
+      // the only network cohort a single local prototype process can observe (privacy_network_cohort_v1).
+      verifiedContext: { ...(actorId ? { actorId } : {}), localCaller: LOOPBACK.includes(request.ip), ...(LOOPBACK.includes(request.ip) ? { networkCohort: "loopback" } : {}) },
     });
   }
 }
