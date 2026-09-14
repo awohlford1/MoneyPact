@@ -97,6 +97,8 @@ export interface IdentityView {
   readonly profileId: string;
   readonly identityBindingId: string;
   readonly sessionRef: string;
+  /** CBD-191 section 5.1: the per-session version the web may hold as a non-authoritative reconnect hint. */
+  readonly sessionVersion: number;
   readonly environmentId: string;
   readonly assurance: "session" | "fresh";
   /**
@@ -111,19 +113,17 @@ export interface IdentityView {
    * limitation, same custody class as the challenge and rate-limit
    * counter stores).
    *
-   * Correction round 3 RC-06 (packet residual, P3): before this, repeated
-   * `view()`/`/me` calls kept returning the same raw value indefinitely,
-   * cleared only by an explicit logout -- a growing repeat-disclosure and
-   * retention window §5.1 does not require. Chosen fix (of the two the
-   * finding offers): deliver it once. The value is consumed -- removed
-   * from server memory -- the first time it is successfully returned, and
-   * every entry also expires at its session's own absolute expiry even if
-   * never read. `undefined` here therefore also means "already delivered
-   * once, or the session's csrf entry expired," not only "unknown to this
-   * process" -- the web bootstrap flow must capture it on that first
-   * fetch after sign-in/reauthentication and hold it for the session's
-   * lifetime in memory, exactly as it already must for a cookie-shaped
-   * delivery it will never see again either.
+   * Correction round 3 RC-06 (packet residual, P3) first made delivery
+   * one-time. PROTO-ACTIVATION-001 reverted that to the finding's other
+   * option, bounded retention: the browser holds the value only in memory
+   * (§5.1 forbids a cookie or durable client value), so every page reload
+   * or new tab performs the bootstrap read again and must receive the
+   * value or it can never mutate again -- which is exactly what the
+   * browser walkthrough showed. The value is therefore returned on every
+   * bootstrap read of a live session and bounded by the session's own
+   * absolute expiry (entries past it are erased on read), and it is erased
+   * at logout. `undefined` means "unknown to this process" (a session
+   * issued before this process started) or "expired".
    */
   readonly csrfValue: string | undefined;
 }
@@ -136,7 +136,7 @@ interface CsrfBootstrapEntry {
 export class IdentityCeremony {
   readonly #d: CeremonyDependencies;
   readonly #inflight: Record<string, Promise<CompletionResult> | undefined> = Object.create(null);
-  /** RC-06: in-process only, keyed by `sessionRef`; never persisted, never a cookie. Populated at issuance, consumed on first read, cleared at logout, expired at the session's own absolute expiry. */
+  /** RC-06: in-process only, keyed by `sessionRef`; never persisted, never a cookie. Populated at issuance, returned on each bootstrap read, cleared at logout, expired at the session's own absolute expiry. */
   readonly #csrfValues: Record<string, CsrfBootstrapEntry | undefined> = Object.create(null);
 
   constructor(dependencies: CeremonyDependencies) {
@@ -398,9 +398,8 @@ export class IdentityCeremony {
     // replay could still recover the byte-identical delivery (§5.3), never a second session.
     await this.#d.sessionStore.acknowledgeDeliveryResult(handoff.sessionHandoffId).catch(() => undefined);
     // C9 (Manager ruling) / RC-06: the raw CSRF value is never a cookie. It lives only in this
-    // process's memory, keyed by sessionRef, delivered exactly once through the GET
-    // /v1/identity/me bootstrap response (CBD-191 §5.1), and bounded by the session's own
-    // absolute expiry even if that bootstrap read never happens.
+    // process's memory, keyed by sessionRef, delivered through the GET /v1/identity/me bootstrap
+    // response (CBD-191 §5.1), and bounded by the session's own absolute expiry.
     this.#csrfValues[delivery.sessionRef] = { value: delivery.csrfValue, expiresAt: delivery.absoluteExpiresAt };
     this.#evidence("handoff_consumed", challenge.challengeId, "success");
     this.#reliability("ok");
@@ -410,25 +409,34 @@ export class IdentityCeremony {
 
   /**
    * GET /v1/identity/me: the resolved subject's identifiers for the web; no contact attribute, no
-   * provider value. RC-06: `csrfValue` is consumed here -- delivered at most once per issuance.
+   * provider value. RC-06: `csrfValue` is the bounded in-process bootstrap value.
    */
   async view(cookieValue: string | undefined): Promise<IdentityView | undefined> {
     const resolved = await resolveSession(cookieValue, this.#d.sessionStore, this.#d.sessionConfig, this.#d.config.environmentId, this.#d.now());
     if (resolved.status !== "resolved") return undefined;
-    const subject = await findSubject(this.#d.client, resolved.accountSubjectId);
-    if (!subject || subject.lifecycleState !== "active") return undefined;
-    const binding = await findBindingBySubject(this.#d.client, this.#d.config.environmentId, subject.accountSubjectId);
-    const profile = (await listProfiles(this.#d.client, subject.accountSubjectId)).find((candidate) => candidate.profileState === "active");
-    if (!binding || !profile) return undefined;
-    return { accountSubjectId: subject.accountSubjectId, profileId: profile.profileId, identityBindingId: binding.identityBindingId, sessionRef: resolved.sessionRef, environmentId: this.#d.config.environmentId, assurance: resolved.assurance.level, csrfValue: this.#consumeCsrfBootstrap(resolved.sessionRef) };
+    return this.viewResolved(this.#d.client, { accountSubjectId: resolved.accountSubjectId, sessionRef: resolved.sessionRef, sessionVersion: resolved.sessionVersion, assurance: resolved.assurance.level });
   }
 
-  /** RC-06: one-time delivery. Returns the raw value at most once, and never past its own absolute expiry, regardless of how many times `view()` is called. */
+  /**
+   * PROTO-ACTIVATION-001: the `me` route runs inside the authorization boundary, whose fact assembly
+   * already resolved the session (and slid its idle expiry). The handler therefore reads the
+   * subject, binding and profile rows through the boundary's transaction client for the subject the
+   * policy authorized, without resolving the cookie a second time.
+   */
+  async viewResolved(client: DataAccessClient, session: { readonly accountSubjectId: string; readonly sessionRef: string; readonly sessionVersion: number; readonly assurance: "session" | "fresh" }): Promise<IdentityView | undefined> {
+    const subject = await findSubject(client, session.accountSubjectId);
+    if (!subject || subject.lifecycleState !== "active") return undefined;
+    const binding = await findBindingBySubject(client, this.#d.config.environmentId, subject.accountSubjectId);
+    const profile = (await listProfiles(client, subject.accountSubjectId)).find((candidate) => candidate.profileState === "active");
+    if (!binding || !profile) return undefined;
+    return { accountSubjectId: subject.accountSubjectId, profileId: profile.profileId, identityBindingId: binding.identityBindingId, sessionRef: session.sessionRef, sessionVersion: session.sessionVersion, environmentId: this.#d.config.environmentId, assurance: session.assurance, csrfValue: this.#consumeCsrfBootstrap(session.sessionRef) };
+  }
+
+  /** RC-06 (bounded retention): the raw value for a live session, erased once its own absolute expiry passes. */
   #consumeCsrfBootstrap(sessionRef: string): string | undefined {
     const entry = this.#csrfValues[sessionRef];
     if (!entry) return undefined;
-    delete this.#csrfValues[sessionRef];
-    if (entry.expiresAt.getTime() <= this.#d.now().getTime()) return undefined;
+    if (entry.expiresAt.getTime() <= this.#d.now().getTime()) { delete this.#csrfValues[sessionRef]; return undefined; }
     return entry.value;
   }
 

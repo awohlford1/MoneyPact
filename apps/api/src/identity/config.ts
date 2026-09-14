@@ -25,7 +25,8 @@ export const LOCAL_ISSUER_PATH = "/v1/identity/local";
 /** Application-owned accessible result page for every non-success outcome (§7). */
 export const IDENTITY_RESULT_PATH = "/identity/result";
 /** §4.1: `post_result_destination_id` is an opaque server-side allowlist key, never a URL. */
-export const POST_RESULT_DESTINATIONS: Readonly<Record<string, string>> = Object.freeze({ home: "/" });
+// PROTO-ACTIVATION-001: `budgets` lets the web land on its authenticated budgets page after the callback.
+export const POST_RESULT_DESTINATIONS: Readonly<Record<string, string>> = Object.freeze({ home: "/", budgets: "/budgets" });
 
 export type IdentityProviderKind = "local" | "cognito" | "unavailable";
 export type IdentityEnvironmentId = "development" | "test" | "staging" | "production";

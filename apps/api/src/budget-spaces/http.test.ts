@@ -15,14 +15,15 @@ import { FakeClock } from "../../../../packages/budget-application/src/creation-
 import { budgetSpacesHttp, listOwnSpaces } from "./http.ts";
 import { proposalHttp } from "../budget-creation/proposal-http.ts";
 
-void test("mounted detail reads a member's current periods; p2 routes deny without effects or cookies", async () => {
+void test("mounted detail reads a member's stored current period; p2 routes deny without effects or cookies when no environment is configured", async () => {
   const h = new Harness(ordinaryFixture("1.view_space"));
   let reads = 0; let handlerCalls = 0;
   const client = { readOwnBudgetMemberships: async (subject: string) => ({ rows: subject === "subject-1" ? [{ budget_space_id: "space-1", membership_id: "membership-1" }] : [] }),
     tenantSelect: async (query: { table: string; budgetSpaceId: string }) => {
       reads++; assert.equal(query.budgetSpaceId, "space-1");
       const rows = query.table === "budget_space_membership" ? [{}] : query.table === "budget_space" ? [{ name: "Household", name_version: 1,
-        time_zone: "America/New_York", currency_code: "USD", lifecycle: "live", lifecycle_version: 1, current_schedule_version_id: "schedule-1" }]
+        time_zone: "America/New_York", currency_code: "USD", lifecycle: "live", lifecycle_version: 1, current_schedule_version_id: "schedule-1", current_period_id: "period-1" }]
+        : query.table === "budget_space_period" ? [{ period_id: "period-1", schedule_version_id: "schedule-1", status: "active", period_start_date: "2026-11-30", period_end_date: "2026-12-06" }]
         : [{ schedule_version_id: "schedule-1", sequence: 1, cadence_definition: { cadence: "weekly", anchor: "monday" } }];
       return { rows, rowCount: rows.length };
     } } as unknown as DataAccessClient;
@@ -48,6 +49,7 @@ void test("mounted detail reads a member's current periods; p2 routes deny witho
     const headers = { cookie: "opaque" };
     const response = await app.inject({ method: "GET", url: "/v1/budget-spaces/space-1", headers });
     assert.equal(response.statusCode, 200, response.body);
+    assert.equal(response.json().activePeriod.periodId, "period-1", "ACT-06: the stored current period row");
     assert.equal(response.json().activePeriod.start, "2026-11-30"); assert.equal(response.json().nextPeriods.length, 3);
     const prior = reads;
     // Non-member and wrong-space denials are byte-identical to a policy denial (CBD-236 PC-236-009): uniform external body, no access_denied code.
@@ -71,8 +73,8 @@ void test("mounted detail reads a member's current periods; p2 routes deny witho
 
 void test("list own returns only membership-selected spaces and refuses missing identity", async () => {
   const client = { readOwnBudgetMemberships: async (subject: string) => { assert.equal(subject, "owner"); return { rows: [{ budget_space_id: "owned", membership_id: "member" }] }; },
-    tenantSelect: async (query: { budgetSpaceId: string }) => { assert.equal(query.budgetSpaceId, "owned"); return { rows: [{ name: "Home", name_version: 1, lifecycle: "live", lifecycle_version: 1 }] }; },
+    tenantSelect: async (query: { budgetSpaceId: string }) => { assert.equal(query.budgetSpaceId, "owned"); return { rows: [{ name: "Home", name_version: 1, lifecycle: "live", lifecycle_version: 1, currency_code: "USD", time_zone: "America/New_York" }] }; },
   } as unknown as DataAccessClient;
-  assert.deepEqual(await listOwnSpaces(client, "owner"), { spaces: [{ budgetSpaceId: "owned", membershipId: "member", name: "Home", nameVersion: 1, lifecycle: "live", lifecycleVersion: 1 }] });
+  assert.deepEqual(await listOwnSpaces(client, "owner"), { spaces: [{ budgetSpaceId: "owned", membershipId: "member", name: "Home", nameVersion: 1, lifecycle: "live", lifecycleVersion: 1, currencyCode: "USD", timeZone: "America/New_York" }] });
   await assert.rejects(listOwnSpaces(client, ""));
 });

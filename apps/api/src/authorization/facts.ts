@@ -14,6 +14,9 @@ export interface Operation {
   readonly fieldSet: "default" | readonly string[];
   /** Opaque server-resolved reference; never populated from request fields. */
   readonly proposalReference?: string;
+  /** Route metadata: the CBD-236 v0.5 subject-scoped variant (section 4.4). `resourceType`/`resourceId` name the
+   * subject-owned target row for a subject-target cell; no acting space or membership exists in this scope. */
+  readonly scope?: "subject";
 }
 export type CreationCandidates = Readonly<{ spaceId: string; membershipId: string }>;
 /** Trusted composition supplies persisted candidates for a resolved proposal. */
@@ -33,6 +36,9 @@ export interface FactLookup {
 export interface FactSourceAdapter {
   read(source: FactSource, lookup: FactLookup, transaction?: unknown): Promise<Readonly<Record<string, unknown>> | null>;
 }
+/** Trusted runtime configuration of the receiving process (section 4.4): the configured environment
+ * stamped with `runtime_configuration` provenance. Never read from a request, cookie or row. */
+export interface AssemblerRuntime { readonly environmentId: string }
 export class FactFailure extends Error {
   readonly reason: "not_authenticated" | "input_invalid";
   constructor(reason: "not_authenticated" | "input_invalid") { super(reason); this.reason = reason; }
@@ -46,8 +52,11 @@ const datastore = paths(`
   membership.viewerProfile.type membership.viewerProfile.groupIds membership.viewerProfile.version
   consent.consentId consent.disclosureVersion consent.state resource.owningSpaceId resource.version
   resource.lifecycle resource.authorizerSubjectId resource.authorSubjectId
+  resource.owningSubjectId resource.environmentId
   bootstrap.spaceState bootstrap.primaryMembershipState
 `);
+/** Leaves a subject-scoped input may carry from the datastore: the subject and profile rows, plus the subject-owned target row. */
+const SUBJECT_SCOPED_DATASTORE = /^(subject|profile)\.|^resource\.(owningSpaceId|version|lifecycle|owningSubjectId|environmentId)$/;
 const assurance = ["assurance.level", "assurance.boundAction", "assurance.boundSpaceId", "assurance.expiresAt"];
 const producers: Partial<Record<FactSource, readonly string[]>> = {
   session_store: ["subject.accountSubjectId", "subject.sessionRef", "subject.sessionVersion"],
@@ -82,10 +91,12 @@ export class FactAssembler {
   readonly #clock: () => Date;
   readonly #timeoutMs: number;
   readonly #proposalCandidates: ProposalCandidateProvider | undefined;
-  constructor(adapter: "api" | "worker", source: FactSourceAdapter, clock: () => Date = () => new Date(), timeoutMs = 5_000, proposalCandidates?: ProposalCandidateProvider) {
+  readonly #runtime: AssemblerRuntime | undefined;
+  constructor(adapter: "api" | "worker", source: FactSourceAdapter, clock: () => Date = () => new Date(), timeoutMs = 5_000, proposalCandidates?: ProposalCandidateProvider, runtime?: AssemblerRuntime) {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 5_000) throw new Error("invalid_fact_deadline");
+    if (runtime !== undefined && !validLeaf("environmentId", runtime.environmentId)) throw new Error("invalid_runtime_environment");
     this.#adapter = adapter; this.#source = source; this.#clock = clock; this.#timeoutMs = timeoutMs;
-    this.#proposalCandidates = proposalCandidates;
+    this.#proposalCandidates = proposalCandidates; this.#runtime = runtime;
   }
   async candidates(operation: Operation): Promise<CreationCandidates> {
     if (operation.proposalReference === undefined) return { spaceId: randomUUID(), membershipId: randomUUID() };
@@ -119,6 +130,10 @@ export class FactAssembler {
   async assemble(lookup: FactLookup, transaction?: unknown, captured?: CapturedVersions): Promise<PolicyInput> {
     const { operation } = lookup;
     const bootstrap = operation.action === "space.create";
+    // Section 4.4: the subject-scoped variant exists only on the api adapter, only for user-delegated
+    // authority, never for the bootstrap action, and only when the process configuration names an environment.
+    const subjectScoped = operation.scope === "subject";
+    if (subjectScoped && (this.#adapter !== "api" || bootstrap || operation.mode !== "user_delegated" || !this.#runtime)) throw new FactFailure("input_invalid");
     if ((this.#adapter === "api" && operation.mode !== "user_delegated") || (bootstrap && this.#adapter !== "api")) throw new FactFailure("input_invalid");
     const first: FactSource = operation.mode === "service" ? "workload_identity" : this.#adapter === "api" ? "session_store" : "delegation_store";
     let identity: Readonly<Record<string, unknown>> | null;
@@ -139,6 +154,9 @@ export class FactAssembler {
       for (const path of producers[source] ?? []) {
         if (bootstrap && /^(space|membership|consent|resource)\./.test(path)) continue;
         if (!bootstrap && path.startsWith("bootstrap.")) continue;
+        if (subjectScoped && source === "datastore" && !SUBJECT_SCOPED_DATASTORE.test(path)) continue;
+        if (subjectScoped && operation.resourceType === undefined && path.startsWith("resource.")) continue;
+        if (!subjectScoped && /^resource\.(owningSubjectId|environmentId)$/.test(path)) continue;
         if (operation.mode === "service" && /^(subject|profile|membership|consent)\./.test(path)) continue;
         if (Object.hasOwn(facts, path)) {
           if (!validLeaf(path, facts[path])) throw new FactFailure(source === "session_store" ? "not_authenticated" : "input_invalid");
@@ -154,6 +172,19 @@ export class FactAssembler {
       if (!lookup.candidates) throw new FactFailure("input_invalid");
       put(input, "bootstrap.candidateSpaceId", lookup.candidates.spaceId);
       put(input, "bootstrap.candidatePrimaryMembershipId", lookup.candidates.membershipId);
+    } else if (subjectScoped) {
+      // The configured environment is a runtime fact; the target row (when the cell names one) was loaded by the
+      // datastore through a statement keyed on environment and acting subject, and carries its own owner and
+      // environment columns for `decide` to re-prove. An absent row leaves `resource` without its datastore leaves,
+      // which fails the provenance comparison below (`input_invalid`) without any identifier-only lookup.
+      if (operation.actingSpaceId !== undefined || operation.actingMembershipId !== undefined || operation.delegationRef !== undefined) throw new FactFailure("input_invalid");
+      put(input, "environment.environmentId", this.#runtime!.environmentId);
+      if (operation.resourceType !== undefined) {
+        if (!operation.resourceId) throw new FactFailure("input_invalid");
+        put(input, "resource.id", operation.resourceId); put(input, "resource.type", operation.resourceType);
+        const resource = input.resource as Record<string, unknown>;
+        if (resource.owningSpaceId !== "none" || !Object.hasOwn(resource, "owningSubjectId") || !Object.hasOwn(resource, "environmentId")) throw new FactFailure("input_invalid");
+      } else if (operation.resourceId !== undefined || input.resource !== undefined) throw new FactFailure("input_invalid");
     } else {
       if (!operation.resourceId || !operation.resourceType || !operation.actingSpaceId) throw new FactFailure("input_invalid");
       put(input, "resource.id", operation.resourceId); put(input, "resource.type", operation.resourceType);

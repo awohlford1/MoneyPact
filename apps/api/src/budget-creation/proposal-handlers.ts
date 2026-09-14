@@ -4,7 +4,8 @@ import type { AuthenticatedSubjectContext, Ports } from "../../../../packages/bu
 
 export interface ProposalHttpDependencies {
   readonly context: (request: FastifyRequest, authenticatedSubject: string) => Promise<AuthenticatedSubjectContext>;
-  readonly ports: (context: AuthenticatedSubjectContext) => Promise<Ports>;
+  /** `transaction` is the boundary's transaction-scoped client (PROTO-ACTIVATION-001): the proposal store must write through it. */
+  readonly ports: (context: AuthenticatedSubjectContext, transaction?: unknown) => Promise<Ports>;
 }
 export interface ProposalHttpResponse { readonly status: number; readonly body: unknown }
 
@@ -20,13 +21,13 @@ export class ProposalHandlers {
     return context.subjectId === subject ? context : null;
   }
 
-  async createOrRegenerate(request: FastifyRequest, subject: string | undefined): Promise<ProposalHttpResponse> {
+  async createOrRegenerate(request: FastifyRequest, subject: string | undefined, transaction?: unknown): Promise<ProposalHttpResponse> {
     const context = await this.resolve(request, subject);
     if (!context) return { status: 401, body: { error: "unauthenticated" } };
     const header = request.headers["idempotency-key"];
     const outcome = await createOrRegenerateProposal({ subjectContext: context,
       idempotencyKeyHeader: Array.isArray(header) ? header.join(",") : header,
-      body: request.body }, await this.dependencies.ports(context));
+      body: request.body }, await this.dependencies.ports(context, transaction));
     switch (outcome.kind) {
       case "created": case "replayed": return { status: outcome.status, body: outcome.response };
       case "validation_failed": return { status: 400, body: { error: "validation_failed", fieldErrors: outcome.fieldErrors } };
@@ -35,14 +36,14 @@ export class ProposalHandlers {
     }
   }
 
-  async read(request: FastifyRequest, subject: string | undefined): Promise<ProposalHttpResponse> {
+  async read(request: FastifyRequest, subject: string | undefined, transaction?: unknown): Promise<ProposalHttpResponse> {
     const context = await this.resolve(request, subject);
     if (!context) return { status: 401, body: { error: "unauthenticated" } };
     const proposalId = (request.params as Record<string, unknown>).proposalId;
     if (typeof proposalId !== "string" || !/^bcp_[0-9a-f]{32}$/u.test(proposalId)) {
       return { status: 404, body: { error: "proposal_not_found" } };
     }
-    const outcome = await readProposal({ ...context, proposalId }, await this.dependencies.ports(context));
+    const outcome = await readProposal({ ...context, proposalId }, await this.dependencies.ports(context, transaction));
     return outcome.kind === "found" ? { status: 200, body: outcome.response }
       : { status: 404, body: { error: "proposal_not_found" } };
   }

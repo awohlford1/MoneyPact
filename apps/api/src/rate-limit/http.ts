@@ -22,11 +22,20 @@ export class ApiRateLimits implements ApiSurfaceGate {
   }
   async enforce(request: FastifyRequest, actorId: string | undefined): Promise<Decision> {
     const evidence = this.evidence(request);
+    const local = LOOPBACK.includes(request.ip);
+    // PROTO-ACTIVATION-001: the identity ceremony surfaces (surf-266-authentication) are bound to the approved
+    // bootstrap record (proto-bootstrap-v1), whose counting key is a server-issued ceremony plus stage. The
+    // local prototype observes one network cohort (loopback) and issues no ceremony identifier before `begin`
+    // runs, so the ceremony dimension is the loopback cohort on the exact registered surface and every request
+    // is an `ordinary` stage decision: the record's six ordinary units per window bound each ceremony route for
+    // the single local cohort, and the two reserved completion units are never consumed here. This is a
+    // prototype projection of the approved record, reported as a substitution; it changes no parameter value.
+    const ceremony = local && evidence.surface_id === "surf-266-authentication" ? { ceremonyId: `loopback:${evidence.registration_id}`, bootstrapStage: "ordinary" as const } : {};
     return this.#engine.decide({ registrationId: evidence.registration_id, surfaceId: evidence.surface_id ?? "", parameterRecordId: evidence.parameter_record_id,
       releaseSetDigest: evidence.release_set_digest, requestOrJobUnit: 1,
       // The pre-authentication cohort is the direct loopback transport itself (never a forwarded header):
       // the only network cohort a single local prototype process can observe (privacy_network_cohort_v1).
-      verifiedContext: { ...(actorId ? { actorId } : {}), localCaller: LOOPBACK.includes(request.ip), ...(LOOPBACK.includes(request.ip) ? { networkCohort: "loopback" } : {}) },
+      verifiedContext: { ...(actorId ? { actorId } : {}), localCaller: local, ...(local ? { networkCohort: "loopback" } : {}), ...ceremony },
     });
   }
 }

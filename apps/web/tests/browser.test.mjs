@@ -125,10 +125,11 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
       })();
     } else void request.continue();
   });
+  // The merged API detail carries no staleness signal (API-ASSUMPTIONS.md), so the stale shell state is not reachable from a response;
+  // a partial response is one missing a required section (here the schedule version).
   for (const [label, body, expected] of [
     ["empty", { ...detailResponse, activePeriod: null }, "No active period"],
-    ["stale", { ...detailResponse, freshness: "stale" }, "Saved budget snapshot"],
-    ["partial", { ...detailResponse, completeness: "partial" }, "Budget details are incomplete"],
+    ["partial", { ...detailResponse, scheduleVersion: null }, "Budget details are incomplete"],
   ]) await t.test(`CBD-218-AC02/AC03: ${label}`, async () => {
     scenario = { body }; await clickText("Refresh budget"); await waitText(expected); await accessibility();
     if (label !== "empty") assert.equal(await page.$("#plan-heading"), null);
@@ -141,7 +142,7 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     await waitText("Budget refreshed."); scenario = null; await page.reload(); await waitText("The active budget period is ready.");
   });
   await t.test("CBD-218-AC04: navigation discards a slow response from another budget", async () => {
-    scenario = { delay: 1200, body: { ...detailResponse, name: "Stale response marker" } };
+    scenario = { delay: 1200, body: { ...detailResponse, space: { ...detailResponse.space, name: "Stale response marker" } } };
     await clickText("Refresh budget"); await waitText("Loading the active budget period");
     await clickText("Your budgets"); await waitText("Create a budget"); await pause(1400);
     assert.equal((await text()).includes("Stale response marker"), false); scenario = null;

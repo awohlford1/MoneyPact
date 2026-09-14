@@ -9,10 +9,10 @@ import type { DataAccessClient } from "@cobudget/data-access";
 import { AppModule } from "../app.module.js";
 import { loadApiConfigFrom } from "../config.js";
 import { Harness, testHistory } from "../authorization/test-support.js";
-import { invocation } from "../../../../packages/rate-limit/src/index.ts";
+import { invocation, loadRegistrations } from "../../../../packages/rate-limit/src/index.ts";
 import { budgetApiHttp } from "./modules.ts";
 import { installedRoutes } from "../rate-limit/inventory.js";
-import registrationProposal from "./rate-limit-proposal.json" with { type: "json" };
+
 import { CreationAuthorizationStore } from "./transaction-store.js";
 import { DurableProposalStore } from "../../../../packages/budget-application/src/persistence/proposal-store.ts";
 import { requestDigest } from "../../../../packages/budget-application/src/creation-confirmation/index.ts";
@@ -42,8 +42,9 @@ void test("registered confirmation route authenticates before lookup, rejects ec
   const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { logger: false });
   try {
     await app.init(); await app.getHttpAdapter().getInstance().ready();
+    // PROTO-ACTIVATION-001: the eight routes are registered in config/rate-limit/registrations.json (the proposal file is gone).
     assert.deepEqual(installedRoutes(app.getHttpAdapter().getInstance()).map(route => route.id).filter(id => id.includes("/v1/budget-")).sort(),
-      registrationProposal.registrations.map(row => row.registration_id).sort());
+      loadRegistrations().map(row => row.registration_id).filter(id => id.includes("/v1/budget-") && !id.includes("/categories") && !id.includes("/targets") && !id.includes("/plan")).sort());
     const url = "/v1/budget-creation-proposals/" + request.proposalId + "/confirm";
     assert.equal((await app.inject({ method: "POST", url, payload: { confirmationBinding: "binding" } })).statusCode, 403);
     assert.equal(lookups, 0);

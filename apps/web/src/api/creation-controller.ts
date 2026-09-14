@@ -5,6 +5,13 @@ function freeze<T>(value: T): T {
   if (value && typeof value === "object") { Object.values(value).forEach(freeze); Object.freeze(value); }
   return value;
 }
+/** Key-order-independent equality: the API stores the proposal as jsonb, so a re-read returns the same values with a different key order. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`).join(",")}}`;
+  return JSON.stringify(value);
+}
+export function sameProposal(left: Proposal, right: Proposal): boolean { return canonical(left) === canonical(right); }
 /** Every draft edit invalidates synchronously, before an asynchronous request can resolve. */
 export class CreationController {
   private state: CreationState;
@@ -73,7 +80,7 @@ export class CreationController {
     try {
       const read = await this.api.readProposal(reviewed.proposalId, this.abort?.signal);
       if (generation !== this.generation) return;
-      if (read.lifecycle.status !== "previewed" || this.expired() || JSON.stringify(read.proposal) !== JSON.stringify(reviewed)) {
+      if (read.lifecycle.status !== "previewed" || this.expired() || !sameProposal(read.proposal, reviewed)) {
         this.edit(this.state.draft);
         await this.preview();
       } else this.publish({ ...this.state, proposal: freeze(structuredClone(read.proposal)) });
@@ -89,7 +96,7 @@ export class CreationController {
     try {
       const read = await this.api.readProposal(reviewed.proposalId);
       if (generation !== this.generation) return;
-      if (read.lifecycle.status !== "previewed" || this.expired() || JSON.stringify(read.proposal) !== JSON.stringify(reviewed)) {
+      if (read.lifecycle.status !== "previewed" || this.expired() || !sameProposal(read.proposal, reviewed)) {
         this.publish({ ...this.state, stage: "review" });
         this.edit(this.state.draft);
         await this.preview();
