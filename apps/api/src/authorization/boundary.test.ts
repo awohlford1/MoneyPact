@@ -154,16 +154,23 @@ describe("authorization transaction boundary", () => {
     for (const expectedDigest of ["0".repeat(64), SUPPORTED_POLICY_TUPLES[0]!.expectedDigest]) {
       assert.throws(() => assertPolicyCompatibility(testHistory, [{ version: "p1", expectedDigest, schemaVersion: 99 }]), /policy_version_unsupported/);
     }
+    assert.throws(() => assertPolicyCompatibility(testHistory, [{ version: "p2", expectedDigest: SUPPORTED_POLICY_TUPLES[0]!.expectedDigest, schemaVersion: 99 }]), /policy_version_unsupported/);
     assert.throws(() => assertPolicyCompatibility(testHistory, [{ ...SUPPORTED_POLICY_TUPLES[0]!, expectedDigest: "0".repeat(64) }]), /policy_version_unsupported/);
     assert.throws(() => assertPolicyCompatibility([]), /policy_version_unsupported/);
     assert.throws(() => assertPolicyCompatibility([{ ...testHistory[0], securityApprovalRef: "" }]), /policy_version_unsupported/);
     // p1 was released under CBD236-P1-RELEASE-001: the checked-in history must
     // carry exactly that row and satisfy the guard the processes run at startup.
     const released = readReleaseHistory() as Array<Record<string, unknown>>;
-    assert.equal(released.length, 1, "exactly one released policy row");
+    assert.equal(released.length, 2, "exactly two released policy rows");
     assert.equal(released[0]?.version, "p1");
     assert.equal(released[0]?.productApprovalRef, "PO-CONTRACT-APPROVALS-001");
     assert.equal(released[0]?.securityApprovalRef, "CBD236-SECURITY-001");
+    assert.equal(released[1]?.version, "p2");
+    assert.equal(released[1]?.digest, "374e0b4d2ae86d53afe3fdf02a9d91e52d7b95b2e67df75b975bb54b4163d322");
+    assert.equal(released[1]?.schemaVersion, 1);
+    assert.equal(released[1]?.productApprovalRef, "PO-P2-APPROVAL-001");
+    assert.equal(released[1]?.securityApprovalRef, "PROTO-POLICY-V2-SEC-001");
+    assert.equal(typeof released[1]?.releaseCommit === "string" && (released[1]?.releaseCommit as string).length > 0, true);
     assert.doesNotThrow(() => assertPolicyCompatibility(released));
   });
 });

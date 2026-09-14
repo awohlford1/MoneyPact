@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Ready to apply after approvals** — not applied; `p2` is registered and not released |
+| Status | **Applied** — `releaseCommit` `c4aac07b133e50ece1c0de327c8e1c634c19617f`; `p2` is released |
 | Document version | 0.2 |
 | Governing contract | [`docs/cbd-236-authorization-policy-contract.md`](./cbd-236-authorization-policy-contract.md) v0.5.1 §6 `PC-236-011`, `PC-236-013`, §8.5 |
 | Governing decisions | `CBD236-POLICY-APPROVAL-001` (Product Owner and Security sign-off cited in every released row); `PROTO-POLICY-V2-DECISION-001` (add `p2` through an Architecture packet and a following Security review; release requires both approvals as separate records) |

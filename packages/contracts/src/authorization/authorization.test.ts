@@ -24,6 +24,9 @@ function denyIsInert(input: unknown, reason?: string, version?: RegisteredPolicy
   assert.deepEqual(externalDenial(), { outcome: "deny", reason: "denied" });
 }
 
+// The registry constant is a literal type; widen it once so version-derived branches typecheck under either released version.
+const currentVersion = CURRENT_POLICY_VERSION as RegisteredPolicyVersion;
+
 describe("CBD-236 acceptance criteria", () => {
   it("AC01 exposes one deterministic entry point with explicit complete decisions and bootstrap obligations", () => {
     const input = bootstrapFixture();
@@ -135,7 +138,7 @@ describe("CBD-236 acceptance criteria", () => {
     for (const action of ACTION_DEFINITIONS.filter((item) => item.permission !== "reserved")) assert.ok(fixtureActions.has(action.action), action.action);
     assert.deepEqual(new Set(NEGATIVE_FAMILIES.map(([id]) => id)), new Set(Array.from({ length: 15 }, (_, index) => `NC-236-${String(index + 1).padStart(2, "0")}`)));
     for (const fixture of P1_FIXTURES) assert.equal(decideUnderRegisteredVersion("p1", fixture.input).outcome, fixture.expected, fixture.id);
-    const currentCatalog = CURRENT_POLICY_VERSION === "p1" ? P1_FIXTURES : P2_FIXTURES;
+    const currentCatalog = currentVersion === "p1" ? P1_FIXTURES : P2_FIXTURES;
     for (const fixture of currentCatalog) assert.equal(decide(fixture.input).outcome, fixture.expected, `${fixture.id} through decide`);
     const crossSpace = serviceFixture();
     denyIsInert(restamp({ ...crossSpace, resource: { ...crossSpace.resource, owningSpaceId: "other-space" } }), "scope_mismatch");
@@ -263,7 +266,7 @@ describe("policy version p2: subject-scoped cells, registered and not current", 
       denyIsInert(ordinaryFixture("1.view_space", "primary_owner", version), "policy_version_unsupported");
       assert.equal(policyCompatibility(version, POLICY_VERSIONS[version].digest, 1), false);
     }
-    if (CURRENT_POLICY_VERSION === "p1") {
+    if (currentVersion === "p1") {
       // Before the section 8.5.4 release: every p2 input denies through decide and a p2-only action is unsupported exactly as before p2 existed.
       for (const cell of SUBJECT_CELLS) denyIsInert(subjectFixture(cell.action), "policy_version_unsupported");
       for (const action of [...p2Only, "profile.read"]) denyIsInert(restamp({ ...ordinaryFixture("1.view_space"), request: { action, purpose: "user_delegated", fieldSet: "default" } }), "input_unsupported");
