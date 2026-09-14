@@ -14,5 +14,13 @@
     "releaseCommit": "c4aac07b133e50ece1c0de327c8e1c634c19617f",
     "productApprovalRef": "PO-P2-APPROVAL-001",
     "securityApprovalRef": "PROTO-POLICY-V2-SEC-001"
+  },
+  {
+    "version": "p3",
+    "digest": "b4fbdb8e32a6155705877d7c91846ee855dc717dfce9d57a6f04e07301923e4d",
+    "schemaVersion": 1,
+    "releaseCommit": "2245eea5347263943ae4ec1edc5a2b4d30460220",
+    "productApprovalRef": "PO-P3-APPROVAL-001",
+    "securityApprovalRef": "PROTO-POLICY-V3-SEC-001-RESULT-001"
   }
 ]

@@ -7,7 +7,7 @@ export interface PolicyTuple { version: string; expectedDigest: string; schemaVe
 
 // Independent application pin. Never derive this value from the loaded registry.
 export const SUPPORTED_POLICY_TUPLES: readonly PolicyTuple[] = Object.freeze([
-  Object.freeze({ version: "p2", expectedDigest: "374e0b4d2ae86d53afe3fdf02a9d91e52d7b95b2e67df75b975bb54b4163d322", schemaVersion: 1 }),
+  Object.freeze({ version: "p3", expectedDigest: "b4fbdb8e32a6155705877d7c91846ee855dc717dfce9d57a6f04e07301923e4d", schemaVersion: 1 }),
 ]);
 
 export function readReleaseHistory(): unknown {
@@ -23,7 +23,7 @@ export function assertPolicyCompatibility(
   history: unknown = readReleaseHistory(),
   supported: readonly PolicyTuple[] = SUPPORTED_POLICY_TUPLES,
 ): void {
-  const tuple = supported.find((item) => item.version === "p2");
+  const tuple = supported.find((item) => item.version === "p3");
   const keys = ["digest", "productApprovalRef", "releaseCommit", "schemaVersion", "securityApprovalRef", "version"];
   if (!tuple || supported.length !== 1 || !Array.isArray(history)
     || !policyCompatibility(tuple.version, tuple.expectedDigest, tuple.schemaVersion)) {

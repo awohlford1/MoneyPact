@@ -143,7 +143,7 @@ export class FactAssembler {
     if (!identity || typeof id !== "string" || id.length === 0) throw new FactFailure(first === "session_store" ? "not_authenticated" : "input_invalid");
     const request: Record<string, unknown> = { action: operation.action, fieldSet: operation.fieldSet };
     const input: Record<string, unknown> = {
-      request, authority: {}, versions: { policyVersion: "p2", ...(captured ? { capturedAtPrecheck: structuredClone(captured) } : {}) },
+      request, authority: {}, versions: { policyVersion: "p3", ...(captured ? { capturedAtPrecheck: structuredClone(captured) } : {}) },
       evaluation: { adapter: this.#adapter, inputSchemaVersion: 1, evaluatedAt: this.#clock().toISOString() },
     };
     const selected = [first, "datastore", ...(this.#adapter === "api" ? ["idp_evidence"] : []), ...(operation.mode === "service" ? ["server_policy_store"] : [])] as FactSource[];

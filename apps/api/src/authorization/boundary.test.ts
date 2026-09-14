@@ -155,13 +155,14 @@ describe("authorization transaction boundary", () => {
       assert.throws(() => assertPolicyCompatibility(testHistory, [{ version: "p1", expectedDigest, schemaVersion: 99 }]), /policy_version_unsupported/);
     }
     assert.throws(() => assertPolicyCompatibility(testHistory, [{ version: "p2", expectedDigest: SUPPORTED_POLICY_TUPLES[0]!.expectedDigest, schemaVersion: 99 }]), /policy_version_unsupported/);
+    assert.throws(() => assertPolicyCompatibility(testHistory, [{ version: "p3", expectedDigest: "b4fbdb8e32a6155705877d7c91846ee855dc717dfce9d57a6f04e07301923e4d", schemaVersion: 99 }]), /policy_version_unsupported/);
     assert.throws(() => assertPolicyCompatibility(testHistory, [{ ...SUPPORTED_POLICY_TUPLES[0]!, expectedDigest: "0".repeat(64) }]), /policy_version_unsupported/);
     assert.throws(() => assertPolicyCompatibility([]), /policy_version_unsupported/);
     assert.throws(() => assertPolicyCompatibility([{ ...testHistory[0], securityApprovalRef: "" }]), /policy_version_unsupported/);
     // p1 was released under CBD236-P1-RELEASE-001: the checked-in history must
     // carry exactly that row and satisfy the guard the processes run at startup.
     const released = readReleaseHistory() as Array<Record<string, unknown>>;
-    assert.equal(released.length, 2, "exactly two released policy rows");
+    assert.equal(released.length, 3, "exactly three released policy rows");
     assert.equal(released[0]?.version, "p1");
     assert.equal(released[0]?.productApprovalRef, "PO-CONTRACT-APPROVALS-001");
     assert.equal(released[0]?.securityApprovalRef, "CBD236-SECURITY-001");
@@ -171,6 +172,12 @@ describe("authorization transaction boundary", () => {
     assert.equal(released[1]?.productApprovalRef, "PO-P2-APPROVAL-001");
     assert.equal(released[1]?.securityApprovalRef, "PROTO-POLICY-V2-SEC-001");
     assert.equal(typeof released[1]?.releaseCommit === "string" && (released[1]?.releaseCommit as string).length > 0, true);
+    assert.equal(released[2]?.version, "p3");
+    assert.equal(released[2]?.digest, "b4fbdb8e32a6155705877d7c91846ee855dc717dfce9d57a6f04e07301923e4d");
+    assert.equal(released[2]?.schemaVersion, 1);
+    assert.equal(released[2]?.productApprovalRef, "PO-P3-APPROVAL-001");
+    assert.equal(released[2]?.securityApprovalRef, "PROTO-POLICY-V3-SEC-001-RESULT-001");
+    assert.equal(typeof released[2]?.releaseCommit === "string" && (released[2]?.releaseCommit as string).length > 0, true);
     assert.doesNotThrow(() => assertPolicyCompatibility(released));
   });
 });

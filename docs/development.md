@@ -210,7 +210,7 @@ Both scripts drop and recreate the named scratch database. Never point them at
 - Sessions are opaque cookies per CBD-191; the CSRF value is delivered once in
   the sign-in bootstrap response and sent back as `X-CoBudget-CSRF` on every
   mutation.
-- Authorization is policy version p2, deny by default, evaluated on every
+- Authorization is policy version p3, deny by default, evaluated on every
   protected route. Consent facts for the sole Primary Owner come from a
   labelled interim derivation until the consent record lands
   (`CBD236-CONSENT-SEMANTICS-001`); the walkthrough works, but no other role
