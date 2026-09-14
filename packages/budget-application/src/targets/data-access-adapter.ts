@@ -14,7 +14,8 @@
  * read from a failure. 55000 is the completed-period trigger (AC02); 23514 is
  * a CHECK -- the negative amount or unsupported precision the application
  * already refused, kept as defence in depth (AC04); 23505 is the one-current
- * or one-per-period uniqueness a concurrent writer beat this transaction to.
+ * uniqueness (base or period target) a concurrent writer beat this
+ * transaction to.
  */
 import { parseCadenceDefinition } from "@cobudget/budget-domain/schedule";
 import type { Cadence } from "@cobudget/budget-domain/schedule";
@@ -129,6 +130,7 @@ export function periodTargetFromRow(row: BudgetCategoryPeriodTargetRow): PeriodT
     periodStart: row.period_start_date, periodEnd: row.period_end_date, origin, currencyCode: row.currency_code,
     minorUnitPrecision: row.minor_unit_precision, amountMinorUnits: row.amount_minor_units, formulaVersion: row.formula_version,
     inputs: inputsOf(row.inputs), calculation, computedBySubjectId: row.computed_by_subject_id, source: sourceOf(row.source), computedAt: row.computed_at,
+    supersededAt: row.superseded_at,
   };
 }
 
@@ -138,6 +140,7 @@ export function periodTargetToRow(record: PeriodTargetRecord): BudgetCategoryPer
     period_start_date: record.periodStart, period_end_date: record.periodEnd, origin: record.origin, currency_code: record.currencyCode,
     minor_unit_precision: record.minorUnitPrecision, amount_minor_units: record.amountMinorUnits, formula_version: record.formulaVersion,
     inputs: record.inputs, calculation: record.calculation, computed_by_subject_id: record.computedBySubjectId, source: record.source, computed_at: record.computedAt,
+    superseded_at: record.supersededAt,
   };
 }
 
@@ -173,11 +176,18 @@ export function dataAccessTargetsRepository(statements: TargetsStatements): Targ
       return row === null ? null : planContextFromRow(row);
     }),
     listPeriodTargets: (budgetSpaceId, periodId) => guarded(async () => (await statements.listPeriodTargets(budgetSpaceId, periodId)).map(periodTargetFromRow)),
-    replacePeriodTargets: (budgetSpaceId, periodId, records) => guarded(async () => {
-      await statements.deletePeriodTargets(budgetSpaceId, periodId);
+    supersedePeriodTargets: (budgetSpaceId, periodId, supersededAt, records) => guarded(async () => {
       for (const record of records) {
-        if (record.budgetSpaceId !== budgetSpaceId || record.periodId !== periodId) throw new TargetsError("invalid_request", "periodTargets");
-        await statements.insertPeriodTarget(periodTargetToRow(record));
+        if (record.budgetSpaceId !== budgetSpaceId || record.periodId !== periodId || record.supersededAt !== null) throw new TargetsError("invalid_request", "periodTargets");
+      }
+      // Retained versions: the current rows are stamped, never removed, in the same transaction as the new ones.
+      for (const current of await statements.listPeriodTargets(budgetSpaceId, periodId)) {
+        if (current.superseded_at !== null) continue;
+        if ((await statements.supersedePeriodTarget(budgetSpaceId, current.period_target_id, supersededAt)) !== 1) throw new TargetsError("conflict", "periodTargetId");
+      }
+      for (const record of records) {
+        const { superseded_at: _superseded, ...row } = periodTargetToRow(record);
+        await statements.insertPeriodTarget(row);
       }
     }),
   };

@@ -4,24 +4,23 @@
  * schedule tables: the budget's currency and time zone, the period's bounds,
  * and the cadence of the schedule version that produced the period.
  *
- * Deleting an open period's rows is how INV-54's whole-set recomputation is
- * persisted; the migration's trigger refuses the same delete for a completed
- * period with SQLSTATE 55000, which `COMPLETED_PERIOD_TARGET_SQLSTATE` names
- * so callers map it to a canonical error rather than a string match.
+ * Rows are retained versions (20260913T130003Z): INV-54's whole-set
+ * recomputation of an open period stamps `superseded_at` on the current rows
+ * and inserts new ones, which is the only update the trigger permits. The
+ * trigger refuses any change to a completed period's rows, any delete, and
+ * any change to a superseded row with SQLSTATE 55000, which
+ * `COMPLETED_PERIOD_TARGET_SQLSTATE` names so callers map it to a canonical
+ * error rather than a string match.
  */
-import { dateText, instantText, integerValue, textValue } from "./budget-category.ts";
+import { dateText, instantText, integerValue, nullableInstantText, textValue } from "./budget-category.ts";
 import type { TenantStatementClient } from "./budget-category.ts";
-import type { QueryResult } from "./driver.ts";
-import type { TenantDeleteQuery } from "./tenant.ts";
 
 export const BUDGET_CATEGORY_PERIOD_TARGET_TABLE = "budget_category_period_target";
 
-/** Raised by the migration's trigger when a completed period's row is updated or deleted (CBD-153-AC02). */
+/** Raised by the migration's trigger when a completed period's row, a superseded row, or any row's deletion is attempted (CBD-153-AC02). */
 export const COMPLETED_PERIOD_TARGET_SQLSTATE = "55000";
 
-export interface PeriodTargetStatementClient extends TenantStatementClient {
-  readonly tenantDelete: (query: TenantDeleteQuery) => Promise<QueryResult>;
-}
+export type PeriodTargetStatementClient = TenantStatementClient;
 
 export interface BudgetCategoryPeriodTargetRow {
   readonly period_target_id: string;
@@ -40,9 +39,10 @@ export interface BudgetCategoryPeriodTargetRow {
   readonly computed_by_subject_id: string;
   readonly source: string;
   readonly computed_at: string;
+  readonly superseded_at: string | null;
 }
 
-export type BudgetCategoryPeriodTargetInsert = BudgetCategoryPeriodTargetRow;
+export type BudgetCategoryPeriodTargetInsert = Omit<BudgetCategoryPeriodTargetRow, "superseded_at">;
 
 /** What the plan read needs to know about the budget and one of its periods. */
 export interface PlanContextRow {
@@ -77,9 +77,11 @@ function toRow(value: unknown): BudgetCategoryPeriodTargetRow {
     computed_by_subject_id: textValue(row.computed_by_subject_id),
     source: textValue(row.source),
     computed_at: instantText(row.computed_at),
+    superseded_at: nullableInstantText(row.superseded_at),
   };
 }
 
+/** Every row of one period, current and superseded. */
 export async function listBudgetCategoryPeriodTargets(client: PeriodTargetStatementClient, budgetSpaceId: string, periodId: string): Promise<readonly BudgetCategoryPeriodTargetRow[]> {
   const result = await client.tenantSelect({ table: BUDGET_CATEGORY_PERIOD_TARGET_TABLE, budgetSpaceId, conditions: [{ column: "period_id", value: periodId }] });
   return result.rows.map(toRow);
@@ -93,9 +95,12 @@ export async function insertBudgetCategoryPeriodTarget(client: PeriodTargetState
   await client.tenantInsert({ table: BUDGET_CATEGORY_PERIOD_TARGET_TABLE, budgetSpaceId: budget_space_id, values });
 }
 
-/** Removes every row of one period; the trigger refuses it for a completed period. Returns the rows removed. */
-export async function deleteBudgetCategoryPeriodTargets(client: PeriodTargetStatementClient, budgetSpaceId: string, periodId: string): Promise<number> {
-  const result = await client.tenantDelete({ table: BUDGET_CATEGORY_PERIOD_TARGET_TABLE, budgetSpaceId, conditions: [{ column: "period_id", value: periodId }] });
+/** Stamps `superseded_at` on one current row; returns 0 when no row of this budget matched. The trigger refuses a completed period's row and an already superseded row (55000). */
+export async function supersedeBudgetCategoryPeriodTarget(client: PeriodTargetStatementClient, budgetSpaceId: string, periodTargetId: string, supersededAt: string): Promise<number> {
+  const result = await client.tenantUpdate({
+    table: BUDGET_CATEGORY_PERIOD_TARGET_TABLE, budgetSpaceId, set: { superseded_at: supersededAt },
+    conditions: [{ column: "period_target_id", value: periodTargetId }],
+  });
   return result.rowCount ?? 0;
 }
 
@@ -142,7 +147,7 @@ export function budgetCategoryPeriodTargetStatements(client: PeriodTargetStateme
   return {
     listPeriodTargets: (budgetSpaceId: string, periodId: string) => listBudgetCategoryPeriodTargets(client, budgetSpaceId, periodId),
     insertPeriodTarget: (row: BudgetCategoryPeriodTargetInsert) => insertBudgetCategoryPeriodTarget(client, row),
-    deletePeriodTargets: (budgetSpaceId: string, periodId: string) => deleteBudgetCategoryPeriodTargets(client, budgetSpaceId, periodId),
+    supersedePeriodTarget: (budgetSpaceId: string, periodTargetId: string, supersededAt: string) => supersedeBudgetCategoryPeriodTarget(client, budgetSpaceId, periodTargetId, supersededAt),
     readPlanContext: (budgetSpaceId: string, periodId: string | null) => readPlanContext(client, budgetSpaceId, periodId),
   };
 }

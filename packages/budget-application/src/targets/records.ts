@@ -138,6 +138,8 @@ export interface PeriodTargetRecord {
   readonly computedBySubjectId: string;
   readonly source: TargetSource;
   readonly computedAt: string;
+  /** null on the current version; the instant a recomputation of the open period superseded this row otherwise. */
+  readonly supersededAt: string | null;
 }
 
 /** The budget and period a plan is read for. */

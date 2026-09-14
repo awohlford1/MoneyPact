@@ -4,8 +4,9 @@
  * It mirrors the migration's constraints closely enough that the commands'
  * error mapping is exercised without a database: negative amounts and
  * unsupported precisions are refused as `constraint_violation` (AC04), a
- * completed period's rows refuse replacement with
- * `completed_period_immutable` (AC02), the one-current-per-category rule
+ * completed period's rows refuse supersession with
+ * `completed_period_immutable` (AC02), prior versions are retained rather
+ * than deleted, the one-current-per-category rule
  * holds (23505 -> `conflict`), and every read and write is keyed on the
  * budget space first, so a record of one space is unreachable through
  * another space's identifier (PROTO-PLAN-02). "Completed" is decided against
@@ -106,16 +107,16 @@ export class InMemoryTargetsRepository implements TargetsRepository {
     return [...this.periodTargets.values()].filter((t) => t.budgetSpaceId === budgetSpaceId && t.periodId === periodId).map((t) => structuredClone(t));
   }
 
-  async replacePeriodTargets(budgetSpaceId: string, periodId: string, records: readonly PeriodTargetRecord[]): Promise<void> {
+  async supersedePeriodTargets(budgetSpaceId: string, periodId: string, supersededAt: string, records: readonly PeriodTargetRecord[]): Promise<void> {
     const today = this.#today();
     for (const [k, existing] of this.periodTargets) {
-      if (existing.budgetSpaceId !== budgetSpaceId || existing.periodId !== periodId) continue;
+      if (existing.budgetSpaceId !== budgetSpaceId || existing.periodId !== periodId || existing.supersededAt !== null) continue;
       if (existing.periodEnd < today) throw new TargetsError("completed_period_immutable");
-      this.periodTargets.delete(k);
+      this.periodTargets.set(k, { ...existing, supersededAt });
     }
     for (const record of records) {
       assertMonetary(record);
-      if (record.budgetSpaceId !== budgetSpaceId || record.periodId !== periodId) throw new TargetsError("invalid_request", "periodTargets");
+      if (record.budgetSpaceId !== budgetSpaceId || record.periodId !== periodId || record.supersededAt !== null) throw new TargetsError("invalid_request", "periodTargets");
       const context = this.contexts.get(key(budgetSpaceId, periodId));
       if (!context || context.periodStart !== record.periodStart || context.periodEnd !== record.periodEnd) throw new TargetsError("constraint_violation", "period_id");
       if (!this.categories.has(key(budgetSpaceId, record.categoryId))) throw new TargetsError("constraint_violation", "category_id");

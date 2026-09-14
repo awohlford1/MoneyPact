@@ -37,9 +37,13 @@ export interface TargetsRepository {
   readonly supersedeBaseTarget: (budgetSpaceId: string, baseTargetId: string, supersededAt: string) => Promise<boolean>;
   /** The plan's context for one period, or the current period when periodId is null; null when either is not this budget's. */
   readonly readPlanContext: (budgetSpaceId: string, periodId: string | null) => Promise<PlanContext | null>;
+  /** Every stored version for the period, current (supersededAt null) and superseded. */
   readonly listPeriodTargets: (budgetSpaceId: string, periodId: string) => Promise<readonly PeriodTargetRecord[]>;
-  /** Removes the period's stored rows and inserts the given set. Rejects with `completed_period_immutable` for a completed period. */
-  readonly replacePeriodTargets: (budgetSpaceId: string, periodId: string, records: readonly PeriodTargetRecord[]) => Promise<void>;
+  /**
+   * Stamps supersededAt on the period's current rows and inserts the given set as the new current versions;
+   * prior rows are retained with their identifiers and provenance. Rejects with `completed_period_immutable` for a completed period.
+   */
+  readonly supersedePeriodTargets: (budgetSpaceId: string, periodId: string, supersededAt: string, records: readonly PeriodTargetRecord[]) => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,6 +93,7 @@ export interface BudgetCategoryPeriodTargetRow {
   readonly computed_by_subject_id: string;
   readonly source: string;
   readonly computed_at: string;
+  readonly superseded_at: string | null;
 }
 
 export interface PlanContextRow {
@@ -112,7 +117,7 @@ export interface TargetsStatements {
   readonly insertBaseTarget: (row: Omit<BudgetCategoryBaseTargetRow, "superseded_at">) => Promise<void>;
   readonly supersedeBaseTarget: (budgetSpaceId: string, baseTargetId: string, supersededAt: string) => Promise<number>;
   readonly listPeriodTargets: (budgetSpaceId: string, periodId: string) => Promise<readonly BudgetCategoryPeriodTargetRow[]>;
-  readonly insertPeriodTarget: (row: BudgetCategoryPeriodTargetRow) => Promise<void>;
-  readonly deletePeriodTargets: (budgetSpaceId: string, periodId: string) => Promise<number>;
+  readonly insertPeriodTarget: (row: Omit<BudgetCategoryPeriodTargetRow, "superseded_at">) => Promise<void>;
+  readonly supersedePeriodTarget: (budgetSpaceId: string, periodTargetId: string, supersededAt: string) => Promise<number>;
   readonly readPlanContext: (budgetSpaceId: string, periodId: string | null) => Promise<PlanContextRow | null>;
 }

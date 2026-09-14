@@ -14,6 +14,7 @@ const periodTarget: PeriodTargetRecord = {
   origin: "prorated-transition", currencyCode: "USD", minorUnitPrecision: 2, amountMinorUnits: 18667, formulaVersion: TARGET_FORMULA_VERSION,
   inputs: { baseTargetId: baseTarget.baseTargetId, baseAmountMinorUnits: 40000, cadence: "monthly", scheduleVersionId: SCHEDULE_A, period: { start: "2026-09-17", end: "2026-09-30" }, basis: { start: "2026-09-01", end: "2026-09-30" } },
   calculation: { baseAmountMinorUnits: 40000, transitionDays: 14, basisDays: 30, remainderUnitAwarded: true }, computedBySubjectId: SUBJECT_1, source: "user", computedAt: "2026-09-17T00:00:00.000Z",
+  supersededAt: null,
 };
 
 describe("data-access adapter mapping (CBD-153-AC01)", () => {
@@ -56,8 +57,8 @@ describe("data-access adapter mapping (CBD-153-AC01)", () => {
       insertBaseTarget: async (row) => { bases.push({ ...row, superseded_at: null }); },
       supersedeBaseTarget: async (space, id, at) => { const i = bases.findIndex((r) => r.budget_space_id === space && r.base_target_id === id); if (i < 0) return 0; bases[i] = { ...bases[i]!, superseded_at: at }; return 1; },
       listPeriodTargets: async (space, period) => periods.filter((r) => r.budget_space_id === space && r.period_id === period),
-      insertPeriodTarget: async (row) => { periods.push(row); },
-      deletePeriodTargets: async (space, period) => { const before = periods.length; for (let i = periods.length - 1; i >= 0; i--) if (periods[i]!.budget_space_id === space && periods[i]!.period_id === period) periods.splice(i, 1); return before - periods.length; },
+      insertPeriodTarget: async (row) => { periods.push({ ...row, superseded_at: null }); },
+      supersedePeriodTarget: async (space, id, at) => { const i = periods.findIndex((r) => r.budget_space_id === space && r.period_target_id === id); if (i < 0) return 0; periods[i] = { ...periods[i]!, superseded_at: at }; return 1; },
       readPlanContext: async () => null,
     };
     const repository = dataAccessTargetsRepository(statements);
@@ -68,10 +69,12 @@ describe("data-access adapter mapping (CBD-153-AC01)", () => {
     await repository.insertBaseTarget(baseTarget);
     assert.equal(await repository.supersedeBaseTarget(SPACE_A, baseTarget.baseTargetId, "2026-09-03T00:00:00.000Z"), true);
     assert.deepEqual(await repository.listBaseTargets(SPACE_A, "monthly"), [{ ...baseTarget, supersededAt: "2026-09-03T00:00:00.000Z" }]);
-    await repository.replacePeriodTargets(SPACE_A, PERIOD_A_OPEN, [periodTarget]);
-    await repository.replacePeriodTargets(SPACE_A, PERIOD_A_OPEN, [{ ...periodTarget, periodTargetId: "cccccccc-0000-4000-8000-000000000002" }]);
-    assert.deepEqual((await repository.listPeriodTargets(SPACE_A, PERIOD_A_OPEN)).map((t) => t.periodTargetId), ["cccccccc-0000-4000-8000-000000000002"]);
-    await assert.rejects(repository.replacePeriodTargets(SPACE_A, PERIOD_A_OPEN, [{ ...periodTarget, budgetSpaceId: "other" }]), (e: unknown) => e instanceof TargetsError && e.code === "invalid_request");
+    await repository.supersedePeriodTargets(SPACE_A, PERIOD_A_OPEN, "2026-09-17T00:00:00.000Z", [periodTarget]);
+    await repository.supersedePeriodTargets(SPACE_A, PERIOD_A_OPEN, "2026-09-18T00:00:00.000Z", [{ ...periodTarget, periodTargetId: "cccccccc-0000-4000-8000-000000000002" }]);
+    assert.deepEqual((await repository.listPeriodTargets(SPACE_A, PERIOD_A_OPEN)).map((t) => [t.periodTargetId, t.supersededAt]),
+      [["cccccccc-0000-4000-8000-000000000001", "2026-09-18T00:00:00.000Z"], ["cccccccc-0000-4000-8000-000000000002", null]], "the prior version is retained and stamped, never removed");
+    await assert.rejects(repository.supersedePeriodTargets(SPACE_A, PERIOD_A_OPEN, "2026-09-19T00:00:00.000Z", [{ ...periodTarget, budgetSpaceId: "other" }]), (e: unknown) => e instanceof TargetsError && e.code === "invalid_request");
+    assert.equal(periods.filter((r) => r.superseded_at === null).length, 1, "a refused set leaves the current version current");
     assert.equal(await repository.readPlanContext(SPACE_A, null), null);
   });
 });

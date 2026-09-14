@@ -287,8 +287,9 @@ function planCategory(category: CategoryRecord, base: BaseTargetRecord | undefin
  * Every live category is in the set, contributing zero when it has no base
  * target (INV-54 "all current zero-or-positive base targets"). The engine
  * runs over the stored base targets and the stored period; for an open
- * period the result is persisted -- replaced only when it differs from what
- * is stored, so a plain read is idempotent -- and for a completed period the
+ * period the result is persisted as a new version -- the current rows are
+ * superseded, never removed, and only when the result differs from what is
+ * stored, so a plain read is idempotent -- and for a completed period the
  * stored rows are returned untouched (INV-79) and any category that never had
  * one is reported computed-but-not-persisted rather than written into
  * history now.
@@ -317,9 +318,9 @@ export async function readPlan(deps: TargetsDependencies, budgetSpaceId: string,
       baseTargetId: base.get(target.categoryId)?.baseTargetId ?? null, baseAmountMinorUnits: base.get(target.categoryId)?.amountMinorUnits ?? 0,
       cadence: context.cadence, scheduleVersionId: context.scheduleVersionId, period: { start: context.periodStart, end: context.periodEnd }, basis: null,
     },
-    calculation: target.calculation, computedBySubjectId: actorSubjectId, source: "user", computedAt: now,
+    calculation: target.calculation, computedBySubjectId: actorSubjectId, source: "user", computedAt: now, supersededAt: null,
   }]));
-  const stored = new Map((await deps.repository.listPeriodTargets(budgetSpaceId, context.periodId)).map((t) => [t.categoryId, t] as const));
+  const stored = new Map((await deps.repository.listPeriodTargets(budgetSpaceId, context.periodId)).filter((t) => t.supersededAt === null).map((t) => [t.categoryId, t] as const));
 
   if (completed) {
     return { ...plan, categories: categories.map((c) => {
@@ -329,6 +330,6 @@ export async function readPlan(deps: TargetsDependencies, budgetSpaceId: string,
   }
   const unchanged = stored.size === fresh.size && [...fresh].every(([categoryId, record]) => { const row = stored.get(categoryId); return row !== undefined && sameStoredTarget(row, record); });
   const effective = unchanged ? stored : fresh;
-  if (!unchanged) await deps.repository.replacePeriodTargets(budgetSpaceId, context.periodId, [...fresh.values()]);
+  if (!unchanged) await deps.repository.supersedePeriodTargets(budgetSpaceId, context.periodId, now, [...fresh.values()]);
   return { ...plan, categories: categories.map((c) => planCategory(c, base.get(c.categoryId), effective.get(c.categoryId)!, true)) };
 }

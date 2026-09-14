@@ -4,7 +4,7 @@ import { fullPeriodTargets } from "@cobudget/budget-domain/targets";
 import { toISODate } from "@cobudget/budget-domain/shared";
 import { parseBaseTargetRequest, parseCategoryUpsertRequest, readPlan, setBaseTargets, upsertCategories, listCategories, budgetSpaceDate, computePeriodTargets } from "./application.ts";
 import { TARGET_FORMULA_VERSION, TargetsError, resolveMinorUnitPrecision, iso4217PrecisionReader } from "./records.ts";
-import { PERIOD_A_DONE, PERIOD_A_OPEN, SPACE_A, SPACE_B, SUBJECT_1, testWorld } from "./support.ts";
+import { FIXED_NOW, PERIOD_A_DONE, PERIOD_A_OPEN, SPACE_A, SPACE_B, SUBJECT_1, testWorld } from "./support.ts";
 
 const code = (expected: string) => (error: unknown) => error instanceof TargetsError && error.code === expected;
 
@@ -128,7 +128,9 @@ describe("plan (PROTO-PLAN-01, CBD-153-AC01/AC02)", () => {
     assert.equal(after.categories.length, 2);
     assert.equal(after.categories.find((c) => c.categoryId === groceries!.categoryId)?.periodTarget.amountMinorUnits, 200);
     assert.notEqual(after.categories[0]!.periodTarget.periodTargetId, before.categories[0]!.periodTarget.periodTargetId);
-    assert.equal((await world.repository.listPeriodTargets(SPACE_A, PERIOD_A_OPEN)).length, 2);
+    const versions = await world.repository.listPeriodTargets(SPACE_A, PERIOD_A_OPEN);
+    assert.equal(versions.filter((v) => v.supersededAt === null).length, 2, "current versions: the two live categories");
+    assert.equal(versions.length, 5, "the three prior versions are retained");
   });
   it("never rewrites a completed period: stored rows are returned and missing ones are computed but not persisted", async () => {
     const { world, categories } = await seedCategories();
@@ -149,8 +151,34 @@ describe("plan (PROTO-PLAN-01, CBD-153-AC01/AC02)", () => {
     const fresh = later.categories.find((c) => c.label === "New")!;
     assert.equal(fresh.periodTarget.provenance.persisted, false); assert.equal(fresh.periodTarget.periodTargetId, null);
     assert.equal((await world.repository.listPeriodTargets(SPACE_A, PERIOD_A_DONE)).length, 3);
-    await assert.rejects(world.repository.replacePeriodTargets(SPACE_A, PERIOD_A_DONE, []), code("completed_period_immutable"));
+    await assert.rejects(world.repository.supersedePeriodTargets(SPACE_A, PERIOD_A_DONE, world.now, []), code("completed_period_immutable"));
     void rent;
+  });
+  it("F-REVIEW-TARGETS-001: a recomputation of an open period retains the prior period-target version with its provenance, marked superseded", async () => {
+    const { world, categories } = await seedCategories();
+    const groceries = categories[0]!;
+    await setBaseTargets(world.deps, SPACE_A, SUBJECT_1, [{ categoryId: groceries.categoryId, amountMinorUnits: 100 }]);
+    const first = await readPlan(world.deps, SPACE_A, null, SUBJECT_1);
+    const firstRow = first.categories.find((c) => c.categoryId === groceries.categoryId)!.periodTarget;
+    assert.equal(firstRow.amountMinorUnits, 100);
+    world.now = "2026-09-16T12:00:00.000Z";
+    await setBaseTargets(world.deps, SPACE_A, SUBJECT_1, [{ categoryId: groceries.categoryId, amountMinorUnits: 200 }]);
+    const second = await readPlan(world.deps, SPACE_A, null, SUBJECT_1);
+    const secondRow = second.categories.find((c) => c.categoryId === groceries.categoryId)!.periodTarget;
+    assert.equal(secondRow.amountMinorUnits, 200);
+    assert.notEqual(secondRow.periodTargetId, firstRow.periodTargetId);
+    const versions = await world.repository.listPeriodTargets(SPACE_A, PERIOD_A_OPEN);
+    const retained = versions.find((v) => v.periodTargetId === firstRow.periodTargetId);
+    assert.ok(retained, "the first period-target row still exists");
+    assert.equal(retained.supersededAt, world.now, "and is marked superseded at the recomputation instant");
+    assert.equal(retained.amountMinorUnits, 100); assert.equal(retained.computedAt, FIXED_NOW); assert.equal(retained.computedBySubjectId, SUBJECT_1);
+    assert.deepEqual(retained.inputs, firstRow.provenance.inputs); assert.equal(retained.formulaVersion, firstRow.provenance.formulaVersion);
+    const current = versions.filter((v) => v.categoryId === groceries.categoryId && v.supersededAt === null);
+    assert.equal(current.length, 1); assert.equal(current[0]!.periodTargetId, secondRow.periodTargetId);
+    assert.equal(versions.length, 6, "three categories, two versions each; nothing deleted");
+    // A plain read afterwards returns the current version without creating another.
+    assert.deepEqual(await readPlan(world.deps, SPACE_A, null, SUBJECT_1), second);
+    assert.equal((await world.repository.listPeriodTargets(SPACE_A, PERIOD_A_OPEN)).length, 6);
   });
   it("computes a prorated transition through budget-domain when a basis is supplied", () => {
     const targets = computePeriodTargets({ baseTargets: { cadence: "monthly", currency: "USD", targets: [{ categoryId: "a", amountMinorUnits: 3000 }, { categoryId: "b", amountMinorUnits: 1000 }] },
