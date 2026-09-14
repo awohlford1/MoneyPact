@@ -214,7 +214,9 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
           // F4: an unresolvable request on a navigation surface is denied the same way (audited, nothing consumed) and answered by navigation.
           const navigation = decision.outcome === "deny_input_invalid" ? this.#deniedNavigation.get(`${request.method} ${request.routeOptions.url}`)?.(request) : undefined;
           if (navigation) {
-            try { await this.#options.boundary.rejectEnforcement(surfaceOutcome(evidence, decision.outcome)); } catch { /* One decisive denial, recorded. */ }
+            // Only the expected denial is absorbed; an audit-writer failure falls to the outer catch and the uniform denial (RF-1).
+            try { await this.#options.boundary.rejectEnforcement(surfaceOutcome(evidence, decision.outcome)); }
+            catch (error) { if (!(error instanceof AuthorizationDenied)) throw error; }
             return reply.code(303).header("location", navigation).send();
           }
           return await this.#options.boundary.rejectEnforcement(surfaceOutcome(evidence, decision.outcome));
