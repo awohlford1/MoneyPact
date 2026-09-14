@@ -39,8 +39,10 @@ export function SessionProvider({ children, client }: { children: ReactNode; cli
   }, [api]);
   const bootstrap = useCallback(async () => {
     const request = ++sequence.current;
-    // Remove protected children immediately; their effects cancel on unmount.
-    setSession(null);
+    // Keep an established session mounted while it is rechecked (pageshow, online, visibility):
+    // unmounting the tree would discard in-flight work such as a budget confirmation. The children
+    // are removed only when no session is known yet or when the recheck resolves to none/another.
+    if (!current.current) setSession(null);
     setError(false);
     try {
       const resolved = await api.me();

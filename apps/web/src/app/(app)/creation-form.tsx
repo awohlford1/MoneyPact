@@ -88,6 +88,10 @@ export function CreationForm() {
   const cadence = valueAt(state.draft, "schedule.cadence");
   const pattern = valueAt(state.draft, "schedule.pattern.kind");
   async function confirm() {
+    // Drop the persisted draft when the confirmation is dispatched, not when it returns: a tab switch or
+    // unmount while the server commits must not restore a draft that invites a second creation.
+    // A stale or failed confirmation republishes state, and the draft effect persists it again.
+    sessionStorage.removeItem(draftKey);
     const result = await controller.confirm(subject);
     if (result) { sessionStorage.removeItem(draftKey); router.replace(`/budgets/${encodeURIComponent(result.budgetSpaceId)}`); }
   }

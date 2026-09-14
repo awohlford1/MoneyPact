@@ -51,6 +51,8 @@ export class CreationController {
       if (generation !== this.generation) return;
       if (proposal.preview.periods.length < 4 || proposal.preview.periodCount !== proposal.preview.periods.length || proposal.preview.periods[0]?.relation !== "current" || !Number.isFinite(Date.parse(proposal.expiresAt)) || Date.parse(proposal.expiresAt) <= this.now()) throw new ApiError(502, "invalid_preview");
       this.predecessor = proposal.proposalId;
+      // A new proposal needs a new Idempotency-Key: reusing the old key with a different proposalId is a CBD-233 idempotency_key_reused conflict.
+      this.confirmationKey = undefined;
       this.publish({ stage: "review", draft, proposal, rendered: false, errors: [], message: "Review your complete current period and the next three periods." });
     } catch (error) {
       if (generation !== this.generation) return;
