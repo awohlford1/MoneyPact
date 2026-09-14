@@ -74,7 +74,15 @@ export function budgetCreationHttp(dependencies: CreationHttpDependencies): { mo
         // still using this same client, and aborts on audit failure.
         allowAudit: async (_client, plan: CreationPlan) => { dependencies.transactions.recordPlan(client, plan); },
       });
-      return confirmWithin(tx, resolved.context, resolved.request);
+      try {
+        return await confirmWithin(tx, resolved.context, resolved.request);
+      } catch (error) {
+        // The consent write runs inside the boundary's transaction, so a `stale_disclosure` raised there
+        // would otherwise reach the caller as the boundary's generic denial. Publish it as the stable
+        // CBD-233 outcome before the rollback, then rethrow so nothing commits (CBD-236 SS7 step 5).
+        if (error instanceof ConfirmationError && error.code === "stale_disclosure") dependencies.transactions.recordFailure(client, confirmationFailure(error));
+        throw error;
+      }
     }
   }
   return { module: { module: BudgetCreationModule, controllers: [ConfirmationController] }, facts: source => ({

@@ -46,6 +46,8 @@ async function reviewed() {
   await controller.preview();
   const proposal = controller.snapshot().proposal!;
   controller.rendered(proposal.proposalId, "subject");
+  // CBD-236: the review is not confirmable until the disclosure is explicitly acknowledged.
+  controller.acknowledge(true);
   return { api, controller, proposal };
 }
 test("CBD-242-AC01: canonical errors preserve unrelated raw input", async () => {
@@ -63,9 +65,10 @@ test("CBD-242-AC02: HTTP confirms using only binding body, proposal route, idemp
     return Response.json(url.endsWith("/me") ? { ...bootstrap, csrfValue: "test-csrf" } : {});
   }) as typeof fetch;
   const api = createHttpClient("/v1", fetcher);
-  await api.me(); await api.confirmProposal("proposal", "binding", "confirmation-request-id");
+  await api.me(); await api.confirmProposal("proposal", "binding", "confirmation-request-id", { kind: "primary_owner_self", version: 1 });
   assert.equal(calls[1].url, "/v1/budget-creation-proposals/proposal/confirm");
-  assert.deepEqual(JSON.parse(calls[1].init!.body as string), { confirmationBinding: "binding" });
+  // CBD-236: the body is still closed -- the binding plus the acknowledged disclosure, and nothing else.
+  assert.deepEqual(JSON.parse(calls[1].init!.body as string), { confirmationBinding: "binding", acknowledgedDisclosure: { kind: "primary_owner_self", version: 1 } });
   assert.equal((calls[1].init!.headers as Record<string, string>)["X-CoBudget-CSRF"], "test-csrf");
   assert.equal((calls[1].init!.headers as Record<string, string>)["Idempotency-Key"], "confirmation-request-id");
   assert.equal(calls[1].init!.credentials, "same-origin");
@@ -84,7 +87,12 @@ test("CBD-242-AC04: confirmation requires rendering for the same subject and pro
   assert.equal(controller.canConfirm(), false);
   controller.rendered("other", "subject"); assert.equal(controller.canConfirm(), false);
   controller.rendered(proposal.proposalId, "other"); assert.equal(controller.canConfirm(), false);
-  controller.rendered(proposal.proposalId, "subject"); assert.equal(controller.canConfirm(), true);
+  controller.rendered(proposal.proposalId, "subject");
+  // CBD-236: rendering is not enough; the disclosure must be explicitly acknowledged.
+  assert.equal(controller.canConfirm(), false, "the acknowledgement is required");
+  controller.acknowledge(true); assert.equal(controller.canConfirm(), true);
+  controller.acknowledge(false); assert.equal(controller.canConfirm(), false, "withdrawing it disables confirmation again");
+  controller.acknowledge(true);
   assert.equal(await controller.confirm("other"), undefined);
 });
 test("CBD-242-AC04: changed reviewed content is immutable and cannot confirm", async () => {
@@ -104,7 +112,7 @@ test("CBD-242-AC05: expiry and budget midnight invalidate without client date ca
   const api = createMockClient(() => now); await api.me(); const controller = new CreationController(api, draft, "subject", () => now);
   await controller.preview(); const old = controller.snapshot().proposal!;
   assert.equal(old.expiresAt, "2026-09-14T04:00:00.000Z");
-  controller.rendered(old.proposalId, "subject"); assert.equal(controller.canConfirm(), true);
+  controller.rendered(old.proposalId, "subject"); controller.acknowledge(true); assert.equal(controller.canConfirm(), true);
   now += 10000; assert.equal(controller.canConfirm(), false); await controller.revalidate();
   assert.notEqual(controller.snapshot().proposal?.proposalId, old.proposalId);
   assert.equal(controller.snapshot().proposal?.preview.budgetDate, "2026-09-14");
@@ -115,7 +123,7 @@ test("CBD-242-AC05: governing version change regenerates instead of confirming",
   let changed = false;
   api.readProposal = async (...args) => { const read = await original(...args); if (changed) read.proposal.governingVersions.periodContractVersion = "changed"; return read; };
   const controller = new CreationController(api, draft, "subject", clock); await controller.preview();
-  const id = controller.snapshot().proposal!.proposalId; controller.rendered(id, "subject"); changed = true;
+  const id = controller.snapshot().proposal!.proposalId; controller.rendered(id, "subject"); controller.acknowledge(true); changed = true;
   assert.equal(await controller.confirm("subject"), undefined);
   assert.notEqual(controller.snapshot().proposal?.proposalId, id);
   assert.equal((await api.listBudgets()).length, 0);
@@ -177,7 +185,8 @@ test("PROTO-SIGNIN-01: logout denies subsequent protected mock reads", async () 
 });
 test("Mock confirmation consumes once under a same-proposal race", async () => {
   const { api, proposal } = await reviewed();
-  const outcomes = await Promise.allSettled([api.confirmProposal(proposal.proposalId, proposal.confirmationBinding, "first-confirmation"), api.confirmProposal(proposal.proposalId, proposal.confirmationBinding, "second-confirmation")]);
+  const claim = { kind: proposal.currentDisclosure.kind, version: proposal.currentDisclosure.version };
+  const outcomes = await Promise.allSettled([api.confirmProposal(proposal.proposalId, proposal.confirmationBinding, "first-confirmation", claim), api.confirmProposal(proposal.proposalId, proposal.confirmationBinding, "second-confirmation", claim)]);
   assert.equal(outcomes.filter(outcome => outcome.status === "fulfilled").length, 1);
   assert.equal((await api.listBudgets()).length, 1);
 });
@@ -195,7 +204,7 @@ test("Incomplete server preview never enables confirmation", async () => {
 test("CBD-242-AC05: fake-timer 30-minute expiry disables the rendered preview", async t => {
   t.mock.timers.enable({ apis: ["Date"], now: clock() });
   const api = createMockClient(); await api.me(); const controller = new CreationController(api, draft, "subject");
-  await controller.preview(); controller.rendered(controller.snapshot().proposal!.proposalId, "subject");
+  await controller.preview(); controller.rendered(controller.snapshot().proposal!.proposalId, "subject"); controller.acknowledge(true);
   assert.equal(controller.canConfirm(), true); t.mock.timers.tick(30 * 60 * 1000);
   assert.equal(controller.canConfirm(), false); await controller.revalidate();
   assert.equal(controller.snapshot().stage, "review");

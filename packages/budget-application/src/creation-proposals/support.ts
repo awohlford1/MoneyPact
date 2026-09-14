@@ -1,3 +1,5 @@
+import type { ConsentDisclosure, ConsentDisclosureSource } from "../creation-confirmation/disclosure.ts";
+import { PRIMARY_OWNER_SELF_DISCLOSURE } from "../creation-confirmation/disclosure.ts";
 import { hmacSha256Base64Url } from "./canonical-json.ts";
 import { InMemoryProposalStore } from "./in-memory-store.ts";
 import type {
@@ -66,6 +68,13 @@ export class FakeCurrencyContextReader implements CurrencyContextReader {
   }
 }
 
+/** A one-entry approved registry standing in for config/consent-disclosure-registry.json. */
+export function testDisclosures(overrides?: Partial<ConsentDisclosure>): ConsentDisclosureSource {
+  const disclosure: ConsentDisclosure = { kind: PRIMARY_OWNER_SELF_DISCLOSURE, version: 1, digest: "d".repeat(64),
+    text: { heading: "Before you create this budget", items: [{ id: "role", text: "You become the sole Primary Owner." }],
+      acknowledgement: "I agree to become Primary Owner of this budget space." }, ...overrides };
+  return { current: (kind: string) => { if (kind !== disclosure.kind) throw new Error(`consent_disclosure_kind_unregistered: ${kind}`); return disclosure; } };
+}
 export function testAuthContext(overrides?: Partial<AuthenticatedSubjectContext>): AuthenticatedSubjectContext {
   return { environment: "test", subjectId: "subject-1", accountId: "account-1", profileId: "profile-1",
     sessionGeneration: 1, ...overrides };
@@ -73,5 +82,5 @@ export function testAuthContext(overrides?: Partial<AuthenticatedSubjectContext>
 export function testPorts(overrides?: Partial<Ports>): Ports {
   return { clock: new FakeClock("2026-09-15T12:00:00.000Z"), idGenerator: new SequentialIdGenerator(),
     bindingKeyring: new FakeBindingKeyring(), currencyContextReader: new FakeCurrencyContextReader(),
-    store: new InMemoryProposalStore(), timeZoneDataVersion: "tzdata-test-1", ...overrides };
+    store: new InMemoryProposalStore(), timeZoneDataVersion: "tzdata-test-1", disclosures: testDisclosures(), ...overrides };
 }

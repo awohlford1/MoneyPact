@@ -130,7 +130,32 @@ async function main() {
       throw new Error(`Missing control: ${label}`);
     };
     const confirmDisabled = () => page.evaluate(() => [...document.querySelectorAll("button")].find((node) => node.textContent === "Confirm and create budget")?.disabled);
-    const waitConfirmEnabled = () => page.waitForFunction(() => [...document.querySelectorAll("button")].find((node) => node.textContent === "Confirm and create budget")?.disabled === false);
+    /**
+     * CBD-236 (CBD236-CONSENT-SEMANTICS-001 item 1): the confirm control is enabled only after the
+     * person explicitly acknowledges the current-version Primary Owner self-disclosure. Nothing ticks
+     * the box for them, so every path that expects an enabled confirm ticks it here first.
+     */
+    const acknowledgeDisclosure = async () => {
+      const box = await page.$('[id="field-acknowledged-disclosure"]');
+      if (box && !(await box.evaluate((node) => node.checked || node.disabled))) await box.click();
+      return box;
+    };
+    /**
+     * A preview that resolves after the box was ticked republishes the review and drops the
+     * acknowledgement with it -- correctly, because the acknowledgement was given against the previous
+     * review. So re-tick until the control is actually enabled rather than ticking once and hoping.
+     */
+    const waitConfirmEnabled = async (timeoutMs = 30_000) => {
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        await acknowledgeDisclosure();
+        try {
+          return await page.waitForFunction(() => [...document.querySelectorAll("button")].find((node) => node.textContent === "Confirm and create budget")?.disabled === false, { timeout: 1_000 });
+        } catch (error) {
+          if (Date.now() >= deadline) throw error;
+        }
+      }
+    };
     const accessibility = async (target = page) => {
       await target.evaluate(axeSource);
       const violations = await target.evaluate(async () => (await window.axe.run(document.querySelector("main"), { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa"] } })).violations.map((item) => ({ id: item.id, nodes: item.nodes.map((node) => node.target) })));
@@ -210,7 +235,7 @@ async function main() {
     };
     /** The next successful proposal POST Chrome receives; the rejection is observed so a timed-out wait cannot crash the run. */
     const nextProposal = () => { const p = page.waitForResponse((r) => r.request().method() === "POST" && r.url().endsWith("/budget-creation-proposals") && r.ok()).then((r) => r.json()); p.catch(() => {}); return p; };
-    let budgetId; let confirmResponse; let confirmedName;
+    let budgetId; let confirmResponse; let confirmedName; let confirmBody; let confirmedDisclosure;
     const createBudget = async (name) => {
       const proposal = await previewFresh(name);
       const confirmed = page.waitForResponse((r) => r.url().endsWith("/confirm") && r.request().method() === "POST");
@@ -446,13 +471,48 @@ async function main() {
       const confirmed = page.waitForResponse((r) => r.url().endsWith("/confirm") && r.request().method() === "POST");
       await clickText("Confirm and create budget");
       const request = await confirmRequest;
-      expect(request.url().includes(proposal.proposalId) && JSON.stringify(Object.keys(JSON.parse(request.postData()))) === '["confirmationBinding"]' && typeof request.headers()["x-cobudget-csrf"] === "string" && typeof request.headers()["idempotency-key"] === "string", "confirm request shape");
+      // CBD-236: the body is still closed -- the server binding plus the acknowledged disclosure, and nothing else.
+      confirmBody = JSON.parse(request.postData());
+      expect(request.url().includes(proposal.proposalId) && Object.keys(confirmBody).sort().join(",") === "acknowledgedDisclosure,confirmationBinding" && typeof request.headers()["x-cobudget-csrf"] === "string" && typeof request.headers()["idempotency-key"] === "string", `confirm request shape ${JSON.stringify(Object.keys(confirmBody))}`);
+      confirmedDisclosure = proposal.currentDisclosure;
       confirmResponse = await (await confirmed).json();
       await waitText("No categories yet"); budgetId = pathname().split("/").at(-1); confirmedName = proposal.normalizedInputs.name;
       expect(budgetId === confirmResponse.budgetSpaceId, `route ${budgetId} vs response ${confirmResponse.budgetSpaceId}`);
       const detail = (await apiJson(`/v1/budget-spaces/${budgetId}`)).body;
       expect(detail.activePeriod.periodId === confirmResponse.currentPeriodId, "dashboard period differs from the confirmation");
-      return `POST .../${proposal.proposalId}/confirm {confirmationBinding} with X-CoBudget-CSRF and Idempotency-Key -> ${confirmResponse.budgetSpaceId}; route /budgets/${budgetId}; activePeriod ${detail.activePeriod.periodId} = currentPeriodId`;
+      return `POST .../${proposal.proposalId}/confirm {confirmationBinding, acknowledgedDisclosure} with X-CoBudget-CSRF and Idempotency-Key -> ${confirmResponse.budgetSpaceId}; route /budgets/${budgetId}; activePeriod ${detail.activePeriod.periodId} = currentPeriodId`;
+    });
+    await criterion("CBD-236-CONSENT-03", "positive/denial: the review presents the approved Primary Owner self-disclosure above the confirm control, nothing is ticked for the person, confirming is impossible until they tick it and impossible again once they untick it, and the confirmation echoes exactly the disclosure the server sent", async () => {
+      // The confirmation that created the budget above is the evidence for the request half; no second
+      // budget is created here, so the failure-path budget counting downstream is undisturbed.
+      expect(confirmedDisclosure && typeof confirmedDisclosure.kind === "string" && Number.isSafeInteger(confirmedDisclosure.version) && /^[0-9a-f]{64}$/u.test(confirmedDisclosure.digest ?? ""),
+        `the preview response carried no approved disclosure: ${JSON.stringify(confirmedDisclosure)}`);
+      expect(confirmBody.acknowledgedDisclosure?.kind === confirmedDisclosure.kind && confirmBody.acknowledgedDisclosure.version === confirmedDisclosure.version,
+        `the acknowledgement ${JSON.stringify(confirmBody.acknowledgedDisclosure)} is not the disclosure the server sent`);
+      expect(confirmBody.acknowledgedDisclosure.digest === undefined, "the client echoes only the kind and version; the digest is the server's own");
+
+      // The presentation and the gate, on a fresh review that is deliberately never confirmed.
+      await ensureForm(); await roomFor(1);
+      const posted = page.waitForResponse((r) => r.request().method() === "POST" && r.url().endsWith("/budget-creation-proposals") && r.ok());
+      await setValue('[id="field-name"]', "Disclosure review");
+      const proposal = await (await posted).json();
+      await waitText("Complete current period");
+      const disclosure = proposal.currentDisclosure;
+      const shown = await text();
+      expect(shown.includes(disclosure.text.heading), `the disclosure heading is not on the review: ${shown.slice(0, 200)}`);
+      for (const item of disclosure.text.items) expect(shown.includes(item.text), `disclosure item ${item.id} is not presented`);
+      expect(shown.includes(disclosure.text.acknowledgement), "the acknowledgement sentence is not presented");
+      const box = await page.$('[id="field-acknowledged-disclosure"]');
+      expect(box !== null, "there is no acknowledgement control");
+      expect(await box.evaluate((node) => node.checked) === false, "the acknowledgement is ticked by default");
+      expect(await confirmDisabled() === true, "confirm is enabled before the disclosure is acknowledged");
+      await box.click();
+      await page.waitForFunction(() => [...document.querySelectorAll("button")].find((node) => node.textContent === "Confirm and create budget")?.disabled === false);
+      await box.click();
+      await page.waitForFunction(() => [...document.querySelectorAll("button")].find((node) => node.textContent === "Confirm and create budget")?.disabled === true);
+      const accessible = await accessibility();
+      await clickText("Your budgets");
+      return `${disclosure.kind} v${disclosure.version}: heading, ${disclosure.text.items.length} items and the acknowledgement sentence are presented with nothing ticked; confirm disabled until ticked and disabled again when unticked; the committed confirm body was exactly {confirmationBinding, acknowledgedDisclosure ${confirmedDisclosure.kind} v${confirmedDisclosure.version}}; ${accessible}`;
     });
 
     // ------------------------------------------------------------ CBD-218 shell

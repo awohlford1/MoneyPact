@@ -35,6 +35,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import http from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -229,8 +230,16 @@ async function propose(browser, draft, key = randomUUID(), expectStatus = 201) {
   expect(created.status === expectStatus, `proposal returned ${created.status} ${created.text}`);
   return { ...created, key };
 }
+/**
+ * CBD-236 (CBD236-CONSENT-SEMANTICS-001 item 4): every confirmation carries the disclosure the
+ * preview response supplied, as `acknowledgedDisclosure`. A proposal the server never issued has no
+ * disclosure to echo, so the fallback keeps a guessed-identifier probe byte-identical to a real one.
+ */
+const acknowledgementFor = (proposal) => proposal.currentDisclosure
+  ? { kind: proposal.currentDisclosure.kind, version: proposal.currentDisclosure.version }
+  : { kind: "primary_owner_self", version: 1 };
 async function confirm(browser, proposal, key = randomUUID(), body) {
-  const response = await browser.fetch(`/v1/budget-creation-proposals/${proposal.proposalId}/confirm`, { method: "POST", body: body ?? { confirmationBinding: proposal.confirmationBinding }, headers: { "idempotency-key": key } });
+  const response = await browser.fetch(`/v1/budget-creation-proposals/${proposal.proposalId}/confirm`, { method: "POST", body: body ?? { confirmationBinding: proposal.confirmationBinding, acknowledgedDisclosure: acknowledgementFor(proposal) }, headers: { "idempotency-key": key } });
   return { ...response, key };
 }
 /** Creates one budget for the signed-in browser (one confirm per ceremony is the reserved unit). */
@@ -658,11 +667,11 @@ async function phaseProposals() {
     const budgets = await count("budget_space");
     const one = await freshProposal("subject-a", monthly("Altered"));
     const flipped = one.proposal.confirmationBinding.slice(0, -1) + (one.proposal.confirmationBinding.endsWith("A") ? "B" : "A");
-    const altered = await confirm(one.browser, one.proposal, randomUUID(), { confirmationBinding: flipped });
+    const altered = await confirm(one.browser, one.proposal, randomUUID(), { confirmationBinding: flipped, acknowledgedDisclosure: acknowledgementFor(one.proposal) });
     expect(altered.status === 409 && altered.json?.error === "proposal_not_current", `altered ${altered.status} ${altered.text}`);
     const two = await freshProposal("subject-a", monthly("Swapped"));
     const other = (await propose(two.browser, monthly("Other binding"))).json;
-    const swapped = await confirm(two.browser, two.proposal, randomUUID(), { confirmationBinding: other.confirmationBinding });
+    const swapped = await confirm(two.browser, two.proposal, randomUUID(), { confirmationBinding: other.confirmationBinding, acknowledgedDisclosure: acknowledgementFor(two.proposal) });
     expect(swapped.status === 409 && swapped.json?.error === "proposal_not_current", `swapped ${swapped.status} ${swapped.text}`);
     const extra = await confirm(a, issued, randomUUID(), { confirmationBinding: issued.confirmationBinding, preview: issued.preview });
     expect(extra.status === 400 && extra.json?.error === "invalid_request", `extra ${extra.status} ${extra.text}`);
@@ -881,7 +890,7 @@ async function phaseConfirmation() {
     const cross = await confirm(b, p);
     const guessed = await confirm(a, { proposalId: `bcp_${"2".repeat(32)}`, confirmationBinding: p.confirmationBinding });
     const one = await freshProposal("subject-a", monthly("Altered"));
-    const altered = await confirm(one.browser, one.proposal, randomUUID(), { confirmationBinding: `${one.proposal.confirmationBinding.slice(0, -2)}zz` });
+    const altered = await confirm(one.browser, one.proposal, randomUUID(), { confirmationBinding: `${one.proposal.confirmationBinding.slice(0, -2)}zz`, acknowledgedDisclosure: acknowledgementFor(one.proposal) });
     const two = await freshProposal("subject-a", monthly("Expired"));
     const uuid = two.proposal.proposalId.slice(4).replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/u, "$1-$2-$3-$4-$5");
     await q("update budget_creation_proposal set proposal_payload = jsonb_set(proposal_payload, '{expiresAt}', to_jsonb((now() - interval '1 second')::timestamptz)) where proposal_id = $1", [uuid]);
@@ -938,7 +947,9 @@ async function phaseConfirmation() {
     for (let i = 0; i < 6; i++) await pace(b.subject);
     const cookie = [...b.cookies].map(([n, v]) => `${n}=${v}`).join("; ");
     const sameKey = randomUUID();
-    const body = JSON.stringify({ confirmationBinding: p.confirmationBinding });
+    // CBD-236: every racer carries the acknowledged disclosure, so the race is decided by PostgreSQL
+    // uniqueness and not by a stale-disclosure denial.
+    const body = JSON.stringify({ confirmationBinding: p.confirmationBinding, acknowledgedDisclosure: acknowledgementFor(p) });
     // A second API process on the next port shares the database but has its own in-process reservation gate, so the
     // two winners of the per-process gates race on PostgreSQL itself (the contract's final guard).
     const second = await startApi(currentOverrides, { port: PORT + 1 });
@@ -969,6 +980,72 @@ async function phaseConfirmation() {
     const failed = results.filter((r) => r.criterion.startsWith("CBD-233") && r.status === "fail").map((r) => r.case);
     const notRunCases = results.filter((r) => r.criterion.startsWith("CBD-233") && r.status === "not_run").map((r) => r.case);
     return `${failed.length} CBD-233 cases failed (${failed.join("; ") || "none"}); executed live: T01 (cardinalities), T02 (replay before/after delivery), T03 (six synchronized submits), T04 (expiry, successor, altered binding), T05 (logout, account switch, new session generation), T08 (cross-subject, guessed, altered), T09 (forbidden entities), T10 (post-commit replay identical). Not executed live: ${notRunCases.length} cases (${notRunCases.join("; ")})`;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Phase: CBD-236 consent record (CBD236-CONSENT-SEMANTICS-001)
+//
+// Its own API process, so its ceremonies and reserved initial-creation units
+// are its own. The reservation counters are process-local, and several
+// criteria elsewhere assert the exact gate a denial reaches (404 locator
+// versus 403 exhausted), which depends on how many units the phase has spent.
+// ---------------------------------------------------------------------------
+async function phaseConsent() {
+  await criterion("CBD-236-CONSENT-01", "positive: a completed confirmation writes exactly one current self_disclosure consent row, carrying the approved registry's version and digest and the decision's policy tuple", async () => {
+    const registry = JSON.parse(await readFile(new URL("../config/consent-disclosure-registry.json", import.meta.url), "utf8"));
+    const approved = registry.filter((entry) => entry.kind === "primary_owner_self").at(-1);
+    const fresh = await freshProposal("subject-a", monthly("Consent write"));
+    const proposed = fresh.proposal;
+    expect(proposed.currentDisclosure?.kind === approved.kind && proposed.currentDisclosure.version === approved.version && proposed.currentDisclosure.digest === approved.digest,
+      `the preview carries ${JSON.stringify(proposed.currentDisclosure)} against registry ${JSON.stringify(approved)}`);
+    expect(Array.isArray(proposed.currentDisclosure.text?.items) && proposed.currentDisclosure.text.items.length > 0 && typeof proposed.currentDisclosure.text.acknowledgement === "string",
+      "the preview carries the disclosure text and its acknowledgement sentence");
+    const created = await confirm(fresh.browser, proposed);
+    expect(created.status === 201, `confirm ${created.status} ${created.text}`);
+    const rows = await q("select membership_id, account_subject_id, recorded_by_subject_id, role, resource_scope, source, source_record_version, disclosure_kind, disclosure_version, disclosure_digest, policy_version, policy_digest, state, assurance_ref, ended_at from budget_space_consent where budget_space_id = $1", [created.json.budgetSpaceId]);
+    expect(rows.length === 1, `${rows.length} consent rows`);
+    const row = rows[0];
+    expect(row.membership_id === created.json.primaryOwnerMembershipId, "the row names the creator membership");
+    expect(row.account_subject_id === row.recorded_by_subject_id, "the acting subject recorded their own consent");
+    expect(row.role === "primary_owner" && row.resource_scope === "full" && row.source === "self_disclosure" && row.state === "current" && row.assurance_ref === null && row.ended_at === null, JSON.stringify(row));
+    expect(row.disclosure_kind === approved.kind && Number(row.disclosure_version) === approved.version && row.disclosure_digest === approved.digest,
+      "the recorded disclosure is the registry's, never the request's");
+    expect(row.policy_version === created.json.authorization.policyVersion && row.policy_digest === created.json.authorization.policyDigest, "the row carries the decision's policy tuple");
+    expect(Number(row.source_record_version) >= 1, "the confirmed proposal lifecycle revision is recorded");
+    const detail = await fresh.browser.fetch(`/v1/budget-spaces/${created.json.budgetSpaceId}`);
+    expect(detail.status === 200, `1.view_space with a current consent row ${detail.status} ${detail.text}`);
+    return `one current self_disclosure row: disclosure ${row.disclosure_kind} v${row.disclosure_version} digest ${String(row.disclosure_digest).slice(0, 12)}...; policy ${row.policy_version}; ordinary cell 200`;
+  });
+  await criterion("CBD-236-CONSENT-02", "denial: a stale or missing acknowledged disclosure fails confirmation with stale_disclosure and writes nothing; an ordinary cell denies once the consent row is no longer current", async () => {
+    const budgetsBefore = await count("budget_space");
+    const consentsBefore = (await q("select count(*)::int as total from budget_space_consent", []))[0].total;
+    for (const [label, acknowledgedDisclosure] of [
+      ["a superseded version", { kind: "primary_owner_self", version: 99 }],
+      ["another disclosure kind", { kind: "invitation", version: 1 }],
+      ["no acknowledgement at all", undefined],
+    ]) {
+      const stale = await freshProposal("subject-a", monthly(`Stale ${label}`));
+      const body = acknowledgedDisclosure
+        ? { confirmationBinding: stale.proposal.confirmationBinding, acknowledgedDisclosure }
+        : { confirmationBinding: stale.proposal.confirmationBinding };
+      const denied = await confirm(stale.browser, stale.proposal, randomUUID(), body);
+      expect(denied.status === 409 && denied.json.error === "stale_disclosure", `${label}: ${denied.status} ${denied.text}`);
+    }
+    expect(budgetsBefore === await count("budget_space"), "a denied confirmation created a budget");
+    expect(consentsBefore === (await q("select count(*)::int as total from budget_space_consent", []))[0].total, "a denied confirmation wrote a consent row");
+
+    // CONSENT-L-03: the datastore row is the only source of the consent fact. The same owner and the
+    // same cell, with nothing changed but the row's state.
+    const owner = await freshProposal("subject-b", monthly("Consent ended"));
+    const created = await confirm(owner.browser, owner.proposal);
+    expect(created.status === 201, `confirm ${created.status} ${created.text}`);
+    const allowed = await owner.browser.fetch(`/v1/budget-spaces/${created.json.budgetSpaceId}`);
+    expect(allowed.status === 200, `with a current consent row ${allowed.status} ${allowed.text}`);
+    await q("update budget_space_consent set state = 'ended', ended_at = now(), ended_reason_class = 'qa_probe' where budget_space_id = $1", [created.json.budgetSpaceId]);
+    const denied = await owner.browser.fetch(`/v1/budget-spaces/${created.json.budgetSpaceId}`);
+    expect(denied.status === 403, `consent no longer current: ${denied.status} ${denied.text}`);
+    return `stale, foreign-kind and missing acknowledgements each 409 stale_disclosure with no budget_space row and no consent row; the same owner and the same cell: 200 with a current consent row, ${denied.status} once it is ended`;
   });
 }
 
@@ -1180,6 +1257,7 @@ async function main() {
     await phase("CBD-153 targets and the joined flow", phaseTargets);
     await phase("CBD-232 proposals", phaseProposals);
     await phase("CBD-233 confirmation", phaseConfirmation);
+    await phase("CBD-236 consent record", phaseConsent);
     await phase("CBD-190 identity", phaseIdentity);
     await phase("CBD-190 expired challenge", phaseExpiredChallenge, { COBUDGET_IDENTITY_CHALLENGE_LIFETIME_SECONDS: "1" });
     await phaseConfiguration();

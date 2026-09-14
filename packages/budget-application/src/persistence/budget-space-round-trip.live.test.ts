@@ -4,7 +4,9 @@ import { randomUUID } from "node:crypto";
 import { loadLocalDatabaseConfig } from "@cobudget/migrations/local";
 import { bindClient } from "../../../data-access/src/binding.ts";
 import { createOrRegenerateProposal } from "../creation-proposals/application.ts";
-import { testAuthContext, testPorts, FakeClock } from "../creation-proposals/support.ts";
+import { testAuthContext, testDisclosures, testPorts, FakeClock } from "../creation-proposals/support.ts";
+import { PRIMARY_OWNER_SELF_DISCLOSURE } from "../creation-confirmation/disclosure.ts";
+import { consentDependency } from "./consent-store.ts";
 import { confirmationRequest, confirmBudgetCreation } from "../creation-confirmation/index.ts";
 import { DurableProposalStore } from "./proposal-store.ts";
 import { DurableConfirmationStore } from "./confirmation-store.ts";
@@ -28,10 +30,12 @@ void test("PROTO persisted proposal confirmation followed by current space detai
       name: "Round trip", timeZone: "America/New_York", currencyCode: "USD", schedule: { cadence: "weekly", anchor: "monday" },
     } }, ports);
     assert.equal(issued.kind, "created"); if (issued.kind !== "created") throw new Error("fixture failed");
-    const request = confirmationRequest(issued.response.proposalId, randomUUID(), { confirmationBinding: issued.response.confirmationBinding });
+    const disclosures = testDisclosures();
+    const request = confirmationRequest(issued.response.proposalId, randomUUID(), { confirmationBinding: issued.response.confirmationBinding,
+      acknowledgedDisclosure: { kind: PRIMARY_OWNER_SELF_DISCLOSURE, version: disclosures.current(PRIMARY_OWNER_SELF_DISCLOSURE).version } });
     const store = new DurableConfirmationStore(client, proposals, { attempts: 3, reload: async () => ({ context, ports }),
       authorize: async () => ({ policyVersion: "p1", policyDigest: "a".repeat(64), inputSchemaVersion: 1, authorizationVersion: 1 }),
-      allowAudit: async () => undefined });
+      allowAudit: async () => undefined, consent: consentDependency(disclosures, randomUUID) });
     const confirmed = await confirmBudgetCreation(store, context, request);
     const detail = await readBudgetSpaceDetail(client, confirmed.budgetSpaceId, context.subjectId, confirmed.primaryOwnerMembershipId, clock);
     assert.ok(detail); assert.equal(detail.space.name, "Round trip");

@@ -18,20 +18,20 @@
  *                 owning space is the space itself, the version is the space's
  *                 lifecycle version and the lifecycle is the space's.
  *
- * Consent (PROTO-ACTIVATION-001 A6, review R06 / SEC-ACT-F01): CBD-236
- * requires `consent.{consentId, disclosureVersion, state}` on every ordinary
- * input (CBD-73 DI-91-007), but no migration creates a consent row and the
- * prototype records no disclosure. `interimOwnerSelfConsent` below is the
- * interim rule of docs/cbd-236-consent-facts-proposal.md section 9
- * (`CF-236-008`, pending the Executive decision drafted in its section 14 as
- * CBD236-CONSENT-SEMANTICS-001): a *tolerated absence of consent evidence*
- * for the local synthetic-identity prototype, not a definition of consent.
- * It emits consent facts only when every condition a to e holds and no
- * consent fact at all otherwise, so `decide` denies `input_invalid` for any
- * other membership. The emitted values are labelled constants
- * (`interim-owner-self:<membership id>`, INTERIM_DISCLOSURE_VERSION, the
- * literal source `runtime_prototype_derivation`) so every audit line shows
- * that no consent was recorded. The interim ends with the consent landing.
+ * Consent (CBD236-CONSENT-SEMANTICS-001 item 4; docs/cbd-236-consent-facts-
+ * proposal.md section 8, `CF-236-007`): CBD-236 section 4.1 requires
+ * `consent.{consentId, disclosureVersion, state}` on every ordinary input,
+ * sourced from the application datastore (CBD-91 `DI-91-007`). This reader
+ * reads `budget_space_consent` by a tenant-scoped statement keyed on the
+ * acting membership and subject and derives NOTHING: the consent identifier,
+ * the disclosure version and the state are the row's own columns. A membership
+ * with a `current` row emits its facts; a membership whose rows have all left
+ * `current` emits the most recent row's stored state, so `decide` denies
+ * `consent_not_current`; a membership with no row emits no consent fact at
+ * all, so `decide` denies `input_invalid`. Both are the same external class
+ * (CBD-236 section 5.2). The interim owner-only derivation of section 9 was
+ * deleted by this change, as item 5 of the decision requires -- it is gone,
+ * not switched off.
  *
  * Bootstrap variant (`space.create`): the server-allocated candidate space and
  * Primary-membership identifiers (`lookup.candidates`) are checked for
@@ -58,55 +58,34 @@ import { proposalUuid } from "../../../../packages/budget-application/src/persis
 import type { FactReader } from "./fact-source.ts";
 
 const SPACE_RESOURCE_TYPES: ReadonlySet<string> = new Set(["space", "category", "plan"]);
-/** The membership columns the ordinary variant and the interim consent rule read. */
-const MEMBERSHIP_COLUMNS: readonly string[] = [
-  "membership_id",
-  "role",
-  "status",
-  "authorization_version", // the membership's own version (never relabelled as a disclosure version)
-  "account_subject_id", // the acting subject, condition a
-  "created_by_subject_id", // self-created, condition d
-];
+/** The membership columns the ordinary variant reads. `authorization_version` is the membership's own version and is never relabelled as a disclosure version. */
+const MEMBERSHIP_COLUMNS: readonly string[] = ["membership_id", "role", "status", "authorization_version"];
+/** The consent evidence columns of `budget_space_consent`; `recorded_at` orders the terminal rows and is not a fact. */
+const CONSENT_COLUMNS: readonly string[] = ["consent_id", "disclosure_version", "state", "recorded_at"];
 
-/** No disclosure was shown; this is not a registry version. `decide` requires a positive integer, so 0 cannot label it. */
-export const INTERIM_DISCLOSURE_VERSION = 1;
-/** The label carried on every interim consent fact, so the derivation is visible wherever the fact travels. */
-export const INTERIM_CONSENT_SOURCE = "runtime_prototype_derivation";
-export const INTERIM_CONSENT_ID_PREFIX = "interim-owner-self:";
-/** The CBD-231 membership migration literals the interim's safety rests on; budget-facts.test.ts pins them against the migration file. */
-export const INTERIM_MEMBERSHIP_ROLE = "primary_owner";
-export const INTERIM_MEMBERSHIP_STATUS = "active";
-
-export interface InterimConsentInput {
-  /** `budget_space.primary_owner_membership_id` of the acting space. */
-  readonly primaryOwnerMembershipId: unknown;
-  /** The membership row loaded by (space, membership id, acting subject). */
-  readonly membership: { readonly membership_id?: unknown; readonly role?: unknown; readonly status?: unknown; readonly account_subject_id?: unknown; readonly created_by_subject_id?: unknown } | undefined;
-  readonly actingSubjectId: string;
-  /** The process's identity configuration is the explicitly local adapter (development or test). */
-  readonly localRuntime: boolean;
-}
+interface ConsentRow { readonly consent_id?: unknown; readonly disclosure_version?: unknown; readonly state?: unknown; readonly recorded_at?: unknown }
 
 /**
- * docs/cbd-236-consent-facts-proposal.md section 9 (`CF-236-008`), conditions a to e. Returns the consent
- * leaves for the ordinary input or `undefined` (no consent fact at all) when any condition fails.
+ * docs/cbd-236-consent-facts-proposal.md section 8 steps 2 and 3, over the rows the tenant-scoped
+ * statement returned for (space, membership, acting subject). The `current` row wins; otherwise the
+ * most recently recorded row is reported with ITS OWN stored state, so `decide` denies
+ * `consent_not_current` rather than being told a state no row carries. No row yields no fact.
  */
-export function interimOwnerSelfConsent(input: InterimConsentInput): Readonly<Record<string, unknown>> | undefined {
-  const { membership } = input;
-  if (!membership) return undefined;                                                                  // a: the acting subject's own membership exists
-  if (membership.account_subject_id !== input.actingSubjectId) return undefined;                    // a: loaded for the acting subject
-  if (membership.role !== INTERIM_MEMBERSHIP_ROLE || membership.status !== INTERIM_MEMBERSHIP_STATUS) return undefined; // b
-  if (typeof membership.membership_id !== "string" || membership.membership_id !== input.primaryOwnerMembershipId) return undefined; // c
-  if (membership.created_by_subject_id !== membership.account_subject_id) return undefined;         // d: self-created through CBD-233
-  if (!input.localRuntime) return undefined;                                                          // e: local prototype only
-  return {
-    "consent.consentId": `${INTERIM_CONSENT_ID_PREFIX}${membership.membership_id}`,
-    "consent.disclosureVersion": INTERIM_DISCLOSURE_VERSION,
-    "consent.state": "current",
-    // Not a PolicyInput leaf (the contract's provenance vocabulary has no such producer): a label the assembler ignores
-    // and evidence readers can see on the raw fact set.
-    "consent.source": INTERIM_CONSENT_SOURCE,
-  };
+export function currentConsentRow(rows: readonly ConsentRow[]): ConsentRow | undefined {
+  const current = rows.filter(row => row.state === "current");
+  // The partial unique index admits at most one; more than one means the evidence is not trustworthy.
+  if (current.length === 1) return current[0];
+  if (current.length > 1) return undefined;
+  const ordered = [...rows].sort((a, b) => Date.parse(String(b.recorded_at ?? 0)) - Date.parse(String(a.recorded_at ?? 0)));
+  return ordered[0];
+}
+
+/** The consent leaves of one evidence row, or `undefined` when the row cannot supply all three. */
+export function consentFactsOf(row: ConsentRow | undefined): Readonly<Record<string, unknown>> | undefined {
+  if (!row) return undefined;
+  const version = integer(row.disclosure_version);
+  if (typeof row.consent_id !== "string" || !row.consent_id || version === undefined || version < 1 || typeof row.state !== "string" || !row.state) return undefined;
+  return { "consent.consentId": row.consent_id, "consent.disclosureVersion": version, "consent.state": row.state };
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
@@ -116,7 +95,7 @@ function integer(value: unknown): number | undefined {
   return undefined;
 }
 
-async function spaceFacts(client: DataAccessClient, lookup: FactLookup, subjectId: string, localRuntime: boolean): Promise<Record<string, unknown> | null> {
+async function spaceFacts(client: DataAccessClient, lookup: FactLookup, subjectId: string): Promise<Record<string, unknown> | null> {
   const { operation } = lookup;
   const spaceId = operation.actingSpaceId;
   if (typeof spaceId !== "string" || !UUID.test(spaceId)) return null;
@@ -145,8 +124,13 @@ async function spaceFacts(client: DataAccessClient, lookup: FactLookup, subjectI
       facts["membership.role"] = membership.role;
       facts["membership.status"] = membership.status;
       facts["membership.authorizationVersion"] = integer(membership.authorization_version);
-      // A6: the interim owner-only derivation (section 9); any other membership gets no consent fact and denies.
-      Object.assign(facts, interimOwnerSelfConsent({ primaryOwnerMembershipId: space?.primary_owner_membership_id, membership, actingSubjectId: subjectId, localRuntime }) ?? {});
+      // Section 8: consent comes from `budget_space_consent` and from nowhere else. The read set is the
+      // acting membership's own rows for the acting subject; no row means no consent fact, and `decide`
+      // then denies `input_invalid`.
+      const consents = await client.tenantSelect({ table: "budget_space_consent", budgetSpaceId: spaceId,
+        columns: CONSENT_COLUMNS,
+        conditions: [{ column: "membership_id", value: membershipId }, { column: "account_subject_id", value: subjectId }] });
+      Object.assign(facts, consentFactsOf(currentConsentRow(consents.rows as readonly ConsentRow[])) ?? {});
     }
   }
   return facts;
@@ -182,17 +166,18 @@ async function bootstrapFacts(client: DataAccessClient, candidates: { readonly s
 }
 
 /**
- * The `extend` reader for `createApiFactSource`: `environmentId` is the process's configured environment, used
- * only as a statement predicate; `localRuntime` states that the identity adapter is the explicitly local one
- * (condition e of the interim consent rule) and is false for anything else.
+ * The `extend` reader for `createApiFactSource`: `environmentId` is the process's configured
+ * environment, used only as a statement predicate. The reader takes no runtime-shape argument any
+ * more -- consent is evidence in the datastore, so there is nothing left that a local runtime could
+ * be permitted to assume (CBD236-CONSENT-SEMANTICS-001 item 5).
  */
-export function budgetFactReader(environmentId: string, localRuntime: boolean): FactReader {
+export function budgetFactReader(environmentId: string): FactReader {
   return async (source: FactSource, lookup: FactLookup, client: DataAccessClient) => {
     if (source !== "datastore") return null;
     const subjectId = lookup.identity?.["subject.accountSubjectId"];
     if (typeof subjectId !== "string" || !subjectId) return null;
     if (lookup.operation.scope === "subject") return lookup.operation.resourceType === "proposal" ? proposalFacts(client, lookup, subjectId, environmentId) : null;
     if (lookup.operation.action === "space.create") return lookup.candidates ? bootstrapFacts(client, lookup.candidates) : null;
-    return spaceFacts(client, lookup, subjectId, localRuntime);
+    return spaceFacts(client, lookup, subjectId);
   };
 }

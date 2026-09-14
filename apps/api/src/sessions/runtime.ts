@@ -19,7 +19,7 @@
  * (`budget-creation/composition.ts`); the boundary's transaction store
  * dispatches by action to the creation, targets and general stores
  * (`dispatch.ts`); the fact source layers the budget-space, proposal and
- * consent facts (`budget-facts.ts`) over the subject/profile leaves; and the
+ * consent facts read from `budget_space_consent` (`budget-facts.ts`) over the subject/profile leaves; and the
  * fact assembler carries the configured environment so the p2 subject-scoped
  * cells assemble (CBD-236 section 4.4).
  *
@@ -184,8 +184,7 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
   const sessions = buildSessionFactSourceAdapter(session, identityConfig.environmentId, client, overrides.revocationFence ?? true);
   const audit = new InProcessRestrictedAuditStore();
   const budget = composeBudgetApi({ client, environmentId: identityConfig.environmentId, sessions, pepper: session.pepper, now });
-  // A6 condition e: this composition runs only under the explicitly local adapter (composeApiRuntime routes every other provider away).
-  const budgetFacts = budgetFactReader(identityConfig.environmentId, identityConfig.adapterKind === "local" && (identityConfig.environmentId === "development" || identityConfig.environmentId === "test"));
+  const budgetFacts = budgetFactReader(identityConfig.environmentId);
   const extend: FactReader = async (source, lookup, scoped) => {
     const facts = { ...(await budgetFacts(source, lookup, scoped) ?? {}), ...(await overrides.extendFacts?.(source, lookup, scoped) ?? {}) };
     return Object.keys(facts).length ? facts : null;

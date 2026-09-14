@@ -14,6 +14,16 @@ export interface ConfirmationDependencies {
   readonly boundary?: (point: string) => Promise<void>;
   /** The HTTP authorization store has already discharged this exact membership. */
   readonly membershipDischarged?: boolean;
+  /**
+   * CBD-236 consent landing (CBD236-CONSENT-SEMANTICS-001 item 4): writes the
+   * creator's `budget_space_consent` row on this same client, immediately
+   * after the creator membership, and denies `stale_disclosure` when the
+   * request's acknowledged disclosure is not the approved registry's current
+   * one. A required dependency and not an optional hook: a confirmation that
+   * cannot record consent must not commit a membership, which the migration's
+   * deferred activation-atomicity trigger independently enforces at COMMIT.
+   */
+  readonly consent: (client: DataAccessClient, plan: CreationPlan) => Promise<void>;
 }
 const scope = (c: AuthenticatedSubjectContext) => [{ column: "environment", value: c.environment }, { column: "account_subject_id", value: c.subjectId }];
 export async function lookupConfirmation(client: DataAccessClient, context: AuthenticatedSubjectContext, request: ConfirmBudgetCreationRequest): Promise<ConfirmBudgetCreationResponse | null> {
@@ -76,6 +86,8 @@ export class DurableConfirmationTransaction implements ConfirmationTransaction {
     if (!this.dependencies.membershipDischarged) await insert("budget_space_membership", { membership_id: r.primaryOwnerMembershipId,
       profile_id: c.profileId, account_subject_id: c.subjectId, role: "primary_owner", status: "active", authorization_version: 1,
       created_by_subject_id: c.subjectId, created_at: r.committedAt });
+    // CBD-236 SS7 step 6: the consent row follows the creator membership inside this same transaction.
+    await this.step("budget_space_consent", () => this.dependencies.consent(this.client, plan));
     await insert("budget_space_schedule_version", { schedule_version_id: r.initialScheduleVersionId, sequence: 1, status: "authoritative",
       cadence_definition: record.normalizedInputs.schedule, proposal_preview_digest: record.previewDigest, created_at: r.committedAt });
     for (const [i, period] of record.preview.periods.entries()) await insert("budget_space_period", { period_id: plan.periodIds[i],

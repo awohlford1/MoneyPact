@@ -5,6 +5,8 @@
  * (in `in-memory-store.ts`) is the only implementation shipped here; the
  * durable, tenant-scoped implementation belongs to CBD-246.
  */
+import type { ConsentDisclosure, ConsentDisclosureSource } from "../creation-confirmation/disclosure.ts";
+
 
 import type {
   BusinessDayPolicy,
@@ -157,6 +159,14 @@ export interface BudgetCreationProposalResponse {
   readonly previewDigest: string;
   readonly confirmationBinding: string;
   readonly bindingVersion: "bcp-hmac-sha256/v1";
+  /**
+   * The disclosure that must be shown above the confirm control and echoed
+   * back as `acknowledgedDisclosure`. It is always the registry's *current*
+   * version, re-read on every response rather than frozen into the stored
+   * proposal: a proposal previewed against a superseded disclosure must not be
+   * confirmable against it.
+   */
+  readonly currentDisclosure: ConsentDisclosure;
 }
 
 export type InvalidatedReason =
@@ -332,4 +342,12 @@ export interface Ports {
   readonly constraintReader?: BudgetCreationConstraintReader;
   readonly store: BudgetCreationProposalStore;
   readonly timeZoneDataVersion: string;
+  /**
+   * CBD-236 consent landing: the approved disclosure registry, read
+   * server-side. The preview response carries the current `primary_owner_self`
+   * disclosure so the creation surface can present it above the confirm
+   * control (CBD-232 amendment `OQ-CF-004`, routed to the CBD-232 owner under
+   * PO-CONTRACT-APPROVALS-001).
+   */
+  readonly disclosures: ConsentDisclosureSource;
 }

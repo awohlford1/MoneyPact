@@ -27,7 +27,7 @@ void test("registered confirmation route authenticates before lookup, rejects ec
   const binding = budgetApiHttp({ client, transactions: new CreationAuthorizationStore(client, 3),
     proposals: new DurableProposalStore(client, () => assert.fail("allocate on replay"), () => "2026-09-15T12:00:00.000Z"),
     context: async (_request, subject) => ({ environment: "test", subjectId: subject, accountId: "account", profileId: "profile", sessionGeneration: 1 }),
-    persistence: { attempts: 3, reload: async () => assert.fail("reload on replay"), authorize: async () => assert.fail("policy on replay"), allowAudit: async () => assert.fail("audit on replay") },
+    persistence: { attempts: 3, reload: async () => assert.fail("reload on replay"), authorize: async () => assert.fail("policy on replay"), allowAudit: async () => assert.fail("audit on replay"), consent: async () => assert.fail("consent on replay") },
   }, { context: async () => assert.fail("p2 context"), ports: async () => assert.fail("p2 ports") }, { client, clock: { now: () => new Date("2026-09-15T12:00:00.000Z") } });
   const authorize = h.boundary.authorize.bind(h.boundary);
   h.boundary.authorize = async (...args) => { policy++; return authorize(...args); };

@@ -83,10 +83,13 @@ export interface PreAuthenticationSurfaceOptions {
 export const PreAuthenticationSurface = (options: PreAuthenticationSurfaceOptions = {}): MethodDecorator => SetMetadata(PRE_AUTHENTICATION, Object.freeze({ ...options }));
 /** PROTO-QA-FIXES-001 F1: the closed set of effect denials that return the ceremony's reserved unit. A confirm
  * that passed the session gate, the replay lookup, the locator and the policy but was denied inside its effect
- * (expired or superseded proposal, altered binding) committed nothing, so the reserved initial `space.create`
- * unit it was admitted on goes back to the ceremony and the corrected confirm is admitted on the same session.
+ * (expired or superseded proposal, altered binding, an acknowledged disclosure that is no longer the approved
+ * current one) committed nothing, so the reserved initial `space.create` unit it was admitted on goes back to
+ * the ceremony and the corrected confirm is admitted on the same session. `stale_disclosure` belongs here for
+ * exactly the reason the other two do (CBD236-CONSENT-SEMANTICS-001 item 4): the person is asked to read the
+ * current disclosure and confirm again, which is impossible if the refusal spent their only reserved unit.
  * Ordinary units and committed effects are never refunded (CBD-266 section 4.7 `proto-bootstrap-v1`). */
-const REFUNDABLE_EFFECT_DENIALS: ReadonlySet<string> = new Set(["proposal_not_current", "confirmation_stale"]);
+const REFUNDABLE_EFFECT_DENIALS: ReadonlySet<string> = new Set(["proposal_not_current", "confirmation_stale", "stale_disclosure"]);
 /**
  * PROTO-ACTIVATION-001: a session-authenticated surface with no policy cell.
  * The released p2 matrix (CBD-236 section 8.5) carries `profile.read` for the

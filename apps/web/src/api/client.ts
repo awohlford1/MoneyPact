@@ -156,7 +156,7 @@ export function createHttpClient(base = "/v1", fetcher: typeof fetch = fetch): A
   return {
     createProposal: (draft, idempotency, supersedes, signal) => request("/budget-creation-proposals", "POST", { ...draft, ...(supersedes ? { supersedesProposalId: supersedes } : {}) }, signal, idempotency),
     readProposal: (id, signal) => request(`/budget-creation-proposals/${encodeURIComponent(id)}`, "GET", undefined, signal),
-    confirmProposal: (id, binding, idempotency) => request(`/budget-creation-proposals/${encodeURIComponent(id)}/confirm`, "POST", { confirmationBinding: binding }, undefined, idempotency),
+    confirmProposal: (id, binding, idempotency, acknowledgedDisclosure) => request(`/budget-creation-proposals/${encodeURIComponent(id)}/confirm`, "POST", { confirmationBinding: binding, acknowledgedDisclosure }, undefined, idempotency),
     // The API owns its authorize page, chooser, and callback exchange.
     begin: async () => (await request<{ navigateTo: string }>("/identity/begin", "POST", { ceremony: "sign_in", postResultDestinationId: "budgets" })).navigateTo,
     async me(signal) {

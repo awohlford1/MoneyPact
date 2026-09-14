@@ -1,0 +1,28 @@
+{
+  "kind": "primary_owner_self",
+  "version": 1,
+  "heading": "Before you create this budget",
+  "items": [
+    {
+      "id": "role",
+      "text": "You are creating a personal budget space and you become its sole Primary Owner."
+    },
+    {
+      "id": "authority",
+      "text": "A Primary Owner fully administers this budget space. Creating it gives no payment, financial, legal, or bank-account authority, and it moves no money."
+    },
+    {
+      "id": "privacy",
+      "text": "Nobody else can see this budget space. Sharing it with another person is a separate invitation that the other person accepts or declines; nothing here shares anything."
+    },
+    {
+      "id": "exits",
+      "text": "You can transfer primary ownership or archive this budget space later. Each is a separate action you take, and nothing else removes you as Primary Owner."
+    },
+    {
+      "id": "action",
+      "text": "Confirming is your agreement to the items above, and it makes you Primary Owner immediately. Nothing is chosen for you."
+    }
+  ],
+  "acknowledgement": "I have read the items above and I agree to become Primary Owner of this budget space."
+}

@@ -9,6 +9,18 @@ export interface ConfirmBudgetCreationRequest {
   readonly proposalId: string;
   readonly confirmationBinding: string;
   readonly confirmationIdempotencyKey: string;
+  /**
+   * CBD-236 consent landing (CBD236-CONSENT-SEMANTICS-001 item 4): the
+   * disclosure the creation surface showed above the confirm control, as a
+   * claim. The server compares it with the approved registry and denies
+   * `stale_disclosure`; the claim is never the recorded value. Optional in the
+   * type because an absent claim is denied at commit exactly like a stale one
+   * rather than rejected as a malformed request -- a confirmation taken
+   * without the current disclosure is simply not consent (CBD-73 SS6 rule 1).
+   * The matching CBD-233 SS3.1/SS3.3 amendment is routed to the CBD-233 owner
+   * under PO-CONTRACT-APPROVALS-001 (proposal finding CF-F03).
+   */
+  readonly acknowledgedDisclosure?: { readonly kind: string; readonly version: number };
 }
 export interface ConfirmBudgetCreationResponse {
   readonly confirmationOutcomeId: string;
@@ -25,7 +37,7 @@ export interface ConfirmBudgetCreationResponse {
   readonly committedAt: string;
   readonly onboardingContinuationId: string;
 }
-export type ConfirmationErrorCode = "invalid_request" | "unauthenticated" | "proposal_not_found" | "proposal_not_current" | "idempotency_key_reused" | "authorization_denied" | "confirmation_stale" | "retryable_conflict";
+export type ConfirmationErrorCode = "invalid_request" | "unauthenticated" | "proposal_not_found" | "proposal_not_current" | "idempotency_key_reused" | "authorization_denied" | "confirmation_stale" | "stale_disclosure" | "retryable_conflict";
 export class ConfirmationError extends Error {
   readonly code: ConfirmationErrorCode;
   constructor(code: ConfirmationErrorCode) { super(code); this.code = code; }
@@ -34,13 +46,27 @@ export function equalDigest(a: string, b: string): boolean {
   const left = Buffer.from(a); const right = Buffer.from(b);
   return left.length === right.length && timingSafeEqual(left, right);
 }
+/** The confirmation body is still closed: exactly `confirmationBinding`, optionally `acknowledgedDisclosure`, and nothing else. */
+const CONFIRMATION_BODY_FIELDS: readonly string[] = ["confirmationBinding", "acknowledgedDisclosure"];
+/** A present-but-malformed claim is a malformed request; an absent claim is not (it is denied at commit as `stale_disclosure`). */
+function acknowledgedDisclosureField(value: unknown): { readonly kind: string; readonly version: number } | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new ConfirmationError("invalid_request");
+  const record = value as Record<string, unknown>;
+  const { kind, version } = record;
+  if (Object.keys(record).length !== 2 || typeof kind !== "string" || !/^[a-z][a-z0-9_]{0,63}$/u.test(kind)
+    || !Number.isSafeInteger(version) || (version as number) < 1) throw new ConfirmationError("invalid_request");
+  return { kind, version: version as number };
+}
 export function confirmationRequest(proposalId: unknown, key: unknown, body: unknown): ConfirmBudgetCreationRequest {
   if (typeof proposalId !== "string" || !/^bcp_[0-9a-f]{32}$/u.test(proposalId)
     || typeof key !== "string" || !/^[\x21-\x7e]{16,128}$/u.test(key)
     || !body || typeof body !== "object" || Array.isArray(body)
-    || Object.keys(body).length !== 1 || !("confirmationBinding" in body)
+    || Object.keys(body).some(field => !CONFIRMATION_BODY_FIELDS.includes(field)) || !("confirmationBinding" in body)
     || typeof body.confirmationBinding !== "string" || !body.confirmationBinding.length || body.confirmationBinding.length > 1024) throw new ConfirmationError("invalid_request");
-  return { proposalId, confirmationIdempotencyKey: key, confirmationBinding: body.confirmationBinding };
+  const acknowledgedDisclosure = acknowledgedDisclosureField((body as Record<string, unknown>).acknowledgedDisclosure);
+  return { proposalId, confirmationIdempotencyKey: key, confirmationBinding: body.confirmationBinding,
+    ...(acknowledgedDisclosure ? { acknowledgedDisclosure } : {}) };
 }
 export const requestDigest = (request: ConfirmBudgetCreationRequest): string => digestOf(request);
 export interface ClaimedProposal {

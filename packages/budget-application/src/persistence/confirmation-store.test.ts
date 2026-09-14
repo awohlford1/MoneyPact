@@ -3,7 +3,9 @@ import { test } from "node:test";
 import { randomUUID } from "node:crypto";
 import type { DataAccessClient, Condition } from "@cobudget/data-access";
 import { createOrRegenerateProposal } from "../creation-proposals/application.ts";
-import { testAuthContext, testPorts, FakeClock } from "../creation-proposals/support.ts";
+import { testAuthContext, testDisclosures, testPorts, FakeClock } from "../creation-proposals/support.ts";
+import { PRIMARY_OWNER_SELF_DISCLOSURE } from "../creation-confirmation/disclosure.ts";
+import { consentDependency } from "./consent-store.ts";
 import type { ProposalRecord } from "../creation-proposals/ports.ts";
 import { confirmBudgetCreation, confirmationRequest, ConfirmationError } from "../creation-confirmation/index.ts";
 import { DurableProposalStore } from "./proposal-store.ts";
@@ -46,15 +48,20 @@ async function fixture() {
   const created = await createOrRegenerateProposal({ subjectContext: context, idempotencyKeyHeader: "3333333333333333",
     body: { name: "Groceries", timeZone: "America/New_York", currencyCode: "USD", schedule: { cadence: "weekly", anchor: "monday" } } }, ports);
   assert.equal(created.kind, "created"); if (created.kind !== "created") throw new Error("fixture");
-  const request = confirmationRequest(created.response.proposalId, "1111111111111111", { confirmationBinding: created.response.confirmationBinding });
+  const disclosures = testDisclosures();
+  const acknowledgedDisclosure = { kind: PRIMARY_OWNER_SELF_DISCLOSURE, version: disclosures.current(PRIMARY_OWNER_SELF_DISCLOSURE).version };
+  const request = confirmationRequest(created.response.proposalId, "1111111111111111", { confirmationBinding: created.response.confirmationBinding, acknowledgedDisclosure });
   const points: string[] = []; let failAt = ""; let authorizations = 0;
   const dependencies: ConfirmationDependencies = { attempts: 3, reload: async () => ({ context, ports }),
     authorize: async () => { authorizations++; return { policyVersion: "p1", policyDigest: "a".repeat(64), inputSchemaVersion: 1, authorizationVersion: 1 }; },
     allowAudit: async client => { await client.platformInsert({ table: "test_restricted_audit", values: { outcome: "allow" } }); },
     boundary: async p => { points.push(p); if (p === failAt) throw new Error("injected:" + p); },
+    // The production consent write, over the fixture registry: every confirmation in this suite
+    // records the creator's consent row exactly as the API does.
+    consent: consentDependency(disclosures, randomUUID),
   };
   const store = new DurableConfirmationStore(db.client, proposals, dependencies);
-  return { db, context, clock, ports, request, proposals, points, dependencies, store,
+  return { db, context, clock, ports, request, proposals, points, dependencies, store, disclosures, acknowledgedDisclosure,
     fail: (p: string) => { failAt = p; }, authorizations: () => authorizations,
     confirm: () => confirmBudgetCreation(store, context, request),
     record: () => db.state().budget_creation_proposal![0]!.proposal_payload as ProposalRecord };
@@ -124,8 +131,17 @@ void test("CONF-233-T09 request and closed transaction reject optional setup", a
   for (const name of ["categories", "targets", "bills", "goals", "transactions", "memberships", "accountLinks", "subjectId", "budgetSpaceId", "preview", "governingVersions"]) {
     assert.throws(() => confirmationRequest("bcp_" + "a".repeat(32), "1111111111111111", { confirmationBinding: "binding", [name]: [] }), /invalid_request/);
   }
+  // CBD-236 opens exactly one further field, and only in its approved shape.
+  assert.deepEqual(confirmationRequest("bcp_" + "a".repeat(32), "1111111111111111", { confirmationBinding: "binding",
+    acknowledgedDisclosure: { kind: PRIMARY_OWNER_SELF_DISCLOSURE, version: 1 } }).acknowledgedDisclosure, { kind: PRIMARY_OWNER_SELF_DISCLOSURE, version: 1 });
+  assert.equal(confirmationRequest("bcp_" + "a".repeat(32), "1111111111111111", { confirmationBinding: "binding" }).acknowledgedDisclosure, undefined,
+    "an absent claim is not a malformed request: it is denied at commit as stale_disclosure");
+  for (const malformed of [null, [], "primary_owner_self", { kind: "primary_owner_self" }, { kind: "primary_owner_self", version: 0 },
+    { kind: "primary_owner_self", version: "1" }, { kind: "Primary Owner", version: 1 }, { kind: "primary_owner_self", version: 1, extra: true }]) {
+    assert.throws(() => confirmationRequest("bcp_" + "a".repeat(32), "1111111111111111", { confirmationBinding: "binding", acknowledgedDisclosure: malformed }), /invalid_request/, JSON.stringify(malformed));
+  }
   const f = await fixture(); await f.confirm();
-  assert.deepEqual(Object.keys(f.db.state()).sort(), ["budget_creation_proposal", "budget_space", "budget_space_membership", "budget_space_schedule_version", "budget_space_period", "budget_creation_operation", "budget_creation_audit", "budget_creation_success", "budget_creation_idempotency", "test_restricted_audit"].sort());
+  assert.deepEqual(Object.keys(f.db.state()).sort(), ["budget_creation_proposal", "budget_space", "budget_space_membership", "budget_space_schedule_version", "budget_space_period", "budget_creation_operation", "budget_creation_audit", "budget_creation_success", "budget_creation_idempotency", "budget_space_consent", "test_restricted_audit"].sort());
 });
 void test("23505/40001/40P01 retry the whole operation, rereading authority", async () => {
   for (const state of ["23505", "40001", "40P01"]) { const f = await fixture(); f.db.transient(state); await f.confirm(); assert.equal(f.authorizations(), 2); assert.equal(f.db.state().budget_space?.length, 1); }

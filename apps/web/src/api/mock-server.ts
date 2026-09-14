@@ -15,7 +15,23 @@ import { addDays, toISODate } from "@cobudget/budget-domain/shared";
 import { fullPeriodTargets } from "@cobudget/budget-domain/targets";
 import { ApiError, createHttpClient } from "./client.ts";
 import type { ApiClient, FieldError, WireCategoryList, WirePlan, WireSession, WireSpaceDetail, WireSpaceList, WireTargetSet } from "./client.ts";
-import type { Confirmation, Draft, Proposal, ProposalRead } from "./proposals.ts";
+import type { Confirmation, Disclosure, Draft, Proposal, ProposalRead } from "./proposals.ts";
+
+/** The mock's stand-in for config/consent-disclosure-registry.json; the live API serves the approved entry. */
+const MOCK_DISCLOSURE: Disclosure = {
+  kind: "primary_owner_self", version: 1, digest: "mock-consent-disclosure-digest",
+  text: {
+    heading: "Before you create this budget",
+    items: [
+      { id: "role", text: "You are creating a personal budget space and you become its sole Primary Owner." },
+      { id: "authority", text: "Creating it gives no payment, financial, legal, or bank-account authority, and it moves no money." },
+      { id: "privacy", text: "Nobody else can see this budget space." },
+      { id: "exits", text: "You can transfer primary ownership or archive this budget space later." },
+      { id: "action", text: "Confirming is your agreement to the items above." },
+    ],
+    acknowledgement: "I have read the items above and I agree to become Primary Owner of this budget space.",
+  },
+};
 
 function localDate(now: number, timeZone: string) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
@@ -41,7 +57,7 @@ export interface MockWire {
   logout(): void;
   createProposal(body: Draft & { supersedesProposalId?: string }, idempotency: string): Proposal;
   readProposal(id: string): ProposalRead;
-  confirmProposal(id: string, binding: string, idempotency: string): Confirmation;
+  confirmProposal(id: string, binding: string, idempotency: string, acknowledgedDisclosure: { kind: string; version: number }): Confirmation;
   listSpaces(): WireSpaceList;
   spaceDetail(id: string): WireSpaceDetail;
   plan(id: string, periodId: string): WirePlan;
@@ -117,7 +133,7 @@ export function createServerMock(now = Date.now): MockWire {
         governingVersions: { proposalContractVersion: "cbd-232/0.2", periodContractVersion: "cbd-26/@cobudget-budget-domain-0.1.0", calendarDataVersion: null, timeZoneDataVersion: "mock-runtime", currencyCatalogVersion: "mock-usd" },
         issuedAt: new Date(issued).toISOString(), expiresAt: expiry(issued, timeZone),
         preview: { budgetDate: date, timeZone, cadence: schedule.cadence, cadenceDefinition: schedule, cadenceSummary: describeCadence(schedule), periodCount: 4, periods, adjustments: [], warnings: [] },
-        previewDigest: createHash("sha256").update(JSON.stringify(periods)).digest("base64url"), confirmationBinding: randomUUID(), bindingVersion: "bcp-hmac-sha256/v1",
+        previewDigest: createHash("sha256").update(JSON.stringify(periods)).digest("base64url"), confirmationBinding: randomUUID(), bindingVersion: "bcp-hmac-sha256/v1", currentDisclosure: structuredClone(MOCK_DISCLOSURE),
       };
       if (predecessor) predecessor.status = "invalidated";
       proposals.set(proposal.proposalId, { proposal, status: "previewed" });
@@ -125,10 +141,13 @@ export function createServerMock(now = Date.now): MockWire {
       return structuredClone(proposal);
     },
     readProposal(id) { authorize(); return readProposal(id); },
-    confirmProposal(id, binding, idempotency) {
+    confirmProposal(id, binding, idempotency, acknowledgedDisclosure) {
       authorize();
       const replay = confirmations.get(idempotency);
       if (replay) { if (replay.id !== id) throw new ApiError(409, "idempotency_key_reused"); return structuredClone(replay.response); }
+      // CBD-236: the acknowledged disclosure is compared with the registry's current entry, exactly as
+      // the live API does, so a missing or superseded acknowledgement is denied and nothing is created.
+      if (acknowledgedDisclosure?.kind !== MOCK_DISCLOSURE.kind || acknowledgedDisclosure.version !== MOCK_DISCLOSURE.version) throw new ApiError(409, "stale_disclosure");
       const read = readProposal(id);
       if (read.lifecycle.status !== "previewed" || read.proposal.confirmationBinding !== binding) throw new ApiError(409, "proposal_not_current");
       if (proposals.get(id)?.status !== "previewed") throw new ApiError(409, "proposal_not_current");
@@ -210,8 +229,8 @@ export async function handleMockRequest(mock: MockWire, request: Request, path: 
       if (path.length === 1 && request.method === "POST") return json(mock.createProposal(body, idempotency), 201);
       if (path.length === 2 && request.method === "GET") return json(mock.readProposal(path[1]!));
       if (path.length === 3 && path[2] === "confirm" && request.method === "POST") {
-        if (Object.keys(body).some(field => field !== "confirmationBinding")) throw new ApiError(400, "invalid_request");
-        return json(mock.confirmProposal(path[1]!, body.confirmationBinding, idempotency), 201);
+        if (Object.keys(body).some(field => !["confirmationBinding", "acknowledgedDisclosure"].includes(field))) throw new ApiError(400, "invalid_request");
+        return json(mock.confirmProposal(path[1]!, body.confirmationBinding, idempotency, body.acknowledgedDisclosure), 201);
       }
     } else if (path[0] === "budget-spaces") {
       if (path.length === 1 && request.method === "GET") return json(mock.listSpaces());
