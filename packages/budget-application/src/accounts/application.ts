@@ -76,7 +76,13 @@ export interface AccountCreateRequest {
   readonly ownerSubjectId: string;
 }
 
-/** Parse `{ accountType, label, currencyCode, openingBalanceMinorUnits, ownerSubjectId? }`; every failure names its path. */
+/**
+ * Parse `{ accountType, label, currencyCode, openingBalanceMinorUnits?, ownerSubjectId? }`;
+ * every failure names its path. Two fields default rather than fail: a missing
+ * openingBalanceMinorUnits is 0 (an account opened at zero), and a missing
+ * ownerSubjectId is the acting subject. A present value of either is validated
+ * in full (F-REV-006).
+ */
 export function parseAccountCreateRequest(body: unknown, actingSubjectId: string, currencies: CurrencyPrecisionReader = iso4217PrecisionReader): AccountCreateRequest {
   if (!isRecord(body)) throw new AccountError("invalid_request", "body");
   const accountType = parseAccountType(body.accountType, "accountType");

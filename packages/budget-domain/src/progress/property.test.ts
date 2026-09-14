@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { calculateBudgetProgress, isRecordInDetail } from "./progress.ts";
+import { ProgressError, calculateBudgetProgress, isRecordInDetail } from "./progress.ts";
 import type { ProgressCellInput, ProgressInput, ProgressRecord } from "./progress.ts";
 
 function prng(seed: number): () => number {
@@ -73,20 +73,33 @@ function shuffled<T>(values: readonly T[], next: () => number): readonly T[] {
 
 const WORLDS: readonly World[] = Array.from({ length: 200 }, (_, index) => world(index + 1));
 
-/** Skip the rare world whose random draw overflows; overflow is a refusal, tested directly elsewhere. */
+/**
+ * Skip only the rare world whose random draw overflows; overflow is a refusal,
+ * tested directly elsewhere. Any other failure propagates, and the floor below
+ * keeps the properties from passing vacuously when most worlds refuse.
+ */
 function computed(input: ProgressInput): ReturnType<typeof calculateBudgetProgress> | null {
   try {
     return calculateBudgetProgress(input);
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof ProgressError && error.code === "overflow") return null;
+    throw error;
   }
 }
+
+/** The properties must run on nearly every world (F-REV-004). */
+const COMPUTED_FLOOR = 180;
 
 describe("CBD-209-AC05: properties over generated worlds", () => {
   it("covers non-trivial worlds", () => {
     const sizes = WORLDS.map((w) => w.input.records.length);
     assert.ok(Math.max(...sizes) > 10, "generator produced no substantial world");
     assert.ok(sizes.includes(0) || Math.min(...sizes) < 3, "generator produced no near-empty world");
+  });
+
+  it("computes at least the floor of worlds rather than skipping them", () => {
+    const computedWorlds = WORLDS.filter(({ input }) => computed(input) !== null).length;
+    assert.ok(computedWorlds >= COMPUTED_FLOOR, `only ${computedWorlds} of ${WORLDS.length} worlds computed`);
   });
 
   it("CBD-209-AC02: every aggregate equals the signed sum of its own detail set", () => {

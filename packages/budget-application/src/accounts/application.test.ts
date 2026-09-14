@@ -110,6 +110,12 @@ describe("CBD-196-AC02: every invalid input fails atomically with a stable error
     });
   }
 
+  it("a missing opening balance defaults to zero and a missing owner defaults to the acting subject", () => {
+    const parsed = parseAccountCreateRequest(validBody({ openingBalanceMinorUnits: undefined, ownerSubjectId: undefined }), ACCOUNT_SUBJECT_1);
+    assert.equal(parsed.openingBalanceMinorUnits, 0);
+    assert.equal(parsed.ownerSubjectId, ACCOUNT_SUBJECT_1);
+  });
+
   it("a non-object body is invalid_request", () => {
     refusesSync("invalid_request", () => parseAccountCreateRequest("nope", ACCOUNT_SUBJECT_1));
     refusesSync("invalid_request", () => parseAccountCreateRequest(null, ACCOUNT_SUBJECT_1));
