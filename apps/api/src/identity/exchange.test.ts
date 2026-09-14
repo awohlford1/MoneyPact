@@ -131,6 +131,35 @@ describe("CBD-190-AC02 bounded exchange state machine (section 10.1, CT-190-016 
     assert.equal(unknownCode.status === "rejected" && unknownCode.rejection, "grant_rejected");
   });
 
+  it("PROTO-IDENTITY-API-001 C6: an invalid ID token still yields exactly one cleanup revocation of the received token family", async () => {
+    const prepared = prepare("bad-signature");
+    const outcome = await exchange(prepared);
+    assert.equal(outcome.status, "rejected");
+    assert.equal(outcome.status === "rejected" && outcome.rejection, "token_invalid");
+    assert.equal(prepared.issuer.revocations.length, 1, "the family received before validation failed still gets one cleanup revocation");
+    assert.deepEqual(prepared.issuer.familyCounts(), { issued: 1, revoked: 1 });
+  });
+
+  it("PROTO-IDENTITY-API-001 C6: a timeout settles the late transport response and still revokes the family it minted, without affecting the returned outcome", async () => {
+    const prepared = prepare("subject-a");
+    let resolveLate!: (value: import("./local-issuer.ts").ExchangeTransportResult) => void;
+    const late = new Promise<import("./local-issuer.ts").ExchangeTransportResult>((resolve) => { resolveLate = resolve; });
+    const hangingThenLate: ProviderTransport = {
+      exchange: () => late,
+      revoke: (input) => prepared.issuer.revoke(input),
+      jwks: () => prepared.issuer.jwks(),
+    };
+    const outcome = await exchange(prepared, { transport: hangingThenLate, maxLifetimeMs: 30 });
+    assert.equal(outcome.status, "rejected");
+    assert.equal(outcome.status === "rejected" && outcome.rejection, "exchange_timeout");
+    assert.equal(prepared.issuer.revocations.length, 0, "no post-return issuance or revocation has happened yet");
+    // The transport call the exchange abandoned at the deadline now resolves with a real token family.
+    resolveLate(await prepared.issuer.exchange({ code: prepared.code, codeVerifier: prepared.verifier.toString("ascii"), redirectUri: CALLBACK_URI, clientId: CLIENT_ID }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(prepared.issuer.revocations.length, 1, "the late-minted family was cleaned up exactly once");
+    assert.deepEqual(prepared.issuer.familyCounts(), { issued: 1, revoked: 1 });
+  });
+
   it("key rotation: a token signed by a freshly rotated key is accepted after one bounded JWKS refresh; a retired key fails closed", async () => {
     const issuer = new LocalIssuer({ issuer: ISSUER, clientId: CLIENT_ID, callbackUri: CALLBACK_URI });
     const stale = (await issuer.jwks())!.keys;

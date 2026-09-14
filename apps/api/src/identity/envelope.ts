@@ -76,3 +76,34 @@ export function parseCallbackEnvelope(rawQuery: string | undefined): CallbackEnv
   // error_description / error_uri are validated for size only and dropped here.
   return { kind: "provider_error", error, state };
 }
+
+/**
+ * PROTO-IDENTITY-API-001 correction C5 (review R05): CBD-190 §7 requires a
+ * *known* challenge to terminate even when the rest of the callback is
+ * malformed (duplicate `code`, both `code` and `error`, an oversized
+ * `code`, an unexpected security-meaningful key, and so on) -- a malformed
+ * envelope must never leave a known state usable for a later, well-formed
+ * replay. This performs only the narrow, safe extraction needed to find
+ * the one candidate `state` value for termination; it never accepts the
+ * envelope itself (the caller still returns `invalid_or_expired` either
+ * way) and it refuses to guess when the `state` field is itself ambiguous
+ * (duplicated with a different value) or invalid in shape.
+ */
+export function extractStateForTermination(rawQuery: string | undefined): string | undefined {
+  if (rawQuery === undefined || rawQuery.length === 0 || rawQuery.length > 8_192) return undefined;
+  const withoutFragment = rawQuery.split("#")[0] ?? "";
+  let candidate: string | undefined;
+  for (const pair of withoutFragment.split("&")) {
+    if (pair.length === 0) continue;
+    const separator = pair.indexOf("=");
+    const rawKey = separator === -1 ? pair : pair.slice(0, separator);
+    const key = decode(rawKey);
+    if (key !== "state") continue;
+    const rawValue = separator === -1 ? "" : pair.slice(separator + 1);
+    const value = decode(rawValue);
+    if (value === undefined || !STATE_PATTERN.test(value)) return undefined;
+    if (candidate !== undefined && candidate !== value) return undefined;
+    candidate = value;
+  }
+  return candidate;
+}

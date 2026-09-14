@@ -19,9 +19,11 @@ import { configureHttpSecurity } from "../http-security.js";
 import type { ApiSurfaceGate } from "../rate-limit/http.js";
 import { composeApiRuntime } from "../sessions/runtime.ts";
 import { installedRoutes } from "../rate-limit/inventory.js";
-import { CSRF_COOKIE_NAME } from "./ceremony.ts";
 import { createFakeIdentityClient, FakeIdentityDatabase } from "./test-support/fake-client.ts";
 import { APPLICATION_ORIGIN, localConfig, localEnvironment } from "./test-support/harness.ts";
+
+/** C9: there is no CSRF cookie any more; this literal is only used to assert its absence. */
+const CSRF_COOKIE_NAME_LITERAL = "__Host-cobudget_csrf";
 
 const IDENTITY_ROUTES = ["/v1/identity/begin", "/v1/identity/callback", "/v1/identity/local/authorize", "/v1/identity/local/choose", "/v1/identity/me", "/v1/identity/logout", "/protected/probe", "/health"];
 
@@ -91,7 +93,7 @@ async function signIn(b: Browser, scenario = "subject-a") {
 }
 
 describe("PROTO-WIRE-01/02 identity routes through the real Fastify instance", () => {
-  it("assembles the API with the real session fact source and transaction store, and a browser can sign in, read /me, be denied without a cookie, and sign out", async () => {
+  it("assembles the API with the real session fact source and transaction store; a browser can sign in, but /me and /logout are denied with or without a cookie (PROTO-IDENTITY-API-001 correction C2, pending p2's policy cell)", async () => {
     const db = new FakeIdentityDatabase();
     const { app, runtime } = await createComposedApiApplication(localConfig(), () => undefined, testHistory, { client: createFakeIdentityClient(db), rateLimit: syntheticGate });
     const b = await browser(app);
@@ -108,32 +110,28 @@ describe("PROTO-WIRE-01/02 identity routes through the real Fastify instance", (
       const committed = await signIn(b);
       assert.equal(committed.statusCode, 303, committed.body);
       assert.equal(committed.headers.location, `${APPLICATION_ORIGIN}/`);
-      assert.ok(b.cookies[SESSION_COOKIE_NAME] && b.cookies[CSRF_COOKIE_NAME], "session and CSRF cookies delivered");
+      // C9 (Manager ruling): only the session cookie is ever set -- no CSRF cookie exists to check for.
+      assert.ok(b.cookies[SESSION_COOKIE_NAME], "session cookie delivered");
+      assert.equal(b.cookies[CSRF_COOKIE_NAME_LITERAL], undefined, "no CSRF cookie is ever delivered");
       assert.equal(committed.headers["cache-control"], "no-store");
 
-      const me = await b.inject("GET", "/v1/identity/me");
-      assert.equal(me.statusCode, 200, me.body);
-      const view = me.json<{ accountSubjectId: string; profileId: string; identityBindingId: string; environmentId: string; assurance: string }>();
-      assert.equal(view.accountSubjectId, db.rows("account_subject")[0]!.account_subject_id);
-      assert.equal(view.profileId, db.rows("financial_profile")[0]!.profile_id);
-      assert.equal(view.environmentId, "test");
-      assert.equal(view.assurance, "session");
-      assert.deepEqual(Object.keys(view).sort(), ["accountSubjectId", "assurance", "environmentId", "identityBindingId", "profileId"]);
+      // C2 (review R02 / security S06): a *valid, resolvable* session cookie is still denied, because
+      // p1 carries no `identity.me` policy cell. This is the discriminating test the correction
+      // requires: a valid cookie with a denying policy must be denied, not served through a replay
+      // shortcut that skips policy evaluation.
+      const meWithValidCookie = await b.inject("GET", "/v1/identity/me");
+      assert.equal(meWithValidCookie.statusCode, 403, "even a resolvable session is denied absent a policy cell for identity.me");
+      assert.deepEqual(meWithValidCookie.json(), { outcome: "deny", reason: "denied" });
 
       const forged = await b.inject("GET", "/v1/identity/me", { cookie: `${SESSION_COOKIE_NAME}=${"x".repeat(43)}.${"y".repeat(43)}`, authorization: "Bearer not-a-session" });
-      assert.equal(forged.statusCode, 403, "a bearer token or guessed cookie is never a session");
+      assert.equal(forged.statusCode, 403, "a bearer token or guessed cookie is never a session, and is denied for the same reason as a resolvable one");
 
-      const csrfRejected = await b.inject("POST", "/v1/identity/logout", { origin: APPLICATION_ORIGIN, "sec-fetch-site": "same-origin" });
-      assert.equal(csrfRejected.statusCode, 403);
-      assert.ok(b.cookies[SESSION_COOKIE_NAME], "a CSRF-rejected logout changes nothing");
-
-      const logout = await b.inject("POST", "/v1/identity/logout", { origin: APPLICATION_ORIGIN, "sec-fetch-site": "same-origin", "x-csrf-token": b.cookies[CSRF_COOKIE_NAME]! });
-      assert.equal(logout.statusCode, 200, logout.body);
-      assert.deepEqual(logout.json(), { signedOut: true });
-      assert.equal(b.cookies[SESSION_COOKIE_NAME], undefined, "deletion header cleared the session cookie");
-      assert.equal(db.count("account_session", [{ column: "state", value: "revoked" }]), 1);
-      const afterLogout = await b.inject("GET", "/v1/identity/me");
-      assert.equal(afterLogout.statusCode, 403);
+      // Logout is likewise denied through the boundary regardless of CSRF header, since policy denial
+      // now happens before the handler (and its CSRF check) ever runs -- consistent with `/me`.
+      const logoutDenied = await b.inject("POST", "/v1/identity/logout", { origin: APPLICATION_ORIGIN, "sec-fetch-site": "same-origin" });
+      assert.equal(logoutDenied.statusCode, 403);
+      assert.ok(b.cookies[SESSION_COOKIE_NAME], "a denied logout changes nothing");
+      assert.equal(db.count("account_session", [{ column: "state", value: "revoked" }]), 0, "no session was revoked through the denied HTTP route");
       assert.ok(runtime.audit!.snapshot().length >= 2, "denials were appended to the in-process restricted audit stream");
     } finally { await app.close(); }
   });

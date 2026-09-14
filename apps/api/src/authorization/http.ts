@@ -50,6 +50,21 @@ export const Authorize = (metadata: RouteAuthorization): MethodDecorator => SetM
  * pre-authentication counting keys; no policy is evaluated and no transaction is opened. The
  * marker is explicit so the route is inventoried like any other and never a silent bypass. */
 export const PreAuthenticationSurface = (): MethodDecorator => SetMetadata(PRE_AUTHENTICATION, true);
+/**
+ * PROTO-IDENTITY-API-001 correction C7 (security S02): the marker previously
+ * bypassed policy on metadata alone with no restriction on which routes
+ * could carry it. `onModuleInit` now accepts it only on this explicit,
+ * closed set of identity pre-authentication surfaces (begin, the local
+ * hosted ceremony's authorize/choose, and the callback) and refuses at
+ * startup to install a route that carries both `@Authorize` and this
+ * marker, or that carries this marker outside the set.
+ */
+const ELIGIBLE_PRE_AUTHENTICATION_SURFACES: ReadonlySet<string> = new Set([
+  "POST /v1/identity/begin",
+  "GET /v1/identity/callback",
+  "GET /v1/identity/local/authorize",
+  "GET /v1/identity/local/choose",
+]);
 const active = new WeakMap<object, EffectContext>();
 export const Authorization = createParamDecorator((_data: unknown, context: ExecutionContext): EffectContext => {
   const effect = active.get(context.switchToHttp().getRequest<object>());
@@ -100,9 +115,16 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
         const path = this.#reflector.get<string>(PATH_METADATA, handler) ?? "";
         if (typeof prefix !== "string" || typeof path !== "string") { this.#missing.push(`${wrapper.name}.${name}`); continue; }
         const key = `${RequestMethod[method]} /${[prefix, path].join("/").split("/").filter(Boolean).join("/")}`;
+        const authMetadata = this.#reflector.get<RouteAuthorization | undefined>(METADATA, handler);
+        const preAuthentication = this.#reflector.get<true | undefined>(PRE_AUTHENTICATION, handler);
         if (wrapper.metatype === HealthController && handler === HealthController.prototype.getReadiness) this.#registered.add(key);
-        else if (this.#reflector.get<RouteAuthorization | undefined>(METADATA, handler)) this.#registered.add(key);
-        else if (this.#reflector.get<true | undefined>(PRE_AUTHENTICATION, handler)) { this.#registered.add(key); this.#preAuthentication.add(key); }
+        else if (preAuthentication) {
+          // C7: reject at startup rather than silently letting a policy-evaluated route skip policy, or an ineligible route skip the session gate.
+          if (authMetadata) throw new Error(`authorization startup: "${key}" carries both @Authorize and @PreAuthenticationSurface`);
+          if (!ELIGIBLE_PRE_AUTHENTICATION_SURFACES.has(key)) throw new Error(`authorization startup: "${key}" is marked @PreAuthenticationSurface but is not an eligible pre-authentication surface`);
+          this.#registered.add(key); this.#preAuthentication.add(key);
+        }
+        else if (authMetadata) this.#registered.add(key);
         else this.#missing.push(key);
       }
     }

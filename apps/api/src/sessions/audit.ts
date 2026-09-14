@@ -19,6 +19,20 @@
  * rollback discards the buffer (`discard(handle)`). Denial events without a
  * transaction append immediately. Events carry no protected content beyond
  * what `RestrictedAudit` builds (policy metadata and enforcement evidence).
+ *
+ * PROTO-IDENTITY-API-001 correction C3 (review R03 / security S03): a
+ * capacity or integrity failure must never surface after the database has
+ * already committed. `AuthorizationBoundary.execute` calls `audit.emit(...,
+ * transaction, ...)` *inside* the work callback `ApiTransactionStore.transaction`
+ * passes to `client.transaction(...)`, i.e. strictly before that transaction's
+ * COMMIT. `append()` now reserves a capacity slot and validates the current
+ * chain's integrity synchronously at that buffering call, so a store at
+ * capacity (or a corrupted chain) throws there and the thrown error
+ * propagates out of the scoped work function, which aborts the database
+ * transaction before it can commit (`ApiTransactionStore` then calls
+ * `discard()`, releasing the reservation). `commit()` only flushes
+ * already-reserved events after a real commit, so it can no longer fail on
+ * capacity for anything it was told about at buffer time.
  */
 import { sha256 } from "@cobudget/contracts/authorization";
 import type { PolicyAuditEvent } from "@cobudget/contracts/authorization";
@@ -30,6 +44,8 @@ export class InProcessRestrictedAuditStore implements AuditStore {
   readonly #events: Partial<PolicyAuditEvent>[] = [];
   readonly #pending = new WeakMap<object, Build[]>();
   readonly #capacity: number;
+  /** Slots reserved for buffered-but-not-yet-committed events, so a later `commit()` cannot fail on capacity. */
+  #reserved = 0;
   #tail: Promise<void> = Promise.resolve();
 
   constructor(capacity = 100_000) {
@@ -37,6 +53,8 @@ export class InProcessRestrictedAuditStore implements AuditStore {
   }
 
   get length(): number { return this.#events.length; }
+  /** Test/evidence only: reserved-but-unflushed capacity slots. */
+  get reserved(): number { return this.#reserved; }
 
   /** Read-only view for tests and operators; never exported to a customer surface. */
   snapshot(): readonly Readonly<Partial<PolicyAuditEvent>>[] {
@@ -54,26 +72,47 @@ export class InProcessRestrictedAuditStore implements AuditStore {
     this.#events.push(event);
   }
 
-  async append(build: Build, transaction?: unknown): Promise<void> {
-    if (transaction !== undefined && transaction !== null && typeof transaction === "object") {
-      const pending = this.#pending.get(transaction) ?? [];
-      pending.push(build);
-      this.#pending.set(transaction, pending);
-      return;
+  /** Capacity/integrity precondition for the *next* real append, checked without mutating `#events`. */
+  #checkAdmissible(): void {
+    if (this.#events.length + this.#reserved >= this.#capacity) throw new Error("audit_capacity_unavailable");
+    const prior = this.#events.at(-1);
+    if (prior) {
+      const { eventDigest, ...body } = prior;
+      if (eventDigest !== sha256(body)) throw new Error("audit_integrity_unavailable");
     }
-    await this.#serialize(async () => { this.#appendNow(build); });
   }
 
-  /** Called by the transaction store after the database COMMIT succeeded. */
+  async append(build: Build, transaction?: unknown): Promise<void> {
+    if (transaction !== undefined && transaction !== null && typeof transaction === "object") {
+      // C3 (R03/S03): reserve the slot and validate the chain now, before the
+      // caller's database transaction can commit -- not later at `commit()`,
+      // which would be after the commit already happened.
+      await this.#serialize(async () => {
+        this.#checkAdmissible();
+        this.#reserved += 1;
+        const pending = this.#pending.get(transaction) ?? [];
+        pending.push(build);
+        this.#pending.set(transaction, pending);
+      });
+      return;
+    }
+    await this.#serialize(async () => { this.#checkAdmissible(); this.#appendNow(build); });
+  }
+
+  /** Called by the transaction store after the database COMMIT succeeded. Every event here was already reserved at `append()` time, so this cannot fail on capacity. */
   async commit(transaction: object): Promise<void> {
     const pending = this.#pending.get(transaction);
     this.#pending.set(transaction, []);
     if (!pending?.length) return;
-    await this.#serialize(async () => { for (const build of pending) this.#appendNow(build); });
+    await this.#serialize(async () => {
+      for (const build of pending) { this.#appendNow(build); this.#reserved = Math.max(0, this.#reserved - 1); }
+    });
   }
 
   discard(transaction: object): void {
+    const pending = this.#pending.get(transaction);
     this.#pending.set(transaction, []);
+    if (pending?.length) this.#reserved = Math.max(0, this.#reserved - pending.length);
   }
 
   async #serialize(work: () => Promise<void>): Promise<void> {

@@ -96,11 +96,26 @@ export class ChallengeStore {
     this.#size -= 1;
   }
 
-  /** Drops expired non-pending records lazily; pending expired records stay until observed so replay of a known expired state terminates it (§7). */
+  /**
+   * PROTO-IDENTITY-API-001 correction C4 (review R04): an abandoned pending
+   * challenge (no callback ever arrives) previously stayed `pending`
+   * forever and its PKCE buffer was never released, so enough abandoned
+   * `begin` calls exhausted capacity until restart (reproduced at capacity
+   * one: a one-second challenge left pending still filled a size-one store
+   * two minutes later). A pending challenge past its own deadline now
+   * expires here -- zeroing and releasing its verifier exactly like
+   * `terminate()` -- so its capacity is bounded by its own lifetime plus
+   * the same 60-second tombstone grace every other terminal record gets,
+   * not by a restart. The tombstone still exists for that grace window so
+   * a replay of the known expired state terminates cleanly (§7) before
+   * being forgotten and its slot reclaimed.
+   */
   #sweep(now: Date): void {
     for (const key of Object.keys(this.#byChallenge)) {
       const slot = this.#byChallenge[key];
-      if (slot && slot.record.status !== "pending" && slot.record.expiresAt.getTime() + 60_000 <= now.getTime()) this.#forget(slot);
+      if (!slot) continue;
+      if (slot.record.status === "pending" && slot.record.expiresAt.getTime() <= now.getTime()) this.terminate(slot.record.challengeId);
+      if (slot.record.status !== "pending" && slot.record.expiresAt.getTime() + 60_000 <= now.getTime()) this.#forget(slot);
     }
   }
 

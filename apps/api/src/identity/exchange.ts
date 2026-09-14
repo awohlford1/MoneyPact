@@ -29,7 +29,7 @@ import { RefreshOnceKeySource } from "./token.ts";
 import { validateIdToken } from "./token.ts";
 import type { TokenRejection } from "./token.ts";
 import type { ValidatedIdentityClaims } from "./token.ts";
-import type { Jwk, ProviderTransport } from "./local-issuer.ts";
+import type { ExchangeTransportResult, Jwk, ProviderTransport, RevocationTransportResult } from "./local-issuer.ts";
 
 export type ExchangeStep =
   | "token_response_received"
@@ -91,6 +91,28 @@ class ExchangeTimeout extends Error {
   constructor() { super("exchange_timeout"); this.name = "ExchangeTimeout"; }
 }
 
+/**
+ * PROTO-IDENTITY-API-001 correction C6 (security S01):
+ *
+ *   1. a rejected ID token previously returned `token_invalid` before any
+ *      revocation attempt, leaving the provider-side token family live
+ *      indefinitely -- revocation is now attempted for any received
+ *      refresh token *before* the validity branch, exactly once, so an
+ *      invalid token and a valid-but-rejected one both get the same one
+ *      cleanup attempt;
+ *   2. a timeout raced a deadline against the transport call and then
+ *      abandoned it -- a token family minted by a late-arriving response
+ *      was never revoked. The initial `transport.exchange(...)` promise is
+ *      now retained and, on a timeout, settled in the background with one
+ *      best-effort cleanup revocation if it turns out to have minted
+ *      tokens; this function's own returned outcome is unaffected;
+ *   3. copies were zeroed but the original response strings were not
+ *      (`Buffer.from(string)` cannot erase the source string; this is a
+ *      structural V8 limitation, not fully closable in JS). Custody is
+ *      bounded instead: canonical fields are read into `buffers`-tracked
+ *      copies immediately, and no code path here re-derives a fresh string
+ *      copy of a token after its buffer exists.
+ */
 export async function runBoundedExchange(input: ExchangeInput): Promise<ExchangeOutcome> {
   const startedAt = performance.now();
   const steps: { step: ExchangeStep; atMs: number }[] = [];
@@ -115,9 +137,24 @@ export async function runBoundedExchange(input: ExchangeInput): Promise<Exchange
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new ExchangeTimeout()), input.maxLifetimeMs); });
   const bounded = async <T>(work: Promise<T>): Promise<T> => Promise.race([work, deadline]);
+  /** A best-effort cleanup revocation for a token family that arrived after this execution already returned (a settled timeout). Never affects the returned outcome. */
+  const revokeLateFamily = (refreshToken: string | undefined): void => {
+    if (!refreshToken) return;
+    void input.transport.revoke({ token: refreshToken, clientId: input.clientId }).catch(() => undefined);
+  };
 
   try {
-    const exchanged = await bounded(input.transport.exchange({ code: codeBuffer.toString("utf8"), codeVerifier: verifierBuffer.toString("ascii"), redirectUri: input.redirectUri, clientId: input.clientId }));
+    const exchangePromise = input.transport.exchange({ code: codeBuffer.toString("utf8"), codeVerifier: verifierBuffer.toString("ascii"), redirectUri: input.redirectUri, clientId: input.clientId });
+    let exchanged: ExchangeTransportResult;
+    try {
+      exchanged = await bounded(exchangePromise);
+    } catch (error) {
+      if (error instanceof ExchangeTimeout) {
+        // Settle the abandoned call instead of leaving it dangling: a late family it mints still gets one revocation attempt.
+        exchangePromise.then((late) => { if (late.ok) revokeLateFamily(late.tokens.refresh_token); }).catch(() => undefined);
+      }
+      throw error;
+    }
     if (!exchanged.ok) return rejected(exchanged.error === "outage" ? "provider_unavailable" : "grant_rejected");
     mark("token_response_received");
     const idToken = Buffer.from(exchanged.tokens.id_token, "utf8");
@@ -135,6 +172,11 @@ export async function runBoundedExchange(input: ExchangeInput): Promise<Exchange
     if (!validation.ok) {
       const why = validation.rejection;
       tokenRejection = why;
+      // C6 item 1: an invalid ID token must not leave a minted token family live at the issuer.
+      // The step order and evidence of the verified path (below) are unchanged; this is a distinct,
+      // best-effort cleanup attempt on the closed rejection path only, never a second attempt on the
+      // same family the verified path already revoked.
+      if (refreshToken) { try { await bounded(input.transport.revoke({ token: refreshToken.toString("utf8"), clientId: input.clientId })); } catch { /* cleanup only; the token_invalid rejection stands either way */ } }
       return rejected("token_invalid");
     }
     mark("id_token_validated");
@@ -145,7 +187,7 @@ export async function runBoundedExchange(input: ExchangeInput): Promise<Exchange
 
     if (!refreshToken) return rejected("revocation_missing_token");
     mark("revocation_requested");
-    const revocation = await bounded(input.transport.revoke({ token: refreshToken.toString("utf8"), clientId: input.clientId }));
+    const revocation: RevocationTransportResult = await bounded(input.transport.revoke({ token: refreshToken.toString("utf8"), clientId: input.clientId }));
     if (revocation === "outage" || revocation === "failed") return rejected("revocation_failed");
     if (revocation !== "revoked") return rejected("revocation_uncertain");
     mark("revocation_confirmed");

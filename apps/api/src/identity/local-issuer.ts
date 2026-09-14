@@ -101,10 +101,22 @@ interface IssuedCode {
   used: boolean;
 }
 
+/**
+ * PROTO-IDENTITY-API-001 correction C6 (security S01): a token family
+ * previously stored the raw access/refresh token strings in this
+ * process-lifetime array, so custody was unbounded even after revocation.
+ * Only one-way digests are kept -- enough to recognize a presented token
+ * for revocation and post-revocation probing, never enough to reconstruct
+ * it.
+ */
 interface TokenFamily {
-  readonly accessToken: string;
-  readonly refreshToken: string;
+  readonly accessTokenDigest: string;
+  readonly refreshTokenDigest: string;
   revoked: boolean;
+}
+
+function tokenDigest(token: string): string {
+  return createHash("sha256").update(token, "utf8").digest("base64url");
 }
 
 interface SigningKey {
@@ -296,14 +308,15 @@ export class LocalIssuer implements ProviderTransport {
     const expected = Buffer.from(issued.codeChallenge, "ascii");
     const actual = Buffer.from(createHash("sha256").update(input.codeVerifier, "ascii").digest("base64url"), "ascii");
     if (expected.length !== actual.length || !expected.equals(actual)) return { ok: false, error: "invalid_grant" };
-    const family: TokenFamily = { accessToken: randomBytes(32).toString("base64url"), refreshToken: randomBytes(32).toString("base64url"), revoked: false };
-    this.#families.push(family);
+    const accessToken = randomBytes(32).toString("base64url");
+    const refreshToken = randomBytes(32).toString("base64url");
+    this.#families.push({ accessTokenDigest: tokenDigest(accessToken), refreshTokenDigest: tokenDigest(refreshToken), revoked: false });
     return {
       ok: true,
       tokens: {
         id_token: this.#idToken(issued),
-        access_token: family.accessToken,
-        refresh_token: issued.scenario === "no-refresh" ? undefined : family.refreshToken,
+        access_token: accessToken,
+        refresh_token: issued.scenario === "no-refresh" ? undefined : refreshToken,
         token_type: "Bearer",
         expires_in: this.#lifetimeSeconds,
       },
@@ -316,9 +329,10 @@ export class LocalIssuer implements ProviderTransport {
     if (this.#revocation === "fail") return "failed";
     if (this.#revocation === "ambiguous") return "ambiguous";
     if (input.clientId !== this.clientId) return "failed";
-    const family = this.#families.find((candidate) => candidate.refreshToken === input.token);
+    const digest = tokenDigest(input.token);
+    const family = this.#families.find((candidate) => candidate.refreshTokenDigest === digest);
     if (family) family.revoked = true;
-    this.revocations.push(createHash("sha256").update(input.token).digest("base64url"));
+    this.revocations.push(digest);
     return "revoked";
   }
 
@@ -331,7 +345,8 @@ export class LocalIssuer implements ProviderTransport {
 
   /** Post-revocation probe (CT-190-016 shape): a UserInfo-style check that must fail after the family was revoked. */
   probeAccessToken(accessToken: string): { readonly active: boolean } {
-    const family = this.#families.find((candidate) => candidate.accessToken === accessToken);
+    const digest = tokenDigest(accessToken);
+    const family = this.#families.find((candidate) => candidate.accessTokenDigest === digest);
     return { active: family !== undefined && !family.revoked };
   }
 

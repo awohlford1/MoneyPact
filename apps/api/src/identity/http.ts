@@ -11,11 +11,26 @@
  * The four pre-authentication routes carry `@PreAuthenticationSurface()`:
  * the boundary still runs surface (rate-limit) enforcement first, skips the
  * session gate the contract says they cannot require, evaluates no policy
- * and opens no transaction. `me` and `logout` go through the boundary's
- * session-authenticated `replay` path: the boundary resolves the subject
- * from the cookie through the real session fact source and hands it to the
- * route; the p1 policy matrix carries no profile-level self-read or logout
- * cell, so no policy evaluation is claimed for them (reported in the result).
+ * and opens no transaction. Startup rejects that marker on any route
+ * outside this closed set, and rejects a route carrying both the marker
+ * and `@Authorize` (PROTO-IDENTITY-API-001 correction C7).
+ *
+ * PROTO-IDENTITY-API-001 correction C2 (review R02 / security S06): `me`
+ * and `logout` previously ran their real work inside the boundary's
+ * idempotency `replay` hook and unconditionally returned `committed`,
+ * which skips policy evaluation and the authorized transaction path
+ * entirely -- effectively a policy bypass for both routes. The p1 policy
+ * matrix carries no `identity.me`/`identity.logout` cell yet (that is
+ * `PROTO-RATELIMIT-APPROVAL-001`/p2's release, not this packet's), so both
+ * routes now go through the *normal* `@Authorize` path with no `replay`:
+ * `decide()` denies an action with no matching cell, so both routes are
+ * denied (403) for every request, cookie or not, until p2 releases the
+ * matching cell. That is a deliberate, disclosed limitation, not a
+ * regression: binding either route to its released cell is then a
+ * metadata-only change (add the resource locator a real cell needs), and
+ * the handler bodies below already contain the real behavior they will
+ * run once authorized. Until then, the web packet must treat a 403 on
+ * `/v1/identity/me` as signed-out.
  *
  * Every callback answer is a 303 navigation: the committed success
  * destination (with `Set-Cookie` only on first delivery) or the
@@ -48,7 +63,8 @@ export interface IdentityHttp {
 @Module({})
 export class IdentityModule {}
 
-const CSRF_HEADER = "x-csrf-token";
+/** CBD-191 §5.1: the CSRF header name the raw bootstrap value (delivered via `GET /v1/identity/me`, never a cookie) is echoed back on. */
+const CSRF_HEADER = "x-cobudget-csrf";
 const CHOOSE_PATH = `${LOCAL_ISSUER_PATH}/choose`;
 
 function header(request: FastifyRequest, name: string): string | undefined {
@@ -143,31 +159,33 @@ export function identityHttp(runtime: IdentityRuntime | undefined): IdentityHttp
       await reply.code(303).header("location", target).send();
     }
 
+    // C2: no `replay` -- authorization runs the normal policy path. p1 carries no `identity.me`
+    // cell, so `decide()` denies every request here until p2 releases one (a metadata-only change).
     @Get("me")
-    @Authorize({ action: "identity.me", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default" }),
-      replay: async (request, subject) => {
-        const live = required();
-        const view = await live.ceremony.view(readSessionCookieValue(header(request, "cookie")));
-        if (!view || view.accountSubjectId !== subject) throw new RouteFailure(401, "not_authenticated");
-        return { kind: "committed", response: { accountSubjectId: view.accountSubjectId, profileId: view.profileId, identityBindingId: view.identityBindingId, environmentId: view.environmentId, assurance: view.assurance } };
-      } })
-    me(): never { return unavailable(); }
+    @Authorize({ action: "identity.me", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default" }) })
+    async me(@Req() request: FastifyRequest): Promise<unknown> {
+      const live = required();
+      const view = await live.ceremony.view(readSessionCookieValue(header(request, "cookie")));
+      if (!view) throw new RouteFailure(401, "not_authenticated");
+      // C9 (Manager ruling): the raw CSRF bootstrap value travels only in this same-origin JSON
+      // response body, held in browser memory -- never a cookie, URL or log field (CBD-191 §5.1).
+      return { accountSubjectId: view.accountSubjectId, profileId: view.profileId, identityBindingId: view.identityBindingId, environmentId: view.environmentId, assurance: view.assurance, csrfValue: view.csrfValue };
+    }
 
+    // C2: no `replay`, same reasoning as `me` above; p1 carries no `identity.logout` cell.
     @Post("logout")
     @HttpCode(200)
-    @Authorize({ action: "identity.logout", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default" }),
-      replay: async (request, subject) => {
-        const live = required();
-        const cookie = readSessionCookieValue(header(request, "cookie"));
-        const session = await live.ceremony.csrfDigestFor(cookie);
-        const view = session ? await live.ceremony.view(cookie) : undefined;
-        if (!session || !view || view.accountSubjectId !== subject) throw new RouteFailure(401, "not_authenticated");
-        const csrfOk = checkCsrf(live.sessionPepper, { method: request.method, origin: header(request, "origin"), allowedOrigin: live.ceremony.config.applicationOrigin, secFetchSite: header(request, "sec-fetch-site"), csrfHeaderValue: header(request, CSRF_HEADER), csrfDigest: session.csrfDigest });
-        if (!csrfOk) throw new RouteFailure(403, "csrf_rejected");
-        pendingHeaders.set(request, await live.ceremony.logout(session.sessionRef));
-        return { kind: "committed", response: { signedOut: true } };
-      } })
-    logout(): never { return unavailable(); }
+    @Authorize({ action: "identity.logout", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default" }) })
+    async logout(@Req() request: FastifyRequest): Promise<unknown> {
+      const live = required();
+      const cookie = readSessionCookieValue(header(request, "cookie"));
+      const session = await live.ceremony.csrfDigestFor(cookie);
+      if (!session) throw new RouteFailure(401, "not_authenticated");
+      const csrfOk = checkCsrf(live.sessionPepper, { method: request.method, origin: header(request, "origin"), allowedOrigin: live.ceremony.config.applicationOrigin, secFetchSite: header(request, "sec-fetch-site"), csrfHeaderValue: header(request, CSRF_HEADER), csrfDigest: session.csrfDigest });
+      if (!csrfOk) throw new RouteFailure(403, "csrf_rejected");
+      pendingHeaders.set(request, await live.ceremony.logout(session.sessionRef));
+      return { signedOut: true };
+    }
   }
 
   return {

@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { describe, it } from "node:test";
 import { SESSION_COOKIE_NAME } from "@cobudget/sessions";
-import { CSRF_COOKIE_NAME } from "./ceremony.ts";
 import type { CompletionResult } from "./ceremony.ts";
 import { setSubjectLifecycle } from "./store.ts";
 import { APPLICATION_ORIGIN, buildHarness, cookieValueFrom } from "./test-support/harness.ts";
@@ -49,8 +48,14 @@ describe("CBD-190-AC03 identity mapping (CT-190-001/002, CBD190-PROFILE-ATOMIC-0
     assert.equal(result.firstDelivery, true);
     assert.equal(result.navigateTo, `${APPLICATION_ORIGIN}/`);
     assert.ok(cookieValueFrom(result.setCookie, SESSION_COOKIE_NAME));
-    assert.ok(cookieValueFrom(result.setCookie, CSRF_COOKIE_NAME));
+    // C9 (Manager ruling): the raw CSRF value is never a cookie -- exactly one Set-Cookie header (the
+    // session cookie), and the value reaches the browser only through the same-origin `view()`/`/me`
+    // bootstrap response, held in browser memory (CBD-191 §5.1).
+    assert.equal(result.setCookie.length, 1, "only the session cookie is ever set");
     assert.ok(result.setCookie[0]!.includes("HttpOnly") && result.setCookie[0]!.includes("Secure") && result.setCookie[0]!.includes("SameSite=Lax"));
+    const sessionCookieValue = cookieValueFrom(result.setCookie, SESSION_COOKIE_NAME)!;
+    const bootstrap = await h.ceremony.view(sessionCookieValue);
+    assert.ok(bootstrap?.csrfValue, "the raw CSRF value is recoverable, in-process, through the bootstrap view");
     const callback = h.db.rows("identity_callback")[0]!;
     assert.equal(callback.challenge_id, result.challengeId);
     assert.equal(callback.processing_state, "handoff_ready");
@@ -137,6 +142,27 @@ describe("CBD-190-AC03 identity mapping (CT-190-001/002, CBD190-PROFILE-ATOMIC-0
     assert.equal(counts(h).activeSessions, 1);
     const withoutSession = await h.ceremony.begin({ ceremony: "account_switch", postResultDestinationId: "home", origin: APPLICATION_ORIGIN, secFetchSite: "same-origin", sessionCookie: undefined });
     assert.deepEqual(withoutSession, { ok: false, reason: "session_required" });
+  });
+
+  it("PROTO-IDENTITY-API-001 C8: a same-subject reauthentication that fails to revoke the prior browser row never delivers success with two active rows", async () => {
+    const h = buildHarness();
+    const a = success(await h.signIn("subject-a"));
+    const cookie = sessionCookie(a);
+    // Same-subject "account_switch" (a browser-initiated reauthentication naming the currently
+    // signed-in subject again) mints a fresh lineage and must end the prior row atomically.
+    // Faulting `revocation_outbox` (only touched by `revokeSession`'s outbox insert, never by
+    // `resolveSession`'s idle-expiry slide) targets exactly the C8 revocation step.
+    h.db.failStatement("revocation_outbox", "insert", "XX000");
+    const failed = await h.signIn("subject-a", "account_switch", cookie);
+    assert.equal(outcome(failed), "still_processing", "the revocation failure aborts the whole issuance rather than delivering success");
+    assert.equal(h.db.count("account_session", [{ column: "state", value: "active" }]), 1, "still exactly one active row: the original, untouched");
+    assert.equal(h.db.count("account_session"), 1, "no second session was minted alongside the failed revocation");
+    // Once the fault clears, the same prepared hand-off is retryable and converges on exactly one active row.
+    const retried = success(await h.signIn("subject-a", "account_switch", cookie));
+    assert.equal(retried.accountSubjectId, a.accountSubjectId);
+    assert.equal(h.db.count("account_session", [{ column: "state", value: "active" }]), 1, "exactly one active row after the prior row was revoked atomically with the fresh lineage");
+    assert.equal(h.db.count("account_session", [{ column: "state", value: "revoked" }]), 1);
+    assert.notEqual(h.db.rows("account_session").find((row) => row.state === "active")!.session_ref, a.sessionRef, "a fresh lineage, not the original row");
   });
 
   it("CT-190-005 disabled, deletion-pending and security-blocked subjects resolve to the same binding, produce account_unavailable and never a session or a remapping", async () => {
@@ -227,7 +253,15 @@ describe("CBD-190-AC04 deterministic safe outcomes (CT-190-006..011)", () => {
       assert.equal(result.navigateTo, `${APPLICATION_ORIGIN}/identity/result?outcome=invalid_or_expired`);
     }
     zeroRows(h);
-    assert.equal(success(await h.deliver(callbackUrl)).firstDelivery, true, "positive control after malformed attempts: the untouched challenge still completes");
+    // PROTO-IDENTITY-API-001 correction C5 (review R05): a malformed callback naming a known,
+    // still-pending state must terminate that challenge (§7) rather than leave it usable -- this
+    // reverses the previous (defective) assertion that the original callback still succeeded
+    // afterward. The very first malformed query above already consumed/terminated this state.
+    assert.equal(outcome(await h.deliver(callbackUrl)), "invalid_or_expired", "the known challenge named by the malformed attempts is terminated, not still usable");
+    assert.ok(h.runtime.evidence.some((event) => event.class === "callback_malformed" && event.challengeId !== undefined), "the malformed evidence carries the terminated challenge's id, not undefined");
+    // A genuinely untouched challenge is unaffected and still completes normally.
+    const fresh = await h.callbackFor("subject-a");
+    assert.equal(success(await h.deliver(fresh.callbackUrl)).firstDelivery, true, "positive control: an untouched challenge still completes");
   });
 
   it("CT-190-010 verification pending, cancelled and denied are non-enumerating safe outcomes with no effect", async () => {
@@ -300,18 +334,31 @@ describe("CBD-190 section 6 / CT-190-012 commit-boundary fault injection", () =>
     assert.equal(Number(h.db.rows("identity_session_handoff")[0]!.attempt_count), 2);
   });
 
-  it("after the CBD-191 commit but before finalization: replay observes the consumed hand-off, finalizes the same success and never issues another session", async () => {
+  it("PROTO-IDENTITY-API-001 C1: a finalization failure now rolls back the session issuance atomically -- no orphaned account_session, and a retry issues exactly one session", async () => {
+    // Before C1, session issuance (CBD-191) and hand-off/callback finalization were separate
+    // transactions: a failure here left an active `account_session` row with an unconsumed hand-off.
+    // `createSessionStore(scoped)` now binds issuance to the same transaction as
+    // `markHandoffConsumed`/`markCallbackCommitted`, so this failure rolls back the session too.
     const h = buildHarness();
     h.db.failStatement("identity_session_handoff", "update", "XX000");
     const { callbackUrl } = await h.callbackFor("subject-a");
     assert.equal(outcome(await h.deliver(callbackUrl)), "still_processing");
-    assert.equal(counts(h).sessions, 1);
-    assert.equal(counts(h).prepared, 1, "hand-off still prepared because finalization rolled back");
+    assert.deepEqual(counts(h), { ...ZERO, subjects: 1, profiles: 1, activeProfiles: 1, bindings: 1, callbacks: 1, handoffs: 1, prepared: 1 }, "no account_session row survives the failed finalization");
     const replay = success(await h.deliver(callbackUrl));
     assert.equal(replay.firstDelivery, true);
-    assert.equal(counts(h).sessions, 1, "the identical sealed delivery was replayed, not a second session");
-    assert.equal(counts(h).consumed, 1);
+    assert.deepEqual(counts(h), { ...ZERO, subjects: 1, profiles: 1, activeProfiles: 1, bindings: 1, callbacks: 1, handoffs: 1, consumed: 1, sessions: 1, activeSessions: 1 }, "the retry issued exactly one session");
     assert.equal(h.db.rows("account_session")[0]!.session_ref, replay.sessionRef);
+  });
+
+  it("PROTO-IDENTITY-API-001 C1: a session_delivery_result insert failure rolls back the whole issuance; a callback retry issues exactly one session", async () => {
+    const h = buildHarness();
+    h.db.failStatement("session_delivery_result", "insert", "XX000");
+    const { callbackUrl } = await h.callbackFor("subject-a");
+    assert.equal(outcome(await h.deliver(callbackUrl)), "still_processing");
+    assert.deepEqual(counts(h), { ...ZERO, subjects: 1, profiles: 1, activeProfiles: 1, bindings: 1, callbacks: 1, handoffs: 1, prepared: 1 }, "no account_session row survives the failed delivery-result insert");
+    const retry = success(await h.deliver(callbackUrl));
+    assert.equal(retry.firstDelivery, true);
+    assert.deepEqual(counts(h), { ...ZERO, subjects: 1, profiles: 1, activeProfiles: 1, bindings: 1, callbacks: 1, handoffs: 1, consumed: 1, sessions: 1, activeSessions: 1 }, "the retry issued exactly one session");
   });
 
   it("exhaustion after mapping commit: an expired prepared hand-off becomes terminal_failed and callback_failure while the immutable subject, profile and binding remain with zero sessions", async () => {
@@ -364,11 +411,13 @@ describe("identity view and logout", () => {
     assert.equal(view.accountSubjectId, signedIn.accountSubjectId);
     assert.equal(view.profileId, h.db.rows("financial_profile")[0]!.profile_id);
     assert.equal(view.sessionRef, signedIn.sessionRef);
-    assert.deepEqual(Object.keys(view).sort(), ["accountSubjectId", "assurance", "environmentId", "identityBindingId", "profileId", "sessionRef"]);
+    assert.ok(view.csrfValue, "C9: the raw CSRF bootstrap value is recoverable in-process before logout");
+    assert.deepEqual(Object.keys(view).sort(), ["accountSubjectId", "assurance", "csrfValue", "environmentId", "identityBindingId", "profileId", "sessionRef"]);
     const csrf = await h.ceremony.csrfDigestFor(cookie);
     assert.ok(csrf);
     const deletion = await h.ceremony.logout(csrf.sessionRef);
-    assert.equal(deletion.length, 2);
+    // C9: only the session cookie is ever deleted -- there is no CSRF cookie to delete.
+    assert.equal(deletion.length, 1);
     assert.ok(deletion.every((header) => header.includes("Max-Age=0")));
     assert.equal(await h.ceremony.view(cookie), undefined);
     assert.equal(h.db.count("account_session", [{ column: "state", value: "revoked" }]), 1);

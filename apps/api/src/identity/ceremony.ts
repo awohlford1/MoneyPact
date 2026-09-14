@@ -16,13 +16,13 @@
  */
 import { createHmac, randomUUID } from "node:crypto";
 import type { DataAccessClient } from "@cobudget/data-access";
-import { buildSessionCookieDeletionHeader, buildSessionCookieHeader, consumeAndIssue, IssuanceRejectedError, logout as revokeSession, resolveSession, SessionStoreUnavailableError, UnsupportedUnderV03Error } from "@cobudget/sessions";
-import type { EnvelopeKeyProvider, SessionConfig, SessionIssueCommandV1, SessionStore } from "@cobudget/sessions";
+import { buildSessionCookieDeletionHeader, buildSessionCookieHeader, consumeAndIssue, createSessionStore, IssuanceRejectedError, logout as revokeSession, resolveSession, UnsupportedUnderV03Error } from "@cobudget/sessions";
+import type { EnvelopeKeyProvider, SealedSessionDelivery, SessionConfig, SessionIssueCommandV1, SessionStore } from "@cobudget/sessions";
 import { CEREMONIES, ChallengeStore, ChallengeStoreFullError, oneWayDigest } from "./challenge.ts";
 import type { Ceremony, ChallengeRecord } from "./challenge.ts";
 import { IDENTITY_CALLBACK_PATH } from "./config.ts";
 import type { LocalIdentityConfig } from "./config.ts";
-import { parseCallbackEnvelope } from "./envelope.ts";
+import { extractStateForTermination, parseCallbackEnvelope } from "./envelope.ts";
 import { runBoundedExchange } from "./exchange.ts";
 import type { ExchangeOutcome } from "./exchange.ts";
 import type { ProviderTransport } from "./local-issuer.ts";
@@ -34,7 +34,6 @@ import { findBindingBySubject, findCallback, findHandoff, findHandoffByChallenge
 import type { HandoffRow } from "./store.ts";
 import type { ReliabilitySink } from "../telemetry.ts";
 
-export const CSRF_COOKIE_NAME = "__Host-cobudget_csrf";
 const STILL_PROCESSING_WAIT_MS = 5_000;
 
 export type IdentityEvidenceClass =
@@ -100,11 +99,26 @@ export interface IdentityView {
   readonly sessionRef: string;
   readonly environmentId: string;
   readonly assurance: "session" | "fresh";
+  /**
+   * PROTO-IDENTITY-API-001 correction C9 (Manager ruling): CBD-191 §5.1
+   * requires the raw CSRF value to reach the browser only through a
+   * same-origin bootstrap response, held in browser memory -- never a
+   * cookie. `GET /v1/identity/me` is that bootstrap response. The raw
+   * value exists only in this process's memory from the moment of
+   * issuance (the session row persists only its peppered digest), so a
+   * process restart or a session established before this process started
+   * makes it unavailable here; `undefined` in that case (prototype
+   * limitation, same custody class as the challenge and rate-limit
+   * counter stores).
+   */
+  readonly csrfValue: string | undefined;
 }
 
 export class IdentityCeremony {
   readonly #d: CeremonyDependencies;
   readonly #inflight: Record<string, Promise<CompletionResult> | undefined> = Object.create(null);
+  /** C9: in-process only, keyed by `sessionRef`; never persisted, never a cookie. Populated at issuance, cleared at logout. */
+  readonly #csrfValues: Record<string, string | undefined> = Object.create(null);
 
   constructor(dependencies: CeremonyDependencies) {
     this.#d = dependencies;
@@ -175,8 +189,14 @@ export class IdentityCeremony {
   async complete(context: CallbackContext): Promise<CompletionResult> {
     const envelope = parseCallbackEnvelope(context.rawQuery);
     if (envelope.kind === "malformed") {
-      this.#evidence("callback_malformed", undefined, "invalid_or_expired");
-      return { kind: "outcome", outcome: "invalid_or_expired", navigateTo: this.#resultNavigation("invalid_or_expired"), challengeId: undefined };
+      // C5 (§7): a malformed envelope naming a known, still-pending state terminates that challenge
+      // here -- it never becomes usable for a later, well-formed replay -- without ever accepting
+      // the malformed envelope itself (the outcome below is unconditionally the safe one).
+      const candidateState = extractStateForTermination(context.rawQuery);
+      const known = candidateState ? this.#d.challenges.find(candidateState) : undefined;
+      if (known && known.status === "pending") this.#d.challenges.terminate(known.challengeId);
+      this.#evidence("callback_malformed", known?.challengeId, "invalid_or_expired");
+      return { kind: "outcome", outcome: "invalid_or_expired", navigateTo: this.#resultNavigation("invalid_or_expired"), challengeId: known?.challengeId };
     }
     const known = this.#d.challenges.find(envelope.state);
     if (!known) {
@@ -292,10 +312,32 @@ export class IdentityCeremony {
     return this.#issueAndFinalize(challenge, mapping.handoff);
   }
 
-  /** §6: consume the prepared hand-off through CBD-191 issuance, then finalize in a short idempotent transaction. */
+  /**
+   * §6: consume the prepared hand-off through CBD-191 issuance and finalize
+   * the callback/hand-off rows, all in one database transaction.
+   *
+   * PROTO-IDENTITY-API-001 correction C1 (review R01): the root
+   * `this.#d.sessionStore` talks to the un-scoped client, so a prior
+   * revision's separate issuance call and separate finalize transaction
+   * left a real gap between "session minted" and "hand-off marked
+   * consumed" -- a crash there stranded an active session with an
+   * unconsumed hand-off, and a retry could mint a second session for the
+   * same hand-off. `createSessionStore(scoped)` binds a session store to
+   * the *same* scoped transaction client `markHandoffConsumed`/
+   * `markCallbackCommitted` use, so issuance, rotation, hand-off
+   * consumption and callback commit now commit or roll back together
+   * (CBD-190 §6, CBD-191 SC-191-003A).
+   *
+   * Correction C8 (security S05): a same-subject reauthentication ends the
+   * prior browser row through the *same* scoped store inside this one
+   * transaction instead of a best-effort call after the fact, so a
+   * revocation failure aborts the whole issuance rather than delivering
+   * success while two rows stay active.
+   */
   async #issueAndFinalize(challenge: ChallengeRecord, handoff: HandoffRow, retry = false): Promise<CompletionResult> {
     const now = this.#d.now();
     const switching = handoff.ceremony === "account_switch" && handoff.previousSessionId !== undefined && challenge.currentAccountSubjectId !== undefined && challenge.currentAccountSubjectId !== handoff.accountSubjectId;
+    const sameSubjectPriorSession = handoff.ceremony === "account_switch" && !switching ? handoff.previousSessionId : undefined;
     const command: SessionIssueCommandV1 = {
       contractVersion: 1, sessionHandoffId: handoff.sessionHandoffId, accountSubjectId: handoff.accountSubjectId, environmentId: this.#d.config.environmentId,
       identityBindingId: handoff.identityBindingId, rotationCause: switching ? "account_switch" : "authentication",
@@ -304,9 +346,19 @@ export class IdentityCeremony {
     };
     // Attempt metadata (§5.1): the prepared row starts at attempt 1; only a bounded retry of the same hand-off increments it.
     if (retry && handoff.state === "prepared") await incrementHandoffAttempt(this.#d.client, handoff, now).catch(() => undefined);
-    let delivery;
+    let delivery: SealedSessionDelivery;
     try {
-      delivery = await consumeAndIssue(command, this.#d.sessionStore, this.#d.sessionConfig, this.#d.sealing, now);
+      delivery = await this.#d.client.transaction({ isolation: "serializable" }, async (scoped) => {
+        const scopedStore = createSessionStore(scoped);
+        const issued = await consumeAndIssue(command, scopedStore, this.#d.sessionConfig, this.#d.sealing, now);
+        if (sameSubjectPriorSession) {
+          // C8: required, not best-effort -- a throw here rolls back the fresh issuance too, so success is never delivered with two active browser rows.
+          await revokeSession(scopedStore, this.#d.sessionConfig, sameSubjectPriorSession, this.#d.config.environmentId);
+        }
+        await markHandoffConsumed(scoped, handoff.sessionHandoffId, issued.sessionRef, now);
+        await markCallbackCommitted(scoped, challenge.challengeId, now);
+        return issued;
+      });
     } catch (error) {
       if (error instanceof IssuanceRejectedError || error instanceof UnsupportedUnderV03Error) {
         // Deterministic rejection (stale epoch, subject not active, expired hand-off): terminal_failed, callback_failure; subject, profile and binding remain (§6).
@@ -317,35 +369,22 @@ export class IdentityCeremony {
         this.#evidence("handoff_terminal_failed", challenge.challengeId, "callback_failure");
         return { kind: "outcome", outcome: "callback_failure", navigateTo: this.#resultNavigation("callback_failure"), challengeId: challenge.challengeId };
       }
-      if (error instanceof SessionStoreUnavailableError) {
-        // Recoverable workflow state: the same prepared hand-off stays retryable until consumed or terminal (§6).
-        this.#evidence("session_unavailable", challenge.challengeId, "still_processing");
-        this.#reliability("error");
-        return { kind: "outcome", outcome: "still_processing", navigateTo: this.#resultNavigation("still_processing"), challengeId: challenge.challengeId };
-      }
-      throw error;
-    }
-    // Finalization: idempotent; a replay after a committed session observes `consumed` and finalizes the same success.
-    try {
-      await this.#d.client.transaction({ isolation: "serializable" }, async (scoped) => {
-        await markHandoffConsumed(scoped, handoff.sessionHandoffId, delivery.sessionRef, now);
-        await markCallbackCommitted(scoped, challenge.challengeId, now);
-      });
-      await this.#d.sessionStore.acknowledgeDeliveryResult(handoff.sessionHandoffId);
-    } catch {
-      this.#evidence("session_unavailable", challenge.challengeId, "still_processing", "finalization");
+      // SessionStoreUnavailableError, a prior-row revocation failure (C8) or any other transactional
+      // fault: nothing committed, so the prepared hand-off stays retryable until consumed or terminal (§6).
+      this.#evidence("session_unavailable", challenge.challengeId, "still_processing");
+      this.#reliability("error");
       return { kind: "outcome", outcome: "still_processing", navigateTo: this.#resultNavigation("still_processing"), challengeId: challenge.challengeId };
     }
-    if (handoff.ceremony === "account_switch" && !switching && handoff.previousSessionId) {
-      // Same-subject switch: CBD-191 issued a fresh lineage; end the prior browser row so only one row is live.
-      await revokeSession(this.#d.sessionStore, this.#d.sessionConfig, handoff.previousSessionId, this.#d.config.environmentId).catch(() => undefined);
-    }
+    // Best-effort acknowledgement of the now-committed delivery result: a failure here only means a
+    // replay could still recover the byte-identical delivery (§5.3), never a second session.
+    await this.#d.sessionStore.acknowledgeDeliveryResult(handoff.sessionHandoffId).catch(() => undefined);
+    // C9 (Manager ruling): the raw CSRF value is never a cookie. It lives only in this process's
+    // memory, keyed by sessionRef, and reaches the browser through the GET /v1/identity/me bootstrap
+    // response (CBD-191 §5.1).
+    this.#csrfValues[delivery.sessionRef] = delivery.csrfValue;
     this.#evidence("handoff_consumed", challenge.challengeId, "success");
     this.#reliability("ok");
-    const setCookie = [
-      buildSessionCookieHeader(delivery.cookieValue, delivery.absoluteExpiresAt, now),
-      buildCsrfCookieHeader(delivery.csrfValue, delivery.absoluteExpiresAt, now),
-    ];
+    const setCookie = [buildSessionCookieHeader(delivery.cookieValue, delivery.absoluteExpiresAt, now)];
     return { kind: "success", navigateTo: this.#successNavigation(challenge.postResultDestinationId), setCookie, challengeId: challenge.challengeId, accountSubjectId: handoff.accountSubjectId, sessionRef: delivery.sessionRef, firstDelivery: true };
   }
 
@@ -358,7 +397,7 @@ export class IdentityCeremony {
     const binding = await findBindingBySubject(this.#d.client, this.#d.config.environmentId, subject.accountSubjectId);
     const profile = (await listProfiles(this.#d.client, subject.accountSubjectId)).find((candidate) => candidate.profileState === "active");
     if (!binding || !profile) return undefined;
-    return { accountSubjectId: subject.accountSubjectId, profileId: profile.profileId, identityBindingId: binding.identityBindingId, sessionRef: resolved.sessionRef, environmentId: this.#d.config.environmentId, assurance: resolved.assurance.level };
+    return { accountSubjectId: subject.accountSubjectId, profileId: profile.profileId, identityBindingId: binding.identityBindingId, sessionRef: resolved.sessionRef, environmentId: this.#d.config.environmentId, assurance: resolved.assurance.level, csrfValue: this.#csrfValues[resolved.sessionRef] };
   }
 
   /** POST /v1/identity/logout: CBD-191 §6.1 `logout` plus cookie deletion; the CSRF check is the caller's (`checkCsrf`) with the digest returned here. */
@@ -372,24 +411,15 @@ export class IdentityCeremony {
 
   async logout(sessionRef: string): Promise<readonly string[]> {
     await revokeSession(this.#d.sessionStore, this.#d.sessionConfig, sessionRef, this.#d.config.environmentId);
+    delete this.#csrfValues[sessionRef];
     this.#evidence("logout", undefined, undefined);
-    return [buildSessionCookieDeletionHeader(), buildCsrfCookieDeletionHeader()];
+    return [buildSessionCookieDeletionHeader()];
   }
 
   /** Test evidence helper: the hand-off row by id, without any cookie material. */
   async handoff(sessionHandoffId: string): Promise<HandoffRow | undefined> {
     return findHandoff(this.#d.client, sessionHandoffId);
   }
-}
-
-/** The CSRF delivery cookie: readable by the application's own scripts (not HttpOnly), bound to the session's peppered digest server-side (§5.1 CBD-191). */
-export function buildCsrfCookieHeader(csrfValue: string, absoluteExpiresAt: Date, now: Date): string {
-  const maxAge = Math.max(0, Math.floor((absoluteExpiresAt.getTime() - now.getTime()) / 1000));
-  return [`${CSRF_COOKIE_NAME}=${csrfValue}`, "Secure", "SameSite=Lax", "Path=/", `Max-Age=${maxAge}`, `Expires=${absoluteExpiresAt.toUTCString()}`].join("; ");
-}
-
-export function buildCsrfCookieDeletionHeader(): string {
-  return [`${CSRF_COOKIE_NAME}=`, "Secure", "SameSite=Lax", "Path=/", "Max-Age=0", `Expires=${new Date(0).toUTCString()}`].join("; ");
 }
 
 export function newCorrelationId(): string {
