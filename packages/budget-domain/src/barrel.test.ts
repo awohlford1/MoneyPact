@@ -24,6 +24,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import * as incomeBarrel from "@cobudget/budget-domain/income";
+import * as progressBarrel from "@cobudget/budget-domain/progress";
 import * as scheduleBarrel from "@cobudget/budget-domain/schedule";
 import * as sharedBarrel from "@cobudget/budget-domain/shared";
 import * as targetsBarrel from "@cobudget/budget-domain/targets";
@@ -61,6 +62,7 @@ function barrelGroups(): readonly BarrelGroup[] {
 const GROUPS = barrelGroups();
 const PUBLIC_BARRELS: Readonly<Record<string, Record<string, unknown>>> = {
   income: incomeBarrel,
+  progress: progressBarrel,
   schedule: scheduleBarrel,
   shared: sharedBarrel,
   targets: targetsBarrel,
