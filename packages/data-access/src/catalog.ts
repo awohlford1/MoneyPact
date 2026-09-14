@@ -63,6 +63,11 @@ export const PRODUCTION_TABLE_CATALOG: TableCatalog = {
   budget_category: "budget-space",
   budget_category_base_target: "budget-space",
   budget_category_period_target: "budget-space",
+  // --- BEGIN PROTO-INCREMENT-A-001 (CBD-196/CBD-199/CBD-201), 20260914T1800xxZ ---
+  financial_account: "budget-space",
+  manual_transaction: "budget-space",
+  transaction_allocation: "budget-space",
+  // --- END PROTO-INCREMENT-A-001 ---
 };
 
 export function isTenantTable(catalog: TableCatalog, table: string): boolean {
