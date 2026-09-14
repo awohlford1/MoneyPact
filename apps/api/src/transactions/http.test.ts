@@ -1,0 +1,255 @@
+import "reflect-metadata";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { HttpException } from "@nestjs/common";
+import { FastifyAdapter } from "@nestjs/platform-fastify";
+import type { NestFastifyApplication } from "@nestjs/platform-fastify";
+import { Test } from "@nestjs/testing";
+import { expectedProvenance, ordinaryFixture } from "@cobudget/contracts/authorization";
+import type { PolicyInput } from "@cobudget/contracts/authorization";
+import { apiIdentity, invocation } from "../../../../packages/rate-limit/src/index.ts";
+import { PERIOD_A_OPEN, SPACE_A, SPACE_B, SUBJECT_1, testWorld } from "../../../../packages/budget-application/src/targets/support.ts";
+import { parseBaseTargetRequest, parseCategoryUpsertRequest, setBaseTargets, upsertCategories } from "../../../../packages/budget-application/src/targets/index.ts";
+import { InMemoryTransactionsRepository } from "../../../../packages/budget-application/src/transactions/index.ts";
+import { testAccount } from "../../../../packages/budget-application/src/transactions/support.ts";
+import { AppModule } from "../app.module.js";
+import { RouteFailure } from "../authorization/http.js";
+import { Harness, testHistory } from "../authorization/test-support.js";
+import { loadApiConfigFrom } from "../config.js";
+import { transactionsHttp } from "./http.js";
+import type { TransactionsHttpDependencies } from "./http.js";
+
+const config = loadApiConfigFrom({ API_PORT: "3001", LOG_LEVEL: "info", NODE_ENV: "test", SERVICE_VERSION: "transactions-test", COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local", COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: Buffer.alloc(32, 7).toString("base64"), COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1" });
+const ROUTES = [
+  "/v1/budget-spaces/:budgetSpaceId/transactions",
+  "/v1/budget-spaces/:budgetSpaceId/transactions/:transactionId",
+  "/v1/budget-spaces/:budgetSpaceId/transactions/:transactionId/remove",
+  "/v1/budget-spaces/:budgetSpaceId/transactions/:transactionId/history",
+  "/v1/budget-spaces/:budgetSpaceId/periods/:periodId/progress",
+  "/v1/budget-spaces/:budgetSpaceId/periods/:periodId/progress/:categoryId",
+];
+const MEMBER = SUBJECT_1;
+const ACCOUNT = "77777777-7777-4777-8777-777777777771";
+const ACCOUNT_ARCHIVED = "77777777-7777-4777-8777-777777777772";
+const FOREIGN_CATEGORY = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+function factsFor(spaceId: string): PolicyInput {
+  const base = ordinaryFixture("9.add_manual_transaction");
+  const input = { ...base, subject: { ...base.subject, accountSubjectId: MEMBER }, space: { ...base.space, spaceId }, resource: { ...base.resource, owningSpaceId: spaceId }, assurance: { ...base.assurance, boundSpaceId: spaceId } };
+  return { ...input, provenance: expectedProvenance(input as PolicyInput) } as PolicyInput;
+}
+
+/**
+ * One budget space with a September period, two categories carrying base
+ * targets, one live account and one archived one. The plan world owns the
+ * category identifiers; the transaction world is seeded with the same ones, so
+ * the aggregate and the plan are measuring the same cells.
+ */
+async function application() {
+  const plan = testWorld();
+  const categories = await upsertCategories(plan.deps, SPACE_A, parseCategoryUpsertRequest({ categories: [{ label: "Groceries" }, { label: "Transport" }] }));
+  const groceries = categories[0]!.categoryId;
+  const transport = categories[1]!.categoryId;
+  await setBaseTargets(plan.deps, SPACE_A, MEMBER, parseBaseTargetRequest({ targets: [{ categoryId: groceries, amountMinorUnits: 50_000 }, { categoryId: transport, amountMinorUnits: 20_000 }] }));
+
+  const ledger = new InMemoryTransactionsRepository();
+  ledger.seedPeriod({ periodId: PERIOD_A_OPEN, budgetSpaceId: SPACE_A, status: "active", periodStart: "2026-09-01", periodEnd: "2026-09-30" });
+  ledger.seedAccount(testAccount({ accountId: ACCOUNT, budgetSpaceId: SPACE_A }));
+  ledger.seedAccount(testAccount({ accountId: ACCOUNT_ARCHIVED, budgetSpaceId: SPACE_A, label: "retired", archivedAt: plan.now, version: 2 }));
+  ledger.seedCategory({ categoryId: groceries, budgetSpaceId: SPACE_A, archivedAt: null });
+  ledger.seedCategory({ categoryId: transport, budgetSpaceId: SPACE_A, archivedAt: null });
+
+  const h = new Harness(factsFor(SPACE_A));
+  const discharge = h.store.discharge.bind(h.store);
+  h.store.discharge = async (transaction, input, obligation) =>
+    ["preserve", "invalidate", "confirm", "mask", "bind_cache_key"].includes(obligation.kind) || discharge(transaction, input, obligation);
+  const transaction = h.store.transaction.bind(h.store);
+  h.store.transaction = async <T>(work: (tx: unknown) => Promise<T>): Promise<T> => {
+    try { return await transaction(work); } catch (error) { if (error instanceof RouteFailure) return error as T; throw error; }
+  };
+  const memberships: Record<string, string | undefined> = { [`${MEMBER}:${SPACE_A}`]: "membership-1", [`${MEMBER}:${SPACE_B}`]: "membership-1" };
+  let repositoryCalls = 0;
+  const dependencies: TransactionsHttpDependencies = {
+    repository: () => { repositoryCalls++; return ledger; },
+    targets: () => plan.repository,
+    membership: async (subject, spaceId) => memberships[`${subject}:${spaceId}`] ?? null,
+    clock: { now: () => plan.now }, ids: { uuid: () => plan.ids.uuid() },
+  };
+  const module = await Test.createTestingModule({
+    imports: [AppModule.register(config, () => undefined, {
+      modules: [transactionsHttp(dependencies).module],
+      boundary: h.boundary, surfaceApproved: async () => true, csrf: async () => true,
+      rateLimit: {
+        evidence: (request) => invocation(apiIdentity(request.method, request.routeOptions.url!), "api_route", "test-only", "test-only"),
+        enforce: async (request) => ROUTES.includes(request.routeOptions.url!) ? { outcome: "allow", provenance: "test-only", release: async () => undefined } : { outcome: "deny_unregistered" },
+      },
+      sessionLocator: (request) => request.headers.cookie,
+      deny: (response) => { throw new HttpException(response, 403); },
+    }, testHistory)],
+  }).compile();
+  const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { logger: false });
+  await app.init(); await app.getHttpAdapter().getInstance().ready();
+  const call = (method: "GET" | "POST" | "PATCH", url: string, payload?: unknown, cookie: string | undefined = "opaque") =>
+    app.inject({ method, url, ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }), ...(cookie === undefined ? {} : { headers: { cookie } }) });
+  const space = `/v1/budget-spaces/${SPACE_A}`;
+  return { app, h, call, space, groceries, transport, repositoryCalls: () => repositoryCalls, memberships };
+}
+
+const split = (groceries: string, transport: string) => ({
+  accountId: ACCOUNT, amountMinorUnits: -1_250, budgetDate: "2026-09-15", description: "Corner shop",
+  allocations: [{ categoryId: groceries, amountMinorUnits: -800 }, { categoryId: transport, amountMinorUnits: -450 }],
+});
+
+describe("CBD-199/200/201/209/211 transaction and progress routes through the real Fastify instance", () => {
+  it("INCB-02: record, edit and remove one expense; history reads in revision order", async () => {
+    const { app, call, space, groceries, transport } = await application();
+    try {
+      const created = await call("POST", `${space}/transactions`, split(groceries, transport));
+      assert.equal(created.statusCode, 201, created.body);
+      const current = created.json().current as { version: { transactionId: string; revision: number; periodId: string; settlementState: string; origin: string }; allocations: unknown[] };
+      assert.equal(created.json().previous, null);
+      assert.equal(current.version.revision, 1);
+      assert.equal(current.version.periodId, PERIOD_A_OPEN, "CBD-199-AC04: the period is assigned from the stored bounds");
+      assert.equal(current.version.settlementState, "settled");
+      assert.equal(current.version.origin, "manual");
+      assert.equal(current.allocations.length, 2);
+      const transactionId = current.version.transactionId;
+
+      const edited = await call("PATCH", `${space}/transactions/${transactionId}`, { ...split(groceries, transport), amountMinorUnits: -2_000, description: "Corner shop, corrected", allocations: [{ categoryId: groceries, amountMinorUnits: -2_000 }] });
+      assert.equal(edited.statusCode, 200, edited.body);
+      assert.equal(edited.json().previous.version.revision, 1);
+      assert.equal(edited.json().previous.version.supersededAt, null, "`previous` is the state as it was read, before the stamp");
+      assert.equal(edited.json().current.version.revision, 2);
+
+      const history = await call("GET", `${space}/transactions/${transactionId}/history`);
+      assert.equal(history.statusCode, 200, history.body);
+      const versions = history.json().history as { version: { revision: number; supersededAt: string | null }; allocations: unknown[] }[];
+      assert.deepEqual(versions.map((entry) => entry.version.revision), [1, 2]);
+      assert.notEqual(versions[0]!.version.supersededAt, null, "CBD-201-AC04: the replaced version is retained, stamped");
+      assert.equal(versions[1]!.version.supersededAt, null, "exactly one current version");
+      assert.deepEqual(versions.map((entry) => entry.allocations.length), [2, 1], "each version keeps its own allocation set");
+
+      const removed = await call("POST", `${space}/transactions/${transactionId}/remove`);
+      assert.equal(removed.statusCode, 201, removed.body);
+      assert.deepEqual(removed.json().current.allocations, [], "CBD-200-AC03: a tombstone carries no allocations");
+      assert.notEqual(removed.json().current.version.removedAt, null);
+
+      const afterRemoval = await call("GET", `${space}/transactions/${transactionId}/history`);
+      assert.deepEqual((afterRemoval.json().history as { version: { revision: number } }[]).map((entry) => entry.version.revision), [1, 2, 3]);
+    } finally { await app.close(); }
+  });
+
+  it("INCB-02: canonical field errors, including the exact-sum rule and an archived account", async () => {
+    const { app, call, space, groceries, transport } = await application();
+    try {
+      for (const [body, status, error] of [
+        [{ ...split(groceries, transport), allocations: [{ categoryId: groceries, amountMinorUnits: -800 }] }, 400, "allocation_sum_mismatch"],
+        [{ ...split(groceries, transport), allocations: [] }, 400, "allocations_empty"],
+        [{ ...split(groceries, transport), allocations: [{ categoryId: groceries, amountMinorUnits: -600 }, { categoryId: groceries, amountMinorUnits: -650 }] }, 400, "allocation_duplicate_category"],
+        [{ ...split(groceries, transport), allocations: [{ categoryId: FOREIGN_CATEGORY, amountMinorUnits: -1_250 }] }, 400, "allocation_category_invalid"],
+        [{ ...split(groceries, transport), budgetDate: "2026-02-30" }, 400, "date_invalid"],
+        [{ ...split(groceries, transport), amountMinorUnits: -12.5 }, 400, "amount_not_integer"],
+        [{ ...split(groceries, transport), budgetDate: "2026-11-15" }, 404, "period_not_found"],
+        [{ ...split(groceries, transport), accountId: ACCOUNT_ARCHIVED }, 409, "account_archived"],
+        [{ ...split(groceries, transport), accountId: "77777777-7777-4777-8777-777777779999" }, 404, "account_not_found"],
+      ] as const) {
+        const refused = await call("POST", `${space}/transactions`, body);
+        assert.equal(refused.statusCode, status, `${error}: ${refused.body}`);
+        assert.deepEqual(refused.json(), { error });
+      }
+      // SEC-P3-F1, the transaction half: an archived account refuses a transaction, and the policy never saw the account state.
+      const editMissing = await call("PATCH", `${space}/transactions/00000000-0000-4000-8000-000000009999`, split(groceries, transport));
+      assert.equal(editMissing.statusCode, 404, editMissing.body);
+      assert.deepEqual(editMissing.json(), { error: "transaction_not_found" });
+    } finally { await app.close(); }
+  });
+
+  it("INCB-03: the aggregate reports settled spent and remaining per category, and the detail itemizes one category", async () => {
+    const { app, call, space, groceries, transport } = await application();
+    try {
+      await call("POST", `${space}/transactions`, split(groceries, transport));
+      const progress = await call("GET", `${space}/periods/${PERIOD_A_OPEN}/progress`);
+      assert.equal(progress.statusCode, 200, progress.body);
+      const body = progress.json();
+      assert.equal(body.calculationVersion, "budget-domain/progress/1");
+      assert.equal(body.currencyCode, "USD");
+      const cell = (categoryId: string) => (body.cells as { categoryId: string; targetMinorUnits: number; settledActualMinorUnits: number; remainingAfterSettledMinorUnits: number; settledRecordIds: string[] }[]).find((entry) => entry.categoryId === categoryId)!;
+      assert.equal(cell(groceries).targetMinorUnits, 50_000);
+      assert.equal(cell(groceries).settledActualMinorUnits, -800, "signed: an expense is negative");
+      assert.equal(cell(groceries).remainingAfterSettledMinorUnits, 49_200, "remaining = target + actual, unclamped");
+      assert.equal(cell(transport).settledActualMinorUnits, -450);
+      assert.equal(cell(transport).remainingAfterSettledMinorUnits, 19_550);
+      assert.equal(body.labels[groceries], "Groceries");
+
+      const detail = await call("GET", `${space}/periods/${PERIOD_A_OPEN}/progress/${groceries}`);
+      assert.equal(detail.statusCode, 200, detail.body);
+      assert.equal(detail.json().categoryId, groceries);
+      assert.equal(detail.json().label, "Groceries");
+      assert.equal(detail.json().cell.settledActualMinorUnits, -800, "CBD-209: aggregate and detail agree for the same cell");
+      const items = detail.json().items as { amountMinorUnits: number; description: string; budgetDate: string }[];
+      assert.equal(items.length, 1);
+      assert.equal(items[0]!.amountMinorUnits, -800);
+      assert.equal(items[0]!.description, "Corner shop");
+      assert.equal(items[0]!.budgetDate, "2026-09-15");
+      assert.deepEqual(cell(groceries).settledRecordIds, [(detail.json().items as { allocationId: string }[])[0]!.allocationId]);
+
+      // An excluded item appears in neither: the tombstone removes it from both at once.
+      const transactionId = (detail.json().items as { transactionId: string }[])[0]!.transactionId;
+      await call("POST", `${space}/transactions/${transactionId}/remove`);
+      const after = await call("GET", `${space}/periods/${PERIOD_A_OPEN}/progress`);
+      assert.equal((after.json().cells as { categoryId: string; settledActualMinorUnits: number }[]).find((entry) => entry.categoryId === groceries)!.settledActualMinorUnits, 0);
+      const detailAfter = await call("GET", `${space}/periods/${PERIOD_A_OPEN}/progress/${groceries}`);
+      assert.deepEqual(detailAfter.json().items, []);
+    } finally { await app.close(); }
+  });
+
+  it("INCB-03: a category owned by another space is a policy denial, not a query miss", async () => {
+    const { app, h, call, space, groceries, repositoryCalls } = await application();
+    try {
+      await call("GET", `${space}/periods/${PERIOD_A_OPEN}/progress/${groceries}`);
+      const before = repositoryCalls();
+
+      // What the production reader does with a foreign category: the tenant-scoped read of
+      // `budget_category` returns nothing, so no `resource.*` leaf is produced at all and the
+      // assembler refuses the input before the handler runs.
+      h.corrupt = (source, facts) => {
+        if (source !== "datastore") return;
+        for (const path of Object.keys(facts)) if (path.startsWith("resource.")) delete facts[path];
+      };
+      const absentRow = await call("GET", `${space}/periods/${PERIOD_A_OPEN}/progress/${FOREIGN_CATEGORY}`);
+      assert.equal(absentRow.statusCode, 403, absentRow.body);
+      assert.deepEqual(absentRow.json(), { outcome: "deny", reason: "denied" });
+
+      // And if the row were visible, its own owning space is compared by `decide`: another space denies.
+      h.corrupt = (source, facts) => { if (source === "datastore" && "resource.owningSpaceId" in facts) facts["resource.owningSpaceId"] = SPACE_B; };
+      const foreignOwner = await call("GET", `${space}/periods/${PERIOD_A_OPEN}/progress/${FOREIGN_CATEGORY}`);
+      assert.equal(foreignOwner.statusCode, 403, foreignOwner.body);
+
+      h.corrupt = undefined;
+      assert.equal(repositoryCalls(), before, "neither denial reached the handler, so neither ran a query");
+      assert.equal((await call("GET", `${space}/periods/${PERIOD_A_OPEN}/progress/${groceries}`)).statusCode, 200, "the space's own category still reads");
+    } finally { await app.close(); }
+  });
+
+  it("INCB-03: a period that is not this budget's is a canonical 404, and every route denies a subject without membership", async () => {
+    const { app, call, space, groceries, transport, memberships } = await application();
+    try {
+      const missing = await call("GET", `${space}/periods/99999999-9999-4999-8999-999999999999/progress`);
+      assert.equal(missing.statusCode, 404, missing.body);
+      assert.deepEqual(missing.json(), { error: "period_not_found" });
+
+      delete memberships[`${MEMBER}:${SPACE_A}`];
+      for (const [method, path, payload] of [
+        ["POST", "transactions", split(groceries, transport)],
+        ["PATCH", "transactions/00000000-0000-4000-8000-000000000001", split(groceries, transport)],
+        ["POST", "transactions/00000000-0000-4000-8000-000000000001/remove", undefined],
+        ["GET", "transactions/00000000-0000-4000-8000-000000000001/history", undefined],
+        ["GET", `periods/${PERIOD_A_OPEN}/progress`, undefined],
+        ["GET", `periods/${PERIOD_A_OPEN}/progress/${groceries}`, undefined],
+      ] as const) {
+        const denied = await call(method, `${space}/${path}`, payload);
+        assert.equal(denied.statusCode, 403, `${method} ${path}: ${denied.body}`);
+      }
+    } finally { await app.close(); }
+  });
+});

@@ -13,10 +13,15 @@
  *   membership.*  from `budget_space_membership`
  *   consent.*     see below
  *   resource.*    for resource id = budgetSpaceId with types `space`,
- *                 `category` and `plan`: the budget's category set and plan are
- *                 whole-set resources owned by the space (INV-54), so the
- *                 owning space is the space itself, the version is the space's
- *                 lifecycle version and the lifecycle is the space's.
+ *                 `category`, `plan`, `report`, `account` and `transaction`:
+ *                 the budget's category set, plan, report surface, account set
+ *                 and transaction set are whole-set resources owned by the
+ *                 space (INV-54), so the owning space is the space itself, the
+ *                 version is the space's lifecycle version and the lifecycle is
+ *                 the space's. When the locator instead names a row --
+ *                 PROTO-INCREMENT-B-001's `p3` account cells, the row-9
+ *                 transaction cells and the CBD-211 category drill-down -- the
+ *                 row's own columns answer (`rowResourceFacts`).
  *
  * Consent (CBD236-CONSENT-SEMANTICS-001 item 4; docs/cbd-236-consent-facts-
  * proposal.md section 8, `CF-236-007`): CBD-236 section 4.1 requires
@@ -57,7 +62,16 @@ import type { FactLookup } from "../authorization/facts.js";
 import { proposalUuid } from "../../../../packages/budget-application/src/persistence/proposal-store.ts";
 import type { FactReader } from "./fact-source.ts";
 
-const SPACE_RESOURCE_TYPES: ReadonlySet<string> = new Set(["space", "category", "plan"]);
+/**
+ * Resource types whose target is the budget's whole set rather than one row
+ * (INV-54): the space itself, its category set, its plan, its report surface,
+ * its account set and its transaction set. All six are named by the budget
+ * space identifier, own the space, and carry the space's lifecycle version.
+ * `account`, `transaction` and `category` are also row types -- when the
+ * locator names something other than the space, the row's own columns answer
+ * instead (see `rowResourceFacts`).
+ */
+const SPACE_RESOURCE_TYPES: ReadonlySet<string> = new Set(["space", "category", "plan", "report", "account", "transaction"]);
 /** The membership columns the ordinary variant reads. `authorization_version` is the membership's own version and is never relabelled as a disclosure version. */
 const MEMBERSHIP_COLUMNS: readonly string[] = ["membership_id", "role", "status", "authorization_version"];
 /** The consent evidence columns of `budget_space_consent`; `recorded_at` orders the terminal rows and is not a fact. */
@@ -95,6 +109,56 @@ function integer(value: unknown): number | undefined {
   return undefined;
 }
 
+/**
+ * PROTO-INCREMENT-B-001: the `p3` and row-9 route targets that name a real row.
+ *
+ * `account`      -> `financial_account`: the account's own version, and a
+ *                   lifecycle of `active` or `archived` projected from
+ *                   `archived_at`. `decide` does not evaluate it (`SEC-P3-F1`);
+ *                   the CBD-200 handler owns account-state admissibility.
+ * `transaction`  -> the current `manual_transaction` version of the identity:
+ *                   `revision` is the version a concurrent edit moves, so a
+ *                   stale captured version denies `stale_version`.
+ * `category`     -> `budget_category`, the CBD-211 drill-down target required
+ *                   by `HO-236-09`. The table carries no version column, so the
+ *                   row's own `updated_at` is projected to whole seconds: a
+ *                   monotonic integer that changes exactly when the row does.
+ *
+ * Every read is tenant-scoped on the acting space, so a row belonging to
+ * another budget returns nothing, no `resource.*` leaf is produced, and the
+ * assembler's provenance comparison denies `input_invalid` before the handler
+ * runs and before any query of the route's own. The denial is inert and
+ * indistinguishable from a row that does not exist anywhere.
+ */
+async function rowResourceFacts(client: DataAccessClient, spaceId: string, resourceType: string, resourceId: string): Promise<Record<string, unknown> | null> {
+  if (!UUID.test(resourceId)) return null;
+  if (resourceType === "account") {
+    const found = await client.tenantSelect({ table: "financial_account", budgetSpaceId: spaceId, columns: ["budget_space_id", "version", "archived_at"],
+      conditions: [{ column: "account_id", value: resourceId }] });
+    const row = found.rows[0] as { budget_space_id?: unknown; version?: unknown; archived_at?: unknown } | undefined;
+    if (!row) return null;
+    return { "resource.owningSpaceId": row.budget_space_id, "resource.version": integer(row.version), "resource.lifecycle": row.archived_at === null ? "active" : "archived" };
+  }
+  if (resourceType === "transaction") {
+    const found = await client.tenantSelect({ table: "manual_transaction", budgetSpaceId: spaceId, columns: ["budget_space_id", "revision", "removed_at", "superseded_at"],
+      conditions: [{ column: "transaction_id", value: resourceId }] });
+    const rows = found.rows as { budget_space_id?: unknown; revision?: unknown; removed_at?: unknown; superseded_at?: unknown }[];
+    const current = rows.find((row) => row.superseded_at === null);
+    if (!current) return null;
+    return { "resource.owningSpaceId": current.budget_space_id, "resource.version": integer(current.revision), "resource.lifecycle": current.removed_at === null ? "active" : "removed" };
+  }
+  if (resourceType === "category") {
+    const found = await client.tenantSelect({ table: "budget_category", budgetSpaceId: spaceId, columns: ["budget_space_id", "archived_at", "updated_at"],
+      conditions: [{ column: "category_id", value: resourceId }] });
+    const row = found.rows[0] as { budget_space_id?: unknown; archived_at?: unknown; updated_at?: unknown } | undefined;
+    if (!row) return null;
+    const changed = Date.parse(String(row.updated_at));
+    if (!Number.isFinite(changed)) return null;
+    return { "resource.owningSpaceId": row.budget_space_id, "resource.version": Math.floor(changed / 1000), "resource.lifecycle": row.archived_at === null ? "active" : "archived" };
+  }
+  return null;
+}
+
 async function spaceFacts(client: DataAccessClient, lookup: FactLookup, subjectId: string): Promise<Record<string, unknown> | null> {
   const { operation } = lookup;
   const spaceId = operation.actingSpaceId;
@@ -107,10 +171,14 @@ async function spaceFacts(client: DataAccessClient, lookup: FactLookup, subjectI
     facts["space.lifecycle"] = space.lifecycle;
     facts["space.lifecycleVersion"] = integer(space.lifecycle_version);
     facts["space.primaryOwnerMembershipId"] = space.primary_owner_membership_id;
-    if (operation.resourceType && SPACE_RESOURCE_TYPES.has(operation.resourceType) && operation.resourceId === spaceId) {
-      facts["resource.owningSpaceId"] = space.budget_space_id;
-      facts["resource.version"] = integer(space.lifecycle_version);
-      facts["resource.lifecycle"] = space.lifecycle;
+    if (operation.resourceType && SPACE_RESOURCE_TYPES.has(operation.resourceType)) {
+      if (operation.resourceId === spaceId) {
+        facts["resource.owningSpaceId"] = space.budget_space_id;
+        facts["resource.version"] = integer(space.lifecycle_version);
+        facts["resource.lifecycle"] = space.lifecycle;
+      } else if (typeof operation.resourceId === "string") {
+        Object.assign(facts, await rowResourceFacts(client, spaceId, operation.resourceType, operation.resourceId) ?? {});
+      }
     }
   }
   const membershipId = operation.actingMembershipId;
