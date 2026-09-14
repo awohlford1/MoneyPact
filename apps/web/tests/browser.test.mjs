@@ -46,6 +46,16 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     }
     assert.fail(`Missing control: ${label}`);
   }
+  // Types into a freshly queried control and proves the value landed, so a re-render between the
+  // query and the keystrokes cannot silently leave a field empty.
+  async function fill(selector, value) {
+    await page.waitForSelector(selector);
+    await page.focus(selector);
+    await page.keyboard.down("Control"); await page.keyboard.press("KeyA"); await page.keyboard.up("Control");
+    await page.keyboard.press("Backspace");
+    await page.type(selector, value);
+    assert.equal(await page.$eval(selector, node => node.value), value, `Typing into ${selector} did not take`);
+  }
   async function accessibility() {
     await page.evaluate(axeSource);
     const violations = await page.evaluate(async () => (await window.axe.run(document.querySelector("main"), { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa"] } })).violations.map(item => ({ id: item.id, nodes: item.nodes.map(node => node.target) })));
@@ -125,6 +135,86 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     const input = await page.$('[id^="target-"]'); await input.click({ clickCount: 3 }); await input.type("450.00"); await clickText("Save target");
     await waitText("Period target: 450.00 USD"); await page.reload(); await waitText("Period target: 450.00 USD"); await accessibility();
   });
+  // --- PROTO-INCREMENT-B-001 -------------------------------------------------------------------
+  // CBD-196/200/209/211 in headless Chrome, against the mock that speaks the merged API's wire
+  // shapes: add an account, record one expense split across two categories, read spent and
+  // remaining, open the itemized detail, edit and remove the expense and watch the figures return,
+  // and reload to see the same. Every step is driven through the rendered controls only.
+  await t.test("CBD-196/CBD-200/CBD-209/CBD-211: account, split expense, progress, detail, edit and removal", async () => {
+    await page.goto(`${origin}/budgets/${budgetId}/plan`); await waitText("Add category");
+    await page.type("#category-name", "Transport"); await clickText("Add category"); await waitText("Base target for Transport");
+    // Submitting from inside the control posts that category's own form; the shared button label
+    // would otherwise match the first row's button.
+    const targetIds = await page.$$eval('input[id^="target-"]', nodes => nodes.map(node => `#${node.id}`));
+    await fill(targetIds.at(-1), "200.00");
+    await page.keyboard.press("Enter");
+    await waitText("Period target: 200.00 USD");
+
+    await page.goto(`${origin}/budgets/${budgetId}`); await waitText("Accounts and spending");
+    await waitText("No accounts yet");
+    await accessibility();
+
+    await fill("#account-name", "Everyday"); await clickText("Add account");
+    await waitText("Added Everyday.");
+    await waitText("checking · opening balance 0.00 USD");
+
+    // The active period's inclusive dates are on the page; the expense is dated to its first day.
+    const periodStart = (await text()).match(/(\d{4}-\d{2}-\d{2}) through/)[1];
+    const allocationIds = await page.$$eval('input[id^="allocation-"]', nodes => nodes.map(node => `#${node.id}`));
+    assert.equal(allocationIds.length, 2, "one allocation input per live category");
+    const expense = async (groceries, transport) => {
+      await fill("#expense-date", periodStart);
+      await fill("#expense-amount", "12.50");
+      await fill("#expense-description", "Corner shop");
+      await fill(allocationIds[0], groceries);
+      await fill(allocationIds[1], transport);
+      await clickText("Record expense");
+    };
+
+    // The exact-sum rule is the server's, and its refusal lands on the allocation fieldset.
+    await expense("8.00", "4.00");
+    await waitText("The category amounts must add up to the expense amount exactly.");
+    await accessibility();
+
+    await expense("8.00", "4.50");
+    await waitText("Expense recorded.");
+    await waitText("Spent 8.00 USD of 450.00 USD");
+    await waitText("Remaining 442.00 USD");
+    await waitText("Spent 4.50 USD of 200.00 USD");
+    await waitText("Remaining 195.50 USD");
+    await accessibility();
+
+    // The figures survive a reload, because they are the server's and not the browser's.
+    await page.reload(); await waitText("Spent 8.00 USD of 450.00 USD");
+
+    await clickText("Groceries"); await waitText("Transactions in this category");
+    assert.ok((await page.title()).includes("Category detail"));
+    await waitText("Corner shop");
+    await waitText("8.00 USD · Everyday");
+    await accessibility();
+
+    await clickText("Edit this expense");
+    const amountId = await page.$eval('input[id^="edit-amount-"]', node => `#${node.id}`);
+    await fill(amountId, "20.00");
+    await clickText("Save expense"); await waitText("Expense updated.");
+    await waitText("20.00 USD · Everyday");
+
+    await clickText("Remove this expense"); await waitText("Expense removed.");
+    await waitText("Nothing has been recorded against this category for the active period.");
+    await accessibility();
+
+    await clickText("Back to the budget"); await waitText("Accounts and spending");
+    await waitText("Spent 0.00 USD of 450.00 USD");
+    await waitText("Remaining 450.00 USD");
+
+    // CBD-196-AC04: archival is lifecycle, and restore brings the account back.
+    await clickText("Archive Everyday"); await waitText("Archived Everyday.");
+    await waitText("Everyday · Archived");
+    await clickText("Restore Everyday"); await waitText("Restored Everyday.");
+    await accessibility();
+    assert.deepEqual(errors, []);
+  });
+
   const detailResponse = await page.evaluate(async id => (await fetch(`/api/mock/v1/budget-spaces/${id}`)).json(), budgetId);
   let scenario = null;
   await page.setRequestInterception(true);

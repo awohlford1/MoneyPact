@@ -46,6 +46,70 @@ export interface Plan {
   categories: readonly Category[];
   targets: readonly Target[];
 }
+
+// --- PROTO-INCREMENT-B-001: manual accounts, manual expenses and budget progress ---------------
+
+export interface Account {
+  id: string;
+  label: string;
+  accountType: string;
+  currencyCode: string;
+  minorUnitPrecision: number;
+  /** Decimal major-unit string formatted from the API's minor units; never computed client-side. */
+  openingBalance: string;
+  archived: boolean;
+  version: number;
+}
+export interface AccountDraft { label: string; accountType: string; currencyCode: string; openingBalance: string }
+/**
+ * One category's figure for the period. `spent` is the positive magnitude of the
+ * API's signed `settledActualMinorUnits`: the API is signed end to end (an expense
+ * is negative), and a person reads "spent 12.50", not "spent -12.50". `remaining`
+ * is the API's `remainingAfterSettledMinorUnits` unchanged; when it is negative the
+ * cell is `over` and the magnitude is what the view labels as overspent.
+ */
+export interface ProgressCell {
+  categoryId: string;
+  label: string;
+  target: string;
+  spent: string;
+  remaining: string;
+  over: boolean;
+}
+export interface Progress {
+  budgetSpaceId: string;
+  periodId: string;
+  currencyCode: string;
+  minorUnitPrecision: number;
+  cells: readonly ProgressCell[];
+}
+export interface DetailItem {
+  transactionId: string;
+  accountId: string;
+  budgetDate: string;
+  description: string | null;
+  /** The positive magnitude of this allocation, for the same reason `spent` is. */
+  amount: string;
+}
+export interface CategoryDetail {
+  budgetSpaceId: string;
+  periodId: string;
+  categoryId: string;
+  label: string;
+  currencyCode: string;
+  cell: ProgressCell | null;
+  items: readonly DetailItem[];
+}
+/** Amounts are positive major-unit magnitudes; the client negates them, because an expense is negative on the wire. */
+export interface ExpenseDraft {
+  accountId: string;
+  amount: string;
+  budgetDate: string;
+  description: string;
+  allocations: readonly { categoryId: string; amount: string }[];
+}
+export interface Expense { transactionId: string; revision: number }
+
 export interface ApiClient extends ProposalApi {
   begin(): Promise<string>;
   me(signal?: AbortSignal): Promise<Session | null>;
@@ -55,6 +119,16 @@ export interface ApiClient extends ProposalApi {
   plan(id: string, periodId: string, signal?: AbortSignal): Promise<Plan>;
   addCategory(id: string, name: string): Promise<Category>;
   saveTarget(id: string, categoryId: string, amount: string, precision: number): Promise<void>;
+  listAccounts(id: string, signal?: AbortSignal): Promise<readonly Account[]>;
+  addAccount(id: string, draft: AccountDraft): Promise<Account>;
+  editAccount(id: string, accountId: string, draft: Pick<AccountDraft, "label">): Promise<Account>;
+  archiveAccount(id: string, accountId: string): Promise<Account>;
+  restoreAccount(id: string, accountId: string): Promise<Account>;
+  recordExpense(id: string, draft: ExpenseDraft, precision: number): Promise<Expense>;
+  editExpense(id: string, transactionId: string, draft: ExpenseDraft, precision: number): Promise<Expense>;
+  removeExpense(id: string, transactionId: string): Promise<void>;
+  progress(id: string, periodId: string, signal?: AbortSignal): Promise<Progress>;
+  categoryDetail(id: string, periodId: string, categoryId: string, signal?: AbortSignal): Promise<CategoryDetail>;
   clear(): void;
 }
 
@@ -83,6 +157,31 @@ export interface WirePlan {
 export interface WireCategoryList { budgetSpaceId: string; categories: readonly { categoryId: string; label: string; position: number; archivedAt: string | null }[] }
 /** PUT /v1/budget-spaces/{id}/targets (2a.edit_target): base targets for the listed categories. */
 export interface WireTargetSet { budgetSpaceId: string; cadence: string; currencyCode: string; minorUnitPrecision: number; targets: readonly { categoryId: string; amountMinorUnits: number }[] }
+
+/** POST/GET/PATCH /v1/budget-spaces/{id}/accounts[...] (CBD-196, PROTO-INCREMENT-B-001). */
+export interface WireAccount {
+  accountId: string; origin: string; accountType: string; label: string; currencyCode: string; minorUnitPrecision: number;
+  openingBalanceMinorUnits: number; ownerSubjectId: string; archivedAt: string | null; version: number;
+}
+export interface WireAccountList { budgetSpaceId: string; accounts: readonly WireAccount[] }
+export interface WireAccountMutation { previousVersion: number | null; account: WireAccount }
+/** POST/PATCH /v1/budget-spaces/{id}/transactions[...] (CBD-199, CBD-200, CBD-201). */
+export interface WireTransactionMutation {
+  previous: unknown;
+  current: { version: { transactionId: string; revision: number; [field: string]: unknown }; allocations: readonly unknown[] };
+}
+/** GET /v1/budget-spaces/{id}/periods/{periodId}/progress (CBD-209). */
+export interface WireProgress {
+  budgetSpaceId: string; periodId: string; currencyCode: string; minorUnitPrecision: number;
+  labels: Readonly<Record<string, string>>; calculationVersion: string;
+  cells: readonly { categoryId: string; targetMinorUnits: number; settledActualMinorUnits: number; remainingAfterSettledMinorUnits: number }[];
+}
+/** GET /v1/budget-spaces/{id}/periods/{periodId}/progress/{categoryId} (CBD-211). */
+export interface WireCategoryDetail {
+  budgetSpaceId: string; periodId: string; categoryId: string; label: string | null; currencyCode: string; minorUnitPrecision: number;
+  cell: WireProgress["cells"][number] | null;
+  items: readonly { transactionId: string; accountId: string; budgetDate: string; description: string | null; amountMinorUnits: number }[];
+}
 
 /** Minor units to a decimal string in major units: presentation only, exact for safe integers. */
 export function formatMinorUnits(amountMinorUnits: number, precision: number): string {
@@ -125,6 +224,114 @@ export function toPlan(wire: WirePlan): Plan {
     targets: wire.categories.filter(category => category.baseTarget !== null).map(category => ({
       categoryId: category.categoryId, baseAmount: formatMinorUnits(category.baseTarget!.amountMinorUnits, precision), periodAmount: formatMinorUnits(category.periodTarget.amountMinorUnits, precision),
     })),
+  };
+}
+
+/**
+ * The canonical error code a route returns is also the name of the field it is
+ * about; this is the only place that correspondence is written down. The server
+ * owns the code and the refusal -- nothing here re-validates -- and the view uses
+ * the field so the message lands on the input the person must change.
+ */
+const FIELD_OF_CODE: Readonly<Record<string, string>> = Object.freeze({
+  label_invalid: "label", label_taken: "label",
+  account_type_unsupported: "accountType",
+  currency_unsupported: "currencyCode", currency_precision_unsupported: "currencyCode", currency_mismatch: "accountId",
+  amount_not_integer: "amount", amount_overflow: "amount",
+  owner_invalid: "label",
+  account_not_found: "accountId", account_archived: "accountId", account_not_archived: "accountId", account_inaccessible: "accountId",
+  date_invalid: "budgetDate", period_not_found: "budgetDate", period_ambiguous: "budgetDate",
+  description_invalid: "description",
+  allocations_empty: "allocations", allocation_duplicate_category: "allocations",
+  allocation_category_invalid: "allocations", allocation_sum_mismatch: "allocations",
+  transaction_not_found: "transactionId", transaction_removed: "transactionId",
+  version_conflict: "label", conflict: "label", constraint_violation: "label", invalid_request: "label",
+});
+/** The sentence shown next to the field. One per canonical code, so no refusal reaches a person as a code. */
+const MESSAGE_OF_CODE: Readonly<Record<string, string>> = Object.freeze({
+  label_invalid: "Enter a name between 1 and 120 characters.",
+  label_taken: "Another live account already uses this name.",
+  account_type_unsupported: "Choose one of the listed account types.",
+  currency_unsupported: "Choose a supported currency.",
+  currency_precision_unsupported: "This currency is not supported yet.",
+  currency_mismatch: "This expense is not in the account's currency.",
+  amount_not_integer: "Enter an amount with no more decimal places than the currency allows.",
+  amount_overflow: "Enter a smaller amount.",
+  owner_invalid: "The account owner is not valid.",
+  account_not_found: "Choose an account from this budget.",
+  account_archived: "This account is archived. Restore it first, or choose another.",
+  account_not_archived: "This account is not archived.",
+  account_inaccessible: "This account cannot be used.",
+  date_invalid: "Enter a real date as YYYY-MM-DD.",
+  period_not_found: "This date falls outside every budget period.",
+  period_ambiguous: "This date falls in more than one period.",
+  description_invalid: "Use 200 characters or fewer.",
+  allocations_empty: "Split the expense across at least one category.",
+  allocation_duplicate_category: "Each category may appear once.",
+  allocation_category_invalid: "Choose categories from this budget.",
+  allocation_sum_mismatch: "The category amounts must add up to the expense amount exactly.",
+  transaction_not_found: "This expense no longer exists. Refresh and try again.",
+  transaction_removed: "This expense has already been removed.",
+  version_conflict: "Someone else changed this first. Refresh and try again.",
+  conflict: "This change conflicts with the saved budget. Refresh and try again.",
+  constraint_violation: "This change cannot be saved as entered.",
+  invalid_request: "Check the values entered and try again.",
+});
+/** Turns a route's canonical `{ error }` body into the per-field error the form renders. */
+export function fieldErrorFor(error: ApiError): FieldError {
+  return { path: FIELD_OF_CODE[error.code] ?? "label", code: error.code, message: MESSAGE_OF_CODE[error.code] ?? "This change could not be saved." };
+}
+/** A refusal carrying no field errors of its own is given the one its canonical code names. */
+function withField<T>(work: Promise<T>): Promise<T> {
+  return work.catch((error: unknown) => {
+    if (error instanceof ApiError && error.fieldErrors.length === 0 && FIELD_OF_CODE[error.code]) throw new ApiError(error.status, error.code, [fieldErrorFor(error)]);
+    throw error;
+  });
+}
+export function toAccount(wire: WireAccount): Account {
+  return {
+    id: wire.accountId, label: wire.label, accountType: wire.accountType, currencyCode: wire.currencyCode,
+    minorUnitPrecision: wire.minorUnitPrecision, openingBalance: formatMinorUnits(wire.openingBalanceMinorUnits, wire.minorUnitPrecision),
+    archived: wire.archivedAt !== null, version: wire.version,
+  };
+}
+/** The signed API figure becomes a magnitude for "spent" and stays signed for "remaining". */
+export function toProgressCell(cell: WireProgress["cells"][number], label: string, precision: number): ProgressCell {
+  return {
+    categoryId: cell.categoryId, label,
+    target: formatMinorUnits(cell.targetMinorUnits, precision),
+    spent: formatMinorUnits(Math.abs(cell.settledActualMinorUnits), precision),
+    remaining: formatMinorUnits(Math.abs(cell.remainingAfterSettledMinorUnits), precision),
+    over: cell.remainingAfterSettledMinorUnits < 0,
+  };
+}
+export function toProgress(wire: WireProgress): Progress {
+  return {
+    budgetSpaceId: wire.budgetSpaceId, periodId: wire.periodId, currencyCode: wire.currencyCode, minorUnitPrecision: wire.minorUnitPrecision,
+    cells: wire.cells.map(cell => toProgressCell(cell, wire.labels[cell.categoryId] ?? cell.categoryId, wire.minorUnitPrecision))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+  };
+}
+export function toCategoryDetail(wire: WireCategoryDetail): CategoryDetail {
+  const label = wire.label ?? wire.categoryId;
+  return {
+    budgetSpaceId: wire.budgetSpaceId, periodId: wire.periodId, categoryId: wire.categoryId, label, currencyCode: wire.currencyCode,
+    cell: wire.cell ? toProgressCell(wire.cell, label, wire.minorUnitPrecision) : null,
+    items: wire.items.map(item => ({
+      transactionId: item.transactionId, accountId: item.accountId, budgetDate: item.budgetDate, description: item.description,
+      amount: formatMinorUnits(Math.abs(item.amountMinorUnits), wire.minorUnitPrecision),
+    })),
+  };
+}
+/** A positive major-unit magnitude becomes the negative minor-unit amount the API stores for an expense. */
+export function toExpenseBody(draft: ExpenseDraft, precision: number): Record<string, unknown> {
+  const description = draft.description.trim();
+  return {
+    accountId: draft.accountId,
+    amountMinorUnits: -parseMajorUnits(draft.amount, precision),
+    budgetDate: draft.budgetDate,
+    description: description === "" ? null : description,
+    allocations: draft.allocations.map(allocation => ({ categoryId: allocation.categoryId, amountMinorUnits: -parseMajorUnits(allocation.amount, precision) })),
   };
 }
 
@@ -184,6 +391,28 @@ export function createHttpClient(base = "/v1", fetcher: typeof fetch = fetch): A
     async saveTarget(id, categoryId, amount, precision) {
       await request<WireTargetSet>(`/budget-spaces/${encodeURIComponent(id)}/targets`, "PUT", { targets: [{ categoryId, amountMinorUnits: parseMajorUnits(amount, precision) }] });
     },
+    listAccounts: async (id, signal) => (await request<WireAccountList>(`/budget-spaces/${encodeURIComponent(id)}/accounts`, "GET", undefined, signal)).accounts.map(toAccount),
+    addAccount: async (id, draft) => toAccount((await withField(request<WireAccountMutation>(`/budget-spaces/${encodeURIComponent(id)}/accounts`, "POST", {
+      accountType: draft.accountType, label: draft.label.trim(), currencyCode: draft.currencyCode,
+      openingBalanceMinorUnits: parseMajorUnits(draft.openingBalance === "" ? "0" : draft.openingBalance, 2),
+    }))).account),
+    editAccount: async (id, accountId, draft) => toAccount((await withField(request<WireAccountMutation>(`/budget-spaces/${encodeURIComponent(id)}/accounts/${encodeURIComponent(accountId)}`, "PATCH", { label: draft.label.trim() }))).account),
+    archiveAccount: async (id, accountId) => toAccount((await withField(request<WireAccountMutation>(`/budget-spaces/${encodeURIComponent(id)}/accounts/${encodeURIComponent(accountId)}/archive`, "POST", {}))).account),
+    restoreAccount: async (id, accountId) => toAccount((await withField(request<WireAccountMutation>(`/budget-spaces/${encodeURIComponent(id)}/accounts/${encodeURIComponent(accountId)}/restore`, "POST", {}))).account),
+    async recordExpense(id, draft, precision) {
+      const result = await withField(request<WireTransactionMutation>(`/budget-spaces/${encodeURIComponent(id)}/transactions`, "POST", toExpenseBody(draft, precision)));
+      return { transactionId: result.current.version.transactionId, revision: result.current.version.revision };
+    },
+    async editExpense(id, transactionId, draft, precision) {
+      const result = await withField(request<WireTransactionMutation>(`/budget-spaces/${encodeURIComponent(id)}/transactions/${encodeURIComponent(transactionId)}`, "PATCH", toExpenseBody(draft, precision)));
+      return { transactionId: result.current.version.transactionId, revision: result.current.version.revision };
+    },
+    async removeExpense(id, transactionId) {
+      await withField(request<WireTransactionMutation>(`/budget-spaces/${encodeURIComponent(id)}/transactions/${encodeURIComponent(transactionId)}/remove`, "POST", {}));
+    },
+    progress: async (id, periodId, signal) => toProgress(await request<WireProgress>(`/budget-spaces/${encodeURIComponent(id)}/periods/${encodeURIComponent(periodId)}/progress`, "GET", undefined, signal)),
+    categoryDetail: async (id, periodId, categoryId, signal) =>
+      toCategoryDetail(await request<WireCategoryDetail>(`/budget-spaces/${encodeURIComponent(id)}/periods/${encodeURIComponent(periodId)}/progress/${encodeURIComponent(categoryId)}`, "GET", undefined, signal)),
     clear() { csrf = undefined; },
   };
 }
