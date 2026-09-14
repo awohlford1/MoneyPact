@@ -17,23 +17,34 @@ it("allows a registered approved surface and denies an unregistered route", asyn
   assert.equal((await gate.enforce(request("/unregistered"), "test-actor")).outcome, "deny_unregistered");
 });
 
-it("PROTO-ACTIVATION-001: an identity ceremony surface bound to the approved bootstrap record is admitted on loopback as an ordinary stage decision, bounded per exact surface, and refused off loopback", async () => {
-  const registration = (id: string) => ({
+it("PROTO-ACTIVATION-001 A7: a surface bound to the bootstrap record counts the ceremony the runtime resolves -- per-ceremony buckets, the initial space.create reservation once per ceremony, and nothing without a resolvable ceremony", async () => {
+  const registration = (id: string, surface = "surf-266-authentication") => ({
     registration_id: id, executor_kind: "api_route" as const, source_locator: "fixture.ts#ceremony",
-    surface_id: "surf-266-authentication", parameter_record_id: "rlp-266-bootstrap-v1",
-    registration_lifecycle: "active" as const, introduced_by: "test", authorization_metadata_id: null,
+    surface_id: surface, parameter_record_id: "rlp-266-bootstrap-v1",
+    registration_lifecycle: "active" as const, introduced_by: "test", authorization_metadata_id: surface === "surf-266-authentication" ? null : "space.create",
   });
-  const gate = new ApiRateLimits("test", loadPrototypeRegistry(), [registration("api:POST:/v1/identity/begin"), registration("api:GET:/v1/identity/callback")]);
-  const request = (url: string, method = "POST", ip = "127.0.0.1") => ({ method, routeOptions: { url }, ip }) as FastifyRequest;
-  // Six ordinary units per window for the loopback cohort on this exact surface; the two reserved completion units stay untouched.
+  const contexts: Record<string, { ceremonyId?: string; bootstrapStage?: "ordinary" | "initial_space_create"; primaryOwnerVerified?: boolean }> = {
+    "/v1/identity/callback?a": { ceremonyId: "ceremony-a", bootstrapStage: "ordinary" },
+    "/v1/identity/callback?b": { ceremonyId: "ceremony-b", bootstrapStage: "ordinary" },
+    "/v1/identity/callback?none": {},
+    "/confirm-a": { ceremonyId: "ceremony-a", bootstrapStage: "initial_space_create", primaryOwnerVerified: true },
+  };
+  const gate = new ApiRateLimits("test", loadPrototypeRegistry(), [registration("api:GET:/v1/identity/callback"), registration("api:POST:/confirm", "surf-266-authentication")], undefined, async (request) => contexts[request.url] ?? {});
+  const request = (url: string, routeUrl: string, method = "GET", ip = "127.0.0.1") => ({ method, url, routeOptions: { url: routeUrl }, ip }) as FastifyRequest;
+  // Six ordinary units per ceremony; a sibling ceremony has its own bucket, so one ceremony's traffic cannot block another's completion.
   for (let attempt = 0; attempt < 6; attempt++) {
-    const decision = await gate.enforce(request("/v1/identity/begin"), undefined);
-    assert.equal(decision.outcome, "allow", `attempt ${attempt}`);
+    const decision = await gate.enforce(request("/v1/identity/callback?a", "/v1/identity/callback"), undefined);
+    assert.equal(decision.outcome, "allow", `ceremony a attempt ${attempt}`);
     if (decision.outcome === "allow") await decision.release();
   }
-  assert.equal((await gate.enforce(request("/v1/identity/begin"), undefined)).outcome, "deny_exhausted");
-  // A sibling ceremony surface has its own pool.
-  assert.equal((await gate.enforce(request("/v1/identity/callback", "GET"), undefined)).outcome, "allow");
-  // Off loopback there is no observable cohort or ceremony: denied as invalid input, never admitted.
-  assert.equal((await gate.enforce(request("/v1/identity/begin", "POST", "203.0.113.9"), undefined)).outcome, "deny_input_invalid");
+  assert.equal((await gate.enforce(request("/v1/identity/callback?a", "/v1/identity/callback"), undefined)).outcome, "deny_exhausted");
+  assert.equal((await gate.enforce(request("/v1/identity/callback?b", "/v1/identity/callback"), undefined)).outcome, "allow");
+  // The reserved initial space.create unit is separate from the ordinary units and consumed once per ceremony.
+  const first = await gate.enforce(request("/confirm-a", "/confirm", "POST"), "actor-a");
+  assert.equal(first.outcome, "allow", "the reservation is intact after the ordinary pool was exhausted");
+  if (first.outcome === "allow") await first.release();
+  assert.equal((await gate.enforce(request("/confirm-a", "/confirm", "POST"), "actor-a")).outcome, "deny_exhausted", "one initial create per ceremony");
+  // No resolvable ceremony (unknown state), or off loopback: never admitted.
+  assert.equal((await gate.enforce(request("/v1/identity/callback?none", "/v1/identity/callback"), undefined)).outcome, "deny_input_invalid");
+  assert.equal((await gate.enforce(request("/v1/identity/callback?a", "/v1/identity/callback", "GET", "203.0.113.9"), undefined)).outcome, "deny_input_invalid");
 });

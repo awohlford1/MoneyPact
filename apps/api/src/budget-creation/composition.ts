@@ -39,6 +39,7 @@ import { RouteFailure } from "../authorization/http.js";
 import { listProfiles } from "../identity/store.ts";
 import { budgetApiHttp } from "./modules.ts";
 import { CreationAuthorizationStore } from "./transaction-store.js";
+import type { HandleOutcomes } from "./transaction-store.js";
 import { dataAccessTargetsDependencies, TARGET_ACTIONS, TargetsAuthorizationStore, targetsHttp } from "../targets/http.ts";
 
 export interface BudgetCompositionOptions {
@@ -101,8 +102,10 @@ export function composeBudgetApi(options: BudgetCompositionOptions) {
   const timeZoneDataVersion = `icu-tz-${process.versions.tz ?? "unknown"}`;
   const proposals = new DurableProposalStore(client, randomUUID, () => now().toISOString());
 
-  const context = async (request: FastifyRequest, subject: string): Promise<AuthenticatedSubjectContext> => {
-    const resolved = await sessions.read("session_store", { credential: cookieOf(request) });
+  // A2: inside the boundary transaction the session is resolved through the transaction-bound store (the root store's
+  // idle-extension write would otherwise wait on the row the transaction already holds).
+  const context = async (request: FastifyRequest, subject: string, transaction?: unknown): Promise<AuthenticatedSubjectContext> => {
+    const resolved = await sessions.read("session_store", { credential: cookieOf(request) }, transaction);
     const subjectId = resolved?.["subject.accountSubjectId"];
     const sessionVersion = resolved?.["subject.sessionVersion"];
     if (typeof subjectId !== "string" || subjectId !== subject || typeof sessionVersion !== "number") throw new RouteFailure(401, "not_authenticated");
@@ -129,8 +132,8 @@ export function composeBudgetApi(options: BudgetCompositionOptions) {
     candidates: budget.candidates,
     facts: budget.facts,
     stores: [
-      { actions: ["space.create"], store: creationStore },
-      { actions: Object.values(TARGET_ACTIONS), store: targetsStore },
+      { actions: ["space.create"], store: creationStore, observe: (outcomes: HandleOutcomes) => creationStore.observe(outcomes) },
+      { actions: Object.values(TARGET_ACTIONS), store: targetsStore, observe: (outcomes: HandleOutcomes) => targetsStore.observe(outcomes) },
     ],
   };
 }

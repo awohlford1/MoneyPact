@@ -235,6 +235,12 @@ export class LocalIssuer implements ProviderTransport {
   }
 
   /** The synthetic chooser's selection: returns the exact callback navigation for `scenario`, or `undefined` for an unknown/used request. */
+  /** PROTO-ACTIVATION-001 A7: the raw state of a pending hosted request, so the chooser route's rate-limit context can name its ceremony. */
+  stateOf(requestId: string): string | undefined {
+    const pending = this.#pending[requestId];
+    return pending && !pending.used && pending.expiresAt > this.#now().getTime() ? pending.state : undefined;
+  }
+
   choose(requestId: string, scenario: LocalScenario): string | undefined {
     const pending = this.#pending[requestId];
     if (!pending || pending.used || pending.expiresAt <= this.#now().getTime()) return undefined;

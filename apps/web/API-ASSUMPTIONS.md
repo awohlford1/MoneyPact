@@ -42,6 +42,13 @@ the production client runs unchanged against the mock and the real API.
   `sessionRef`/`sessionVersion` hints and raw drafts are stored in
   `sessionStorage`.
 - Held: 401 or 403 on `/identity/me` is treated as signed out.
+- Changed (correction round): every non-safe request on a cookie-authenticated
+  route is checked by the API boundary for the exact Origin, `Sec-Fetch-Site:
+  same-origin` and `X-CoBudget-CSRF` before any replay, policy or effect; a
+  failure is the uniform 403 denial. The client already sends all three.
+  `GET /v1/identity/recovery` returns the same bootstrap body on the
+  independent `surf-266-recovery` rate-limit pool; the client does not call it
+  yet (a 403 from `/identity/me` is indistinguishable from exhaustion).
 
 ## Proposals and confirmation
 

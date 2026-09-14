@@ -20,8 +20,8 @@ export interface CreationHttpDependencies {
   readonly proposals: DurableProposalStore;
   readonly transactions: CreationAuthorizationStore;
   readonly persistence: ConfirmationDependencies;
-  /** Resolve current account/profile/session context through trusted adapters. */
-  readonly context: (request: FastifyRequest, authenticatedSubject: string) => Promise<AuthenticatedSubjectContext>;
+  /** Resolve current account/profile/session context through trusted adapters; inside the boundary transaction, through it. */
+  readonly context: (request: FastifyRequest, authenticatedSubject: string, transaction?: unknown) => Promise<AuthenticatedSubjectContext>;
 }
 @Module({})
 export class BudgetCreationModule {}
@@ -84,7 +84,7 @@ export function budgetCreationHttp(dependencies: CreationHttpDependencies): { mo
         const attempt = attempts[lookup.operation.proposalReference ?? ""];
         const subject = facts?.["subject.accountSubjectId"];
         if (!attempt || typeof subject !== "string" || subject !== attempt.resolved.context.subjectId) throw new ConfirmationError("unauthenticated");
-        const context = await dependencies.context(attempt.request, subject);
+        const context = await dependencies.context(attempt.request, subject, transaction);
         if (context.subjectId !== subject) throw new ConfirmationError("unauthenticated");
         await dependencies.transactions.replayAfterSession(transaction as DataAccessClient, context, attempt.resolved.request);
       }

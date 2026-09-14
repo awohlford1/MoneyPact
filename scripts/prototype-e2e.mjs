@@ -153,7 +153,21 @@ async function main() {
     expect(foreign.status === 403, `unknown proposal returned ${foreign.status}`);
     log("GET /v1/budget-creation-proposals/{unknown}", `403 (row absent for this subject: uniform denial, no existence disclosure)`);
 
-    const confirmed = await browser.fetch(`/v1/budget-creation-proposals/${proposal.proposalId}/confirm`, { method: "POST", body: { confirmationBinding: proposal.confirmationBinding }, headers: { "idempotency-key": randomUUID() } });
+    // A5: regeneration is dispatched as proposal.regenerate against the predecessor row (its lifecycle revision captured).
+    const regenerated = await browser.fetch("/v1/budget-creation-proposals", { method: "POST", body: { ...draft, name: "Household budget (revised)", supersedesProposalId: proposal.proposalId }, headers: { "idempotency-key": randomUUID() } });
+    expect(regenerated.status === 201 && regenerated.json.supersedesProposalId === proposal.proposalId, `regenerate returned ${regenerated.status} ${regenerated.text}`);
+    const predecessor = await browser.fetch(`/v1/budget-creation-proposals/${proposal.proposalId}`);
+    expect(predecessor.status === 200 && predecessor.json.lifecycle?.status === "invalidated", `predecessor read returned ${predecessor.status} ${predecessor.text}`);
+    log("POST /v1/budget-creation-proposals (supersedesProposalId)", `201, proposalId=${regenerated.json.proposalId} supersedes ${proposal.proposalId}; predecessor lifecycle.status=${predecessor.json.lifecycle.status}`);
+    // A1: a mutation without the bootstrap value is denied at the session gate before any effect.
+    const held = browser.csrf; browser.csrf = undefined;
+    const noCsrf = await browser.fetch("/v1/budget-creation-proposals", { method: "POST", body: draft, headers: { "idempotency-key": randomUUID() } });
+    browser.csrf = held;
+    expect(noCsrf.status === 403, `proposal create without X-CoBudget-CSRF returned ${noCsrf.status}`);
+    log("POST /v1/budget-creation-proposals without X-CoBudget-CSRF", "403 (uniform denial at the session gate; no effect)");
+
+    const current = regenerated.json;
+    const confirmed = await browser.fetch(`/v1/budget-creation-proposals/${current.proposalId}/confirm`, { method: "POST", body: { confirmationBinding: current.confirmationBinding }, headers: { "idempotency-key": randomUUID() } });
     expect(confirmed.status === 200 || confirmed.status === 201, `confirm returned ${confirmed.status} ${confirmed.text}`);
     const budgetSpaceId = confirmed.json.budgetSpaceId;
     expect(typeof budgetSpaceId === "string" && typeof confirmed.json.currentPeriodId === "string", "confirmation must name the budget space and current period");
@@ -186,6 +200,9 @@ async function main() {
     const resolved = await browser.fetch("/v1/identity/me");
     expect(resolved.status === 200 && resolved.json.sessionRef === me.sessionRef && resolved.json.csrfValue === browser.csrf, `fresh resolution returned ${resolved.status} ${resolved.text}`);
     log("GET /v1/identity/me (fresh session resolution, as a reload does)", `200, same sessionRef, same session-bound csrfValue`);
+    const recovery = await browser.fetch("/v1/identity/recovery");
+    expect(recovery.status === 200 && recovery.json.sessionRef === me.sessionRef, `recovery returned ${recovery.status} ${recovery.text}`);
+    log("GET /v1/identity/recovery (independent surf-266-recovery pool)", `200, same session bootstrap`);
     const again = await browser.fetch(`/v1/budget-spaces/${budgetSpaceId}/plan?periodId=${periodId}`);
     expect(again.status === 200 && JSON.stringify(again.json) === JSON.stringify(plan.json), "the plan must read back identically after the fresh resolution");
     log("GET /v1/budget-spaces/{id}/plan (after fresh resolution)", "200, byte-identical plan");
@@ -204,6 +221,11 @@ async function main() {
     const reload = await second.fetch(`/v1/budget-spaces/${budgetSpaceId}/plan?periodId=${periodId}`);
     expect(reload.status === 200 && JSON.stringify(reload.json) === JSON.stringify(plan.json), `the plan must survive a new session: ${reload.status} ${reload.text}`);
     log("GET /v1/budget-spaces/{id}/plan (new session, same subject)", "200, byte-identical plan: the same plan after reload");
+    // A proposal is bound to the session generation that issued it (CBD-232): the old session's superseded predecessor is not
+    // this session's proposal at all, and the attempt spends this ceremony's single initial-create reservation.
+    const staleConfirm = await second.fetch(`/v1/budget-creation-proposals/${proposal.proposalId}/confirm`, { method: "POST", body: { confirmationBinding: proposal.confirmationBinding }, headers: { "idempotency-key": randomUUID() } });
+    expect(staleConfirm.status === 404, `confirming the old session's superseded predecessor returned ${staleConfirm.status} ${staleConfirm.text}`);
+    log("POST .../{old session's superseded predecessor}/confirm (new session)", `404 ${staleConfirm.json?.error} (session-generation bound)`);
     console.log("PROTOTYPE-E2E PASSED");
   } catch (error) {
     console.error(`API output (last 4000 chars):

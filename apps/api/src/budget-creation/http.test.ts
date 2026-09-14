@@ -34,7 +34,7 @@ void test("registered confirmation route authenticates before lookup, rejects ec
   const config = loadApiConfigFrom({ API_PORT: "3001", LOG_LEVEL: "info", NODE_ENV: "test", SERVICE_VERSION: "confirmation-test",
     COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local", COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: Buffer.alloc(32, 7).toString("base64"), COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1" });
   const module = await Test.createTestingModule({ imports: [AppModule.register(config, () => undefined, {
-    modules: binding.modules, boundary: h.boundary, surfaceApproved: async () => true, sessionLocator: req => req.headers.cookie,
+    modules: binding.modules, boundary: h.boundary, surfaceApproved: async () => true, csrf: async () => true, sessionLocator: req => req.headers.cookie,
     deny: response => { throw new HttpException(response, 403); },
     rateLimit: { evidence: () => invocation("api:POST:/v1/budget-creation-proposals/:proposalId/confirm", "api_route", "test-only", "test-only"),
       enforce: async () => ({ outcome: "allow", provenance: "test-only", release: async () => undefined }) },

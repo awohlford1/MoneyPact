@@ -460,14 +460,36 @@ describe("identity view and logout", () => {
     assert.equal((await h.ceremony.csrfDigestFor(cookie)), undefined);
   });
 
-  it("PROTO-ACTIVATION-001: the CSRF bootstrap entry is erased at logout", async () => {
+  it("PROTO-ACTIVATION-001 A8: the raw CSRF bootstrap entry is erased at logout and by the same-subject reauthentication that revokes the prior session", async () => {
     const h = buildHarness();
     const signedIn = success(await h.signIn("subject-a"));
     const cookie = cookieValueFrom(signedIn.setCookie, SESSION_COOKIE_NAME)!;
+    assert.equal(h.ceremony.retainedCsrfValues, 1);
     const csrf = await h.ceremony.csrfDigestFor(cookie);
     assert.ok(csrf);
     await h.ceremony.logout(csrf.sessionRef);
+    assert.equal(h.ceremony.retainedCsrfValues, 0, "logout erased the raw value");
     assert.equal(await h.ceremony.view(cookie), undefined, "the revoked session no longer resolves");
+    const again = success(await h.signIn("subject-a"));
+    assert.equal(h.ceremony.retainedCsrfValues, 1);
+    const switched = success(await h.signIn("subject-a", "account_switch", cookieValueFrom(again.setCookie, SESSION_COOKIE_NAME)));
+    assert.notEqual(switched.sessionRef, again.sessionRef);
+    assert.equal(h.ceremony.retainedCsrfValues, 1, "the prior session's raw value went with its revocation; only the new session's remains");
+  });
+
+  it("PROTO-ACTIVATION-001 A8 (SEC-ACT-F04): unread raw CSRF values are erased by the deadline timer with no bootstrap traffic, and an expired session never reaches the successful-path lookup", async () => {
+    let now = new Date();
+    const timers: { run: () => void; delayMs: number }[] = [];
+    const h = buildHarness({ now: () => now, scheduler: (run, delayMs) => { timers.push({ run, delayMs }); return setTimeout(() => undefined, 0); } });
+    success(await h.signIn("subject-a"));
+    success(await h.signIn("subject-b"));
+    assert.equal(h.ceremony.retainedCsrfValues, 2, "two raw values are held, none ever read");
+    assert.ok(timers.length >= 1, "issuance armed the deadline sweep");
+    assert.ok(Math.abs(timers.at(-1)!.delayMs - 3_600_000) < 5_000, "armed for the earliest absolute expiry");
+    now = new Date(now.getTime() + 3_601_000);
+    timers.at(-1)!.run(); // the deadline fires; no bootstrap read, no logout, no other traffic.
+    assert.equal(h.ceremony.retainedCsrfValues, 0, "both unread values were erased by the deadline itself");
+    h.ceremony.stop();
   });
 
   it("begin refuses a foreign origin, an unknown ceremony and an unknown destination before creating any challenge", async () => {

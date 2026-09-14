@@ -279,6 +279,33 @@ export class SessionStore {
     return withStoreFailure(() => this.#casAuthority(accountSubjectId, decide));
   }
 
+  /**
+   * PROTO-ACTIVATION-001 A2 (review R02): the revocation fence for a mutation transaction. Called on a
+   * store bound to the boundary's serializable transaction after the session resolved inside it, this
+   * re-reads the subject's authority row and re-writes its `revocation_epoch` with the value just read
+   * as the predicate. A concurrent epoch bump that committed since the read makes this conditional
+   * write see a changed row, which under SERIALIZABLE aborts the whole mutation (SQLSTATE 40001); a
+   * bump arriving afterwards blocks on the row lock until this transaction commits and then applies.
+   * Together with the session row's own idle-extension write inside the same transaction, no revoke
+   * or subject-wide bump can land between the commit-time session read and the mutation's COMMIT.
+   * Returns false when the row is gone or the epoch already moved.
+   */
+  async fenceRevocationEpoch(accountSubjectId: AccountSubjectId): Promise<boolean> {
+    return withStoreFailure(async () => {
+      const current = await this.#readAuthority(accountSubjectId);
+      if (!current) return false;
+      const result = await this.#client.platformUpdate({
+        table: "account_subject_authority",
+        set: { revocation_epoch: current.revocationEpoch },
+        conditions: [
+          { column: "account_subject_id", value: accountSubjectId },
+          { column: "revocation_epoch", value: current.revocationEpoch },
+        ],
+      });
+      return result.rowCount === 1;
+    });
+  }
+
   async insertSession(record: SessionRecord): Promise<void> {
     return withStoreFailure(async () => {
       await this.#client.platformInsert({

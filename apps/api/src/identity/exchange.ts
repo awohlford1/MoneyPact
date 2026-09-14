@@ -85,6 +85,10 @@ export interface ExchangeInput {
   readonly clockSkewSeconds: number;
   readonly maxLifetimeMs: number;
   readonly cachedKeys?: readonly Jwk[] | undefined;
+  /** PROTO-ACTIVATION-001 A9 (RC-01): upper bound for the cleanup revocation of a received family after a fault; default `maxLifetimeMs`. */
+  readonly cleanupDeadlineMs?: number | undefined;
+  /** Settlement of a timed-out initial exchange: resolves once the abandoned transport call settled and its late family (if any) got its one cleanup attempt, or the cleanup deadline passed. Test/evidence seam. */
+  readonly onLateSettlement?: ((settled: "revoked" | "no_family" | "abandoned") => void) | undefined;
 }
 
 class ExchangeTimeout extends Error {
@@ -137,10 +141,28 @@ export async function runBoundedExchange(input: ExchangeInput): Promise<Exchange
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new ExchangeTimeout()), input.maxLifetimeMs); });
   const bounded = async <T>(work: Promise<T>): Promise<T> => Promise.race([work, deadline]);
-  /** A best-effort cleanup revocation for a token family that arrived after this execution already returned (a settled timeout on the *initial* exchange call). Never affects the returned outcome. */
-  const revokeLateFamily = (refreshToken: string | undefined): void => {
-    if (!refreshToken) return;
-    void input.transport.revoke({ token: refreshToken, clientId: input.clientId }).catch(() => undefined);
+  const cleanupDeadlineMs = input.cleanupDeadlineMs ?? input.maxLifetimeMs;
+  /** Runs `work` with its own deadline; a stalled transport can never hold this execution (or buffer destruction) open past it. */
+  const withDeadline = async <T>(work: Promise<T>, ms: number): Promise<T | "deadline"> => {
+    let own: ReturnType<typeof setTimeout> | undefined;
+    try { return await Promise.race([work, new Promise<"deadline">((resolve) => { own = setTimeout(() => resolve("deadline"), ms); })]); }
+    finally { clearTimeout(own); }
+  };
+  /**
+   * A9 (RC-01): settles a timed-out *initial* exchange call instead of leaving it dangling. The late
+   * family, if one is minted, gets exactly one cleanup attempt, itself bounded by the cleanup deadline;
+   * the whole settlement is bounded too, so nothing here can run unbounded after this execution
+   * returned. The returned outcome is never affected.
+   */
+  const settleLateExchange = (pending: Promise<ExchangeTransportResult>): void => {
+    void (async () => {
+      const late = await withDeadline(pending.catch(() => undefined), cleanupDeadlineMs);
+      if (late === "deadline") { input.onLateSettlement?.("abandoned"); return; }
+      const refresh = late?.ok ? late.tokens.refresh_token : undefined;
+      if (!refresh) { input.onLateSettlement?.("no_family"); return; }
+      const result = await withDeadline(input.transport.revoke({ token: refresh, clientId: input.clientId }).catch(() => "failed" as const), cleanupDeadlineMs);
+      input.onLateSettlement?.(result === "deadline" ? "abandoned" : "revoked");
+    })();
   };
 
   // RC-01 (correction round 3, C6/S01): hoisted so the outer catch can reach it. Every path that
@@ -153,7 +175,8 @@ export async function runBoundedExchange(input: ExchangeInput): Promise<Exchange
   const cleanupRevoke = async (): Promise<void> => {
     if (!refreshToken || revocationAttempted) return;
     revocationAttempted = true;
-    try { await input.transport.revoke({ token: refreshToken.toString("utf8"), clientId: input.clientId }); } catch { /* best-effort cleanup only */ }
+    // A9 (RC-01): bounded by its own deadline, so a stalled transport cannot delay buffer destruction.
+    try { await withDeadline(input.transport.revoke({ token: refreshToken.toString("utf8"), clientId: input.clientId }), cleanupDeadlineMs); } catch { /* best-effort cleanup only */ }
   };
 
   try {
@@ -162,10 +185,7 @@ export async function runBoundedExchange(input: ExchangeInput): Promise<Exchange
     try {
       exchanged = await bounded(exchangePromise);
     } catch (error) {
-      if (error instanceof ExchangeTimeout) {
-        // Settle the abandoned call instead of leaving it dangling: a late family it mints still gets one revocation attempt.
-        exchangePromise.then((late) => { if (late.ok) revokeLateFamily(late.tokens.refresh_token); }).catch(() => undefined);
-      }
+      if (error instanceof ExchangeTimeout) settleLateExchange(exchangePromise);
       throw error;
     }
     if (!exchanged.ok) return rejected(exchanged.error === "outage" ? "provider_unavailable" : "grant_rejected");

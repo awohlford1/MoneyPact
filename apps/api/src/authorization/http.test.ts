@@ -39,7 +39,7 @@ class ProtectedController {
 async function application(h: Harness, protectedControllers = true): Promise<NestFastifyApplication> {
   const module = await Test.createTestingModule({
     imports: [AppModule.register(config, () => undefined, {
-      boundary: h.boundary, surfaceApproved: async () => true,
+      boundary: h.boundary, surfaceApproved: async () => true, csrf: async () => true,
       // This suite isolates CBD-236 policy behavior with a synthetic surface approval.
       rateLimit: {
         evidence: (request) => invocation(apiIdentity(request.method, request.routeOptions.url!), "api_route", "test-only", "test-only"),
@@ -57,7 +57,7 @@ describe("API enforcement installation", () => {
   it("FX-266-UNREGISTERED-API-ROUTE discovers and denies a real new route before facts, policy or effect", async () => {
     handlerCalls = 0; const h = new Harness();
     const module = await Test.createTestingModule({ imports: [AppModule.register(config, () => undefined, {
-      boundary: h.boundary, surfaceApproved: async () => assert.fail("later surface callback"), sessionLocator: (request) => request.headers.cookie,
+      boundary: h.boundary, surfaceApproved: async () => assert.fail("later surface callback"), csrf: async () => true, sessionLocator: (request) => request.headers.cookie,
       deny: (response) => { throw new HttpException(response, 403); },
     }, testHistory)], controllers: [ProtectedController] }).compile();
     const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { logger: false });
@@ -160,7 +160,7 @@ describe("PROTO-IDENTITY-API-001 C7: @PreAuthenticationSurface is restricted to 
     }
     const h = new Harness();
     const module = await Test.createTestingModule({
-      imports: [AppModule.register(config, () => undefined, { boundary: h.boundary, surfaceApproved: async () => true, rateLimit: { evidence: (request) => invocation(apiIdentity(request.method, request.routeOptions.url!), "api_route", "test-only", "test-only"), enforce: async () => ({ outcome: "allow", provenance: "test-only", release: async () => undefined }) }, sessionLocator: () => undefined, deny: (response) => { throw new HttpException(response, 403); } }, testHistory)],
+      imports: [AppModule.register(config, () => undefined, { boundary: h.boundary, surfaceApproved: async () => true, csrf: async () => true, rateLimit: { evidence: (request) => invocation(apiIdentity(request.method, request.routeOptions.url!), "api_route", "test-only", "test-only"), enforce: async () => ({ outcome: "allow", provenance: "test-only", release: async () => undefined }) }, sessionLocator: () => undefined, deny: (response) => { throw new HttpException(response, 403); } }, testHistory)],
       controllers: [DualMarkerController],
     }).compile();
     const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { logger: false });
@@ -177,7 +177,7 @@ describe("PROTO-IDENTITY-API-001 C7: @PreAuthenticationSurface is restricted to 
     }
     const h = new Harness();
     const module = await Test.createTestingModule({
-      imports: [AppModule.register(config, () => undefined, { boundary: h.boundary, surfaceApproved: async () => true, rateLimit: { evidence: (request) => invocation(apiIdentity(request.method, request.routeOptions.url!), "api_route", "test-only", "test-only"), enforce: async () => ({ outcome: "allow", provenance: "test-only", release: async () => undefined }) }, sessionLocator: () => undefined, deny: (response) => { throw new HttpException(response, 403); } }, testHistory)],
+      imports: [AppModule.register(config, () => undefined, { boundary: h.boundary, surfaceApproved: async () => true, csrf: async () => true, rateLimit: { evidence: (request) => invocation(apiIdentity(request.method, request.routeOptions.url!), "api_route", "test-only", "test-only"), enforce: async () => ({ outcome: "allow", provenance: "test-only", release: async () => undefined }) }, sessionLocator: () => undefined, deny: (response) => { throw new HttpException(response, 403); } }, testHistory)],
       controllers: [IneligibleMarkerController],
     }).compile();
     const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { logger: false });
@@ -197,7 +197,7 @@ describe("PROTO-IDENTITY-API-001 C7: @PreAuthenticationSurface is restricted to 
     const h = new Harness();
     const module = await Test.createTestingModule({
       imports: [AppModule.register(config, () => undefined, {
-        boundary: h.boundary, surfaceApproved: async () => true,
+        boundary: h.boundary, surfaceApproved: async () => true, csrf: async () => true,
         rateLimit: {
           evidence: (request) => invocation(apiIdentity(request.method, request.routeOptions.url!), "api_route", "test-only", "test-only"),
           enforce: async (request) => { enforced++; return request.routeOptions.url === "/v1/identity/begin" ? { outcome: "allow", provenance: "test-only", release: async () => undefined } : { outcome: "deny_unregistered" }; },

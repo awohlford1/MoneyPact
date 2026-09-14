@@ -6,6 +6,7 @@
  *   GET  /v1/identity/local/authorize  pre-authentication  local Cognito-shaped ceremony (dev/test only)
  *   GET  /v1/identity/local/choose     pre-authentication  local synthetic chooser selection (dev/test only)
  *   GET  /v1/identity/me               session-authenticated identity view
+ *   GET  /v1/identity/recovery         the same bootstrap view on the independent surf-266-recovery pool (CBD-266 anti-lockout)
  *   POST /v1/identity/logout           session-authenticated, CSRF-checked sign-out
  *
  * The four pre-authentication routes carry `@PreAuthenticationSurface()`:
@@ -191,6 +192,19 @@ export function identityHttp(runtime: IdentityRuntime | undefined): IdentityHttp
       return { accountSubjectId: view.accountSubjectId, profileId: view.profileId, identityBindingId: view.identityBindingId, sessionRef: view.sessionRef, sessionVersion: view.sessionVersion, environmentId: view.environmentId, assurance: view.assurance, csrfValue: view.csrfValue };
     }
 
+    /**
+     * PROTO-ACTIVATION-001 A7 (SEC-ACT-F03): the session-recovery surface. It is the `me` bootstrap under the
+     * same released `profile.read` cell, registered on `surf-266-recovery` with its own approved record
+     * (`rlp-266-recovery-v1`, CBD266-RECOVERY-RECORD-001) so that an actor whose ordinary session pool is
+     * exhausted can still re-establish a usable session state (a fresh bootstrap value) -- the independent
+     * recovery pool CBD-266's anti-lockout rules require to exist in fact, not only as a record.
+     */
+    @Get("recovery")
+    @Authorize({ action: "profile.read", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default", scope: "subject" }) })
+    async recovery(@Authorization() effect: EffectContext): Promise<unknown> {
+      return this.me(effect);
+    }
+
     // PROTO-ACTIVATION-001: p2 (CBD-236 section 8.5) defines no logout cell and the packet forbids
     // inventing one, so logout stays on the session-authenticated path: the pre-policy session gate
     // denies an unresolvable cookie, and the CBD-191 section 5.1 CSRF check below guards the mutation.
@@ -212,6 +226,8 @@ export function identityHttp(runtime: IdentityRuntime | undefined): IdentityHttp
   return {
     module: { module: IdentityModule, controllers: [IdentityController] },
     install(server) {
+      // A8/A9: the deadline timers belong to the process lifecycle; release them when the server closes.
+      server.addHook("onClose", async () => { runtime?.ceremony.stop(); });
       server.addHook("onSend", async (request, reply, payload) => {
         const headers = pendingHeaders.get(request);
         if (headers) { pendingHeaders.set(request, undefined); for (const value of headers) reply.header("set-cookie", value); }

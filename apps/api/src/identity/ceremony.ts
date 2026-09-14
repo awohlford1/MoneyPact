@@ -75,6 +75,8 @@ export interface CeremonyDependencies {
   readonly reliability: ReliabilitySink;
   readonly serviceVersion: string;
   readonly mappingHooks?: MappingHooks | undefined;
+  /** A8: timer scheduler for the CSRF bootstrap sweep; `null` disables the timer (clock-driven tests), default `setTimeout` unref'd. */
+  readonly scheduler?: ((run: () => void, delayMs: number) => ReturnType<typeof setTimeout>) | null | undefined;
 }
 
 export type BeginRejection = "origin_rejected" | "ceremony_invalid" | "destination_invalid" | "session_required" | "capacity";
@@ -138,12 +140,66 @@ export class IdentityCeremony {
   readonly #inflight: Record<string, Promise<CompletionResult> | undefined> = Object.create(null);
   /** RC-06: in-process only, keyed by `sessionRef`; never persisted, never a cookie. Populated at issuance, returned on each bootstrap read, cleared at logout, expired at the session's own absolute expiry. */
   readonly #csrfValues: Record<string, CsrfBootstrapEntry | undefined> = Object.create(null);
+  /** A7: the ceremony each subject's current session was issued by (in-process, like the CSRF values). */
+  readonly #ceremonyBySubject: Record<string, { readonly challengeId: string; readonly sessionRef: string } | undefined> = Object.create(null);
+  /** PROTO-ACTIVATION-001 A8 (SEC-ACT-F04): lifecycle-owned cleanup of the raw values, independent of bootstrap traffic. */
+  #csrfTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(dependencies: CeremonyDependencies) {
     this.#d = dependencies;
   }
 
   get config(): LocalIdentityConfig { return this.#d.config; }
+
+  /** Number of raw CSRF bootstrap values currently held in process memory (evidence only). */
+  get retainedCsrfValues(): number { return Object.keys(this.#csrfValues).length; }
+
+  /**
+   * A8: erases every raw CSRF value whose session passed its absolute expiry, whether or not any
+   * bootstrap read ever happened, and re-arms an unref'd timer for the earliest remaining expiry so
+   * the next erasure is owned by the deadline itself. Called at issuance, from the timer, and on demand.
+   */
+  sweepCsrfBootstrap(now: Date = this.#d.now()): void {
+    if (this.#csrfTimer) { clearTimeout(this.#csrfTimer); this.#csrfTimer = undefined; }
+    let earliest: number | undefined;
+    for (const sessionRef of Object.keys(this.#csrfValues)) {
+      const entry = this.#csrfValues[sessionRef];
+      if (!entry) continue;
+      if (entry.expiresAt.getTime() <= now.getTime()) { delete this.#csrfValues[sessionRef]; continue; }
+      if (earliest === undefined || entry.expiresAt.getTime() < earliest) earliest = entry.expiresAt.getTime();
+    }
+    if (earliest !== undefined && this.#d.scheduler !== null) {
+      const schedule = this.#d.scheduler ?? ((run, delayMs) => { const timer = setTimeout(run, delayMs); timer.unref?.(); return timer; });
+      this.#csrfTimer = schedule(() => { this.#csrfTimer = undefined; this.sweepCsrfBootstrap(this.#d.now()); }, Math.max(1, earliest - now.getTime()));
+    }
+  }
+
+  /** A8: a session revoked by any path (logout, account switch, security action) loses its raw value at once. */
+  forgetSession(sessionRef: string): void {
+    delete this.#csrfValues[sessionRef];
+    for (const subject of Object.keys(this.#ceremonyBySubject)) if (this.#ceremonyBySubject[subject]?.sessionRef === sessionRef) delete this.#ceremonyBySubject[subject];
+  }
+
+  /**
+   * PROTO-ACTIVATION-001 A7 (review R04): the server-issued ceremony id behind a callback/authorize `state`
+   * (a known, still-classifiable challenge only) so the rate-limit hook counts the ceremony's own bucket.
+   */
+  ceremonyIdForState(state: string | undefined): string | undefined {
+    if (typeof state !== "string" || !state) return undefined;
+    return this.#d.challenges.find(state)?.challengeId;
+  }
+
+  /** A7: the ceremony that signed the subject's current session in (this process), for the initial space.create reservation. */
+  ceremonyIdForSubject(accountSubjectId: string): string | undefined {
+    return this.#ceremonyBySubject[accountSubjectId]?.challengeId;
+  }
+
+  /** Releases the deadline timers (process shutdown); nothing else is affected. */
+  stop(): void {
+    if (this.#csrfTimer) clearTimeout(this.#csrfTimer);
+    this.#csrfTimer = undefined;
+    this.#d.challenges.stop();
+  }
 
   #resultNavigation(outcome: PublicOutcome): string {
     return `${this.#d.config.applicationOrigin}${this.#d.config.resultPath}?outcome=${outcome}`;
@@ -373,6 +429,7 @@ export class IdentityCeremony {
         if (sameSubjectPriorSession) {
           // C8: required, not best-effort -- a throw here rolls back the fresh issuance too, so success is never delivered with two active browser rows.
           await revokeSession(scopedStore, this.#d.sessionConfig, sameSubjectPriorSession, this.#d.config.environmentId);
+          this.forgetSession(sameSubjectPriorSession);
         }
         await markHandoffConsumed(scoped, handoff.sessionHandoffId, issued.sessionRef, now);
         await markCallbackCommitted(scoped, challenge.challengeId, now);
@@ -401,6 +458,8 @@ export class IdentityCeremony {
     // process's memory, keyed by sessionRef, delivered through the GET /v1/identity/me bootstrap
     // response (CBD-191 §5.1), and bounded by the session's own absolute expiry.
     this.#csrfValues[delivery.sessionRef] = { value: delivery.csrfValue, expiresAt: delivery.absoluteExpiresAt };
+    this.#ceremonyBySubject[handoff.accountSubjectId] = { challengeId: challenge.challengeId, sessionRef: delivery.sessionRef };
+    this.sweepCsrfBootstrap(now);
     this.#evidence("handoff_consumed", challenge.challengeId, "success");
     this.#reliability("ok");
     const setCookie = [buildSessionCookieHeader(delivery.cookieValue, delivery.absoluteExpiresAt, now)];
@@ -451,7 +510,7 @@ export class IdentityCeremony {
 
   async logout(sessionRef: string): Promise<readonly string[]> {
     await revokeSession(this.#d.sessionStore, this.#d.sessionConfig, sessionRef, this.#d.config.environmentId);
-    delete this.#csrfValues[sessionRef];
+    this.forgetSession(sessionRef);
     this.#evidence("logout", undefined, undefined);
     return [buildSessionCookieDeletionHeader()];
   }

@@ -16,9 +16,18 @@ import type { DataAccessClient } from "@cobudget/data-access";
 import { createSessionFactSourceAdapter, createSessionStore } from "@cobudget/sessions";
 import type { MinimalFactSourceAdapter, SessionConfig } from "@cobudget/sessions";
 
-export function buildSessionFactSourceAdapter(config: SessionConfig, environmentId: string, client: DataAccessClient = createApiClient()): MinimalFactSourceAdapter {
+function isDataAccessClient(value: unknown): value is DataAccessClient {
+  return typeof value === "object" && value !== null && typeof (value as DataAccessClient).platformSelect === "function" && typeof (value as DataAccessClient).platformUpdate === "function";
+}
+
+/**
+ * `fence` (default true): inside a boundary transaction the session store is bound to the transaction's
+ * client so the session read, idle extension and the revocation-epoch fence are part of the mutation
+ * (PROTO-ACTIVATION-001 A2). `false` exists only for the live test that proves the race without it.
+ */
+export function buildSessionFactSourceAdapter(config: SessionConfig, environmentId: string, client: DataAccessClient = createApiClient(), fence = true): MinimalFactSourceAdapter {
   const store = createSessionStore(client);
-  return createSessionFactSourceAdapter(store, config, environmentId);
+  return createSessionFactSourceAdapter(store, config, environmentId, fence ? (transaction) => isDataAccessClient(transaction) ? createSessionStore(transaction) : undefined : undefined);
 }
 
 export { readSessionCookieValue, buildSessionCookieHeader, buildSessionCookieDeletionHeader, checkCsrf } from "@cobudget/sessions";

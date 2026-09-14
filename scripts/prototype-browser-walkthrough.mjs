@@ -10,7 +10,7 @@
  * through preview and confirm, add two categories with base targets, reload,
  * and see the same plan; then sign out. Both processes are started here with
  * development configuration and stopped afterwards; the `.api-mode` marker is
- * removed again unless it already existed.
+ * restored to its previous content, or removed if it did not exist.
  *
  *   node scripts/prototype-browser-walkthrough.mjs --db cobudget_activation
  *
@@ -22,7 +22,7 @@
  */
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer";
@@ -65,7 +65,8 @@ async function waitFor(check, label, timeoutMs = 60_000) {
 
 async function main() {
   const marker = join(root, "apps/web/.api-mode");
-  const hadMarker = existsSync(marker);
+  // Restore whatever was there before (content included), or remove the marker if it did not exist.
+  const previous = existsSync(marker) ? readFileSync(marker, "utf8") : undefined;
   writeFileSync(marker, "live\n");
   const api = spawn(process.execPath, ["--import=tsx", "src/main.ts"], { cwd: join(root, "apps/api"), env: apiEnvironment, stdio: ["ignore", "pipe", "pipe"] });
   const web = spawn(process.execPath, [join(root, "node_modules/next/dist/bin/next"), "dev", "--port", String(WEB_PORT)], { cwd: join(root, "apps/web"), stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
@@ -158,7 +159,7 @@ async function main() {
     throw error;
   } finally {
     await browser?.close();
-    if (!hadMarker) { try { unlinkSync(marker); } catch { /* already gone */ } }
+    if (previous === undefined) { try { unlinkSync(marker); } catch { /* already gone */ } } else writeFileSync(marker, previous);
     api.kill(); web.kill();
     await Promise.all([new Promise((resolve) => api.once("exit", resolve)), new Promise((resolve) => web.once("exit", resolve))]);
   }

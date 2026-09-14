@@ -32,6 +32,16 @@ export type RouteReplay = { readonly kind: "committed"; readonly response: unkno
 export interface RouteAuthorization {
   readonly replay?: (request: FastifyRequest, subject: string) => Promise<RouteReplay>;
   readonly action: string;
+  /**
+   * PROTO-ACTIVATION-001 A5 (review R05): a route whose server-selected action depends on an untrusted
+   * locator in the request (CBD-232 regeneration: `supersedesProposalId` in the body) declares the closed
+   * set of actions it may dispatch and a trusted pre-policy `select` that reads the locator, resolves it
+   * for the authenticated subject, and returns the action plus the operation locator the boundary then
+   * evaluates. The selected action must be in `actions`; the body never becomes an authority fact -- the
+   * datastore loads the target row by environment and subject and the policy re-proves ownership.
+   */
+  readonly actions?: readonly string[];
+  readonly select?: (request: FastifyRequest, subject: string) => Promise<{ readonly action: string } & Omit<Operation, "action" | "purpose" | "mode">>;
   readonly purpose: "user_delegated";
   readonly resourceLocator: (request: FastifyRequest) => Omit<Operation, "action" | "purpose" | "mode">;
 }
@@ -43,6 +53,13 @@ export interface ApiAuthorizationOptions {
   surfaceApproved(request: FastifyRequest): Promise<boolean>;
   /** Read an opaque session locator only; the fact source resolves the session. */
   sessionLocator(request: FastifyRequest): unknown;
+  /**
+   * PROTO-ACTIVATION-001 A1 (CBD-191 section 5.1): the cookie-authenticated mutation guard. Called for every
+   * non-safe method on a session-authenticated route (pre-authentication surfaces excepted) after the session
+   * and surface gates and before any replay, policy or effect; must verify the exact allowed Origin,
+   * `Sec-Fetch-Site: same-origin` and the `X-CoBudget-CSRF` value against the session's keyed digest.
+   */
+  csrf(request: FastifyRequest): Promise<boolean>;
   /** Supplied by the approved PR-94-003 response contract. */
   deny(response: ExternalDenial): never;
 }
@@ -80,6 +97,7 @@ const ELIGIBLE_PRE_AUTHENTICATION_SURFACES: ReadonlySet<string> = new Set([
   "GET /v1/identity/local/authorize",
   "GET /v1/identity/local/choose",
 ]);
+const SAFE_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
 const active = new WeakMap<object, EffectContext>();
 export const Authorization = createParamDecorator((_data: unknown, context: ExecutionContext): EffectContext => {
   const effect = active.get(context.switchToHttp().getRequest<object>());
@@ -92,6 +110,7 @@ export function unavailableApiAuthorization(failure: () => void): ApiAuthorizati
     boundary: new AuthorizationBoundary(new FactAssembler("api", absentFactSource), unavailableTransactions, undefined, failure),
     surfaceApproved: async () => false,
     sessionLocator: () => undefined,
+    csrf: async () => false,
     // This signals missing runtime dependencies; it is not the pending denial-status contract.
     deny: () => { throw new ServiceUnavailableException(externalDenial()); },
   };
@@ -199,6 +218,11 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
       if (!this.#surfacePassed.has(request)) return await this.#options.boundary.reject();
       if (!await this.#options.surfaceApproved(request)) return await this.#options.boundary.rejectEnforcement(surfaceOutcome(this.#rateLimit.evidence(request), "deny_policy_unavailable"));
       if (this.#reflector.get<true | undefined>(PRE_AUTHENTICATION, context.getHandler())) return true;
+      // A1: every cookie-authenticated non-safe request proves Origin, fetch metadata and the CSRF value before any
+      // replay lookup, policy evaluation or effect; a failure is the uniform denial at the session gate.
+      if (!SAFE_METHODS.has(request.method.toUpperCase()) && !await this.#options.csrf(request)) {
+        return await this.#options.boundary.rejectEnforcement({ ...surfaceOutcome(this.#rateLimit.evidence(request), "deny_input_invalid"), earliest_decisive_gate: "session", safe_reason_class: "not_authenticated" });
+      }
       // The session gate in the preHandler already resolved this request's session (a failure never reaches here).
       if (this.#reflector.get<true | undefined>(SESSION_AUTHENTICATED, context.getHandler())) return true;
       const metadata = this.#reflector.get<RouteAuthorization | undefined>(METADATA, context.getHandler());
@@ -209,7 +233,13 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
         const replay = await metadata.replay(request, subject);
         if (replay.kind !== "absent") { this.#replays.set(request, replay); return true; }
       }
-      const operation = { ...metadata.resourceLocator(request), action: metadata.action, purpose: metadata.purpose, mode: "user_delegated" as const };
+      let operation: Operation;
+      if (metadata.select) {
+        const subject = await this.#options.boundary.resolveSession(this.#options.sessionLocator(request));
+        const selected = await metadata.select(request, subject);
+        if (!metadata.actions?.includes(selected.action)) return await this.#options.boundary.reject();
+        operation = { ...selected, purpose: metadata.purpose, mode: "user_delegated" as const };
+      } else operation = { ...metadata.resourceLocator(request), action: metadata.action, purpose: metadata.purpose, mode: "user_delegated" as const };
       const authorized = await this.#options.boundary.authorize({ operation, credential: this.#options.sessionLocator(request) }, this.#rateLimit.evidence(request));
       this.#pending.set(request, authorized);
       return true;

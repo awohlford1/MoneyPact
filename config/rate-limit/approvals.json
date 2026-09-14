@@ -31,5 +31,21 @@
     "expiresAt": null,
     "revoked": false,
     "decisionRecord": ".agent-state/decisions/CBD266-RECOVERY-RECORD-001.r1.agent-record.json; docs/cbd-266-rate-limit-parameter-registry-contract.md section 4.7.3"
+  },
+  {
+    "approvalId": "CBD266-IDENTITY-RECORDS-001",
+    "actorId": "atlassian:5cffa74b92e6c70c53499977",
+    "candidateDigests": [
+      "2a21ca1d477e4c1d881fcaa981c1dee423f6155b733ed91b00c81881527805db",
+      "98ea97305e8b986430fb85a96ff0f464aa550de9468450b186cae2a832ae091a"
+    ],
+    "conditions": [
+      "prototype-only",
+      "revisit before any hosted environment"
+    ],
+    "decidedAt": "2026-09-14T11:49:36Z",
+    "expiresAt": null,
+    "revoked": false,
+    "decisionRecord": ".agent-state/decisions/CBD266-IDENTITY-RECORDS-001.r2.agent-record.json; docs/cbd-266-rate-limit-parameter-registry-contract.md section 4.7.3"
   }
 ]

@@ -17,22 +17,33 @@
  * scope, or for an action no store claims, uses the general store.
  *
  * The in-process restricted audit stream buffers the allow event against the
- * transaction handle and only the general store flushed it. This store
- * observes every handle the delegate opens (a creation retry opens several)
- * and flushes the one that committed -- the last handle, when the delegate
- * resolved with a value that is not a rolled-back `RouteFailure` -- while
- * discarding the rest, so the audit chain sees exactly the committed effects.
+ * transaction handle and only the general store flushed it. PROTO-ACTIVATION-001
+ * A3 (review R03): a package store reports every handle's fate explicitly
+ * through `TransactionOutcomes` -- `committed` when the database COMMIT
+ * returned, `rolledBack` when the seam rolled back, whatever value the store
+ * then chooses to return (a translated failure, a replayed winner recovered
+ * after a serialization failure). This store flushes exactly the handles
+ * reported committed and discards every other handle it observed, so a
+ * losing attempt's pending allow event can never enter the chain on the
+ * strength of the response shape.
  */
 import type { Obligation, PolicyInput } from "@cobudget/contracts/authorization";
 import type { AuthorizationTransactionStore } from "../authorization/boundary.js";
-import { RouteFailure } from "../authorization/http.js";
 import { currentAction } from "./action-scope.ts";
 import type { InProcessRestrictedAuditStore } from "./audit.ts";
+
+/** Explicit per-handle outcome channel a package store reports on (A3). */
+export interface TransactionOutcomes {
+  committed(handle: object): void;
+  rolledBack(handle: object): void;
+}
 
 export interface ActionStore {
   /** Actions this store owns. */
   readonly actions: readonly string[];
   readonly store: AuthorizationTransactionStore;
+  /** Binds the store's outcome reports to this dispatcher; a store that cannot report has every handle discarded. */
+  readonly observe?: (outcomes: TransactionOutcomes) => void;
   /** Whether the delegate already flushes the audit buffer for a committed handle (only the general store does). */
   readonly flushesAudit?: boolean;
 }
@@ -42,11 +53,21 @@ export class DispatchingTransactionStore implements AuthorizationTransactionStor
   readonly #byAction: ReadonlyMap<string, ActionStore>;
   readonly #audit: InProcessRestrictedAuditStore;
 
+  /** Per-handle fate reports, consumed by `settle`; entries are overwritten to `undefined` rather than deleted so the surface guard's raw-write scan stays quiet. */
+  readonly #fates = new WeakMap<object, "committed" | "rolled_back" | undefined>();
+
   constructor(general: AuthorizationTransactionStore, audit: InProcessRestrictedAuditStore, stores: readonly ActionStore[]) {
     const byAction = new Map<string, ActionStore>();
-    for (const entry of stores) for (const action of entry.actions) {
-      if (byAction.has(action)) throw new Error(`transaction store dispatch: "${action}" claimed twice`);
-      byAction.set(action, entry);
+    const outcomes: TransactionOutcomes = {
+      committed: (handle) => { this.#fates.set(handle, "committed"); },
+      rolledBack: (handle) => { this.#fates.set(handle, "rolled_back"); },
+    };
+    for (const entry of stores) {
+      for (const action of entry.actions) {
+        if (byAction.has(action)) throw new Error(`transaction store dispatch: "${action}" claimed twice`);
+        byAction.set(action, entry);
+      }
+      entry.observe?.(outcomes);
     }
     this.#general = general; this.#byAction = byAction; this.#audit = audit;
   }
@@ -60,6 +81,14 @@ export class DispatchingTransactionStore implements AuthorizationTransactionStor
     if (!selected) return this.#general.transaction(work);
     if (selected.flushesAudit) return selected.store.transaction(work);
     const handles: object[] = [];
+    const settle = async (): Promise<void> => {
+      // Flush only what the store reported committed; a handle it never reported on is treated as rolled back.
+      for (const handle of handles) {
+        if (this.#fates.get(handle) === "committed") await this.#audit.commit(handle);
+        else this.#audit.discard(handle);
+        this.#fates.set(handle, undefined);
+      }
+    };
     let result: T;
     try {
       result = await selected.store.transaction(async (transaction) => {
@@ -67,12 +96,10 @@ export class DispatchingTransactionStore implements AuthorizationTransactionStor
         return work(transaction);
       });
     } catch (error) {
-      for (const handle of handles) this.#audit.discard(handle);
+      await settle();
       throw error;
     }
-    const committed = result instanceof RouteFailure ? undefined : handles.at(-1);
-    for (const handle of handles) if (handle !== committed) this.#audit.discard(handle);
-    if (committed) await this.#audit.commit(committed);
+    await settle();
     return result;
   }
 

@@ -12,16 +12,26 @@ export class ProposalModule {}
  * bound both routes to the released p2 subject-scoped cells (CBD-236 section
  * 8.5): the locator names the subject scope and, for the read, the proposal row
  * the datastore loads by environment and acting subject before the identifier.
- * Regeneration uses POST with supersedesProposalId, per CBD-232 section 4.1;
- * the shared route is authorized under `proposal.create` (subject-self) because
- * one route carries one action and the predecessor is only known from the
- * body, which is never a locator -- reported as a finding, not silently widened. */
+ * Regeneration uses POST with supersedesProposalId, per CBD-232 section 4.1
+ * (correction A5, review R05): the body's `supersedesProposalId` is read as an
+ * untrusted locator by the route's pre-policy `select`, and the boundary then
+ * evaluates the server-selected action -- `proposal.regenerate` with the
+ * predecessor as the subject-owned target row (its lifecycle revision captured
+ * and rechecked at commit) or `proposal.create` when there is none. */
 export function proposalHttp(dependencies: ProposalHttpDependencies): DynamicModule {
   const handlers = new ProposalHandlers(dependencies);
   @Controller("v1/budget-creation-proposals")
   class ProposalController {
     @Post()
-    @Authorize({ action: "proposal.create", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default", scope: "subject" }) })
+    @Authorize({ action: "proposal.create", actions: ["proposal.create", "proposal.regenerate"], purpose: "user_delegated",
+      resourceLocator: () => ({ fieldSet: "default", scope: "subject" }),
+      select: async (request) => {
+        const supersedes = (request.body as Record<string, unknown> | undefined)?.supersedesProposalId;
+        if (supersedes === undefined || supersedes === null) return { action: "proposal.create", fieldSet: "default", scope: "subject" };
+        // A malformed predecessor locator is not a row; the boundary denies it as it denies any absent target row.
+        if (typeof supersedes !== "string" || !/^bcp_[0-9a-f]{32}$/u.test(supersedes)) throw new RouteFailure(404, "proposal_not_found");
+        return { action: "proposal.regenerate", fieldSet: "default", scope: "subject", resourceType: "proposal", resourceId: supersedes };
+      } })
     async create(@Req() request: FastifyRequest, @Authorization() effect: EffectContext,
       @Res({ passthrough: true }) reply: FastifyReply): Promise<unknown> {
       const result = await handlers.createOrRegenerate(request, effect.input.subject?.accountSubjectId, effect.transaction);

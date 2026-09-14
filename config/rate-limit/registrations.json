@@ -113,8 +113,8 @@
     "registration_id": "api:GET:/v1/identity/me",
     "executor_kind": "api_route",
     "source_locator": "apps/api/src/identity/http.ts#IdentityController.me",
-    "surface_id": "surf-266-budget-read",
-    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "surface_id": "surf-266-session",
+    "parameter_record_id": "rlp-266-identity-session-v1",
     "registration_lifecycle": "active",
     "introduced_by": "CBD-190",
     "authorization_metadata_id": "profile.read"
@@ -123,8 +123,8 @@
     "registration_id": "api:HEAD:/v1/identity/me",
     "executor_kind": "api_route",
     "source_locator": "apps/api/src/identity/http.ts#IdentityController.me",
-    "surface_id": "surf-266-budget-read",
-    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "surface_id": "surf-266-session",
+    "parameter_record_id": "rlp-266-identity-session-v1",
     "registration_lifecycle": "active",
     "introduced_by": "CBD-190",
     "authorization_metadata_id": "profile.read"
@@ -133,8 +133,8 @@
     "registration_id": "api:POST:/v1/identity/logout",
     "executor_kind": "api_route",
     "source_locator": "apps/api/src/identity/http.ts#IdentityController.logout",
-    "surface_id": "surf-266-budget-mutation",
-    "parameter_record_id": "rlp-266-mutation-v1",
+    "surface_id": "surf-266-session",
+    "parameter_record_id": "rlp-266-identity-session-v1",
     "registration_lifecycle": "active",
     "introduced_by": "CBD-190",
     "authorization_metadata_id": "session_authenticated_surface"
@@ -173,8 +173,8 @@
     "registration_id": "api:POST:/v1/budget-creation-proposals/{proposalId}/confirm",
     "executor_kind": "api_route",
     "source_locator": "apps/api/src/budget-creation/http.ts#ConfirmationController.confirm",
-    "surface_id": "surf-266-budget-mutation",
-    "parameter_record_id": "rlp-266-mutation-v1",
+    "surface_id": "surf-266-authentication",
+    "parameter_record_id": "rlp-266-bootstrap-v1",
     "registration_lifecycle": "active",
     "introduced_by": "CBD-233",
     "authorization_metadata_id": "space.create"
@@ -278,5 +278,25 @@
     "registration_lifecycle": "active",
     "introduced_by": "CBD-153",
     "authorization_metadata_id": "1.view_space"
+  },
+  {
+    "registration_id": "api:GET:/v1/identity/recovery",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/identity/http.ts#IdentityController.recovery",
+    "surface_id": "surf-266-recovery",
+    "parameter_record_id": "rlp-266-recovery-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-266",
+    "authorization_metadata_id": "profile.read"
+  },
+  {
+    "registration_id": "api:HEAD:/v1/identity/recovery",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/identity/http.ts#IdentityController.recovery",
+    "surface_id": "surf-266-recovery",
+    "parameter_record_id": "rlp-266-recovery-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-266",
+    "authorization_metadata_id": "profile.read"
   }
 ]

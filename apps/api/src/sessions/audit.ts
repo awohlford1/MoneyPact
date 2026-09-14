@@ -39,10 +39,18 @@ import type { PolicyAuditEvent } from "@cobudget/contracts/authorization";
 import type { AuditStore } from "../authorization/audit.js";
 
 type Build = (sequence: number, previousEventDigest: string) => Partial<PolicyAuditEvent>;
+/**
+ * PROTO-ACTIVATION-001 A4 (SEC-ACT-F02, RC-02): an event buffered against a transaction is *prepared* at
+ * buffer time -- the builder runs exactly once, before COMMIT, and its immutable content is retained --
+ * and *published* after COMMIT by re-stamping only the chain position (`sequence`,
+ * `previousEventDigest`) and recomputing `eventDigest` over the prepared content. The builder is never
+ * invoked again, so no builder fault can surface after the database committed.
+ */
+type Prepared = Readonly<Partial<PolicyAuditEvent>>;
 
 export class InProcessRestrictedAuditStore implements AuditStore {
   readonly #events: Partial<PolicyAuditEvent>[] = [];
-  readonly #pending = new WeakMap<object, Build[]>();
+  readonly #pending = new WeakMap<object, Prepared[]>();
   readonly #capacity: number;
   /** Slots reserved for buffered-but-not-yet-committed events, so a later `commit()` cannot fail on capacity. */
   #reserved = 0;
@@ -72,6 +80,18 @@ export class InProcessRestrictedAuditStore implements AuditStore {
     this.#events.push(event);
   }
 
+  /** A4: publishes prepared content at its real chain position without re-running any builder. */
+  #publishPrepared(prepared: Prepared): void {
+    const prior = this.#events.at(-1);
+    if (prior) {
+      const { eventDigest, ...body } = prior;
+      if (eventDigest !== sha256(body)) throw new Error("audit_integrity_unavailable");
+    }
+    const { eventDigest: _stale, ...content } = prepared;
+    const positioned = { ...content, sequence: this.#events.length + 1, previousEventDigest: prior?.eventDigest ?? "0".repeat(64) };
+    this.#events.push({ ...positioned, eventDigest: sha256(positioned) });
+  }
+
   /** Capacity/integrity precondition for the *next* real append, checked without mutating `#events`. */
   #checkAdmissible(): void {
     if (this.#events.length + this.#reserved >= this.#capacity) throw new Error("audit_capacity_unavailable");
@@ -96,10 +116,12 @@ export class InProcessRestrictedAuditStore implements AuditStore {
       // previously produced committedRows=1, auditEvents=0).
       await this.#serialize(async () => {
         this.#checkAdmissible();
-        build(1, "0".repeat(64));
+        // A4: the builder runs exactly once, here, before the caller's COMMIT; its content is retained immutable.
+        const prepared = Object.freeze(structuredClone(build(1, "0".repeat(64))));
+        if (!prepared || typeof prepared !== "object") throw new Error("audit_integrity_unavailable");
         this.#reserved += 1;
         const pending = this.#pending.get(transaction) ?? [];
-        pending.push(build);
+        pending.push(prepared);
         this.#pending.set(transaction, pending);
       });
       return;
@@ -113,7 +135,7 @@ export class InProcessRestrictedAuditStore implements AuditStore {
     this.#pending.set(transaction, []);
     if (!pending?.length) return;
     await this.#serialize(async () => {
-      for (const build of pending) { this.#appendNow(build); this.#reserved = Math.max(0, this.#reserved - 1); }
+      for (const prepared of pending) { this.#publishPrepared(prepared); this.#reserved = Math.max(0, this.#reserved - 1); }
     });
   }
 

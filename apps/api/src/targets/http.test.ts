@@ -50,7 +50,7 @@ async function application() {
   const module = await Test.createTestingModule({
     imports: [AppModule.register(config, () => undefined, {
       modules: [targetsHttp(dependencies).module],
-      boundary: h.boundary, surfaceApproved: async () => true,
+      boundary: h.boundary, surfaceApproved: async () => true, csrf: async () => true,
       rateLimit: {
         evidence: (request) => invocation(apiIdentity(request.method, request.routeOptions.url!), "api_route", "test-only", "test-only"),
         enforce: async (request) => ROUTES.includes(request.routeOptions.url!) ? { outcome: "allow", provenance: "test-only", release: async () => undefined } : { outcome: "deny_unregistered" },

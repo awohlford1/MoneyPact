@@ -1,0 +1,103 @@
+{
+  "$comment": "PROTO-ACTIVATION-001 A7: rlp-266-identity-ceremony-v1 was approved by the Executive exactly as stated here (CBD266-IDENTITY-RECORDS-001 revision 2, 2026-09-14, actor atlassian:5cffa74b92e6c70c53499977; its candidate digest 2a21ca1d477e4c1d881fcaa981c1dee423f6155b733ed91b00c81881527805db is recorded in config/rate-limit/approvals.json). It is not projected into config/rate-limit/records.json because the registry admits one approved record per surface (packages/rate-limit/src/registry.ts, record_reference_invalid /surface_id) and rlp-266-bootstrap-v1 already holds surf-266-authentication; projecting both invalidates the whole registry (verified mechanically in the PROTO-ACTIVATION-001 correction round). Until the Executive supersedes or re-surfaces one of the two records, the four ceremony routes stay bound to rlp-266-bootstrap-v1 with the real ceremony id and stage in the counting key. The companion rlp-266-identity-session-v1 record is projected and active.",
+  "records": [
+    {
+      "schema_version": 1,
+      "record_id": "rlp-266-identity-ceremony-v1",
+      "surface_id": "surf-266-authentication",
+      "window": {
+        "duration_ms": 60000,
+        "kind": "sliding",
+        "anchor": "request_time"
+      },
+      "threshold": 12,
+      "burst": {
+        "additional_units": 3,
+        "refill_units": 1,
+        "refill_interval_ms": 20000
+      },
+      "safe_counting_key": {
+        "phase": "pre_authentication",
+        "components": [
+          "privacy_network_cohort_v1",
+          "exact_surface_id"
+        ],
+        "derivation_version": "hmac-sha256-v1",
+        "normalization": "network-cohort-v1",
+        "rotation_behavior": "dual-read/single-write for at least 120000 ms; carry forward the greater count",
+        "privacy_basis": "No subject locator is used before authentication; the loopback transport cohort is the only counted dimension (AL-266-001).",
+        "subject_bound_after_authentication": false
+      },
+      "counter_store": {
+        "binding": "LOCAL_PROTOTYPE_COUNTER_STORE",
+        "namespace": "cbd266:prototype:identity-ceremony:v1",
+        "atomic_operation": "one process-linearizable atomic consume",
+        "consistency": "single-process-linearizable",
+        "region": "local-process",
+        "ttl_ms": 120000,
+        "clock_source": "monotonic process clock",
+        "failure_mode": "deny"
+      },
+      "quota": {
+        "unit": "request",
+        "ceiling": 15,
+        "scope": "counting key plus exact surface",
+        "reset": "sliding expiry plus burst refill",
+        "resource_dimensions": []
+      },
+      "anti_lockout_rule": {
+        "attackable_dimensions": [
+          "privacy_network_cohort_v1"
+        ],
+        "victim_bound_dimensions": [],
+        "independent_recovery_surface_id": null,
+        "pool_isolation": "Pre-authentication identity ceremony routes (begin, callback, local hosted ceremony) count by network cohort plus exact surface only; no claimed subject, e-mail or state value is a counting dimension, so an attacker cannot exhaust a victim pool by naming it (AL-266-001). The pool is isolated from every post-authentication pool and from the public health exception.",
+        "exhaustion_state_effect": "none",
+        "reset_authority": "local prototype operator / restore counter service only",
+        "notification_behavior": "uniform and content-safe; reveals neither existence nor remaining quota",
+        "rationale": "Pre-authentication identity ceremony routes (begin, callback, local hosted ceremony) count by network cohort plus exact surface only; no claimed subject, e-mail or state value is a counting dimension, so an attacker cannot exhaust a victim pool by naming it (AL-266-001). The pool is isolated from every post-authentication pool and from the public health exception.",
+        "verification_cases": [
+          "FX-266-PUBLIC-COHORT-ISOLATION",
+          "VT-94-065"
+        ]
+      },
+      "capacity_basis": {
+        "evidence_locator": "PROTO-IDENTITY-API-001 / single-local-process planning basis; PROPOSED, not approved",
+        "measured_at": "2026-09-13T00:00:00-04:00",
+        "sustained_capacity": "2 ceremonies/second in one local process; not measured - Implementation estimate dated 2026-09-13",
+        "peak_assumption": "At most 15 ceremony requests in 60 seconds per cohort; at least 87% request-rate headroom against the estimate",
+        "headroom": "At most 15 ceremony requests in 60 seconds per cohort; at least 87% request-rate headroom against the estimate",
+        "failure_budget": "zero uncounted protected effects when the store is unavailable or uncertain",
+        "workload_assumptions": [
+          "One developer, one process, loopback traffic, local Cognito-shaped adapter, no hosted provider"
+        ],
+        "reviewer_role": "Product; ME-94-010 specialist review pending"
+      },
+      "product_owner_approval": {
+        "status": "pending",
+        "approval_id": null,
+        "approved_by_actor_id": null,
+        "decided_at": null,
+        "candidate_digest": "2a21ca1d477e4c1d881fcaa981c1dee423f6155b733ed91b00c81881527805db",
+        "conditions": [
+          "prototype-only",
+          "revisit before any hosted environment"
+        ],
+        "expires_at": null
+      },
+      "source_requirements": [
+        "RL-92-001",
+        "RL-92-002",
+        "RL-92-007",
+        "EP-92-001",
+        "EP-92-005",
+        "SR-94-037",
+        "ME-94-010",
+        "TB-92-003"
+      ],
+      "created_at": "2026-09-13T00:00:00-04:00",
+      "supersedes_record_id": null,
+      "record_digest": "6f48018e0d23c4d1dd1bc2c7ea92159ed385d2afad62814118244e3f23e9ac70"
+    }
+  ]
+}

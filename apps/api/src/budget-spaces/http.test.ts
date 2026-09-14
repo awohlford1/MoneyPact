@@ -38,7 +38,7 @@ void test("mounted detail reads a member's stored current period; p2 routes deny
   const config = loadApiConfigFrom({ API_PORT: "3001", LOG_LEVEL: "info", NODE_ENV: "test", SERVICE_VERSION: "budget-route-test",
     COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local", COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: Buffer.alloc(32, 7).toString("base64"), COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1" });
   const module = await Test.createTestingModule({ imports: [AppModule.register(config, () => undefined, {
-    modules, boundary: h.boundary, surfaceApproved: async () => true, sessionLocator: request => request.headers.cookie,
+    modules, boundary: h.boundary, surfaceApproved: async () => true, csrf: async () => true, sessionLocator: request => request.headers.cookie,
     deny: response => { throw new HttpException(response, 403); },
     rateLimit: { evidence: () => invocation("api:GET:/v1/budget-spaces/:budgetSpaceId", "api_route", "test-only", "test-only"),
       enforce: async () => ({ outcome: "allow", provenance: "test-only", release: async () => undefined }) },

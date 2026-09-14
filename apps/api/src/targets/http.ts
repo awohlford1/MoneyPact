@@ -183,11 +183,22 @@ const TARGET_ACTION_SET: readonly string[] = Object.values(TARGET_ACTIONS);
  */
 export class TargetsAuthorizationStore implements AuthorizationTransactionStore {
   readonly #client: DataAccessClient;
+  #outcomes: { committed(handle: object): void; rolledBack(handle: object): void } | undefined;
   constructor(client: DataAccessClient) { this.#client = client; }
+  /** PROTO-ACTIVATION-001 A3: binds the explicit per-handle outcome channel of the dispatching store. */
+  observe(outcomes: { committed(handle: object): void; rolledBack(handle: object): void }): void { this.#outcomes = outcomes; }
   /** A `RouteFailure` is returned, not thrown, once the transaction has rolled back: the boundary transports it as the route's status while every other failure stays a denial. */
   async transaction<T>(work: (transaction: unknown) => Promise<T>): Promise<T> {
-    try { return await this.#client.transaction({ isolation: "serializable" }, (client) => work(client)); }
-    catch (error) { if (error instanceof RouteFailure) return error as T; throw error; }
+    let handle: object | undefined;
+    try {
+      const result = await this.#client.transaction({ isolation: "serializable" }, (client) => { handle = client; return work(client); });
+      if (handle) this.#outcomes?.committed(handle);
+      return result;
+    } catch (error) {
+      if (handle) this.#outcomes?.rolledBack(handle);
+      if (error instanceof RouteFailure) return error as T;
+      throw error;
+    }
   }
   async discharge(_transaction: unknown, input: PolicyInput, obligation: Obligation): Promise<boolean> {
     return TARGET_ACTION_SET.includes(input.request.action) && obligation.kind === "preserve";

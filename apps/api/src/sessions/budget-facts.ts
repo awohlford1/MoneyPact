@@ -18,17 +18,20 @@
  *                 owning space is the space itself, the version is the space's
  *                 lifecycle version and the lifecycle is the space's.
  *
- * Consent: CBD-236 requires `consent.{consentId, disclosureVersion, state}` on
- * every ordinary input (CBD-73 DI-91-007), but the CBD-73 consent record
- * belongs to invitations, which the prototype does not have, and no
- * migration creates a consent table. The Primary Owner's membership is
- * created by the owner's own CBD-233 confirmation, so this reader treats
- * that membership row as the owner's consent evidence: `consentId` is the
- * membership id, `disclosureVersion` is the membership's authorization
- * version and `state` is `current` exactly while the membership is active.
- * Every value still comes from the datastore, none from the request. This is
- * a prototype derivation reported as a finding for the Manager; a later
- * invitation package must replace it with the real consent row.
+ * Consent (PROTO-ACTIVATION-001 A6, review R06 / SEC-ACT-F01): CBD-236
+ * requires `consent.{consentId, disclosureVersion, state}` on every ordinary
+ * input (CBD-73 DI-91-007), but no migration creates a consent row and the
+ * prototype records no disclosure. `interimOwnerSelfConsent` below is the
+ * interim rule of docs/cbd-236-consent-facts-proposal.md section 9
+ * (`CF-236-008`, pending the Executive decision drafted in its section 14 as
+ * CBD236-CONSENT-SEMANTICS-001): a *tolerated absence of consent evidence*
+ * for the local synthetic-identity prototype, not a definition of consent.
+ * It emits consent facts only when every condition a to e holds and no
+ * consent fact at all otherwise, so `decide` denies `input_invalid` for any
+ * other membership. The emitted values are labelled constants
+ * (`interim-owner-self:<membership id>`, INTERIM_DISCLOSURE_VERSION, the
+ * literal source `runtime_prototype_derivation`) so every audit line shows
+ * that no consent was recorded. The interim ends with the consent landing.
  *
  * Bootstrap variant (`space.create`): the server-allocated candidate space and
  * Primary-membership identifiers (`lookup.candidates`) are checked for
@@ -55,6 +58,56 @@ import { proposalUuid } from "../../../../packages/budget-application/src/persis
 import type { FactReader } from "./fact-source.ts";
 
 const SPACE_RESOURCE_TYPES: ReadonlySet<string> = new Set(["space", "category", "plan"]);
+/** The membership columns the ordinary variant and the interim consent rule read. */
+const MEMBERSHIP_COLUMNS: readonly string[] = [
+  "membership_id",
+  "role",
+  "status",
+  "authorization_version", // the membership's own version (never relabelled as a disclosure version)
+  "account_subject_id", // the acting subject, condition a
+  "created_by_subject_id", // self-created, condition d
+];
+
+/** No disclosure was shown; this is not a registry version. `decide` requires a positive integer, so 0 cannot label it. */
+export const INTERIM_DISCLOSURE_VERSION = 1;
+/** The label carried on every interim consent fact, so the derivation is visible wherever the fact travels. */
+export const INTERIM_CONSENT_SOURCE = "runtime_prototype_derivation";
+export const INTERIM_CONSENT_ID_PREFIX = "interim-owner-self:";
+/** The CBD-231 membership migration literals the interim's safety rests on; budget-facts.test.ts pins them against the migration file. */
+export const INTERIM_MEMBERSHIP_ROLE = "primary_owner";
+export const INTERIM_MEMBERSHIP_STATUS = "active";
+
+export interface InterimConsentInput {
+  /** `budget_space.primary_owner_membership_id` of the acting space. */
+  readonly primaryOwnerMembershipId: unknown;
+  /** The membership row loaded by (space, membership id, acting subject). */
+  readonly membership: { readonly membership_id?: unknown; readonly role?: unknown; readonly status?: unknown; readonly account_subject_id?: unknown; readonly created_by_subject_id?: unknown } | undefined;
+  readonly actingSubjectId: string;
+  /** The process's identity configuration is the explicitly local adapter (development or test). */
+  readonly localRuntime: boolean;
+}
+
+/**
+ * docs/cbd-236-consent-facts-proposal.md section 9 (`CF-236-008`), conditions a to e. Returns the consent
+ * leaves for the ordinary input or `undefined` (no consent fact at all) when any condition fails.
+ */
+export function interimOwnerSelfConsent(input: InterimConsentInput): Readonly<Record<string, unknown>> | undefined {
+  const { membership } = input;
+  if (!membership) return undefined;                                                                  // a: the acting subject's own membership exists
+  if (membership.account_subject_id !== input.actingSubjectId) return undefined;                    // a: loaded for the acting subject
+  if (membership.role !== INTERIM_MEMBERSHIP_ROLE || membership.status !== INTERIM_MEMBERSHIP_STATUS) return undefined; // b
+  if (typeof membership.membership_id !== "string" || membership.membership_id !== input.primaryOwnerMembershipId) return undefined; // c
+  if (membership.created_by_subject_id !== membership.account_subject_id) return undefined;         // d: self-created through CBD-233
+  if (!input.localRuntime) return undefined;                                                          // e: local prototype only
+  return {
+    "consent.consentId": `${INTERIM_CONSENT_ID_PREFIX}${membership.membership_id}`,
+    "consent.disclosureVersion": INTERIM_DISCLOSURE_VERSION,
+    "consent.state": "current",
+    // Not a PolicyInput leaf (the contract's provenance vocabulary has no such producer): a label the assembler ignores
+    // and evidence readers can see on the raw fact set.
+    "consent.source": INTERIM_CONSENT_SOURCE,
+  };
+}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 function integer(value: unknown): number | undefined {
@@ -63,7 +116,7 @@ function integer(value: unknown): number | undefined {
   return undefined;
 }
 
-async function spaceFacts(client: DataAccessClient, lookup: FactLookup, subjectId: string): Promise<Record<string, unknown> | null> {
+async function spaceFacts(client: DataAccessClient, lookup: FactLookup, subjectId: string, localRuntime: boolean): Promise<Record<string, unknown> | null> {
   const { operation } = lookup;
   const spaceId = operation.actingSpaceId;
   if (typeof spaceId !== "string" || !UUID.test(spaceId)) return null;
@@ -84,7 +137,7 @@ async function spaceFacts(client: DataAccessClient, lookup: FactLookup, subjectI
   const membershipId = operation.actingMembershipId;
   if (typeof membershipId === "string" && UUID.test(membershipId)) {
     const memberships = await client.tenantSelect({ table: "budget_space_membership", budgetSpaceId: spaceId,
-      columns: ["membership_id", "role", "status", "authorization_version"],
+      columns: MEMBERSHIP_COLUMNS,
       conditions: [{ column: "membership_id", value: membershipId }, { column: "account_subject_id", value: subjectId }] });
     const membership = memberships.rows[0] as Record<string, unknown> | undefined;
     if (membership) {
@@ -92,10 +145,8 @@ async function spaceFacts(client: DataAccessClient, lookup: FactLookup, subjectI
       facts["membership.role"] = membership.role;
       facts["membership.status"] = membership.status;
       facts["membership.authorizationVersion"] = integer(membership.authorization_version);
-      // Prototype consent derivation (see the header): the owner's own membership row is the consent evidence.
-      facts["consent.consentId"] = membership.membership_id;
-      facts["consent.disclosureVersion"] = integer(membership.authorization_version);
-      facts["consent.state"] = membership.status === "active" ? "current" : "ended";
+      // A6: the interim owner-only derivation (section 9); any other membership gets no consent fact and denies.
+      Object.assign(facts, interimOwnerSelfConsent({ primaryOwnerMembershipId: space?.primary_owner_membership_id, membership, actingSubjectId: subjectId, localRuntime }) ?? {});
     }
   }
   return facts;
@@ -130,14 +181,18 @@ async function bootstrapFacts(client: DataAccessClient, candidates: { readonly s
   };
 }
 
-/** The `extend` reader for `createApiFactSource`: `environmentId` is the process's configured environment, used only as a statement predicate. */
-export function budgetFactReader(environmentId: string): FactReader {
+/**
+ * The `extend` reader for `createApiFactSource`: `environmentId` is the process's configured environment, used
+ * only as a statement predicate; `localRuntime` states that the identity adapter is the explicitly local one
+ * (condition e of the interim consent rule) and is false for anything else.
+ */
+export function budgetFactReader(environmentId: string, localRuntime: boolean): FactReader {
   return async (source: FactSource, lookup: FactLookup, client: DataAccessClient) => {
     if (source !== "datastore") return null;
     const subjectId = lookup.identity?.["subject.accountSubjectId"];
     if (typeof subjectId !== "string" || !subjectId) return null;
     if (lookup.operation.scope === "subject") return lookup.operation.resourceType === "proposal" ? proposalFacts(client, lookup, subjectId, environmentId) : null;
     if (lookup.operation.action === "space.create") return lookup.candidates ? bootstrapFacts(client, lookup.candidates) : null;
-    return spaceFacts(client, lookup, subjectId);
+    return spaceFacts(client, lookup, subjectId, localRuntime);
   };
 }
