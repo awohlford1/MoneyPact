@@ -13,6 +13,7 @@
  * has a member that reaches the underlying `Pool`.
  */
 import { wrapDriverError } from "./logging.ts";
+import { readOwnBudgetMemberships } from "./budget-memberships.ts";
 import { PRODUCTION_TABLE_CATALOG } from "./catalog.ts";
 import type { TableCatalog } from "./catalog.ts";
 import type { Pool } from "./driver.ts";
@@ -51,6 +52,7 @@ function bindWorkerClient(pool: Pick<Pool, "query">, transaction: DataAccessClie
 function bindApiClient(pool: Pick<Pool, "query">, transaction: DataAccessClient["transaction"], catalog: TableCatalog): ApiDataAccessClient {
   const client = bindWorkerClient(pool, transaction, catalog);
   return Object.defineProperties(client, {
+    readOwnBudgetMemberships: { value: (subject: string) => readOwnBudgetMemberships(pool, subject) },
     profileSelect: { value: (query: ProfileSelectQuery) => profileSelect(pool, query, catalog) },
     profileInsert: { value: (query: ProfileInsertQuery) => profileInsert(pool, query, catalog) },
     profileUpdate: { value: (query: ProfileUpdateQuery) => profileUpdate(pool, query, catalog) },

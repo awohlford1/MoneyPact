@@ -9,13 +9,18 @@ import { loadWorkerConfigFrom } from "../../../worker/src/config.js";
 import { startWorker } from "../../../worker/src/runtime.js";
 
 export function installedRoutes(server: FastifyInstance): { id: string; source: string }[] {
-  // commonPrefix:false prints each complete installed path instead of fragments.
+  // Parameter descendants remain nested even with commonPrefix:false.
   const tree = server.printRoutes({ commonPrefix: false });
   const result: { id: string; source: string }[] = [];
+  const parents: { indent: number; path: string }[] = [];
   for (const line of tree.split("\n")) {
     const match = /(\/\S*)\s+\(([A-Z, ]+)\)/.exec(line);
     if (!match) continue;
-    for (const method of match[2]!.split(",").map((item) => item.trim())) result.push({ id: apiIdentity(method, match[1]!), source: "apps/api/src/application.ts#createApiApplication/installed-fastify-route" });
+    const indent = match.index;
+    while (parents.length && parents.at(-1)!.indent >= indent) parents.pop();
+    const path = (parents.at(-1)?.path ?? "") + match[1]!;
+    parents.push({ indent, path });
+    for (const method of match[2]!.split(",").map((item) => item.trim())) result.push({ id: apiIdentity(method, path), source: "apps/api/src/application.ts#createApiApplication/installed-fastify-route" });
   }
   if (!result.length) throw new Error("installed_route_inventory_empty");
   return result;
