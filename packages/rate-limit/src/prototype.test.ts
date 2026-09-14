@@ -8,8 +8,9 @@ import { CountingKeyDeriver, InProcessCounterStore } from "./counter.ts";
 import { seal, validateRegistry } from "./registry.ts";
 
 const evidence = JSON.parse(readFileSync(PROTOTYPE_APPROVALS_PATH, "utf8"));
-// Five prototype sets plus rlp-266-identity-session-v1 (CBD266-IDENTITY-RECORDS-001, projected by PROTO-ACTIVATION-001).
-const APPROVED_RECORDS = 6;
+// Five prototype sets plus rlp-266-identity-session-v1 and rlp-266-identity-ceremony-v1, projected next to
+// rlp-266-bootstrap-v1 on a disjoint stage set (CBD266-IDENTITY-RECORDS-001, CBD266-SURFACE-STAGES-001).
+const APPROVED_RECORDS = 7;
 it("projects all exact decision digests and the authorized actor", () => {
   const registry = loadPrototypeRegistry();
   assert.equal(registry.approved.size, APPROVED_RECORDS);
@@ -78,9 +79,12 @@ it("approved terminal recovery keeps an independent key and budget after read ex
 });
 it("retains recovery isolation and limits the terminal exception to the recovery surface", () => {
   const source = loadPrototypeRegistry().records;
+  // CBD266-SURFACE-STAGES-001 inserted rlp-266-identity-ceremony-v1 into the projected set, so the
+  // recovery and authenticated-read records are found by id rather than a position that would shift.
+  const recoveryId = "rlp-266-recovery-v1"; const readId = "rlp-266-authenticated-read-v1";
   for (const mutate of [
-    (records: typeof source) => { records[4]!.counter_store.namespace = records[1]!.counter_store.namespace; },
-    (records: typeof source) => { records[1]!.anti_lockout_rule.independent_recovery_surface_id = null; },
+    (records: typeof source) => { records.find((r) => r.record_id === recoveryId)!.counter_store.namespace = records.find((r) => r.record_id === readId)!.counter_store.namespace; },
+    (records: typeof source) => { records.find((r) => r.record_id === readId)!.anti_lockout_rule.independent_recovery_surface_id = null; },
   ]) {
     const changed = structuredClone(source); mutate(changed); const records = changed.map(seal);
     const context = prototypeApprovalContext(); const resolve = context.resolve;

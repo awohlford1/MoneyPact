@@ -54,7 +54,7 @@
     "executor_kind": "api_route",
     "source_locator": "apps/api/src/identity/http.ts#IdentityController.callback",
     "surface_id": "surf-266-authentication",
-    "parameter_record_id": "rlp-266-bootstrap-v1",
+    "parameter_record_id": "rlp-266-identity-ceremony-v1",
     "registration_lifecycle": "active",
     "introduced_by": "CBD-190",
     "authorization_metadata_id": null
@@ -64,7 +64,7 @@
     "executor_kind": "api_route",
     "source_locator": "apps/api/src/identity/http.ts#IdentityController.callback",
     "surface_id": "surf-266-authentication",
-    "parameter_record_id": "rlp-266-bootstrap-v1",
+    "parameter_record_id": "rlp-266-identity-ceremony-v1",
     "registration_lifecycle": "active",
     "introduced_by": "CBD-190",
     "authorization_metadata_id": null
@@ -74,7 +74,7 @@
     "executor_kind": "api_route",
     "source_locator": "apps/api/src/identity/http.ts#IdentityController.localAuthorize",
     "surface_id": "surf-266-authentication",
-    "parameter_record_id": "rlp-266-bootstrap-v1",
+    "parameter_record_id": "rlp-266-identity-ceremony-v1",
     "registration_lifecycle": "active",
     "introduced_by": "CBD-190",
     "authorization_metadata_id": null
@@ -84,7 +84,7 @@
     "executor_kind": "api_route",
     "source_locator": "apps/api/src/identity/http.ts#IdentityController.localAuthorize",
     "surface_id": "surf-266-authentication",
-    "parameter_record_id": "rlp-266-bootstrap-v1",
+    "parameter_record_id": "rlp-266-identity-ceremony-v1",
     "registration_lifecycle": "active",
     "introduced_by": "CBD-190",
     "authorization_metadata_id": null
@@ -94,7 +94,7 @@
     "executor_kind": "api_route",
     "source_locator": "apps/api/src/identity/http.ts#IdentityController.localChoose",
     "surface_id": "surf-266-authentication",
-    "parameter_record_id": "rlp-266-bootstrap-v1",
+    "parameter_record_id": "rlp-266-identity-ceremony-v1",
     "registration_lifecycle": "active",
     "introduced_by": "CBD-190",
     "authorization_metadata_id": null
@@ -104,7 +104,7 @@
     "executor_kind": "api_route",
     "source_locator": "apps/api/src/identity/http.ts#IdentityController.localChoose",
     "surface_id": "surf-266-authentication",
-    "parameter_record_id": "rlp-266-bootstrap-v1",
+    "parameter_record_id": "rlp-266-identity-ceremony-v1",
     "registration_lifecycle": "active",
     "introduced_by": "CBD-190",
     "authorization_metadata_id": null

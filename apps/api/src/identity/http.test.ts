@@ -231,6 +231,12 @@ describe("PROTO-WIRE-01/02 identity routes through the real Fastify instance", (
       const committed = await signIn(b);
       assert.equal(committed.statusCode, 303, committed.body);
       assert.ok(b.cookies[SESSION_COOKIE_NAME], "session cookie delivered through the real surface gate");
+      // CBD266-SURFACE-STAGES-001 (R2-01, SEC-ACT-R2-F03): the whole ceremony -- begin, authorize, chooser
+      // and the completing callback -- runs end to end through the real registry and registrations with
+      // rlp-266-identity-ceremony-v1 and rlp-266-bootstrap-v1 both projected on surf-266-authentication
+      // (pre-authentication routes carry no restricted audit event of their own; the stage-resolved record
+      // choice itself is proven directly against this same real registry in
+      // apps/api/src/rate-limit/http.test.ts).
       const me = await b.inject("GET", "/v1/identity/me");
       assert.equal(me.statusCode, 200, me.body);
       const events = runtime.audit!.snapshot() as { outcome?: string; enforcement?: { registration_id: string; parameter_record_id: string | null; surface_id: string | null } }[];

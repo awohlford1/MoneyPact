@@ -73,3 +73,33 @@ it("PROTO-ACTIVATION-001 B1: `reserved` names exactly the requests whose unit is
   assert.equal(resolutions, before, "the deferred enforcement reuses the ceremony resolved for `reserved`; the ceremony is never resolved twice for one request");
   assert.equal(await gate.reserved(request("/confirm-a", "/confirm", "POST", "203.0.113.9"), "actor-a"), false, "off loopback the bootstrap record has no ceremony context");
 });
+
+it("CBD266-SURFACE-STAGES-001: a callback route registered to the ordinary ceremony record still reserves its first-sign-in unit on the bootstrap record, and an exhausted ordinary pool does not block completion (R2-01, SEC-ACT-R2-F03)", async () => {
+  const contexts: Record<string, { ceremonyId?: string; bootstrapStage?: "ordinary" | "first_sign_in"; credentialVerified?: boolean }> = {};
+  const gate = new ApiRateLimits("test", loadPrototypeRegistry(), [
+    { registration_id: "api:GET:/v1/identity/callback", executor_kind: "api_route", source_locator: "fixture.ts#ceremony", surface_id: "surf-266-authentication", parameter_record_id: "rlp-266-identity-ceremony-v1", registration_lifecycle: "active", introduced_by: "test", authorization_metadata_id: null },
+  ], undefined, async (request) => contexts[request.url] ?? {});
+  const request = (url: string) => ({ method: "GET", url, routeOptions: { url: "/v1/identity/callback" }, ip: "127.0.0.1" }) as FastifyRequest;
+  // Ordinary traffic (authorize/chooser/unresolved-state callback deliveries) is registered to, and counted
+  // on, the ceremony record's own 15-unit pool -- exhausting it here must never touch the reservation below.
+  for (let attempt = 0; attempt < 15; attempt++) {
+    contexts["/v1/identity/callback?ordinary"] = { ceremonyId: `ceremony-ordinary-${attempt}`, bootstrapStage: "ordinary" };
+    const decision = await gate.enforce(request("/v1/identity/callback?ordinary"), undefined);
+    assert.equal(decision.outcome, "allow", `ordinary attempt ${attempt}`);
+    if (decision.outcome === "allow") await decision.release();
+  }
+  contexts["/v1/identity/callback?ordinary"] = { ceremonyId: "ceremony-ordinary-exhausted", bootstrapStage: "ordinary" };
+  assert.equal((await gate.enforce(request("/v1/identity/callback?ordinary"), undefined)).outcome, "deny_exhausted", "the ceremony record's ordinary pool is exhausted");
+  // The eligible completing callback still names the ceremony record's registration, but the reserved
+  // first_sign_in stage is counted on the surface's bootstrap record instead -- its own separate pool.
+  contexts["/v1/identity/callback?complete"] = { ceremonyId: "ceremony-completing", bootstrapStage: "first_sign_in", credentialVerified: true };
+  const completing = await gate.enforce(request("/v1/identity/callback?complete"), undefined);
+  assert.equal(completing.outcome, "allow", "the reserved unit is intact even after the ordinary ceremony pool was exhausted");
+  if (completing.outcome === "allow") await completing.release();
+  // The same ceremony's reserved unit is consumed exactly once: a second "first_sign_in" resolution
+  // (a replay of the same completing request) is refused, not double-admitted.
+  assert.equal((await gate.enforce(request("/v1/identity/callback?complete"), undefined)).outcome, "deny_exhausted", "one first-sign-in reservation per ceremony");
+  // A different ceremony has its own reservation: the first ceremony's completion never blocked it.
+  contexts["/v1/identity/callback?other"] = { ceremonyId: "ceremony-completing-2", bootstrapStage: "first_sign_in", credentialVerified: true };
+  assert.equal((await gate.enforce(request("/v1/identity/callback?other"), undefined)).outcome, "allow", "a sibling ceremony's reservation is untouched");
+});

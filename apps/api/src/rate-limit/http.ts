@@ -39,10 +39,16 @@ export class ApiRateLimits implements ApiSurfaceGate {
     const evidence = { ...invocation(id, "api_route", this.#engine.releaseSetDigest, this.#build), surface_id: registration?.surface_id ?? null, parameter_record_id: registration?.parameter_record_id ?? null };
     this.#evidence.set(request, evidence); return evidence;
   }
-  /** A7: a surface bound to the bootstrap record gets its ceremony and stage from the identity runtime (resolved once per request). */
+  /**
+   * A7; CBD266-SURFACE-STAGES-001: every route on the authentication surface gets its ceremony and stage
+   * from the identity runtime (resolved once per request), whether it is registered to the bootstrap
+   * record or -- now that a stage set can share the surface with it -- the ordinary ceremony record. The
+   * resolved stage decides which of the two approved records actually counts the unit (packages/rate-limit
+   * `recordForStage`), never the static registration alone.
+   */
   #ceremonyFor(request: FastifyRequest, actorId: string | undefined): Promise<Awaited<ReturnType<CeremonyContextResolver>>> {
     const evidence = this.evidence(request);
-    if (!LOOPBACK.includes(request.ip) || evidence.parameter_record_id !== "rlp-266-bootstrap-v1" || !this.#ceremony) return Promise.resolve({});
+    if (!LOOPBACK.includes(request.ip) || evidence.surface_id !== "surf-266-authentication" || !this.#ceremony) return Promise.resolve({});
     let pending = this.#contexts.get(request);
     if (!pending) { pending = this.#ceremony(request, actorId); this.#contexts.set(request, pending); }
     return pending;

@@ -33,6 +33,32 @@ export interface Registry {
   records: readonly ParameterRecord[]; approved: ReadonlyMap<string, ParameterRecord>; diagnostics: readonly Diagnostic[]; releaseSetDigest: string;
   approvalCurrent(record: ParameterRecord): boolean;
 }
+/**
+ * CBD266-SURFACE-STAGES-001: a record's counting stage set, derived only from its own safe counting key
+ * (never a value someone could rename around). A bootstrap-class record -- `phase: "compound"` with the
+ * `bootstrap_stage_v1` component -- owns exactly the reserved stages named by its
+ * `quota.resource_dimensions` entries shaped `reserved_<stage>=<units>` (for `proto-bootstrap-v1`,
+ * `first_sign_in` and `initial_space_create`); it never owns the implicit `ordinary` stage, which is a
+ * same-record sub-pool, not a cross-record uniqueness claim. Every other record owns exactly the single
+ * `ordinary` stage. A record with no reserved dimension named is stage-less (an empty set).
+ */
+const RESERVED_STAGE_DIMENSION = /^reserved_([a-z0-9_]+)=\d+$/;
+export function recordStages(record: ParameterRecord): ReadonlySet<string> {
+  if (record.safe_counting_key.phase === "compound" && record.safe_counting_key.components.includes("bootstrap_stage_v1")) {
+    const stages = new Set<string>();
+    for (const dimension of record.quota.resource_dimensions) {
+      const match = RESERVED_STAGE_DIMENSION.exec(dimension);
+      if (match) stages.add(match[1]!);
+    }
+    return stages;
+  }
+  return new Set(["ordinary"]);
+}
+/** The approved record on `surfaceId` that owns `stage`, if any (packages/rate-limit route enforcement, CBD266-SURFACE-STAGES-001). */
+export function recordForStage(registry: Pick<Registry, "approved">, surfaceId: string, stage: string): ParameterRecord | undefined {
+  for (const candidate of registry.approved.values()) if (candidate.surface_id === surfaceId && recordStages(candidate).has(stage)) return candidate;
+  return undefined;
+}
 export function validateRegistry(input: unknown, context: ApprovalContext): Registry {
   const diagnostics: Diagnostic[] = []; const records: ParameterRecord[] = []; const approved = new Map<string, ParameterRecord>();
   const add = (recordId: string, code: string, pointer: string): void => { diagnostics.push({ recordId, code, pointer }); };
@@ -68,11 +94,21 @@ export function validateRegistry(input: unknown, context: ApprovalContext): Regi
       && (!a.expires_at || Date.parse(a.expires_at) > Date.parse(context.now))) approved.set(id, r);
     if (a.status === "approved" && !approved.has(id)) add(id, "approval_evidence_invalid", "/product_owner_approval");
   }
-  const ids = new Set<string>(); const digests = new Set<string>(); const surfaces = new Set<string>();
+  const ids = new Set<string>(); const digests = new Set<string>();
+  // CBD266-SURFACE-STAGES-001: one approved record per (surface, stage), not per surface. A surface may
+  // carry a bootstrap-class record (reserved stages) next to an ordinary record with a disjoint stage set;
+  // two approved records on one surface are refused when their stage sets intersect or either is stage-less.
+  const surfaceStages = new Map<string, Set<string>>();
   for (const r of records) {
     if (ids.has(r.record_id) || digests.has(r.record_digest)) add(r.record_id, "record_reference_invalid", "/record_id");
     ids.add(r.record_id); digests.add(r.record_digest);
-    if (approved.has(r.record_id)) { if (surfaces.has(r.surface_id)) add(r.record_id, "record_reference_invalid", "/surface_id"); surfaces.add(r.surface_id); }
+    if (approved.has(r.record_id)) {
+      const stages = recordStages(r);
+      const owned = surfaceStages.get(r.surface_id);
+      const conflict = stages.size === 0 || (owned && [...stages].some((stage) => owned.has(stage)));
+      if (conflict) add(r.record_id, "record_reference_invalid", "/surface_id");
+      else { const next = owned ?? new Set<string>(); for (const stage of stages) next.add(stage); surfaceStages.set(r.surface_id, next); }
+    }
     const seen = new Set([r.record_id]); let previous = r.supersedes_record_id;
     while (previous) {
       const parent = records.find((item) => item.record_id === previous);

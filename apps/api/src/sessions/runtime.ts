@@ -165,7 +165,7 @@ export function composeApiRuntime(config: ApiConfig, sink: ReliabilitySink, over
   if (identityConfig.adapterKind !== "local") {
     // No identity routes are mounted on the unavailable path: the CBD-266 surface inventory (discovered with this
     // configuration) stays at the baseline until the identity registrations and their approved records exist
-    // (apps/api/src/identity/rate-limit-proposal.json; see the final report's blocker).
+    // (config/rate-limit/records.json rlp-266-bootstrap-v1 and rlp-266-identity-ceremony-v1, CBD266-SURFACE-STAGES-001).
     const identity = identityHttp(undefined);
     return {
       authorization: { ...unavailableApiAuthorization(failure), ...(overrides.rateLimit ? { rateLimit: overrides.rateLimit } : {}) },
@@ -199,17 +199,27 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
   const evidenceSink: IdentityEvidenceSink = overrides.evidence ?? ((event) => { if (evidence.length < 10_000) evidence.push(event); });
   const localIssuer = overrides.transport ? undefined : new LocalIssuer({ issuer: identityConfig.issuer, clientId: identityConfig.clientId, callbackUri: identityConfig.callbackUri, now });
   const transport = overrides.transport ?? localIssuer!;
+  // CBD266-SURFACE-STAGES-001: kept as a local binding (not only inside the ceremony's dependencies) so
+  // `ceremonyContext` below can read a challenge's own status without a new IdentityCeremony method.
+  const challenges = new ChallengeStore(now, 10_000, overrides.scheduler);
   const ceremony = new IdentityCeremony({
-    config: identityConfig, client, sessionStore, sessionConfig: session, sealing, transport, challenges: new ChallengeStore(now, 10_000, overrides.scheduler), now,
+    config: identityConfig, client, sessionStore, sessionConfig: session, sealing, transport, challenges, now,
     evidence: evidenceSink, reliability: sink, serviceVersion: config.SERVICE_VERSION, mappingHooks: overrides.mappingHooks, scheduler: overrides.scheduler,
   });
   const runtime: IdentityRuntime = { ceremony, localIssuer: overrides.transport ? (overrides.transport instanceof LocalIssuer ? overrides.transport : undefined) : localIssuer, sessionPepper: session.pepper };
   const identity = identityHttp(runtime);
   /**
-   * A7: ceremony context for surfaces bound to the bootstrap record. `begin` has no ceremony yet (the challenge
-   * is issued by its handler), so it counts on the single local cohort's ordinary pool; authorize, chooser and
-   * callback count on the ceremony their state or request names; the initial `space.create` reservation is
-   * taken by the ceremony that signed the acting subject in.
+   * A7; CBD266-SURFACE-STAGES-001: ceremony context for the whole authentication surface, which now carries
+   * two approved records with disjoint stages -- `rlp-266-identity-ceremony-v1` for the `ordinary` stage
+   * (registered for authorize, chooser and callback) and `rlp-266-bootstrap-v1` for the two reserved stages
+   * it alone owns. `begin` has no ceremony yet (the challenge is issued by its handler), so it counts on the
+   * bootstrap record's own ordinary sub-pool; authorize and chooser always count ordinary on the ceremony
+   * record. `callback` is the one route that can complete a ceremony: while its challenge is still `pending`
+   * (not yet taken by the handler), this is an eligible completing attempt and reserves the first-sign-in
+   * unit on the bootstrap record (R2-01, SEC-ACT-R2-F03) exactly once -- the same challenge's later replay,
+   * or any other callback, resolves to `pending` no longer (or to no known state) and counts ordinary on the
+   * ceremony record instead, so a flood of invalid or duplicate callbacks cannot touch the reservation. The
+   * initial `space.create` reservation is unchanged: taken by the ceremony that signed the acting subject in.
    */
   const ceremonyContext = async (request: import("fastify").FastifyRequest, actorId: string | undefined) => {
     const query = (request.query ?? {}) as Record<string, unknown>;
@@ -217,7 +227,14 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
     const text = (value: unknown): string | undefined => (typeof value === "string" && value ? value : undefined);
     if (url === "/v1/identity/begin") return { ceremonyId: "loopback-cohort:begin", bootstrapStage: "ordinary" as const };
     if (url === "/v1/identity/local/choose") { const state = runtime.localIssuer?.stateOf(text(query.request) ?? ""); const id = ceremony.ceremonyIdForState(state); return id ? { ceremonyId: id, bootstrapStage: "ordinary" as const } : {}; }
-    if (url === "/v1/identity/local/authorize" || url === "/v1/identity/callback") { const id = ceremony.ceremonyIdForState(text(query.state)); return id ? { ceremonyId: id, bootstrapStage: "ordinary" as const } : {}; }
+    if (url === "/v1/identity/local/authorize") { const id = ceremony.ceremonyIdForState(text(query.state)); return id ? { ceremonyId: id, bootstrapStage: "ordinary" as const } : {}; }
+    if (url === "/v1/identity/callback") {
+      const state = text(query.state);
+      const id = ceremony.ceremonyIdForState(state);
+      if (!id) return {};
+      const eligible = state !== undefined && challenges.find(state)?.status === "pending";
+      return eligible ? { ceremonyId: id, bootstrapStage: "first_sign_in" as const, credentialVerified: true } : { ceremonyId: id, bootstrapStage: "ordinary" as const };
+    }
     if (url === "/v1/budget-creation-proposals/:proposalId/confirm" && actorId) { const id = ceremony.ceremonyIdForSubject(actorId); return id ? { ceremonyId: id, bootstrapStage: "initial_space_create" as const, primaryOwnerVerified: true } : {}; }
     return {};
   };

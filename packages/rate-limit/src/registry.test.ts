@@ -4,7 +4,7 @@ import { loadPrototypeRegistry } from "./prototype.ts";
 import { PARAMETER_SCHEMA, parseRegistryJson } from "./schema.ts";
 import type { Schema } from "./schema.ts";
 import { canonical, seal, validateRegistry } from "./registry.ts";
-import type { ApprovalContext, ParameterRecord } from "./types.ts";
+import type { ApprovalContext, ApprovalEvidence, ParameterRecord } from "./types.ts";
 
 const pending = loadPrototypeRegistry().records[0]!;
 const reviewContext: ApprovalContext = { now: "2026-09-13T12:00:00Z", environment: "local-prototype", singleProcess: true, resolve: () => undefined };
@@ -63,6 +63,55 @@ it("never partially accepts duplicate IDs, ambiguous surfaces, broken supersessi
   for (const records of [[record, record], [record, seal(bad)], [record, { ...record, threshold: -1 }]]) {
     const result = validateRegistry(records, context); assert.ok(result.diagnostics.length); assert.equal(result.approved.size, 0);
   }
+});
+it("CBD266-SURFACE-STAGES-001: one approved record per (surface, stage) -- disjoint stages validate; overlapping or stage-less pairs are refused", () => {
+  const live = loadPrototypeRegistry();
+  assert.deepEqual(live.diagnostics, []);
+  const bootstrapBase = live.records.find((r) => r.record_id === "rlp-266-bootstrap-v1")!;
+  const ceremonyBase = live.records.find((r) => r.record_id === "rlp-266-identity-ceremony-v1")!;
+  // The checked-in projection is itself the disjoint-stages accept case: rlp-266-bootstrap-v1 (reserved
+  // first_sign_in/initial_space_create) sits next to rlp-266-identity-ceremony-v1 (the ordinary stage) on
+  // surf-266-authentication with no diagnostic.
+  assert.equal(live.approved.get("rlp-266-bootstrap-v1")?.surface_id, "surf-266-authentication");
+  assert.equal(live.approved.get("rlp-266-identity-ceremony-v1")?.surface_id, "surf-266-authentication");
+
+  const approve = (record: ParameterRecord, approvalId: string): { record: ParameterRecord; evidence: ApprovalEvidence } => {
+    const draft = structuredClone(record);
+    draft.product_owner_approval = { ...draft.product_owner_approval, status: "approved", approval_id: approvalId, approved_by_actor_id: "test-only-actor", decided_at: "2026-09-13T04:00:00Z", expires_at: null };
+    const sealed = seal(draft);
+    return { record: sealed, evidence: { approvalId, actorId: "test-only-actor", candidateDigests: [sealed.product_owner_approval.candidate_digest], conditions: sealed.product_owner_approval.conditions, decidedAt: "2026-09-13T04:00:00Z", expiresAt: null, revoked: false } };
+  };
+  const contextFor = (...pairs: { record: ParameterRecord; evidence: ApprovalEvidence }[]): ApprovalContext => ({
+    now: "2026-09-13T12:00:00Z", environment: "local-prototype", singleProcess: true,
+    resolve: (id) => pairs.find((pair) => pair.evidence.approvalId === id)?.evidence,
+  });
+
+  // Overlapping: the ceremony record takes on the bootstrap-class shape and names the same reserved stage.
+  const overlappingDraft = structuredClone(ceremonyBase);
+  overlappingDraft.safe_counting_key = { ...overlappingDraft.safe_counting_key, phase: "compound", components: ["server_issued_bootstrap_ceremony_id_v1", "bootstrap_stage_v1"] };
+  overlappingDraft.quota = { ...overlappingDraft.quota, resource_dimensions: ["reserved_first_sign_in=1"] };
+  const bootstrap = approve(bootstrapBase, "test-stages-bootstrap");
+  const overlapping = approve(overlappingDraft, "test-stages-ceremony-overlap");
+  const overlapResult = validateRegistry([bootstrap.record, overlapping.record], contextFor(bootstrap, overlapping));
+  assert.ok(overlapResult.diagnostics.some((d) => d.recordId === "rlp-266-identity-ceremony-v1" && d.code === "record_reference_invalid" && d.pointer === "/surface_id"), JSON.stringify(overlapResult.diagnostics));
+  assert.equal(overlapResult.approved.size, 0);
+
+  // Stage-less: a bootstrap-class record naming no reserved dimension at all.
+  const statelessDraft = structuredClone(bootstrapBase);
+  statelessDraft.quota = { ...statelessDraft.quota, resource_dimensions: [] };
+  const stageless = approve(statelessDraft, "test-stages-bootstrap-stageless");
+  const ceremony = approve(ceremonyBase, "test-stages-ceremony");
+  const statelessResult = validateRegistry([stageless.record, ceremony.record], contextFor(stageless, ceremony));
+  assert.ok(statelessResult.diagnostics.some((d) => d.recordId === "rlp-266-bootstrap-v1" && d.code === "record_reference_invalid" && d.pointer === "/surface_id"), JSON.stringify(statelessResult.diagnostics));
+  assert.equal(statelessResult.approved.size, 0);
+
+  // Disjoint (rebuilt from scratch, independent of the checked-in evidence), alongside the real recovery
+  // record bootstrap's anti-lockout rule requires: both admitted, no diagnostic.
+  const recoveryBase = live.records.find((r) => r.record_id === "rlp-266-recovery-v1")!;
+  const recovery = approve(recoveryBase, "test-stages-recovery");
+  const disjointResult = validateRegistry([bootstrap.record, ceremony.record, recovery.record], contextFor(bootstrap, ceremony, recovery));
+  assert.deepEqual(disjointResult.diagnostics, []);
+  assert.equal(disjointResult.approved.size, 3);
 });
 it("checked-in actor-bound projections stay closed without independent approved recovery", () => {
   for (const pendingRecord of loadPrototypeRegistry().records.filter((r) => r.anti_lockout_rule.independent_recovery_surface_id)) {

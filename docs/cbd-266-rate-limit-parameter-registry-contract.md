@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved v0.3.1 (`PO-CONTRACT-APPROVALS-002`, September 14, 2026) - the four prototype value sets approved as a whole by `CBD266-PROTOTYPE-DEFAULTS-001` and the terminal recovery set by `CBD266-RECOVERY-RECORD-001`; approval projection, resolver and fail-closed guard merged (PR #322); Security/Reliability review of the merged mechanism and hosted-environment evidence remain open and are not waived** |
-| Document version | 0.4 |
+| Status | **Approved v0.3.1 (`PO-CONTRACT-APPROVALS-002`, September 14, 2026) - the four prototype value sets approved as a whole by `CBD266-PROTOTYPE-DEFAULTS-001` and the terminal recovery set by `CBD266-RECOVERY-RECORD-001`; approval projection, resolver and fail-closed guard merged (PR #322); registry rule widened to one approved record per (surface, stage) by `CBD266-SURFACE-STAGES-001`, projecting `rlp-266-identity-ceremony-v1` next to `rlp-266-bootstrap-v1`; Security/Reliability review of the merged mechanism and hosted-environment evidence remain open and are not waived** |
+| Document version | 0.5 |
 | Jira subtask | [CBD-266](https://cobudget.atlassian.net/browse/CBD-266) |
 | Parent | [CBD-123](https://cobudget.atlassian.net/browse/CBD-123) |
 | Repository baseline | `ce49e3dd6f795073132d82f4c077b9365045a0e7` |
@@ -49,7 +49,7 @@ registered explicitly in the same inventory. They are not silently treated as
 
 | ID | Decision |
 | --- | --- |
-| `RC-266-001` | There is one canonical parameter-record registry. Each approved record is immutable and binds exactly one `surface_id` to its complete parameter set and canonical digest. |
+| `RC-266-001` | There is one canonical parameter-record registry. Each approved record is immutable and binds exactly one `surface_id` to its complete parameter set and canonical digest. At most one approved record may own a given `(surface_id, stage)` pair (section 4.7.4, `CBD266-SURFACE-STAGES-001`); most surfaces carry exactly one record whose implicit stage is `ordinary`. |
 | `RC-266-002` | There is one executable-surface inventory assembled from API route and worker job declarations. Every discovered route and job must have exactly one registration. Omission is both a build failure and a runtime denial. |
 | `RC-266-003` | Every non-public registration references one closed catalog surface and one exact parameter record. A catalog entry is classification, not permission to execute. |
 | `RC-266-004` | Parameter validation has structural, semantic, approval, and referential phases. No phase defaults a missing or invalid value. Every failure is closed. |
@@ -336,7 +336,10 @@ pointer, but never returns a partially accepted registry.
    TTL coverage, safe-key phase, recovery-pool requirements, exact fail-closed
    literals, and self-consistent capacity units.
 4. Validate references: unique record IDs/digests; known bounded surface; valid
-   supersession chain; no cycle; at most one current approved record per surface.
+   supersession chain; no cycle; at most one current approved record per
+   `(surface, stage)` (`CBD266-SURFACE-STAGES-001`; see 4.7.4). A surface may
+   carry a bootstrap-class record next to an ordinary record only when their
+   stage sets are disjoint and neither is stage-less.
 5. Validate approval evidence and candidate digest. Pending or unverifiable
    records remain loadable for review but are absent from the runtime-approved
    index.
@@ -448,20 +451,30 @@ recovery pool; other actor-bound surfaces still require independent recovery.
 
 `CBD266-IDENTITY-RECORDS-001` (revision 2, 2026-09-14) approved the two
 identity sets exactly as `apps/api/src/identity/rate-limit-proposal.json`
-stated them. `proto-identity-session-v1` (`rlp-266-identity-session-v1`,
-`surf-266-session`) is projected into `records.json` and active for the
-identity view and logout routes. `proto-identity-ceremony-v1`
-(`rlp-266-identity-ceremony-v1`, `surf-266-authentication`, sliding 60,000 ms,
-threshold 12, burst 3, ceiling 15, `phase: pre_authentication` with components
-`[privacy_network_cohort_v1, exact_surface_id]`) is approved but not projected:
-the registry admits one approved record per surface
-(`record_reference_invalid /surface_id`) and `proto-bootstrap-v1` already
-holds `surf-266-authentication`, so projecting both would clear every
-approval. Its candidate digest is recorded in `approvals.json` and the record
-stays in the proposal file until the Executive supersedes or re-surfaces one of
-the two; until then the ceremony routes count on the bootstrap record with the
-server-issued ceremony id and stage in the counting key, and `begin` (which has
-no ceremony yet) on the single local cohort's ordinary pool.
+stated them (that proposal file no longer exists; both sets are now projected
+and its content is preserved here and in `records.json`). `proto-identity-session-v1`
+(`rlp-266-identity-session-v1`, `surf-266-session`) is projected into
+`records.json` and active for the identity view and logout routes.
+`proto-identity-ceremony-v1` (`rlp-266-identity-ceremony-v1`,
+`surf-266-authentication`, sliding 60,000 ms, threshold 12, burst 3, ceiling
+15, `phase: pre_authentication` with components `[privacy_network_cohort_v1,
+exact_surface_id]`) is projected next to `proto-bootstrap-v1` on the same
+surface under `CBD266-SURFACE-STAGES-001` (4.7.4): the registry rule widened
+from one approved record per surface to one approved record per
+`(surface, stage)`, and the two records' stage sets are disjoint. The
+`authorize`, `chooser` and `callback` ceremony routes are registered to
+`rlp-266-identity-ceremony-v1` and count its ordinary 15-unit pool; `begin`
+(which has no ceremony yet) stays registered to `proto-bootstrap-v1` and
+counts its own ordinary sub-pool. The two stages `proto-bootstrap-v1` alone
+owns -- `first_sign_in` and `initial_space_create` -- are still reserved on
+it: `packages/rate-limit` resolves the record to count by `(surface, stage)`
+at enforcement time (`recordForStage`), so the callback that actually
+completes a ceremony (its challenge still `pending` when the surface gate
+runs) reserves the `first_sign_in` unit on `proto-bootstrap-v1` regardless of
+which record its route is registered to, and `initial_space_create` on
+`/confirm` is unchanged. Exhausting the ceremony record's ordinary pool
+therefore cannot block a valid ceremony's completion (the anti-lockout
+property PROTO-ACTIVATION-001 required).
 
 For each of the four original projected records, `product_owner_approval.status` is `approved`,
 `approval_id` is `CBD266-PROTOTYPE-DEFAULTS-001`, `decided_at` is the decision
@@ -472,6 +485,35 @@ fields must be populated by the authenticated decision-projection mechanism;
 this prose does not invent actor identity or placeholder hashes. The human-
 readable approval field remains the exact value stated at the start of this
 section.
+
+#### 4.7.4 One approved record per (surface, stage)
+
+`CBD266-SURFACE-STAGES-001` (2026-09-14) widened `RC-266-001`/the section 4
+reference-validation rule from one approved record per surface to one
+approved record per `(surface, stage)`, so a surface may carry a
+bootstrap-class record (reserved stages) next to an ordinary record with a
+disjoint stage set, instead of retiring the bootstrap record's reserved
+semantics to make room for a second approved set.
+
+A record's stage set is derived only from its own safe counting key and
+quota, never a value someone could rename around: a bootstrap-class record
+(`safe_counting_key.phase: "compound"` with the `bootstrap_stage_v1`
+component) owns exactly the reserved stages named by its
+`quota.resource_dimensions` entries shaped `reserved_<stage>=<units>`
+(`proto-bootstrap-v1` owns `first_sign_in` and `initial_space_create`); it
+never owns the implicit `ordinary` stage, which is a same-record sub-pool,
+not a cross-record uniqueness claim. Every other record owns exactly the
+single `ordinary` stage. A record whose stage set is empty is stage-less.
+
+Two approved records on one surface are refused as
+`record_reference_invalid /surface_id` when their stage sets intersect or
+when either is stage-less; this is proven with two deliberate violations
+(overlapping stages; a stage-less record) in the guard packet's PR. Route
+enforcement (`apps/api/src/rate-limit/http.ts`, `packages/rate-limit`
+`RateLimitEngine.decide`) resolves the counted record by `(surface, stage)`
+at request time, not by the route's static registration alone: a registered
+record still names the surface's default (ordinary) record, but a reserved
+stage is always counted on the surface's record that owns that stage.
 
 ## 5. Surface catalog
 
@@ -813,6 +855,7 @@ Done.
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.5 | September 14, 2026 | `CBD266-SURFACE-STAGES-001`: widened the registry rule from one approved record per surface to one approved record per `(surface, stage)` (section 4 item 4, new section 4.7.4); projected `rlp-266-identity-ceremony-v1` next to `rlp-266-bootstrap-v1` on `surf-266-authentication` and rebound the authorize, chooser and callback ceremony routes to it, keeping the two reserved stages on the bootstrap record; deleted the now-obsolete unprojectable-proposal note and its parked proposal file; no parameter value changed |
 | 0.4 | September 14, 2026 | Added the `proto-identity-session-v1` set approved by `CBD266-IDENTITY-RECORDS-001` and recorded the approved-but-unprojectable `proto-identity-ceremony-v1` set with the one-record-per-surface reason (PROTO-ACTIVATION-001 correction round); original parameter values, the four prototype sets and the recovery set unchanged |
 | 0.3.1 (approval) | September 14, 2026 | Product Owner approval recorded (`PO-CONTRACT-APPROVALS-002`). Status Proposed → Approved at the same version; status field reconciled with the document version, the two Executive value decisions and the merged projection mechanism (PR #322); no decision, identifier or contract text changed. |
 | 0.3 | September 14, 2026 | Documented the local approval evidence file, resolver, and fail-closed registry guard; added the terminal recovery set approved by `CBD266-RECOVERY-RECORD-001`; original parameter values and hosted gates unchanged |

@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { PUBLIC_SURFACES } from "./catalog.ts";
-import { canonical, registrationErrors } from "./registry.ts";
+import { canonical, recordForStage, registrationErrors } from "./registry.ts";
 import type { Registry } from "./registry.ts";
 import type { Decision, ParameterRecord, Registration } from "./types.ts";
 
@@ -127,7 +127,13 @@ export class RateLimitEngine {
     // never lock health or OpenAPI out (contract section 9, CBD266-REVIEW-IMPL-001 finding 1).
     if (PUBLIC_SURFACES[r.registration_id] === r.surface_id) return { outcome: "allow", provenance: "exact-public-exception", release: async () => undefined };
     if (input.releaseSetDigest !== this.#registry.releaseSetDigest || this.#registry.diagnostics.length) return { outcome: "deny_policy_unavailable" };
-    const record = r.parameter_record_id ? this.#registry.approved.get(r.parameter_record_id) : undefined;
+    // CBD266-SURFACE-STAGES-001: the registration still names the surface's default (ordinary) record, but a
+    // reserved bootstrap stage is always counted on the surface's record that owns that stage -- never on
+    // whichever record the route happens to be registered against -- so a ceremony route registered to the
+    // ordinary ceremony record still reserves its first-sign-in/initial-create unit on the bootstrap record.
+    const stage = input.verifiedContext.bootstrapStage;
+    const staged = stage && stage !== "ordinary" ? recordForStage(this.#registry, r.surface_id, stage) : undefined;
+    const record = staged ?? (r.parameter_record_id ? this.#registry.approved.get(r.parameter_record_id) : undefined);
     if (!record || record.surface_id !== r.surface_id || !this.#registry.approvalCurrent(record)) return { outcome: "deny_policy_unavailable" };
     let keys: string[];
     try { keys = this.#derivation.derive(record, input.verifiedContext); } catch { return { outcome: "deny_input_invalid" }; }
