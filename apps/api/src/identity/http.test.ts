@@ -5,7 +5,7 @@ import { Controller, Get } from "@nestjs/common";
 import { FastifyAdapter } from "@nestjs/platform-fastify";
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Test } from "@nestjs/testing";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { SESSION_COOKIE_NAME } from "@cobudget/sessions";
 import { apiIdentity, invocation } from "../../../../packages/rate-limit/src/index.ts";
 import { AppModule } from "../app.module.js";
@@ -231,6 +231,12 @@ describe("PROTO-WIRE-01/02 identity routes through the real Fastify instance", (
       const committed = await signIn(b);
       assert.equal(committed.statusCode, 303, committed.body);
       assert.ok(b.cookies[SESSION_COOKIE_NAME], "session cookie delivered through the real surface gate");
+      // CBD266-SURFACE-STAGES-001 (R2-01, SEC-ACT-R2-F03): the whole ceremony -- begin, authorize, chooser
+      // and the completing callback -- runs end to end through the real registry and registrations with
+      // rlp-266-identity-ceremony-v1 and rlp-266-bootstrap-v1 both projected on surf-266-authentication
+      // (pre-authentication routes carry no restricted audit event of their own; the stage-resolved record
+      // choice itself is proven directly against this same real registry in
+      // apps/api/src/rate-limit/http.test.ts).
       const me = await b.inject("GET", "/v1/identity/me");
       assert.equal(me.statusCode, 200, me.body);
       const events = runtime.audit!.snapshot() as { outcome?: string; enforcement?: { registration_id: string; parameter_record_id: string | null; surface_id: string | null } }[];
@@ -255,6 +261,69 @@ describe("PROTO-WIRE-01/02 identity routes through the real Fastify instance", (
       assert.equal((await b.inject("GET", "/health")).statusCode, 200);
       const unregistered = await b.inject("GET", "/v1/identity/nowhere");
       assert.equal(unregistered.statusCode, 404, "an unmatched route keeps the router's 404");
+    } finally { await app.close(); }
+  });
+
+  it("PROTO-GUARD-STAGES-SEC-001 SEC-STAGES-F01: a real HTTP callback carrying a known pending state with a garbage, missing or duplicate code, or a wrong origin, never reserves the first-sign-in unit -- the genuine callback for the same ceremony still completes", async () => {
+    const db = new FakeIdentityDatabase();
+    const runtime = composeApiRuntime(localConfig(), () => undefined, { client: createFakeIdentityClient(db), scheduler: null });
+    if (!runtime.runtime || !runtime.localIssuer) throw new Error("harness requires the local adapter");
+    const { ceremony } = runtime.runtime;
+    const issuer = runtime.localIssuer;
+    const gate = runtime.authorization.rateLimit!;
+    const begun = await ceremony.begin({ ceremony: "sign_in", postResultDestinationId: "home", origin: APPLICATION_ORIGIN, secFetchSite: "same-origin", sessionCookie: undefined });
+    assert.ok(begun.ok, "begin");
+    if (!begun.ok) return;
+    const authorize = new URL(begun.navigateTo);
+    const hosted = issuer.authorize(Object.fromEntries(authorize.searchParams.entries()));
+    assert.ok(hosted.ok, "hosted authorize");
+    if (!hosted.ok) return;
+    const callbackUrl = issuer.choose(hosted.requestId, "subject-a");
+    assert.ok(callbackUrl, "chooser");
+    const callback = new URL(callbackUrl!);
+    const state = callback.searchParams.get("state")!;
+    const code = callback.searchParams.get("code")!;
+    const request = (query: string, overrides: Partial<FastifyRequest> = {}): FastifyRequest => ({
+      method: "GET", url: `/v1/identity/callback?${query}`, routeOptions: { url: "/v1/identity/callback" },
+      query: Object.fromEntries(new URLSearchParams(query)), ip: "127.0.0.1", protocol: "http", host: "localhost:3000", headers: {}, ...overrides,
+    }) as unknown as FastifyRequest;
+    // The pending challenge is untouched by every one of these (only `find`, never `take`, is reachable
+    // from a `reserved` probe): none of them may be the request the eventual real callback replays as.
+    assert.equal(await gate.reserved?.(request(`code=${"!".repeat(8)}&state=${state}`), undefined), false, "garbage code does not reserve");
+    assert.equal(await gate.reserved?.(request(`state=${state}`), undefined), false, "missing code does not reserve");
+    assert.equal(await gate.reserved?.(request(`code=${code}&code=${code}&state=${state}`), undefined), false, "duplicate code does not reserve");
+    assert.equal(await gate.reserved?.(request(`code=${code}&state=${state}`, { host: "evil.invalid" } as Partial<FastifyRequest>), undefined), false, "wrong origin does not reserve");
+    // The same known, still-pending ceremony still resolves the reservation -- proving the above consumed
+    // nothing from it -- and the genuine callback still completes end to end.
+    assert.equal(await gate.reserved?.(request(`code=${code}&state=${state}`), undefined), true, "the genuine callback is the reserved first-sign-in unit");
+    const completed = await ceremony.complete({ rawQuery: callback.search.slice(1), method: "GET", observedOrigin: callback.origin, path: callback.pathname, receiptTime: new Date() });
+    assert.equal(completed.kind, "success", "the genuine callback for the same ceremony still completes");
+  });
+
+  it("PROTO-GUARD-STAGES-SEC-001 SEC-STAGES-F02: unknown-state callbacks cannot exhaust the ordinary pool a valid, in-flight ceremony's own authorize and callback traffic needs", async () => {
+    const db = new FakeIdentityDatabase();
+    const { app } = await createComposedApiApplication(localConfig(), () => undefined, testHistory, { client: createFakeIdentityClient(db), scheduler: null });
+    const b = await browser(app);
+    try {
+      const begin = await b.inject("POST", "/v1/identity/begin", { origin: APPLICATION_ORIGIN, "sec-fetch-site": "same-origin", "content-type": "application/json" }, { ceremony: "sign_in", postResultDestinationId: "home" });
+      assert.equal(begin.statusCode, 200, begin.body);
+      const authorize = new URL(begin.json<{ navigateTo: string }>().navigateTo);
+      // A flood of callbacks naming no known ceremony at all -- well beyond the ceremony record's 15-unit
+      // ceiling -- must never draw from the same pool the ceremony issued above still needs.
+      for (let i = 0; i < 15; i++) {
+        const junk = await b.inject("GET", `/v1/identity/callback?code=${"c".repeat(43)}&state=${"s".repeat(43)}`);
+        assert.notEqual(junk.statusCode, 200, `unknown-state callback ${i} is denied, not admitted`);
+      }
+      const chooser = await b.inject("GET", `${authorize.pathname}${authorize.search}`, { host: "127.0.0.1:3001" });
+      assert.equal(chooser.statusCode, 200, chooser.body);
+      const link = /href="([^"]+scenario=subject-a)"/.exec(chooser.body)?.[1]?.replaceAll("&amp;", "&");
+      assert.ok(link, "chooser renders the synthetic scenario link");
+      const choice = await b.inject("GET", link!, { host: "127.0.0.1:3001" });
+      assert.equal(choice.statusCode, 303, "the valid ceremony's own authorize/chooser step still completes after the flood");
+      const callback = new URL(choice.headers.location as string);
+      const committed = await b.inject("GET", `${callback.pathname}${callback.search}`, { "sec-fetch-mode": "navigate" });
+      assert.equal(committed.statusCode, 303, "the valid ceremony's own callback still completes after the flood");
+      assert.ok(b.cookies[SESSION_COOKIE_NAME], "session cookie delivered despite the preceding unknown-state flood");
     } finally { await app.close(); }
   });
 

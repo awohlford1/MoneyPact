@@ -39,10 +39,16 @@ export class ApiRateLimits implements ApiSurfaceGate {
     const evidence = { ...invocation(id, "api_route", this.#engine.releaseSetDigest, this.#build), surface_id: registration?.surface_id ?? null, parameter_record_id: registration?.parameter_record_id ?? null };
     this.#evidence.set(request, evidence); return evidence;
   }
-  /** A7: a surface bound to the bootstrap record gets its ceremony and stage from the identity runtime (resolved once per request). */
+  /**
+   * A7; CBD266-SURFACE-STAGES-001: every route on the authentication surface gets its ceremony and stage
+   * from the identity runtime (resolved once per request), whether it is registered to the bootstrap
+   * record or -- now that a stage set can share the surface with it -- the ordinary ceremony record. The
+   * resolved stage decides which of the two approved records actually counts the unit (packages/rate-limit
+   * `recordForStage`), never the static registration alone.
+   */
   #ceremonyFor(request: FastifyRequest, actorId: string | undefined): Promise<Awaited<ReturnType<CeremonyContextResolver>>> {
     const evidence = this.evidence(request);
-    if (!LOOPBACK.includes(request.ip) || evidence.parameter_record_id !== "rlp-266-bootstrap-v1" || !this.#ceremony) return Promise.resolve({});
+    if (!LOOPBACK.includes(request.ip) || evidence.surface_id !== "surf-266-authentication" || !this.#ceremony) return Promise.resolve({});
     let pending = this.#contexts.get(request);
     if (!pending) { pending = this.#ceremony(request, actorId); this.#contexts.set(request, pending); }
     return pending;
@@ -55,6 +61,17 @@ export class ApiRateLimits implements ApiSurfaceGate {
     const evidence = this.evidence(request);
     const local = LOOPBACK.includes(request.ip);
     const ceremony = await this.#ceremonyFor(request, actorId);
+    // PROTO-GUARD-STAGES-SEC-001 SEC-STAGES-F02: a request on the authentication surface's ordinary
+    // ceremony-record routes (authorize, chooser, callback) that resolves no ceremony at all -- an unknown
+    // or missing state -- names no counting dimension the ceremony record's derivation actually needs, so
+    // it would otherwise still consume the same shared ordinary pool a real, in-flight ceremony's own
+    // authorize/chooser/callback traffic draws from. Deny it here, before any counter is touched, so a
+    // flood of unresolvable requests can never exhaust the pool a valid ceremony needs to complete. A
+    // reserved-stage route (bootstrap-registered: begin, confirm) is unaffected -- its own record already
+    // fails closed on a missing ceremony id (CountingKeyDeriver#derive, quota.unit "bootstrap_stage_decision").
+    if (evidence.surface_id === "surf-266-authentication" && evidence.parameter_record_id !== "rlp-266-bootstrap-v1" && !ceremony.ceremonyId) {
+      return { outcome: "deny_input_invalid" };
+    }
     return this.#engine.decide({ registrationId: evidence.registration_id, surfaceId: evidence.surface_id ?? "", parameterRecordId: evidence.parameter_record_id,
       releaseSetDigest: evidence.release_set_digest, requestOrJobUnit: 1,
       // The pre-authentication cohort is the direct loopback transport itself (never a forwarded header):
