@@ -1,0 +1,35 @@
+[
+  {
+    "approvalId": "CBD266-PROTOTYPE-DEFAULTS-001",
+    "actorId": "atlassian:5cffa74b92e6c70c53499977",
+    "candidateDigests": [
+      "f614588b769507f009a31712c0f74c2e490b966f7f1d750e05cf0416381c5669",
+      "19562bd15bc72a98ec25edd8c16b27da369f0c4f07c19b7d852acb720416c73b",
+      "7156536964425ab726cfd0387ce67c96e4eec0488a7f058ea3d22c320e2faeb9",
+      "a846bd73057f182c8b0850c5c71e735cd87adddcd387f17cc80dcdbd64e688ed"
+    ],
+    "conditions": [
+      "prototype-only",
+      "revisit before any hosted environment"
+    ],
+    "decidedAt": "2026-09-13T00:00:00Z",
+    "expiresAt": null,
+    "revoked": false,
+    "decisionRecord": "docs/agent-operations/records/decisions/CBD266-PROTOTYPE-DEFAULTS-001.md; docs/cbd-266-rate-limit-parameter-registry-contract.md section 4.7.3"
+  },
+  {
+    "approvalId": "CBD266-RECOVERY-RECORD-001",
+    "actorId": "atlassian:5cffa74b92e6c70c53499977",
+    "candidateDigests": [
+      "bb87eb794361478068031786de7de009d4050d8d1af9c84af7950f56747149ba"
+    ],
+    "conditions": [
+      "prototype-only",
+      "revisit before any hosted environment"
+    ],
+    "decidedAt": "2026-09-14T01:17:29Z",
+    "expiresAt": null,
+    "revoked": false,
+    "decisionRecord": ".agent-state/decisions/CBD266-RECOVERY-RECORD-001.r1.agent-record.json; docs/cbd-266-rate-limit-parameter-registry-contract.md section 4.7.3"
+  }
+]
