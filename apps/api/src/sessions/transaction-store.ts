@@ -39,27 +39,50 @@ import type { Obligation, PolicyInput } from "@cobudget/contracts/authorization"
 import type { AuthorizationTransactionStore } from "../authorization/boundary.js";
 import type { InProcessRestrictedAuditStore } from "./audit.ts";
 
+/** Fault-injection seam for the live race proofs (PROTO-ACTIVATION-001 A2): runs after the boundary's work and before COMMIT. Never set in production composition. */
+export interface TransactionHooks {
+  readonly beforeCommit?: ((transaction: unknown) => Promise<void>) | undefined;
+}
+
+const SERIALIZATION_ATTEMPTS = 3;
+
 export class ApiTransactionStore implements AuthorizationTransactionStore {
   readonly #client: DataAccessClient;
   readonly #audit: InProcessRestrictedAuditStore;
+  readonly #hooks: TransactionHooks;
 
-  constructor(client: DataAccessClient, audit: InProcessRestrictedAuditStore) {
+  constructor(client: DataAccessClient, audit: InProcessRestrictedAuditStore, hooks: TransactionHooks = {}) {
     this.#client = client;
     this.#audit = audit;
+    this.#hooks = hooks;
   }
 
+  /**
+   * One serializable transaction per effect. PROTO-ACTIVATION-001 A4 live proof: two actors creating
+   * proposals at the same instant can trip SERIALIZABLE's predicate detection on the shared proposal
+   * table (SQLSTATE 40001/40P01) although their rows never overlap; such a rolled-back attempt is retried
+   * with a fresh transaction, up to `SERIALIZATION_ATTEMPTS`, exactly as the creation store already
+   * does. Every attempt's buffered audit events are discarded on its rollback; only the committed
+   * attempt's are published.
+   */
   async transaction<T>(work: (transaction: unknown) => Promise<T>): Promise<T> {
-    let handle: object | undefined;
-    try {
-      const result = await this.#client.transaction({ isolation: "serializable" }, async (scoped) => {
-        handle = scoped;
-        return work(scoped);
-      });
-      if (handle) await this.#audit.commit(handle);
-      return result;
-    } catch (error) {
-      if (handle) this.#audit.discard(handle);
-      throw error;
+    for (let attempt = 1; ; attempt++) {
+      let handle: object | undefined;
+      try {
+        const result = await this.#client.transaction({ isolation: "serializable" }, async (scoped) => {
+          handle = scoped;
+          const value = await work(scoped);
+          if (this.#hooks.beforeCommit) await this.#hooks.beforeCommit(scoped);
+          return value;
+        });
+        if (handle) await this.#audit.commit(handle);
+        return result;
+      } catch (error) {
+        if (handle) this.#audit.discard(handle);
+        const state = (error as { sqlState?: string }).sqlState;
+        if (attempt < SERIALIZATION_ATTEMPTS && (state === "40001" || state === "40P01")) continue;
+        throw error;
+      }
     }
   }
 

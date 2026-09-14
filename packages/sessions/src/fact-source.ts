@@ -32,13 +32,20 @@ export interface MinimalFactSourceAdapter {
  * `FactSourceAdapter.read` exactly and the caller in
  * `apps/api/src/sessions/**` is what actually satisfies the real interface.
  */
-export function createSessionFactSourceAdapter(store: SessionStore, config: SessionConfig, environmentId: Environment): MinimalFactSourceAdapter {
+export function createSessionFactSourceAdapter(store: SessionStore, config: SessionConfig, environmentId: Environment, storeFor?: (transaction: unknown) => SessionStore | undefined): MinimalFactSourceAdapter {
   return {
-    async read(source, lookup) {
+    async read(source, lookup, transaction) {
       if (source !== "session_store") return null;
       const cookieValue = typeof lookup.credential === "string" ? lookup.credential : undefined;
-      const outcome = await resolveSession(cookieValue, store, config, environmentId, new Date());
+      // PROTO-ACTIVATION-001 A2 (review R02): inside a mutation transaction the session is resolved through a
+      // store bound to that transaction, so the session row read and its idle-extension write are part of the
+      // transaction, and the subject's revocation epoch is fenced by a conditional write on the authority row.
+      // A revoke or subject-wide bump that lands between this read and the mutation's COMMIT therefore aborts
+      // the mutation instead of being overtaken by it.
+      const scoped = transaction !== undefined && storeFor ? storeFor(transaction) : undefined;
+      const outcome = await resolveSession(cookieValue, scoped ?? store, config, environmentId, new Date());
       if (outcome.status !== "resolved") return null;
+      if (scoped && !await scoped.fenceRevocationEpoch(outcome.accountSubjectId)) return null;
       return {
         "subject.accountSubjectId": outcome.accountSubjectId,
         "subject.sessionRef": outcome.sessionRef,

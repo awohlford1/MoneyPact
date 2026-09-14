@@ -8,9 +8,11 @@ import { CountingKeyDeriver, InProcessCounterStore } from "./counter.ts";
 import { seal, validateRegistry } from "./registry.ts";
 
 const evidence = JSON.parse(readFileSync(PROTOTYPE_APPROVALS_PATH, "utf8"));
-it("projects all five exact decision digests and the authorized actor", () => {
+// Five prototype sets plus rlp-266-identity-session-v1 (CBD266-IDENTITY-RECORDS-001, projected by PROTO-ACTIVATION-001).
+const APPROVED_RECORDS = 6;
+it("projects all exact decision digests and the authorized actor", () => {
   const registry = loadPrototypeRegistry();
-  assert.equal(registry.approved.size, 5);
+  assert.equal(registry.approved.size, APPROVED_RECORDS);
   assert.deepEqual(registry.diagnostics, []);
   for (const record of registry.records) {
     assert.equal(record.product_owner_approval.approved_by_actor_id, "atlassian:5cffa74b92e6c70c53499977");
@@ -42,10 +44,10 @@ it("rejects missing, malformed, duplicate, revoked and mismatched file evidence;
     }
     writeFileSync(path, "{"); assert.equal(loadPrototypeRegistry(path).approved.size, 0);
     writeFileSync(path, JSON.stringify(evidence)); const registry = loadPrototypeRegistry(path);
-    assert.equal(registry.approved.size, 5);
+    assert.equal(registry.approved.size, APPROVED_RECORDS);
     writeFileSync(path, JSON.stringify([{ ...evidence[0], revoked: true }]));
     assert.equal(registry.approvalCurrent(registry.records[0]!), false);
-    writeFileSync(path, JSON.stringify(evidence)); assert.equal(loadPrototypeRegistry(path).approved.size, 5);
+    writeFileSync(path, JSON.stringify(evidence)); assert.equal(loadPrototypeRegistry(path).approved.size, APPROVED_RECORDS);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 it("rejects matching but expired or future-dated records and evidence", () => {

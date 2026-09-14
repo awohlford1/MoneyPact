@@ -48,7 +48,8 @@ it("guard fails a changed approval digest and passes restored evidence", () => {
     writeFileSync(path, original);
     const restored = loadPrototypeRegistry(path);
     assert.equal(printReport(checkInventory(discovered, registrations, restored)), true);
-    assert.equal(restored.approved.size, 5);
-    console.log("Restored approval evidence: approved=5");
+    // Five prototype sets plus rlp-266-identity-session-v1 (CBD266-IDENTITY-RECORDS-001, PROTO-ACTIVATION-001).
+    assert.equal(restored.approved.size, 6);
+    console.log("Restored approval evidence: approved=6");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

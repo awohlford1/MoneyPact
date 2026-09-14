@@ -38,5 +38,265 @@
     "registration_lifecycle": "active",
     "introduced_by": "CBD-266",
     "authorization_metadata_id": null
+  },
+  {
+    "registration_id": "api:POST:/v1/identity/begin",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/identity/http.ts#IdentityController.begin",
+    "surface_id": "surf-266-authentication",
+    "parameter_record_id": "rlp-266-bootstrap-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-190",
+    "authorization_metadata_id": null
+  },
+  {
+    "registration_id": "api:GET:/v1/identity/callback",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/identity/http.ts#IdentityController.callback",
+    "surface_id": "surf-266-authentication",
+    "parameter_record_id": "rlp-266-bootstrap-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-190",
+    "authorization_metadata_id": null
+  },
+  {
+    "registration_id": "api:HEAD:/v1/identity/callback",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/identity/http.ts#IdentityController.callback",
+    "surface_id": "surf-266-authentication",
+    "parameter_record_id": "rlp-266-bootstrap-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-190",
+    "authorization_metadata_id": null
+  },
+  {
+    "registration_id": "api:GET:/v1/identity/local/authorize",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/identity/http.ts#IdentityController.localAuthorize",
+    "surface_id": "surf-266-authentication",
+    "parameter_record_id": "rlp-266-bootstrap-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-190",
+    "authorization_metadata_id": null
+  },
+  {
+    "registration_id": "api:HEAD:/v1/identity/local/authorize",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/identity/http.ts#IdentityController.localAuthorize",
+    "surface_id": "surf-266-authentication",
+    "parameter_record_id": "rlp-266-bootstrap-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-190",
+    "authorization_metadata_id": null
+  },
+  {
+    "registration_id": "api:GET:/v1/identity/local/choose",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/identity/http.ts#IdentityController.localChoose",
+    "surface_id": "surf-266-authentication",
+    "parameter_record_id": "rlp-266-bootstrap-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-190",
+    "authorization_metadata_id": null
+  },
+  {
+    "registration_id": "api:HEAD:/v1/identity/local/choose",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/identity/http.ts#IdentityController.localChoose",
+    "surface_id": "surf-266-authentication",
+    "parameter_record_id": "rlp-266-bootstrap-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-190",
+    "authorization_metadata_id": null
+  },
+  {
+    "registration_id": "api:GET:/v1/identity/me",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/identity/http.ts#IdentityController.me",
+    "surface_id": "surf-266-session",
+    "parameter_record_id": "rlp-266-identity-session-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-190",
+    "authorization_metadata_id": "profile.read"
+  },
+  {
+    "registration_id": "api:HEAD:/v1/identity/me",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/identity/http.ts#IdentityController.me",
+    "surface_id": "surf-266-session",
+    "parameter_record_id": "rlp-266-identity-session-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-190",
+    "authorization_metadata_id": "profile.read"
+  },
+  {
+    "registration_id": "api:POST:/v1/identity/logout",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/identity/http.ts#IdentityController.logout",
+    "surface_id": "surf-266-session",
+    "parameter_record_id": "rlp-266-identity-session-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-190",
+    "authorization_metadata_id": "session_authenticated_surface"
+  },
+  {
+    "registration_id": "api:POST:/v1/budget-creation-proposals",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/budget-creation/proposal-http.ts#ProposalController.create",
+    "surface_id": "surf-266-budget-mutation",
+    "parameter_record_id": "rlp-266-mutation-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-232",
+    "authorization_metadata_id": "proposal.create"
+  },
+  {
+    "registration_id": "api:GET:/v1/budget-creation-proposals/{proposalId}",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/budget-creation/proposal-http.ts#ProposalController.read",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-232",
+    "authorization_metadata_id": "proposal.read"
+  },
+  {
+    "registration_id": "api:HEAD:/v1/budget-creation-proposals/{proposalId}",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/budget-creation/proposal-http.ts#ProposalController.read",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-232",
+    "authorization_metadata_id": "proposal.read"
+  },
+  {
+    "registration_id": "api:POST:/v1/budget-creation-proposals/{proposalId}/confirm",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/budget-creation/http.ts#ConfirmationController.confirm",
+    "surface_id": "surf-266-authentication",
+    "parameter_record_id": "rlp-266-bootstrap-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-233",
+    "authorization_metadata_id": "space.create"
+  },
+  {
+    "registration_id": "api:GET:/v1/budget-spaces",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/budget-spaces/http.ts#BudgetSpacesController.list",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-232",
+    "authorization_metadata_id": "membership.list_own"
+  },
+  {
+    "registration_id": "api:GET:/v1/budget-spaces/{budgetSpaceId}",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/budget-spaces/http.ts#BudgetSpacesController.detail",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-232",
+    "authorization_metadata_id": "1.view_space"
+  },
+  {
+    "registration_id": "api:HEAD:/v1/budget-spaces",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/budget-spaces/http.ts#BudgetSpacesController.list",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-232",
+    "authorization_metadata_id": "membership.list_own"
+  },
+  {
+    "registration_id": "api:HEAD:/v1/budget-spaces/{budgetSpaceId}",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/budget-spaces/http.ts#BudgetSpacesController.detail",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-232",
+    "authorization_metadata_id": "1.view_space"
+  },
+  {
+    "registration_id": "api:GET:/v1/budget-spaces/{budgetSpaceId}/categories",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/targets/http.ts#TargetsController.listCategories",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-153",
+    "authorization_metadata_id": "1.view_space"
+  },
+  {
+    "registration_id": "api:HEAD:/v1/budget-spaces/{budgetSpaceId}/categories",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/targets/http.ts#TargetsController.listCategories",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-153",
+    "authorization_metadata_id": "1.view_space"
+  },
+  {
+    "registration_id": "api:PUT:/v1/budget-spaces/{budgetSpaceId}/categories",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/targets/http.ts#TargetsController.putCategories",
+    "surface_id": "surf-266-budget-mutation",
+    "parameter_record_id": "rlp-266-mutation-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-153",
+    "authorization_metadata_id": "4.edit_category"
+  },
+  {
+    "registration_id": "api:PUT:/v1/budget-spaces/{budgetSpaceId}/targets",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/targets/http.ts#TargetsController.putTargets",
+    "surface_id": "surf-266-budget-mutation",
+    "parameter_record_id": "rlp-266-mutation-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-153",
+    "authorization_metadata_id": "2a.edit_target"
+  },
+  {
+    "registration_id": "api:GET:/v1/budget-spaces/{budgetSpaceId}/plan",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/targets/http.ts#TargetsController.getPlan",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-153",
+    "authorization_metadata_id": "1.view_space"
+  },
+  {
+    "registration_id": "api:HEAD:/v1/budget-spaces/{budgetSpaceId}/plan",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/targets/http.ts#TargetsController.getPlan",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-153",
+    "authorization_metadata_id": "1.view_space"
+  },
+  {
+    "registration_id": "api:GET:/v1/identity/recovery",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/identity/http.ts#IdentityController.recovery",
+    "surface_id": "surf-266-recovery",
+    "parameter_record_id": "rlp-266-recovery-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-266",
+    "authorization_metadata_id": "profile.read"
+  },
+  {
+    "registration_id": "api:HEAD:/v1/identity/recovery",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/identity/http.ts#IdentityController.recovery",
+    "surface_id": "surf-266-recovery",
+    "parameter_record_id": "rlp-266-recovery-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-266",
+    "authorization_metadata_id": "profile.read"
   }
 ]

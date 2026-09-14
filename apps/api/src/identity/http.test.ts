@@ -93,7 +93,7 @@ async function signIn(b: Browser, scenario = "subject-a") {
 }
 
 describe("PROTO-WIRE-01/02 identity routes through the real Fastify instance", () => {
-  it("assembles the API with the real session fact source and transaction store; a browser can sign in, but /me and /logout are denied with or without a cookie (PROTO-IDENTITY-API-001 correction C2, pending p2's policy cell)", async () => {
+  it("assembles the API with the real session fact source and transaction store; a browser signs in, /me allows with the cookie (p2 profile.read) and denies without, logout needs the bootstrap CSRF value (PROTO-ACTIVATION-001, ACT-03)", async () => {
     const db = new FakeIdentityDatabase();
     const { app, runtime } = await createComposedApiApplication(localConfig(), () => undefined, testHistory, { client: createFakeIdentityClient(db), rateLimit: syntheticGate });
     const b = await browser(app);
@@ -102,37 +102,64 @@ describe("PROTO-WIRE-01/02 identity routes through the real Fastify instance", (
       assert.notEqual(runtime.authorization.sessionLocator({ headers: { cookie: `${SESSION_COOKIE_NAME}=abc` } } as never), undefined, "the real session locator reads the session cookie");
       const routes = installedRoutes(b.server).map((route) => route.id);
       for (const route of ["api:POST:/v1/identity/begin", "api:GET:/v1/identity/callback", "api:GET:/v1/identity/local/authorize", "api:GET:/v1/identity/local/choose", "api:GET:/v1/identity/me", "api:POST:/v1/identity/logout"]) assert.ok(routes.includes(route), route);
+      // ACT-01: the four route modules are composed alongside identity in the running API.
+      for (const route of ["api:POST:/v1/budget-creation-proposals", "api:GET:/v1/budget-creation-proposals/{proposalId}", "api:POST:/v1/budget-creation-proposals/{proposalId}/confirm", "api:GET:/v1/budget-spaces", "api:GET:/v1/budget-spaces/{budgetSpaceId}", "api:GET:/v1/budget-spaces/{budgetSpaceId}/categories", "api:PUT:/v1/budget-spaces/{budgetSpaceId}/categories", "api:PUT:/v1/budget-spaces/{budgetSpaceId}/targets", "api:GET:/v1/budget-spaces/{budgetSpaceId}/plan"]) assert.ok(routes.includes(route), route);
 
+      // No cookie: denied before the handler by the session gate, with the uniform response.
       const denied = await b.inject("GET", "/v1/identity/me");
       assert.equal(denied.statusCode, 403);
       assert.deepEqual(denied.json(), { outcome: "deny", reason: "denied" });
+      const logoutAnonymous = await b.inject("POST", "/v1/identity/logout", { origin: APPLICATION_ORIGIN, "sec-fetch-site": "same-origin" });
+      assert.equal(logoutAnonymous.statusCode, 403, "logout without a session is denied before its handler");
 
       const committed = await signIn(b);
       assert.equal(committed.statusCode, 303, committed.body);
       assert.equal(committed.headers.location, `${APPLICATION_ORIGIN}/`);
       // C9 (Manager ruling): only the session cookie is ever set -- no CSRF cookie exists to check for.
       assert.ok(b.cookies[SESSION_COOKIE_NAME], "session cookie delivered");
+      const issuedCookie = b.cookies[SESSION_COOKIE_NAME]!;
       assert.equal(b.cookies[CSRF_COOKIE_NAME_LITERAL], undefined, "no CSRF cookie is ever delivered");
       assert.equal(committed.headers["cache-control"], "no-store");
 
-      // C2 (review R02 / security S06): a *valid, resolvable* session cookie is still denied, because
-      // p1 carries no `identity.me` policy cell. This is the discriminating test the correction
-      // requires: a valid cookie with a denying policy must be denied, not served through a replay
-      // shortcut that skips policy evaluation.
-      const meWithValidCookie = await b.inject("GET", "/v1/identity/me");
-      assert.equal(meWithValidCookie.statusCode, 403, "even a resolvable session is denied absent a policy cell for identity.me");
-      assert.deepEqual(meWithValidCookie.json(), { outcome: "deny", reason: "denied" });
+      // A valid, resolvable cookie is allowed through the released p2 profile.read cell and the real
+      // subject-scoped fact assembly; the body is the CBD-191 section 5.1 bootstrap response.
+      const me = await b.inject("GET", "/v1/identity/me");
+      assert.equal(me.statusCode, 200, me.body);
+      const view = me.json() as Record<string, unknown>;
+      assert.equal(typeof view.accountSubjectId, "string"); assert.equal(typeof view.profileId, "string");
+      assert.equal(typeof view.sessionRef, "string"); assert.equal(view.sessionVersion, 1);
+      assert.equal(view.environmentId, "test"); assert.equal(view.assurance, "session");
+      assert.equal(typeof view.csrfValue, "string", "the raw CSRF value is delivered in the bootstrap body");
+      assert.equal(me.headers["set-cookie"], undefined, "no cookie of any kind is set by the bootstrap");
+      const csrfValue = view.csrfValue as string;
+      const allowAudit = runtime.audit!.snapshot().filter((event) => event.outcome === "allow").at(-1) as { cellRef?: unknown } | undefined;
+      assert.equal(allowAudit?.cellRef, JSON.stringify({ kind: "subject", action: "profile.read" }), "the allow was recorded under the p2 subject cell");
+
+      // RC-06 (bounded retention): a reload's bootstrap read receives the same session-bound value again.
+      const again = await b.inject("GET", "/v1/identity/me");
+      assert.equal(again.statusCode, 200);
+      assert.equal((again.json() as Record<string, unknown>).csrfValue, csrfValue);
 
       const forged = await b.inject("GET", "/v1/identity/me", { cookie: `${SESSION_COOKIE_NAME}=${"x".repeat(43)}.${"y".repeat(43)}`, authorization: "Bearer not-a-session" });
-      assert.equal(forged.statusCode, 403, "a bearer token or guessed cookie is never a session, and is denied for the same reason as a resolvable one");
+      assert.equal(forged.statusCode, 403, "a bearer token or guessed cookie is never a session");
 
-      // Logout is likewise denied through the boundary regardless of CSRF header, since policy denial
-      // now happens before the handler (and its CSRF check) ever runs -- consistent with `/me`.
-      const logoutDenied = await b.inject("POST", "/v1/identity/logout", { origin: APPLICATION_ORIGIN, "sec-fetch-site": "same-origin" });
-      assert.equal(logoutDenied.statusCode, 403);
-      assert.ok(b.cookies[SESSION_COOKIE_NAME], "a denied logout changes nothing");
-      assert.equal(db.count("account_session", [{ column: "state", value: "revoked" }]), 0, "no session was revoked through the denied HTTP route");
-      assert.ok(runtime.audit!.snapshot().length >= 2, "denials were appended to the in-process restricted audit stream");
+      // Logout: the session gate admits the cookie; the boundary's A1 CSRF guard needs the header from the bootstrap value
+      // and denies uniformly at the session gate before the handler runs.
+      const logoutNoHeader = await b.inject("POST", "/v1/identity/logout", { origin: APPLICATION_ORIGIN, "sec-fetch-site": "same-origin" });
+      assert.equal(logoutNoHeader.statusCode, 403);
+      assert.deepEqual(logoutNoHeader.json(), { outcome: "deny", reason: "denied" });
+      assert.ok(b.cookies[SESSION_COOKIE_NAME], "a rejected logout changes nothing");
+      assert.equal(db.count("account_session", [{ column: "state", value: "revoked" }]), 0);
+      const logoutCrossSite = await b.inject("POST", "/v1/identity/logout", { origin: "https://evil.example", "sec-fetch-site": "cross-site", "x-cobudget-csrf": csrfValue });
+      assert.equal(logoutCrossSite.statusCode, 403);
+      const logout = await b.inject("POST", "/v1/identity/logout", { origin: APPLICATION_ORIGIN, "sec-fetch-site": "same-origin", "x-cobudget-csrf": csrfValue });
+      assert.equal(logout.statusCode, 200, logout.body);
+      assert.deepEqual(logout.json(), { signedOut: true });
+      assert.equal(b.cookies[SESSION_COOKIE_NAME], undefined, "the session cookie is deleted in the logout response");
+      assert.equal(db.count("account_session", [{ column: "state", value: "revoked" }]), 1);
+      const afterLogout = await b.inject("GET", "/v1/identity/me", { cookie: `${SESSION_COOKIE_NAME}=${issuedCookie}` });
+      assert.equal(afterLogout.statusCode, 403, "the revoked session no longer resolves");
+      assert.ok(runtime.audit!.snapshot().length >= 2, "decisions were appended to the in-process restricted audit stream");
     } finally { await app.close(); }
   });
 
@@ -196,17 +223,38 @@ describe("PROTO-WIRE-01/02 identity routes through the real Fastify instance", (
     } finally { await app.close(); }
   });
 
-  it("with the real CBD-266 surface gate every identity route is denied as unregistered until registrations and approved records exist (recorded blocker)", async () => {
+  it("with the real CBD-266 surface gate (config/rate-limit) the ceremony counts on its own server-issued ceremony bucket, the session routes on the approved identity-session record, and the recovery route on the independent recovery pool (PROTO-ACTIVATION-001 A7, ACT-01)", async () => {
     const db = new FakeIdentityDatabase();
-    const { app, runtime } = await createComposedApiApplication(localConfig(), () => undefined, testHistory, { client: createFakeIdentityClient(db) });
+    const { app, runtime } = await createComposedApiApplication(localConfig(), () => undefined, testHistory, { client: createFakeIdentityClient(db), scheduler: null });
     const b = await browser(app);
     try {
-      const begin = await b.inject("POST", "/v1/identity/begin", { origin: APPLICATION_ORIGIN, "content-type": "application/json" }, { ceremony: "sign_in" });
-      assert.equal(begin.statusCode, 403);
-      const audit = runtime.audit!.snapshot().at(-1) as { enforcement?: { safe_reason_class: string; earliest_decisive_gate: string } } | undefined;
-      assert.equal(audit?.enforcement?.safe_reason_class, "deny_unregistered");
-      assert.equal(audit?.enforcement?.earliest_decisive_gate, "surface");
+      const committed = await signIn(b);
+      assert.equal(committed.statusCode, 303, committed.body);
+      assert.ok(b.cookies[SESSION_COOKIE_NAME], "session cookie delivered through the real surface gate");
+      const me = await b.inject("GET", "/v1/identity/me");
+      assert.equal(me.statusCode, 200, me.body);
+      const events = runtime.audit!.snapshot() as { outcome?: string; enforcement?: { registration_id: string; parameter_record_id: string | null; surface_id: string | null } }[];
+      const meAllow = events.filter((event) => event.outcome === "allow").at(-1);
+      assert.equal(meAllow?.enforcement?.parameter_record_id, "rlp-266-identity-session-v1", "the me route is bound to the approved identity-session record");
+      assert.equal(meAllow?.enforcement?.surface_id, "surf-266-session");
+      // Recovery: its own approved record on surf-266-recovery, admitted even after the session pool is exhausted.
+      for (let i = 0; i < 80; i++) await b.inject("GET", "/v1/identity/me");
+      const exhausted = await b.inject("GET", "/v1/identity/me");
+      assert.equal(exhausted.statusCode, 403, "the session pool is exhausted (70 per minute)");
+      const last = runtime.audit!.snapshot().at(-1) as { enforcement?: { safe_reason_class: string } } | undefined;
+      assert.equal(last?.enforcement?.safe_reason_class, "deny_exhausted");
+      const recovery = await b.inject("GET", "/v1/identity/recovery");
+      assert.equal(recovery.statusCode, 200, recovery.body);
+      assert.equal(typeof recovery.json<{ csrfValue?: string }>().csrfValue, "string", "the recovery surface re-establishes a usable session state");
+      const recoveryAllow = (runtime.audit!.snapshot() as typeof events).filter((event) => event.outcome === "allow").at(-1);
+      assert.equal(recoveryAllow?.enforcement?.parameter_record_id, "rlp-266-recovery-v1");
+      assert.equal(recoveryAllow?.enforcement?.surface_id, "surf-266-recovery");
+      // A second sign-in is a second ceremony with its own bootstrap bucket: the first ceremony's traffic did not consume it.
+      const second = await signIn(b);
+      assert.equal(second.statusCode, 303, second.body);
       assert.equal((await b.inject("GET", "/health")).statusCode, 200);
+      const unregistered = await b.inject("GET", "/v1/identity/nowhere");
+      assert.equal(unregistered.statusCode, 404, "an unmatched route keeps the router's 404");
     } finally { await app.close(); }
   });
 

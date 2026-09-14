@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import { describe, it } from "node:test";
 import { oneWayDigest } from "./challenge.ts";
+import type { LateSettlement } from "./exchange.ts";
 import { EXCHANGE_STEP_ORDER, runBoundedExchange } from "./exchange.ts";
 import type { ExchangeOutcome } from "./exchange.ts";
 import { LocalIssuer } from "./local-issuer.ts";
@@ -22,10 +23,11 @@ function prepare(scenario: LocalScenario, issuer = new LocalIssuer({ issuer: ISS
   return { issuer, code, verifier, nonce, issuedAt: new Date() };
 }
 
-async function exchange(prepared: Prepared, overrides: { readonly transport?: ProviderTransport; readonly maxLifetimeMs?: number; readonly nonceDigest?: string; readonly verifier?: Buffer; readonly code?: string; readonly issuer?: string; readonly clientId?: string } = {}): Promise<ExchangeOutcome> {
+async function exchange(prepared: Prepared, overrides: { readonly transport?: ProviderTransport; readonly maxLifetimeMs?: number; readonly cleanupDeadlineMs?: number; readonly onLateSettlement?: (settled: LateSettlement) => void; readonly nonceDigest?: string; readonly verifier?: Buffer; readonly code?: string; readonly issuer?: string; readonly clientId?: string } = {}): Promise<ExchangeOutcome> {
   return runBoundedExchange({
     transport: overrides.transport ?? prepared.issuer, code: overrides.code ?? prepared.code, codeVerifier: overrides.verifier ?? Buffer.from(prepared.verifier), redirectUri: CALLBACK_URI, clientId: overrides.clientId ?? CLIENT_ID, issuer: overrides.issuer ?? ISSUER,
     allowedAlgorithms: ["RS256"], nonceDigest: overrides.nonceDigest ?? oneWayDigest(prepared.nonce), digest: oneWayDigest, receiptTime: new Date(), challengeIssuedAt: prepared.issuedAt, clockSkewSeconds: 30, maxLifetimeMs: overrides.maxLifetimeMs ?? 2_000,
+    cleanupDeadlineMs: overrides.cleanupDeadlineMs, onLateSettlement: overrides.onLateSettlement,
   });
 }
 
@@ -187,5 +189,95 @@ describe("CBD-190-AC02 bounded exchange state machine (section 10.1, CT-190-016 
     issuer.retireOldKeys();
     const retired = await exchange(second);
     assert.equal(retired.evidence.tokenRejection, "key");
+  });
+});
+
+describe("PROTO-ACTIVATION-001 A9 (RC-01 residuals): every cleanup path is deadline-bounded", () => {
+  it("a stalled revocation transport cannot hold buffer destruction open: the cleanup revocation is bounded and the outcome returns within the deadline", async () => {
+    const prepared = prepare("subject-a");
+    let revokeCalls = 0;
+    const stalledRevoke: ProviderTransport = {
+      exchange: (input) => prepared.issuer.exchange(input),
+      jwks: () => new Promise(() => undefined), // validation hangs until the shared deadline fires, with a family already received.
+      revoke: () => { revokeCalls++; return new Promise(() => undefined); }, // the cleanup revocation never settles.
+    };
+    const started = performance.now();
+    const outcome = await exchange(prepared, { transport: stalledRevoke, maxLifetimeMs: 30, cleanupDeadlineMs: 40 });
+    const elapsed = performance.now() - started;
+    assert.equal(outcome.status === "rejected" && outcome.rejection, "exchange_timeout");
+    assert.equal(revokeCalls, 1, "exactly one cleanup attempt was made");
+    assert.equal(outcome.evidence.buffersZeroed, true, "buffers were destroyed although the revocation never settled");
+    assert.ok(elapsed < 1_000, `returned within the bounded deadlines, not after an unbounded await (${elapsed.toFixed(0)} ms)`);
+  });
+
+  it("a timed-out initial exchange settles its late family with one bounded cleanup and reports the settlement; a transport that never answers is abandoned at the deadline", async () => {
+    const prepared = prepare("subject-a");
+    let resolveLate!: (value: import("./local-issuer.ts").ExchangeTransportResult) => void;
+    const late = new Promise<import("./local-issuer.ts").ExchangeTransportResult>((resolve) => { resolveLate = resolve; });
+    const settlements: string[] = [];
+    const lateTransport: ProviderTransport = { exchange: () => late, revoke: (input) => prepared.issuer.revoke(input), jwks: () => prepared.issuer.jwks() };
+    const outcome = await exchange(prepared, { transport: lateTransport, maxLifetimeMs: 30, cleanupDeadlineMs: 500, onLateSettlement: (settled) => settlements.push(settled) });
+    assert.equal(outcome.status === "rejected" && outcome.rejection, "exchange_timeout");
+    resolveLate(await prepared.issuer.exchange({ code: prepared.code, codeVerifier: prepared.verifier.toString("ascii"), redirectUri: CALLBACK_URI, clientId: CLIENT_ID }));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.deepEqual(settlements, ["revoked"], "the late family was revoked exactly once and the settlement was reported");
+    assert.deepEqual(prepared.issuer.familyCounts(), { issued: 1, revoked: 1 });
+
+    const abandoned: string[] = [];
+    const never: ProviderTransport = { exchange: () => new Promise(() => undefined), revoke: (input) => prepared.issuer.revoke(input), jwks: () => prepared.issuer.jwks() };
+    const second = await exchange(prepare("subject-a"), { transport: never, maxLifetimeMs: 20, cleanupDeadlineMs: 40, onLateSettlement: (settled) => abandoned.push(settled) });
+    assert.equal(second.status === "rejected" && second.rejection, "exchange_timeout");
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    assert.deepEqual(abandoned, ["abandoned"], "the settlement itself is bounded: a transport that never answers is released at the cleanup deadline, not retained for the process lifetime");
+  });
+});
+
+describe("PROTO-ACTIVATION-001 B2 (SEC-ACT-R2-F01): abandonment cancels the initial exchange and retains cleanup ownership of a late response", () => {
+  it("a transport that answers after the cleanup deadline (ignoring the cancellation) has its late family revoked and reported", async () => {
+    const prepared = prepare("subject-a");
+    let resolveLate!: (value: import("./local-issuer.ts").ExchangeTransportResult) => void;
+    const late = new Promise<import("./local-issuer.ts").ExchangeTransportResult>((resolve) => { resolveLate = resolve; });
+    const settlements: string[] = [];
+    let observedSignal: AbortSignal | undefined;
+    const ignoringCancellation: ProviderTransport = { exchange: (input) => { observedSignal = input.signal; return late; }, revoke: (input) => prepared.issuer.revoke(input), jwks: () => prepared.issuer.jwks() };
+    const outcome = await exchange(prepared, { transport: ignoringCancellation, maxLifetimeMs: 20, cleanupDeadlineMs: 40, onLateSettlement: (settled) => settlements.push(settled) });
+    assert.equal(outcome.status === "rejected" && outcome.rejection, "exchange_timeout");
+    assert.equal(observedSignal?.aborted, false, "the exchange is not cancelled at the timeout: its late family is still expected within the cleanup deadline");
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    assert.deepEqual(settlements, ["abandoned"], "the cleanup deadline passed with no answer");
+    assert.equal(observedSignal?.aborted, true, "abandonment cancelled the initial exchange through its signal");
+    // The provider answers anyway, after the abandonment, with a real token family (the pre-B2 escape: settled unrevoked).
+    resolveLate(await prepared.issuer.exchange({ code: prepared.code, codeVerifier: prepared.verifier.toString("ascii"), redirectUri: CALLBACK_URI, clientId: CLIENT_ID }));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.deepEqual(settlements, ["abandoned", "late_revoked"], "the late family got its one cleanup revocation and the settlement was reported");
+    assert.deepEqual(prepared.issuer.familyCounts(), { issued: 1, revoked: 1 }, "no family minted after abandonment stays live");
+    assert.equal(prepared.issuer.revocations.length, 1, "exactly one revocation attempt");
+  });
+
+  it("a transport that honours the cancellation mints nothing after abandonment; a late family whose revocation fails is reported as such", async () => {
+    const prepared = prepare("subject-a");
+    const settlements: string[] = [];
+    // The local issuer honours the signal: the exchange only reaches it after the abandonment.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const honouring: ProviderTransport = { exchange: async (input) => { await gate; return prepared.issuer.exchange(input); }, revoke: (input) => prepared.issuer.revoke(input), jwks: () => prepared.issuer.jwks() };
+    const outcome = await exchange(prepared, { transport: honouring, maxLifetimeMs: 20, cleanupDeadlineMs: 40, onLateSettlement: (settled) => settlements.push(settled) });
+    assert.equal(outcome.status === "rejected" && outcome.rejection, "exchange_timeout");
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.deepEqual(settlements, ["abandoned", "late_no_family"], "the cancelled exchange minted no family");
+    assert.deepEqual(prepared.issuer.familyCounts(), { issued: 0, revoked: 0 });
+
+    const second = prepare("subject-a");
+    let resolveLate!: (value: import("./local-issuer.ts").ExchangeTransportResult) => void;
+    const late = new Promise<import("./local-issuer.ts").ExchangeTransportResult>((resolve) => { resolveLate = resolve; });
+    const failing: string[] = [];
+    const failingRevoke: ProviderTransport = { exchange: () => late, revoke: async () => "failed", jwks: () => second.issuer.jwks() };
+    await exchange(second, { transport: failingRevoke, maxLifetimeMs: 20, cleanupDeadlineMs: 40, onLateSettlement: (settled) => failing.push(settled) });
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    resolveLate(await second.issuer.exchange({ code: second.code, codeVerifier: second.verifier.toString("ascii"), redirectUri: CALLBACK_URI, clientId: CLIENT_ID }));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.deepEqual(failing, ["abandoned", "late_revocation_failed"], "a late family that could not be revoked is reported, never silently settled");
   });
 });

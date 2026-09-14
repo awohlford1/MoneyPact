@@ -430,7 +430,8 @@ describe("identity view and logout", () => {
     assert.equal(view.profileId, h.db.rows("financial_profile")[0]!.profile_id);
     assert.equal(view.sessionRef, signedIn.sessionRef);
     assert.ok(view.csrfValue, "C9: the raw CSRF bootstrap value is recoverable in-process before logout");
-    assert.deepEqual(Object.keys(view).sort(), ["accountSubjectId", "assurance", "csrfValue", "environmentId", "identityBindingId", "profileId", "sessionRef"]);
+    assert.equal(view.sessionVersion, 1, "CBD-191 section 5.1: the per-session version is a permitted client hint");
+    assert.deepEqual(Object.keys(view).sort(), ["accountSubjectId", "assurance", "csrfValue", "environmentId", "identityBindingId", "profileId", "sessionRef", "sessionVersion"]);
     const csrf = await h.ceremony.csrfDigestFor(cookie);
     assert.ok(csrf);
     const deletion = await h.ceremony.logout(csrf.sessionRef);
@@ -444,18 +445,51 @@ describe("identity view and logout", () => {
     assert.equal(await h.ceremony.view("not-a-cookie"), undefined);
   });
 
-  it("PROTO-IDENTITY-API-001 RC-06: the raw CSRF bootstrap value is delivered exactly once per issuance", async () => {
-    const h = buildHarness();
+  it("PROTO-IDENTITY-API-001 RC-06 / PROTO-ACTIVATION-001: the raw CSRF bootstrap value is returned on every bootstrap read of a live session (a reload must be able to mutate again), bounded by the session's absolute expiry and erased at logout", async () => {
+    let now = new Date();
+    const h = buildHarness({ now: () => now });
     const signedIn = success(await h.signIn("subject-a"));
     const cookie = cookieValueFrom(signedIn.setCookie, SESSION_COOKIE_NAME)!;
     const first = await h.ceremony.view(cookie);
-    assert.ok(first?.csrfValue, "the first bootstrap read still returns the raw value");
-    // Before RC-06, every repeated view()/`/me` call kept returning the same raw value forever.
+    assert.ok(first?.csrfValue, "the first bootstrap read returns the raw value");
     const second = await h.ceremony.view(cookie);
-    assert.ok(second, "the session itself is still resolvable");
-    assert.equal(second.csrfValue, undefined, "a second bootstrap read no longer repeats the already-delivered raw value");
-    const third = await h.ceremony.view(cookie);
-    assert.equal(third?.csrfValue, undefined, "consumption is permanent, not merely single-flight");
+    assert.equal(second?.csrfValue, first.csrfValue, "a reload's bootstrap read receives the same session-bound value: it is held only in browser memory (CBD-191 section 5.1)");
+    now = new Date(now.getTime() + 3601 * 1000);
+    const expired = await h.ceremony.view(cookie);
+    assert.equal(expired, undefined, "the session itself has passed its absolute lifetime");
+    assert.equal((await h.ceremony.csrfDigestFor(cookie)), undefined);
+  });
+
+  it("PROTO-ACTIVATION-001 A8: the raw CSRF bootstrap entry is erased at logout and by the same-subject reauthentication that revokes the prior session", async () => {
+    const h = buildHarness();
+    const signedIn = success(await h.signIn("subject-a"));
+    const cookie = cookieValueFrom(signedIn.setCookie, SESSION_COOKIE_NAME)!;
+    assert.equal(h.ceremony.retainedCsrfValues, 1);
+    const csrf = await h.ceremony.csrfDigestFor(cookie);
+    assert.ok(csrf);
+    await h.ceremony.logout(csrf.sessionRef);
+    assert.equal(h.ceremony.retainedCsrfValues, 0, "logout erased the raw value");
+    assert.equal(await h.ceremony.view(cookie), undefined, "the revoked session no longer resolves");
+    const again = success(await h.signIn("subject-a"));
+    assert.equal(h.ceremony.retainedCsrfValues, 1);
+    const switched = success(await h.signIn("subject-a", "account_switch", cookieValueFrom(again.setCookie, SESSION_COOKIE_NAME)));
+    assert.notEqual(switched.sessionRef, again.sessionRef);
+    assert.equal(h.ceremony.retainedCsrfValues, 1, "the prior session's raw value went with its revocation; only the new session's remains");
+  });
+
+  it("PROTO-ACTIVATION-001 A8 (SEC-ACT-F04): unread raw CSRF values are erased by the deadline timer with no bootstrap traffic, and an expired session never reaches the successful-path lookup", async () => {
+    let now = new Date();
+    const timers: { run: () => void; delayMs: number }[] = [];
+    const h = buildHarness({ now: () => now, scheduler: (run, delayMs) => { timers.push({ run, delayMs }); return setTimeout(() => undefined, 0); } });
+    success(await h.signIn("subject-a"));
+    success(await h.signIn("subject-b"));
+    assert.equal(h.ceremony.retainedCsrfValues, 2, "two raw values are held, none ever read");
+    assert.ok(timers.length >= 1, "issuance armed the deadline sweep");
+    assert.ok(Math.abs(timers.at(-1)!.delayMs - 3_600_000) < 5_000, "armed for the earliest absolute expiry");
+    now = new Date(now.getTime() + 3_601_000);
+    timers.at(-1)!.run(); // the deadline fires; no bootstrap read, no logout, no other traffic.
+    assert.equal(h.ceremony.retainedCsrfValues, 0, "both unread values were erased by the deadline itself");
+    h.ceremony.stop();
   });
 
   it("begin refuses a foreign origin, an unknown ceremony and an unknown destination before creating any challenge", async () => {

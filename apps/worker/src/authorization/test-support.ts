@@ -24,6 +24,8 @@ export function operationFor(input: PolicyInput): Operation {
   return { action: input.request.action, purpose: input.request.purpose, mode: input.authority.mode, fieldSet: input.request.fieldSet,
     ...(input.resource && input.space ? { resourceType: input.resource.type, resourceId: input.resource.id, actingSpaceId: input.space.spaceId } : {}),
     ...(input.membership ? { actingMembershipId: input.membership.membershipId } : {}),
+    // p2 subject-scoped variant: route metadata names the scope and, for a subject-target cell, the subject-owned row.
+    ...(input.environment ? { scope: "subject" as const, ...(input.resource ? { resourceType: input.resource.type, resourceId: input.resource.id } : {}) } : {}),
     ...(input.subject?.delegationRef ? { delegationRef: input.subject.delegationRef } : {}),
   };
 }
@@ -99,7 +101,9 @@ export class Harness {
       if (this.failAudit) throw new Error("audit unavailable");
       state.audits.push(event); this.order.push(event.outcome === "deny" ? "deny-audit" : "allow-audit");
     } }, testGovernance);
-    this.boundary = new AuthorizationBoundary(new FactAssembler(input.evaluation.adapter, this.source, () => new Date(input.evaluation.evaluatedAt)), this.store, this.audit, () => { this.operationsFailures++; });
+    // The configured environment (runtime_configuration) is the fixture's own environment, as a real process would stamp it from its configuration.
+    const runtime = input.environment ? { environmentId: input.environment.environmentId } : undefined;
+    this.boundary = new AuthorizationBoundary(new FactAssembler(input.evaluation.adapter, this.source, () => new Date(input.evaluation.evaluatedAt), 5_000, undefined, runtime), this.store, this.audit, () => { this.operationsFailures++; });
   }
   lookup(): FactLookup { return { operation: operationFor(this.input), credential: "opaque" }; }
 }

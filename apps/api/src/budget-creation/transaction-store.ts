@@ -21,9 +21,15 @@ class CommittedReplay {
 
 /** Operation-specific store; compose with the same FactSourceAdapter and audit
  * writer, both of which receive this exact transaction-scoped client. */
+/** A3: per-handle fate reports for the dispatching store; see apps/api/src/sessions/dispatch.ts. */
+export interface HandleOutcomes { committed(handle: object): void; rolledBack(handle: object): void }
+
 export class CreationAuthorizationStore implements AuthorizationTransactionStore {
   readonly #client: DataAccessClient;
   readonly #attempts: number;
+  #outcomes: HandleOutcomes | undefined;
+  /** Binds the explicit outcome channel (A3). */
+  observe(outcomes: HandleOutcomes): void { this.#outcomes = outcomes; }
   readonly #failures = new WeakMap<object, RouteFailure | undefined>();
   readonly #replays = new WeakMap<object, ConfirmBudgetCreationResponse | undefined>();
   readonly #plans = new WeakMap<object, CreationPlan | undefined>();
@@ -52,11 +58,17 @@ export class CreationAuthorizationStore implements AuthorizationTransactionStore
     let replay: ConfirmBudgetCreationResponse | undefined;
     let failure: RouteFailure | undefined;
     for (let attempt = 1; ; attempt++) {
+      let handle: object | undefined;
+      let durable = false;
       try {
         const result = await this.#client.transaction({ isolation: "serializable" }, async client => {
+          handle = client;
           try { return await work(client); }
           finally { failure = this.#failures.get(client); this.#failures.set(client, undefined); plan = this.#plans.get(client); replay = this.#replays.get(client); this.#plans.set(client, undefined); this.#replays.set(client, undefined); }
         });
+        // The seam resolves only after COMMIT: report the fate before anything else can be returned.
+        durable = true;
+        if (handle) this.#outcomes?.committed(handle);
         if (!plan) throw new AuthorizationDenied();
         const committed = await lookupConfirmation(this.#client, plan.context, plan.request);
         if (!committed) throw new ConfirmationError("retryable_conflict");
@@ -64,6 +76,8 @@ export class CreationAuthorizationStore implements AuthorizationTransactionStore
         if (typeof result !== "object" || result === null || !("confirmationOutcomeId" in result)) throw new AuthorizationDenied();
         return committed as T;
       } catch (error) {
+        // Every path below returns or retries after a rollback: report it before choosing the response.
+        if (handle && !durable) this.#outcomes?.rolledBack(handle);
         if (replay) return replay as T;
         if (failure) return failure as T;
         const state = (error as { sqlState?: string }).sqlState;

@@ -105,7 +105,7 @@ function PlanView({ budget, editing }: { budget: BudgetDetail; editing: boolean 
   return <section className="space-y-4" aria-labelledby="plan-heading"><h2 id="plan-heading" className="text-2xl font-semibold">Category plan</h2>
     {result.error ? <Failure error={result.error} retry={result.refresh} /> : !result.value ? <Alert loading>Loading category targets…</Alert> : <>
       {result.value.categories.length === 0 && <Alert>No categories yet. Add a category to start planning.</Alert>}
-      <ul className="space-y-4">{result.value.categories.map(category => <TargetRow key={`${category.id}:${result.value!.targets.find(target => target.categoryId === category.id)?.version}`} category={category} target={result.value!.targets.find(target => target.categoryId === category.id)} plan={result.value!} editing={editing} saved={result.refresh} />)}</ul>
+      <ul className="space-y-4">{result.value.categories.map(category => <TargetRow key={`${category.id}:${result.value!.targets.find(target => target.categoryId === category.id)?.baseAmount ?? ""}`} category={category} target={result.value!.targets.find(target => target.categoryId === category.id)} plan={result.value!} editing={editing} saved={result.refresh} />)}</ul>
     </>}
     {editing && <form className="flex flex-wrap items-end gap-3" onSubmit={event => { event.preventDefault(); void add(); }}><Input id="category-name" label="Category name" value={name} onChange={event => setName(event.target.value)} error={error || undefined} /><Button type="submit" disabled={busy}>Add category</Button></form>}
   </section>;
@@ -117,7 +117,7 @@ function TargetRow({ category, target, plan, editing, saved }: { category: Categ
   const [busy, setBusy] = useState(false);
   async function save() {
     setBusy(true); setError("");
-    try { await api.saveTarget(plan.budgetSpaceId, category.id, amount, target?.version ?? 0); saved(); }
+    try { await api.saveTarget(plan.budgetSpaceId, category.id, amount, plan.minorUnitPrecision); saved(); }
     catch (error) { setError(error instanceof ApiError && error.fieldErrors[0] ? error.fieldErrors[0].message : "We could not save this target. Refresh the plan and try again."); }
     finally { setBusy(false); }
   }

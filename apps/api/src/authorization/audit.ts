@@ -1,6 +1,6 @@
 import type { EnforcementEvidence, EnforcementOutcome } from "../../../../packages/rate-limit/src/index.ts";
 import { randomUUID } from "node:crypto";
-import { ACTION_DEFINITIONS, policyAuditEvent, sha256 } from "@cobudget/contracts/authorization";
+import { CURRENT_POLICY_VERSION, POLICY_VERSIONS, policyAuditEvent, sha256 } from "@cobudget/contracts/authorization";
 import type { PolicyAuditEvent, PolicyDecision, PolicyInput } from "@cobudget/contracts/authorization";
 
 export interface AuditGovernance {
@@ -39,7 +39,8 @@ export class RestrictedAudit {
     const variant = input?.authority.mode === "service" ? "service" : input?.bootstrap ? "bootstrap" : "ordinary";
     await this.#store.append((sequence, previousEventDigest) => {
       if (!Number.isSafeInteger(sequence) || sequence < 1 || !/^[a-f0-9]{64}$/.test(previousEventDigest)) throw new Error("audit_integrity_unavailable");
-      const knownAction = ACTION_DEFINITIONS.some((row) => row.action === input?.request.action);
+      // PROTO-ACTIVATION-001: the action vocabulary is the released policy's (p2 adds the subject-scoped codes), not p1's.
+      const knownAction = POLICY_VERSIONS[CURRENT_POLICY_VERSION].actionDefinitions.some((row) => row.action === input?.request.action);
       const event = policyAuditEvent({
         eventId: randomUUID(), occurredAt: new Date().toISOString(), decisionId: decision.decisionId,
         outcome: decision.outcome, reasonClass: decision.reasonClass, policyVersion: decision.policyVersion,

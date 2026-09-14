@@ -79,13 +79,49 @@ export class ChallengeStore {
   readonly #capacity: number;
   readonly #now: () => Date;
 
-  constructor(now: () => Date = () => new Date(), capacity = 10_000) {
+  /** PROTO-ACTIVATION-001 A9 (RC-04): deadline-owned expiry, independent of traffic. */
+  #timer: ReturnType<typeof setTimeout> | undefined;
+  readonly #schedule: ((run: () => void, delayMs: number) => ReturnType<typeof setTimeout>) | undefined;
+
+  /**
+   * `scheduler` (default: `setTimeout`) arms one unref'd timer for the earliest pending deadline, so
+   * an idle challenge's PKCE verifier is zeroed at its own deadline with no further traffic; `null`
+   * disables the timer (tests that drive the clock by hand). `stop()` releases it on shutdown.
+   */
+  constructor(now: () => Date = () => new Date(), capacity = 10_000, scheduler: ((run: () => void, delayMs: number) => ReturnType<typeof setTimeout>) | null = (run, delayMs) => { const timer = setTimeout(run, delayMs); timer.unref?.(); return timer; }) {
     this.#now = now;
     this.#capacity = capacity;
+    this.#schedule = scheduler ?? undefined;
   }
 
   get size(): number {
     return this.#size;
+  }
+
+  /** Sweeps every slot past its deadline now and re-arms the deadline timer; safe to call at any time. */
+  sweep(now: Date = this.#now()): void {
+    this.#sweep(now);
+    this.#arm(now);
+  }
+
+  /** Releases the deadline timer (process shutdown). */
+  stop(): void {
+    if (this.#timer) clearTimeout(this.#timer);
+    this.#timer = undefined;
+  }
+
+  #arm(now: Date): void {
+    if (!this.#schedule) return;
+    if (this.#timer) { clearTimeout(this.#timer); this.#timer = undefined; }
+    let earliest: number | undefined;
+    for (const key of Object.keys(this.#byChallenge)) {
+      const slot = this.#byChallenge[key];
+      if (!slot) continue;
+      const due = slot.record.status === "pending" ? slot.record.expiresAt.getTime() : slot.record.expiresAt.getTime() + 60_000;
+      if (earliest === undefined || due < earliest) earliest = due;
+    }
+    if (earliest === undefined) return;
+    this.#timer = this.#schedule(() => { this.#timer = undefined; this.sweep(this.#now()); }, Math.max(1, earliest - now.getTime()));
   }
 
   #forget(slot: Slot): void {
@@ -129,10 +165,10 @@ export class ChallengeStore {
    * single slot in place, in O(1), the instant it is touched past its
    * deadline -- so an expired pending challenge is never returned as
    * still-pending and its verifier is zeroed at the deadline, independent
-   * of any other traffic. A store-wide timer sweep was deliberately not
-   * added: it would need lifecycle ownership (start/stop, leak-free on
-   * shutdown) disproportionate to a single-process prototype whose every
-   * real access path already expires on touch here.
+   * of any other traffic. PROTO-ACTIVATION-001 A9 added the store-wide
+   * deadline timer (`#arm`/`sweep`/`stop`) the earlier round left out: an
+   * unref'd timer for the earliest deadline, re-armed after every sweep, so
+   * expiry is owned by the deadline itself and not by any later access.
    */
   #expireIfDue(slot: Slot | undefined, now: Date): Slot | undefined {
     if (slot && slot.record.status === "pending" && slot.record.expiresAt.getTime() <= now.getTime()) this.terminate(slot.record.challengeId);
@@ -173,6 +209,7 @@ export class ChallengeStore {
     const slot: Slot = { record, verifier };
     this.#byState[record.stateDigest] = slot;
     this.#byChallenge[record.challengeId] = slot;
+    this.#arm(now);
     this.#size += 1;
     return { record, state, nonce, codeChallenge: pkceChallenge(verifier) };
   }

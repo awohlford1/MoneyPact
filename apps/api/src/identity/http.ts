@@ -6,6 +6,7 @@
  *   GET  /v1/identity/local/authorize  pre-authentication  local Cognito-shaped ceremony (dev/test only)
  *   GET  /v1/identity/local/choose     pre-authentication  local synthetic chooser selection (dev/test only)
  *   GET  /v1/identity/me               session-authenticated identity view
+ *   GET  /v1/identity/recovery         the same bootstrap view on the independent surf-266-recovery pool (CBD-266 anti-lockout)
  *   POST /v1/identity/logout           session-authenticated, CSRF-checked sign-out
  *
  * The four pre-authentication routes carry `@PreAuthenticationSurface()`:
@@ -15,22 +16,16 @@
  * outside this closed set, and rejects a route carrying both the marker
  * and `@Authorize` (PROTO-IDENTITY-API-001 correction C7).
  *
- * PROTO-IDENTITY-API-001 correction C2 (review R02 / security S06): `me`
- * and `logout` previously ran their real work inside the boundary's
- * idempotency `replay` hook and unconditionally returned `committed`,
- * which skips policy evaluation and the authorized transaction path
- * entirely -- effectively a policy bypass for both routes. The p1 policy
- * matrix carries no `identity.me`/`identity.logout` cell yet (that is
- * `PROTO-RATELIMIT-APPROVAL-001`/p2's release, not this packet's), so both
- * routes now go through the *normal* `@Authorize` path with no `replay`:
- * `decide()` denies an action with no matching cell, so both routes are
- * denied (403) for every request, cookie or not, until p2 releases the
- * matching cell. That is a deliberate, disclosed limitation, not a
- * regression: binding either route to its released cell is then a
- * metadata-only change (add the resource locator a real cell needs), and
- * the handler bodies below already contain the real behavior they will
- * run once authorized. Until then, the web packet must treat a 403 on
- * `/v1/identity/me` as signed-out.
+ * PROTO-IDENTITY-API-001 correction C2 (review R02 / security S06) took
+ * `me` and `logout` off the boundary's idempotency `replay` hook, which had
+ * skipped policy evaluation. PROTO-ACTIVATION-001 then activated them:
+ * `me` is bound to the released p2 `profile.read` subject-self cell (CBD-236
+ * section 8.5.1) through the normal `@Authorize` path and the real
+ * subject-scoped fact assembly, so a valid cookie allows and no cookie is
+ * denied before the handler; `logout` carries `@SessionAuthenticatedSurface`
+ * because p2 defines no logout cell and the packet forbids inventing one --
+ * the pre-policy session gate and the CBD-191 section 5.1 CSRF check are its
+ * guards (reported as a finding, not a cell).
  *
  * Every callback answer is a 303 navigation: the committed success
  * destination (with `Set-Cookie` only on first delivery) or the
@@ -38,10 +33,12 @@
  * and headers are identical across every failure class (§7).
  */
 import { Controller, Get, HttpCode, Module, Post, Req, Res } from "@nestjs/common";
+import type { EffectContext } from "../authorization/boundary.js";
 import type { DynamicModule } from "@nestjs/common";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { DataAccessClient } from "@cobudget/data-access";
 import { checkCsrf, readSessionCookieValue } from "@cobudget/sessions";
-import { Authorize, PreAuthenticationSurface, RouteFailure } from "../authorization/http.js";
+import { Authorization, Authorize, PreAuthenticationSurface, RouteFailure, SessionAuthenticatedSurface } from "../authorization/http.js";
 import type { IdentityCeremony } from "./ceremony.ts";
 import { LOCAL_ISSUER_PATH } from "./config.ts";
 import { isLocalScenario } from "./local-issuer.ts";
@@ -77,7 +74,25 @@ function rawQuery(request: FastifyRequest): string | undefined {
   return index === -1 ? undefined : request.url.slice(index + 1);
 }
 
+const LOOPBACK: readonly string[] = ["127.0.0.1", "::1", "::ffff:127.0.0.1"];
+
+/**
+ * The origin the browser addressed. The application origin proxies `/v1` to
+ * this process (the Next development server's rewrite; CBD-190 section 8 keeps
+ * the ceremony origin distinct), and that proxy replaces the Host header with
+ * its destination while carrying the browser's host in `X-Forwarded-Host`.
+ * PROTO-ACTIVATION-001: the forwarded host and protocol are honoured only when
+ * the TCP peer is the loopback interface -- the only place the local proxy can
+ * live -- so the CBD-190 callback context check sees the origin the browser
+ * navigated to. `trustProxy` stays off for everything else; a hosted deployment
+ * needs its own reviewed proxy trust (reported as a finding).
+ */
 function observedOrigin(request: FastifyRequest): string {
+  const forwardedHost = header(request, "x-forwarded-host");
+  if (forwardedHost && LOOPBACK.includes(request.ip) && /^[a-z0-9.-]+(?::\d{1,5})?$/iu.test(forwardedHost)) {
+    const forwardedProto = header(request, "x-forwarded-proto");
+    return `${forwardedProto === "https" ? "https" : "http"}://${forwardedHost}`;
+  }
   return `${request.protocol}://${request.host}`;
 }
 
@@ -159,23 +174,43 @@ export function identityHttp(runtime: IdentityRuntime | undefined): IdentityHttp
       await reply.code(303).header("location", target).send();
     }
 
-    // C2: no `replay` -- authorization runs the normal policy path. p1 carries no `identity.me`
-    // cell, so `decide()` denies every request here until p2 releases one (a metadata-only change).
+    // PROTO-ACTIVATION-001 (C2 activation, RC-05): the released p2 `profile.read` subject-self cell
+    // (CBD-236 section 8.5.1, PROTO-POLICY-V2-DECISION-001) authorizes the identity `me` view. The
+    // locator names only the subject scope: no acting space, membership or target row exists here,
+    // and the boundary's real fact assembly stamps the configured environment from runtime
+    // configuration. The cell's `bind_cache_key` obligation is discharged by ApiTransactionStore.
     @Get("me")
-    @Authorize({ action: "identity.me", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default" }) })
-    async me(@Req() request: FastifyRequest): Promise<unknown> {
+    @Authorize({ action: "profile.read", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default", scope: "subject" }) })
+    async me(@Authorization() effect: EffectContext): Promise<unknown> {
       const live = required();
-      const view = await live.ceremony.view(readSessionCookieValue(header(request, "cookie")));
+      const subject = effect.input.subject;
+      if (!subject || typeof subject.sessionRef !== "string" || typeof subject.sessionVersion !== "number" || !effect.input.assurance) throw new RouteFailure(401, "not_authenticated");
+      const view = await live.ceremony.viewResolved(effect.transaction as DataAccessClient, { accountSubjectId: subject.accountSubjectId, sessionRef: subject.sessionRef, sessionVersion: subject.sessionVersion, assurance: effect.input.assurance.level });
       if (!view) throw new RouteFailure(401, "not_authenticated");
       // C9 (Manager ruling): the raw CSRF bootstrap value travels only in this same-origin JSON
       // response body, held in browser memory -- never a cookie, URL or log field (CBD-191 §5.1).
-      return { accountSubjectId: view.accountSubjectId, profileId: view.profileId, identityBindingId: view.identityBindingId, environmentId: view.environmentId, assurance: view.assurance, csrfValue: view.csrfValue };
+      return { accountSubjectId: view.accountSubjectId, profileId: view.profileId, identityBindingId: view.identityBindingId, sessionRef: view.sessionRef, sessionVersion: view.sessionVersion, environmentId: view.environmentId, assurance: view.assurance, csrfValue: view.csrfValue };
     }
 
-    // C2: no `replay`, same reasoning as `me` above; p1 carries no `identity.logout` cell.
+    /**
+     * PROTO-ACTIVATION-001 A7 (SEC-ACT-F03): the session-recovery surface. It is the `me` bootstrap under the
+     * same released `profile.read` cell, registered on `surf-266-recovery` with its own approved record
+     * (`rlp-266-recovery-v1`, CBD266-RECOVERY-RECORD-001) so that an actor whose ordinary session pool is
+     * exhausted can still re-establish a usable session state (a fresh bootstrap value) -- the independent
+     * recovery pool CBD-266's anti-lockout rules require to exist in fact, not only as a record.
+     */
+    @Get("recovery")
+    @Authorize({ action: "profile.read", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default", scope: "subject" }) })
+    async recovery(@Authorization() effect: EffectContext): Promise<unknown> {
+      return this.me(effect);
+    }
+
+    // PROTO-ACTIVATION-001: p2 (CBD-236 section 8.5) defines no logout cell and the packet forbids
+    // inventing one, so logout stays on the session-authenticated path: the pre-policy session gate
+    // denies an unresolvable cookie, and the CBD-191 section 5.1 CSRF check below guards the mutation.
     @Post("logout")
     @HttpCode(200)
-    @Authorize({ action: "identity.logout", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default" }) })
+    @SessionAuthenticatedSurface()
     async logout(@Req() request: FastifyRequest): Promise<unknown> {
       const live = required();
       const cookie = readSessionCookieValue(header(request, "cookie"));
@@ -191,6 +226,8 @@ export function identityHttp(runtime: IdentityRuntime | undefined): IdentityHttp
   return {
     module: { module: IdentityModule, controllers: [IdentityController] },
     install(server) {
+      // A8/A9: the deadline timers belong to the process lifecycle; release them when the server closes.
+      server.addHook("onClose", async () => { runtime?.ceremony.stop(); });
       server.addHook("onSend", async (request, reply, payload) => {
         const headers = pendingHeaders.get(request);
         if (headers) { pendingHeaders.set(request, undefined); for (const value of headers) reply.header("set-cookie", value); }

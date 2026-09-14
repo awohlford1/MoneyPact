@@ -66,3 +66,37 @@ describe("PROTO-IDENTITY-API-001 C4: abandoned pending challenges recover capaci
     assert.equal(found.status, "terminated");
   });
 });
+
+describe("PROTO-ACTIVATION-001 A9 (RC-04): expiry is owned by the deadline, not by later traffic", () => {
+  it("an idle pending challenge is terminated and its verifier zeroed by the deadline timer with no access of any kind", () => {
+    let now = new Date("2026-01-01T00:00:00.000Z");
+    const timers: { run: () => void; delayMs: number }[] = [];
+    const store = new ChallengeStore(() => now, 10, (run, delayMs) => { timers.push({ run, delayMs }); return setTimeout(() => undefined, 0); });
+    const issued = store.issue(BASE_INPUT);
+    assert.equal(timers.length, 1, "issuing armed one deadline timer");
+    assert.equal(timers[0]!.delayMs, 1_000, "armed for the challenge's own deadline");
+    now = new Date(now.getTime() + 1_000);
+    timers[0]!.run(); // the deadline fires: nothing else has touched the store.
+    assert.equal(issued.record.status, "terminated", "the deadline terminated the idle challenge without any find/take/issue");
+    assert.equal(store.take(issued.state), undefined, "the verifier is gone: nothing can consume it after the deadline");
+    assert.equal(store.findByChallengeId(issued.record.challengeId)?.status, "terminated");
+    assert.equal(timers.length, 2, "the sweep re-armed for the tombstone grace deadline");
+    now = new Date(now.getTime() + 60_000);
+    timers[1]!.run();
+    assert.equal(store.size, 0, "the tombstone slot was reclaimed at its grace deadline");
+    assert.equal(store.find(issued.state), undefined);
+    store.stop();
+  });
+
+  it("the default scheduler arms a real unref'd timer that fires without traffic", async () => {
+    let now = new Date();
+    const store = new ChallengeStore(() => now, 10);
+    const issued = store.issue({ ...BASE_INPUT, lifetimeSeconds: 1 });
+    // Deadline clocks are the store's `now`; move it past the deadline and let the (real, 1 s) timer fire.
+    now = new Date(now.getTime() + 2_000);
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+    assert.equal(issued.record.status, "terminated", "the real timer expired the idle challenge");
+    assert.equal(store.take(issued.state), undefined);
+    store.stop();
+  });
+});

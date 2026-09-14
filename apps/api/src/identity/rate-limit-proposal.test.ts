@@ -1,87 +1,39 @@
+/**
+ * PROTO-ACTIVATION-001 A7: the approved-but-unprojectable ceremony record. CBD266-IDENTITY-RECORDS-001
+ * approved rlp-266-identity-ceremony-v1 exactly as the proposal file states it; this test pins that the
+ * file still carries the approved candidate digest, and reproduces the reason it is not projected: the
+ * registry admits one approved record per surface, and rlp-266-bootstrap-v1 already holds
+ * surf-266-authentication. When the Executive supersedes or re-surfaces one of them, the second case here
+ * is the signal to project the record and rebind the ceremony routes.
+ */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { apiIdentity, candidateDigest, PUBLIC_SURFACES, registrationErrors, RateLimitEngine, InProcessCounterStore, seal, SURFACE_CATALOG, validateRegistry } from "../../../../packages/rate-limit/src/index.ts";
-import type { ParameterRecord, Registration } from "../../../../packages/rate-limit/src/index.ts";
-import { createComposedApiApplication } from "../application.js";
-import { testHistory } from "../authorization/test-support.js";
-import { installedRoutes } from "../rate-limit/inventory.js";
+import { candidateDigest, loadPrototypeRegistry, seal, validateRegistry } from "../../../../packages/rate-limit/src/index.ts";
+import { prototypeApprovalContext } from "../../../../packages/rate-limit/src/prototype.ts";
+import type { ParameterRecord } from "../../../../packages/rate-limit/src/index.ts";
 import proposal from "./rate-limit-proposal.json" with { type: "json" };
-import { createFakeIdentityClient, FakeIdentityDatabase } from "./test-support/fake-client.ts";
-import { localConfig } from "./test-support/harness.ts";
 
-const records = proposal.records as unknown as ParameterRecord[];
-const registrations = proposal.registrations as unknown as Registration[];
-const ACTOR = "executive:synthetic-test-actor";
-const APPROVAL = "PROTO-IDENTITY-RATE-LIMIT-TEST-APPROVAL";
-const DECIDED_AT = "2026-09-13T12:00:00.000Z";
+const APPROVED_CANDIDATE_DIGEST = "2a21ca1d477e4c1d881fcaa981c1dee423f6155b733ed91b00c81881527805db";
+const ceremony = proposal.records[0] as unknown as ParameterRecord;
 
-/** The records as they would look once an Executive approval is projected onto them, with matching approval evidence. */
-function approved(): { records: ParameterRecord[]; resolve: (id: string) => { approvalId: string; actorId: string; candidateDigests: string[]; conditions: string[]; decidedAt: string; expiresAt: null; revoked: false } | undefined } {
-  const projected = records.map((record) => ({ ...record, product_owner_approval: { ...record.product_owner_approval, status: "approved" as const, approval_id: APPROVAL, approved_by_actor_id: ACTOR, decided_at: DECIDED_AT } }));
-  const sealed = projected.map((record) => seal(record));
-  const digests = sealed.map((record) => candidateDigest(record));
-  return { records: sealed, resolve: (id) => (id === APPROVAL ? { approvalId: APPROVAL, actorId: ACTOR, candidateDigests: digests, conditions: ["prototype-only", "revisit before any hosted environment"], decidedAt: DECIDED_AT, expiresAt: null, revoked: false } : undefined) };
-}
-
-describe("CBD-266 registration proposal for the CBD-190 identity routes", () => {
-  it("every proposed registration is schema-valid, bound to a catalog surface and to one of the two proposed records", () => {
-    for (const registration of registrations) {
-      assert.deepEqual(registrationErrors(registration), [], registration.registration_id);
-      assert.ok(SURFACE_CATALOG[registration.surface_id], registration.surface_id);
-      assert.equal(PUBLIC_SURFACES[registration.registration_id], undefined, "identity routes are bounded surfaces, never public exceptions");
-      const record = records.find((candidate) => candidate.record_id === registration.parameter_record_id);
-      assert.ok(record, registration.registration_id);
-      assert.equal(record.surface_id, registration.surface_id);
-    }
-    const preAuthentication = registrations.filter((registration) => registration.surface_id === "surf-266-authentication");
-    assert.equal(preAuthentication.length, 7);
-    assert.ok(preAuthentication.every((registration) => registration.authorization_metadata_id === null));
-    assert.ok(registrations.filter((registration) => registration.surface_id === "surf-266-session").every((registration) => registration.authorization_metadata_id !== null));
+describe("rlp-266-identity-ceremony-v1 (approved, not projectable)", () => {
+  it("is still exactly the record the Executive approved", () => {
+    assert.equal(ceremony.record_id, "rlp-266-identity-ceremony-v1");
+    assert.equal(candidateDigest(ceremony), APPROVED_CANDIDATE_DIGEST);
+    assert.equal(ceremony.surface_id, "surf-266-authentication");
   });
 
-  it("the proposed records validate with zero diagnostics, seal to their recorded digests, and stay pending (no approval invented here)", () => {
-    const registry = validateRegistry(records, { now: new Date().toISOString(), environment: "local-prototype", singleProcess: true, resolve: () => undefined });
-    assert.deepEqual(registry.diagnostics, []);
-    assert.equal(registry.approved.size, 0, "pending records are never runtime-approved");
-    for (const record of records) {
-      assert.equal(record.product_owner_approval.status, "pending");
-      assert.equal(record.product_owner_approval.approval_id, null);
-      assert.equal(seal(record).record_digest, record.record_digest);
-      assert.equal(record.quota.ceiling, record.threshold + record.burst.additional_units);
-    }
-    const ceremony = records.find((record) => record.record_id === "rlp-266-identity-ceremony-v1")!;
-    assert.equal(ceremony.safe_counting_key.phase, "pre_authentication");
-    assert.deepEqual(ceremony.safe_counting_key.components, ["privacy_network_cohort_v1", "exact_surface_id"]);
-    assert.deepEqual(ceremony.anti_lockout_rule.victim_bound_dimensions, []);
-  });
-
-  it("registration ids are exactly the routes the local adapter installs (nothing missing, nothing stale)", async () => {
-    const { app } = await createComposedApiApplication(localConfig(), () => undefined, testHistory, { client: createFakeIdentityClient(new FakeIdentityDatabase()) });
-    try {
-      await app.init();
-      const server = app.getHttpAdapter().getInstance();
-      await server.ready();
-      const installed = installedRoutes(server).map((route) => route.id).filter((id) => id.includes("/v1/identity/")).sort();
-      assert.deepEqual(installed, registrations.map((registration) => registration.registration_id).sort());
-      for (const registration of registrations) {
-        const [, method, ...path] = registration.registration_id.split(":");
-        assert.equal(apiIdentity(method!, path.join(":")), registration.registration_id);
-      }
-    } finally { await app.close(); }
-  });
-
-  it("once an authenticated Executive approval is projected, the ceremony record approves and the engine allows a loopback pre-authentication request under its pool", async () => {
-    const { records: sealed, resolve } = approved();
-    const registry = validateRegistry(sealed, { now: new Date().toISOString(), environment: "local-prototype", singleProcess: true, resolve });
-    assert.deepEqual(registry.diagnostics, []);
-    assert.ok(registry.approved.has("rlp-266-identity-ceremony-v1"), "the pre-authentication record needs no recovery pool and approves on its own");
-    // The session record names surf-266-recovery as its independent recovery pool, exactly like the merged proto-authenticated-read-v1 record; it approves only once a recovery record exists (OPEN-266 follow-up), never silently.
-    assert.equal(registry.approved.has("rlp-266-identity-session-v1"), false);
-    const engine = new RateLimitEngine(registry, registrations, new InProcessCounterStore());
-    const begin = registrations.find((registration) => registration.registration_id === "api:POST:/v1/identity/begin")!;
-    const decision = await engine.decide({ registrationId: begin.registration_id, surfaceId: begin.surface_id, parameterRecordId: begin.parameter_record_id, releaseSetDigest: registry.releaseSetDigest, requestOrJobUnit: 1, verifiedContext: { localCaller: true, networkCohort: "loopback" } });
-    assert.equal(decision.outcome, "allow");
-    const missingCohort = await engine.decide({ registrationId: begin.registration_id, surfaceId: begin.surface_id, parameterRecordId: begin.parameter_record_id, releaseSetDigest: registry.releaseSetDigest, requestOrJobUnit: 1, verifiedContext: { localCaller: true } });
-    assert.equal(missingCohort.outcome, "deny_input_invalid", "without the cohort the key cannot be derived and the surface denies");
+  it("cannot be projected next to rlp-266-bootstrap-v1: the registry refuses two approved records on one surface", () => {
+    const live = loadPrototypeRegistry();
+    assert.deepEqual(live.diagnostics, []);
+    const bootstrap = live.records.find((record) => record.record_id === "rlp-266-bootstrap-v1")!;
+    assert.equal(bootstrap.surface_id, ceremony.surface_id);
+    const approval = { ...bootstrap.product_owner_approval, approval_id: "CBD266-IDENTITY-RECORDS-001", decided_at: "2026-09-14T11:49:36Z" };
+    const projected = seal({ ...ceremony, product_owner_approval: approval } as ParameterRecord);
+    const evidence = { approvalId: "CBD266-IDENTITY-RECORDS-001", actorId: bootstrap.product_owner_approval.approved_by_actor_id!, candidateDigests: [projected.product_owner_approval.candidate_digest], conditions: approval.conditions, decidedAt: approval.decided_at, expiresAt: null, revoked: false };
+    const context = prototypeApprovalContext();
+    const registry = validateRegistry([...live.records, projected], { ...context, resolve: (id) => id === "CBD266-IDENTITY-RECORDS-001" ? evidence : context.resolve(id) });
+    assert.ok(registry.diagnostics.some((d) => d.recordId === "rlp-266-identity-ceremony-v1" && d.code === "record_reference_invalid" && d.pointer === "/surface_id"), JSON.stringify(registry.diagnostics));
+    assert.equal(registry.approved.size, 0, "a surface conflict clears every approval, which is why the ceremony record stays a proposal");
   });
 });

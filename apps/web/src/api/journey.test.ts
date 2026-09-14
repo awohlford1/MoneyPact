@@ -1,32 +1,47 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createHttpClient, ApiError } from "./client.ts";
-import { createServerMock } from "./mock-server.ts";
-import { CreationController } from "./creation-controller.ts";
+import { createHttpClient, ApiError, formatMinorUnits, parseMajorUnits, toBudgetDetail, toPlan } from "./client.ts";
+import type { WirePlan, WireSpaceDetail } from "./client.ts";
+import { createMockClient } from "./mock-server.ts";
+import { CreationController, sameProposal } from "./creation-controller.ts";
 import type { Draft, Proposal } from "./proposals.ts";
 
 const draft: Draft = { name: "Our plan", timeZone: "America/New_York", currencyCode: "USD", schedule: { cadence: "monthly", anchor: { kind: "day-of-month", day: 1 } } };
 const clock = () => Date.parse("2026-09-13T12:00:00Z");
-test("Identity revision 2: POST begin, signed-out 403, and fresh CSRF cookie on logout", async () => {
+const bootstrap = { accountSubjectId: "s", profileId: "p", identityBindingId: "b", sessionRef: "r", sessionVersion: 1, environmentId: "development", assurance: "session" };
+
+test("CBD-191 section 5.1: POST begin needs no CSRF, signed-out 403 is null, and the bootstrap value is captured in memory and echoed in X-CoBudget-CSRF without any cookie read", async () => {
   const calls: { url: string; init?: RequestInit }[] = [];
-  let cookie = "";
+  let signedIn = false;
   const api = createHttpClient("/v1", (async (url: string, init?: RequestInit) => {
     calls.push({ url, init });
-    if (url.endsWith("/begin")) return Response.json({ navigateTo: "/v1/identity/authorize" });
-    if (url.endsWith("/me")) return Response.json({}, { status: 403 });
-    return new Response(null, { status: 204 });
-  }) as typeof fetch, () => cookie);
-  assert.equal(await api.begin(), "/v1/identity/authorize");
+    if (url.endsWith("/begin")) return Response.json({ navigateTo: "/v1/identity/local/authorize?x=1" });
+    if (url.endsWith("/me")) {
+      if (!signedIn) return Response.json({ outcome: "deny", reason: "denied" }, { status: 403 });
+      return Response.json({ ...bootstrap, csrfValue: "bootstrap-fixture" });
+    }
+    return Response.json({ signedOut: true });
+  }) as typeof fetch);
+  assert.equal(await api.begin(), "/v1/identity/local/authorize?x=1");
   assert.equal(calls[0].init!.method, "POST");
-  assert.deepEqual(JSON.parse(calls[0].init!.body as string), { ceremony: "sign_in", postResultDestinationId: "home" });
+  assert.equal((calls[0].init!.headers as Record<string, string>)["X-CoBudget-CSRF"], undefined);
+  assert.deepEqual(JSON.parse(calls[0].init!.body as string), { ceremony: "sign_in", postResultDestinationId: "budgets" });
   assert.equal(await api.me(), null);
-  await assert.rejects(api.logout(), ApiError);
-  cookie = "unrelated=value; __Host-cobudget_csrf=rotated-fixture";
+  await assert.rejects(api.logout(), (error: unknown) => error instanceof ApiError && error.status === 401, "no bootstrap value: no mutation is attempted");
+  signedIn = true;
+  assert.deepEqual(await api.me(), { accountSubjectId: "s", sessionRef: "r", sessionVersion: 1 });
+  assert.deepEqual(await api.me(), { accountSubjectId: "s", sessionRef: "r", sessionVersion: 1 });
   await api.logout();
-  assert.equal((calls.at(-1)!.init!.headers as Record<string, string>)["x-csrf-token"], "rotated-fixture");
+  const logout = calls.at(-1)!;
+  assert.equal(logout.url, "/v1/identity/logout");
+  assert.equal((logout.init!.headers as Record<string, string>)["X-CoBudget-CSRF"], "bootstrap-fixture");
+  assert.equal(logout.init!.credentials, "same-origin");
+  await assert.rejects(api.logout(), (error: unknown) => error instanceof ApiError && error.status === 401, "logout drops the held value");
+  assert.ok(!calls.some(call => JSON.stringify(call.init?.headers ?? {}).includes("x-csrf-token")), "the legacy cookie-backed header is gone");
 });
 async function reviewed() {
-  const api = createServerMock(clock);
+  const api = createMockClient(clock);
+  assert.ok(await api.me());
   const controller = new CreationController(api, structuredClone(draft), "subject", clock);
   await controller.preview();
   const proposal = controller.snapshot().proposal!;
@@ -45,13 +60,13 @@ test("CBD-242-AC02: HTTP confirms using only binding body, proposal route, idemp
   const calls: { url: string; init?: RequestInit }[] = [];
   const fetcher = (async (url: string, init?: RequestInit) => {
     calls.push({ url, init });
-    return Response.json(url.endsWith("/me") ? { accountSubjectId: "s", sessionRef: "r", sessionVersion: 1, csrf: "test-csrf" } : {});
+    return Response.json(url.endsWith("/me") ? { ...bootstrap, csrfValue: "test-csrf" } : {});
   }) as typeof fetch;
-  const api = createHttpClient("/v1", fetcher, () => "__Host-cobudget_csrf=test-csrf");
+  const api = createHttpClient("/v1", fetcher);
   await api.me(); await api.confirmProposal("proposal", "binding", "confirmation-request-id");
   assert.equal(calls[1].url, "/v1/budget-creation-proposals/proposal/confirm");
   assert.deepEqual(JSON.parse(calls[1].init!.body as string), { confirmationBinding: "binding" });
-  assert.equal((calls[1].init!.headers as Record<string, string>)["x-csrf-token"], "test-csrf");
+  assert.equal((calls[1].init!.headers as Record<string, string>)["X-CoBudget-CSRF"], "test-csrf");
   assert.equal((calls[1].init!.headers as Record<string, string>)["Idempotency-Key"], "confirmation-request-id");
   assert.equal(calls[1].init!.credentials, "same-origin");
   assert.equal(calls[1].init!.cache, "no-store");
@@ -63,7 +78,7 @@ test("CBD-242-AC03: complete current period and three following periods are serv
   assert.equal(proposal.preview.cadenceSummary, "Monthly on day 1");
 });
 test("CBD-242-AC04: confirmation requires rendering for the same subject and proposal", async () => {
-  const api = createServerMock(clock); const controller = new CreationController(api, draft, "subject", clock);
+  const api = createMockClient(clock); await api.me(); const controller = new CreationController(api, draft, "subject", clock);
   assert.equal(controller.canConfirm(), false); await controller.preview();
   const proposal = controller.snapshot().proposal!;
   assert.equal(controller.canConfirm(), false);
@@ -77,9 +92,16 @@ test("CBD-242-AC04: changed reviewed content is immutable and cannot confirm", a
   assert.throws(() => { proposal.preview.periods[0].start = "2020-01-01"; }, TypeError);
   controller.edit({ ...draft, name: "Updated" }); assert.equal(controller.canConfirm(), false);
 });
+test("PROTO-ACTIVATION-001: a re-read proposal with a different JSON key order (jsonb storage) is the same proposal; a changed value is not", async () => {
+  const { proposal } = await reviewed();
+  const reordered = JSON.parse(JSON.stringify({ ...proposal, normalizedInputs: { schedule: proposal.normalizedInputs.schedule, currencyCode: proposal.normalizedInputs.currencyCode, timeZone: proposal.normalizedInputs.timeZone, name: proposal.normalizedInputs.name } })) as Proposal;
+  assert.notEqual(JSON.stringify(reordered), JSON.stringify(proposal));
+  assert.equal(sameProposal(reordered, proposal), true);
+  assert.equal(sameProposal({ ...reordered, previewDigest: "other" }, proposal), false);
+});
 test("CBD-242-AC05: expiry and budget midnight invalidate without client date calculation", async () => {
   let now = Date.parse("2026-09-14T03:59:50Z");
-  const api = createServerMock(() => now); const controller = new CreationController(api, draft, "subject", () => now);
+  const api = createMockClient(() => now); await api.me(); const controller = new CreationController(api, draft, "subject", () => now);
   await controller.preview(); const old = controller.snapshot().proposal!;
   assert.equal(old.expiresAt, "2026-09-14T04:00:00.000Z");
   controller.rendered(old.proposalId, "subject"); assert.equal(controller.canConfirm(), true);
@@ -99,17 +121,18 @@ test("CBD-242-AC05: governing version change regenerates instead of confirming",
   assert.equal((await api.listBudgets()).length, 0);
 });
 test("CBD-242-AC06: out-of-order preview cannot replace a newer edit", async () => {
-  const api = createServerMock(clock); const original = api.createProposal;
+  const api = createMockClient(clock); await api.me(); const original = api.createProposal;
   const release: (() => void)[] = [];
   api.createProposal = async (...args) => { const proposal = await original(...args); await new Promise<void>(resolve => release.push(resolve)); return proposal; };
   const controller = new CreationController(api, draft, "subject", clock);
-  const first = controller.preview(); await Promise.resolve();
-  controller.edit({ ...draft, name: "Latest" }); const second = controller.preview(); await Promise.resolve();
-  release[1](); await second; release[0](); await first;
+  const settle = async (count: number) => { while (release.length < count) await new Promise(resolve => setImmediate(resolve)); };
+  const first = controller.preview(); await settle(1);
+  controller.edit({ ...draft, name: "Latest" }); const second = controller.preview(); await settle(2);
+  release[1]!(); await second; release[0]!(); await first;
   assert.equal(controller.snapshot().proposal?.normalizedInputs.name, "Latest");
 });
 test("CBD-242-AC06: disposed navigation response is discarded; resumed draft gets a new identity", async () => {
-  const api = createServerMock(clock); const controller = new CreationController(api, draft, "subject", clock);
+  const api = createMockClient(clock); await api.me(); const controller = new CreationController(api, draft, "subject", clock);
   const pending = controller.preview(); controller.dispose(); await pending;
   assert.equal(controller.snapshot().proposal, undefined);
   const one = new CreationController(api, draft, "subject", clock); const two = new CreationController(api, draft, "subject", clock);
@@ -117,21 +140,40 @@ test("CBD-242-AC06: disposed navigation response is discarded; resumed draft get
   assert.notEqual(one.snapshot().proposal!.proposalId, two.snapshot().proposal!.proposalId);
   assert.equal(one.canConfirm(), false); assert.equal(two.canConfirm(), false);
 });
-test("CBD-218-AC01: created budget and plan use exact committed server identities", async () => {
+test("CBD-218-AC01: created budget and plan use exact committed server identities through the merged route shapes", async () => {
   const { api, controller } = await reviewed(); const result = (await controller.confirm("subject"))!;
+  const budgets = await api.listBudgets();
+  assert.deepEqual(budgets.map(budget => [budget.id, budget.name, budget.currencyCode, budget.timeZone]), [[result.budgetSpaceId, "Our plan", "USD", "America/New_York"]]);
   const budget = await api.budget(result.budgetSpaceId);
   assert.equal(budget.activePeriod!.id, result.currentPeriodId);
   assert.equal(budget.activePeriod!.scheduleVersionId, result.currentScheduleVersionId);
+  assert.equal(budget.completeness, "complete"); assert.equal(budget.freshness, "current");
   const category = await api.addCategory(budget.id, "Groceries");
-  await api.saveTarget(budget.id, category.id, "450.00", 0);
+  await api.saveTarget(budget.id, category.id, "450.00", 2);
   const plan = await api.plan(budget.id, result.currentPeriodId);
-  assert.equal(plan.budgetSpaceId, result.budgetSpaceId); assert.equal(plan.periodId, result.currentPeriodId);
-  assert.equal(plan.targets[0].periodAmount, "450.00");
-  await assert.rejects(api.saveTarget(budget.id, category.id, "500", 0), (error: unknown) => error instanceof ApiError && error.status === 409);
+  assert.equal(plan.budgetSpaceId, result.budgetSpaceId); assert.equal(plan.periodId, result.currentPeriodId); assert.equal(plan.minorUnitPrecision, 2);
+  assert.deepEqual(plan.categories, [{ id: category.id, name: "Groceries" }]);
+  assert.deepEqual(plan.targets, [{ categoryId: category.id, baseAmount: "450.00", periodAmount: "450.00" }]);
+  await assert.rejects(api.saveTarget(budget.id, category.id, "500.123", 2), (error: unknown) => error instanceof ApiError && error.status === 400 && error.fieldErrors[0]?.code === "amount.invalid");
+  await assert.rejects(api.plan(budget.id, "other-period"), (error: unknown) => error instanceof ApiError && error.status === 404);
+});
+test("PROTO-ACTIVATION-001: wire mappings format minor units by precision, mark an incomplete detail partial and never compute a target", () => {
+  assert.equal(formatMinorUnits(40000, 2), "400.00"); assert.equal(formatMinorUnits(5, 2), "0.05"); assert.equal(formatMinorUnits(1500, 0), "1500"); assert.equal(formatMinorUnits(12345, 3), "12.345");
+  assert.equal(parseMajorUnits("450", 2), 45000); assert.equal(parseMajorUnits("0.5", 2), 50); assert.equal(parseMajorUnits("7", 0), 7);
+  assert.throws(() => parseMajorUnits("1.5", 0), ApiError); assert.throws(() => parseMajorUnits("-1", 2), ApiError); assert.throws(() => parseMajorUnits("abc", 2), ApiError);
+  const detail: WireSpaceDetail = { space: { budgetSpaceId: "b", name: "Home", nameVersion: 1, timeZone: "UTC", currencyCode: "USD", lifecycle: "live", lifecycleVersion: 1 }, scheduleVersion: { scheduleVersionId: "s", sequence: 1, cadenceDefinition: {} }, budgetDate: "2026-09-14", activePeriod: { periodId: "p", scheduleVersionId: "s", status: "active", ordinal: 0, relation: "current", start: "2026-09-01", end: "2026-09-30", lengthInDays: 30 }, nextPeriods: [] };
+  assert.deepEqual(toBudgetDetail(detail), { id: "b", name: "Home", currencyCode: "USD", timeZone: "UTC", activePeriod: { id: "p", start: "2026-09-01", end: "2026-09-30", lengthInDays: 30, scheduleVersionId: "s" }, freshness: "current", completeness: "complete", updatedAt: "2026-09-14" });
+  assert.equal(toBudgetDetail({ ...detail, activePeriod: null }).activePeriod, null);
+  assert.equal(toBudgetDetail({ ...detail, scheduleVersion: undefined as never }).completeness, "partial");
+  const plan: WirePlan = { budgetSpaceId: "b", period: { periodId: "p", start: "2026-09-01", end: "2026-09-30", status: "active", completed: false }, cadence: "monthly", currencyCode: "USD", minorUnitPrecision: 2, formulaVersion: "budget-domain/targets/1", categories: [
+    { categoryId: "c1", label: "Rent", position: 0, baseTarget: { amountMinorUnits: 150000 }, periodTarget: { amountMinorUnits: 150000 } },
+    { categoryId: "c2", label: "Fun", position: 1, baseTarget: null, periodTarget: { amountMinorUnits: 0 } },
+  ] };
+  assert.deepEqual(toPlan(plan), { budgetSpaceId: "b", periodId: "p", currencyCode: "USD", minorUnitPrecision: 2, categories: [{ id: "c1", name: "Rent" }, { id: "c2", name: "Fun" }], targets: [{ categoryId: "c1", baseAmount: "1500.00", periodAmount: "1500.00" }] });
 });
 test("PROTO-SIGNIN-01: logout denies subsequent protected mock reads", async () => {
   const { api } = await reviewed(); assert.ok(await api.me()); await api.logout(); assert.equal(await api.me(), null);
-  await assert.rejects(api.listBudgets(), (error: unknown) => error instanceof ApiError && error.status === 401);
+  await assert.rejects(api.listBudgets(), (error: unknown) => error instanceof ApiError && error.status === 403);
 });
 test("Mock confirmation consumes once under a same-proposal race", async () => {
   const { api, proposal } = await reviewed();
@@ -152,7 +194,7 @@ test("Incomplete server preview never enables confirmation", async () => {
 });
 test("CBD-242-AC05: fake-timer 30-minute expiry disables the rendered preview", async t => {
   t.mock.timers.enable({ apis: ["Date"], now: clock() });
-  const api = createServerMock(); const controller = new CreationController(api, draft, "subject");
+  const api = createMockClient(); await api.me(); const controller = new CreationController(api, draft, "subject");
   await controller.preview(); controller.rendered(controller.snapshot().proposal!.proposalId, "subject");
   assert.equal(controller.canConfirm(), true); t.mock.timers.tick(30 * 60 * 1000);
   assert.equal(controller.canConfirm(), false); await controller.revalidate();
@@ -171,7 +213,7 @@ for (const schedule of [
     { kind: "custom-weekly-interval", weekday: "friday", everyWeeks: 3, recurrenceOrigin: "2026-09-04" },
   ].map(pattern => ({ cadence: "paycheck", pattern, businessDayPolicy: "previous-business-day" })),
 ]) test(`Server mock supports schedule ${JSON.stringify(schedule)}`, async () => {
-  const api = createServerMock(clock);
+  const api = createMockClient(clock); await api.me();
   const proposal = await api.createProposal({ ...draft, schedule }, crypto.randomUUID());
   assert.equal(proposal.preview.periods.length, 4);
   assert.deepEqual(proposal.normalizedInputs.schedule, schedule);

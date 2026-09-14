@@ -13,6 +13,16 @@
  *     CBD-246 seam, the in-process restricted audit stream, and the CBD-190
  *     ceremony over the local Cognito-shaped issuer.
  *
+ * PROTO-ACTIVATION-001 joins the merged islands on the local path: the
+ * budget-creation, proposal, budget-space and targets route modules are
+ * composed through `authorization.modules` with production dependencies
+ * (`budget-creation/composition.ts`); the boundary's transaction store
+ * dispatches by action to the creation, targets and general stores
+ * (`dispatch.ts`); the fact source layers the budget-space, proposal and
+ * consent facts (`budget-facts.ts`) over the subject/profile leaves; and the
+ * fact assembler carries the configured environment so the p2 subject-scoped
+ * cells assemble (CBD-236 section 4.4).
+ *
  * Nothing here reads `process.env`; the data-access client is created
  * lazily on first statement so composition (and the surface inventory
  * discovery) never opens a database connection by itself.
@@ -20,13 +30,14 @@
 import { HttpException } from "@nestjs/common";
 import { createApiClient } from "@cobudget/data-access";
 import type { DataAccessClient } from "@cobudget/data-access";
-import { createSessionStore, readSessionCookieValue, resolveSessionConfig, resolveSessionEnvelopeKeyProvider } from "@cobudget/sessions";
+import { checkCsrf, createSessionStore, readSessionCookieValue, resolveSessionConfig, resolveSessionEnvelopeKeyProvider } from "@cobudget/sessions";
 import type { EnvelopeKeyProvider, SessionConfig } from "@cobudget/sessions";
 import { RestrictedAudit } from "../authorization/audit.js";
 import { AuthorizationBoundary } from "../authorization/boundary.js";
 import { FactAssembler } from "../authorization/facts.js";
 import { unavailableApiAuthorization } from "../authorization/http.js";
 import type { ApiAuthorizationOptions } from "../authorization/http.js";
+import { ApiRateLimits } from "../rate-limit/http.js";
 import type { ApiSurfaceGate } from "../rate-limit/http.js";
 import type { ApiConfig } from "../config.js";
 import { ChallengeStore } from "../identity/challenge.ts";
@@ -40,7 +51,10 @@ import { LocalIssuer } from "../identity/local-issuer.ts";
 import type { ProviderTransport } from "../identity/local-issuer.ts";
 import type { MappingHooks } from "../identity/mapping.ts";
 import type { ReliabilitySink } from "../telemetry.js";
+import { composeBudgetApi } from "../budget-creation/composition.ts";
 import { InProcessRestrictedAuditStore } from "./audit.ts";
+import { budgetFactReader } from "./budget-facts.ts";
+import { DispatchingTransactionStore } from "./dispatch.ts";
 import { createApiFactSource } from "./fact-source.ts";
 import type { FactReader } from "./fact-source.ts";
 import { buildSessionFactSourceAdapter } from "./index.js";
@@ -65,6 +79,12 @@ export interface RuntimeOverrides {
   readonly transport?: ProviderTransport | undefined;
   readonly mappingHooks?: MappingHooks | undefined;
   readonly extendFacts?: FactReader | undefined;
+  /** A2: the revocation fence inside mutation transactions; only the live race proof turns it off to show the race. */
+  readonly revocationFence?: boolean | undefined;
+  /** A2 fault-injection seam: runs inside the general transaction store after the route's work and before COMMIT. */
+  readonly beforeCommit?: ((transaction: unknown) => Promise<void>) | undefined;
+  /** A8/A9: timer scheduler for the identity deadline sweeps; `null` disables timers (clock-driven tests). */
+  readonly scheduler?: ((run: () => void, delayMs: number) => ReturnType<typeof setTimeout>) | null | undefined;
 }
 
 export interface ComposedApiRuntime {
@@ -83,6 +103,7 @@ export function lazyDataAccessClient(factory: () => DataAccessClient): DataAcces
   const client = (): DataAccessClient => (instance ??= factory());
   return {
     transaction: (options, work) => client().transaction(options, work),
+    readOwnBudgetMemberships: (subject) => { const c = client(); if (!c.readOwnBudgetMemberships) throw new Error("membership statements unavailable"); return c.readOwnBudgetMemberships(subject); },
     tenantSelect: (query) => client().tenantSelect(query),
     tenantInsert: (query) => client().tenantInsert(query),
     tenantUpdate: (query) => client().tenantUpdate(query),
@@ -159,11 +180,18 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
   const now = overrides.now ?? (() => new Date());
   const client = overrides.client ?? lazyDataAccessClient(() => createApiClient());
   const sessionStore = createSessionStore(client);
-  const sessions = buildSessionFactSourceAdapter(session, identityConfig.environmentId, client);
+  const sessions = buildSessionFactSourceAdapter(session, identityConfig.environmentId, client, overrides.revocationFence ?? true);
   const audit = new InProcessRestrictedAuditStore();
+  const budget = composeBudgetApi({ client, environmentId: identityConfig.environmentId, sessions, pepper: session.pepper, now });
+  // A6 condition e: this composition runs only under the explicitly local adapter (composeApiRuntime routes every other provider away).
+  const budgetFacts = budgetFactReader(identityConfig.environmentId, identityConfig.adapterKind === "local" && (identityConfig.environmentId === "development" || identityConfig.environmentId === "test"));
+  const extend: FactReader = async (source, lookup, scoped) => {
+    const facts = { ...(await budgetFacts(source, lookup, scoped) ?? {}), ...(await overrides.extendFacts?.(source, lookup, scoped) ?? {}) };
+    return Object.keys(facts).length ? facts : null;
+  };
   const boundary = new AuthorizationBoundary(
-    new FactAssembler("api", createApiFactSource({ sessions, client, extend: overrides.extendFacts })),
-    new ApiTransactionStore(client, audit),
+    new FactAssembler("api", budget.facts(createApiFactSource({ sessions, client, extend })), now, 5_000, budget.candidates, { environmentId: identityConfig.environmentId }),
+    new DispatchingTransactionStore(new ApiTransactionStore(client, audit, { beforeCommit: overrides.beforeCommit }), audit, budget.stores),
     new RestrictedAudit(audit, PROTOTYPE_AUDIT_GOVERNANCE),
     failure,
   );
@@ -172,18 +200,41 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
   const localIssuer = overrides.transport ? undefined : new LocalIssuer({ issuer: identityConfig.issuer, clientId: identityConfig.clientId, callbackUri: identityConfig.callbackUri, now });
   const transport = overrides.transport ?? localIssuer!;
   const ceremony = new IdentityCeremony({
-    config: identityConfig, client, sessionStore, sessionConfig: session, sealing, transport, challenges: new ChallengeStore(now), now,
-    evidence: evidenceSink, reliability: sink, serviceVersion: config.SERVICE_VERSION, mappingHooks: overrides.mappingHooks,
+    config: identityConfig, client, sessionStore, sessionConfig: session, sealing, transport, challenges: new ChallengeStore(now, 10_000, overrides.scheduler), now,
+    evidence: evidenceSink, reliability: sink, serviceVersion: config.SERVICE_VERSION, mappingHooks: overrides.mappingHooks, scheduler: overrides.scheduler,
   });
   const runtime: IdentityRuntime = { ceremony, localIssuer: overrides.transport ? (overrides.transport instanceof LocalIssuer ? overrides.transport : undefined) : localIssuer, sessionPepper: session.pepper };
   const identity = identityHttp(runtime);
+  /**
+   * A7: ceremony context for surfaces bound to the bootstrap record. `begin` has no ceremony yet (the challenge
+   * is issued by its handler), so it counts on the single local cohort's ordinary pool; authorize, chooser and
+   * callback count on the ceremony their state or request names; the initial `space.create` reservation is
+   * taken by the ceremony that signed the acting subject in.
+   */
+  const ceremonyContext = async (request: import("fastify").FastifyRequest, actorId: string | undefined) => {
+    const query = (request.query ?? {}) as Record<string, unknown>;
+    const url = request.routeOptions.url ?? "";
+    const text = (value: unknown): string | undefined => (typeof value === "string" && value ? value : undefined);
+    if (url === "/v1/identity/begin") return { ceremonyId: "loopback-cohort:begin", bootstrapStage: "ordinary" as const };
+    if (url === "/v1/identity/local/choose") { const state = runtime.localIssuer?.stateOf(text(query.request) ?? ""); const id = ceremony.ceremonyIdForState(state); return id ? { ceremonyId: id, bootstrapStage: "ordinary" as const } : {}; }
+    if (url === "/v1/identity/local/authorize" || url === "/v1/identity/callback") { const id = ceremony.ceremonyIdForState(text(query.state)); return id ? { ceremonyId: id, bootstrapStage: "ordinary" as const } : {}; }
+    if (url === "/v1/budget-creation-proposals/:proposalId/confirm" && actorId) { const id = ceremony.ceremonyIdForSubject(actorId); return id ? { ceremonyId: id, bootstrapStage: "initial_space_create" as const, primaryOwnerVerified: true } : {}; }
+    return {};
+  };
   const authorization: Wiring = {
-    modules: [identity.module],
+    modules: [identity.module, ...budget.modules],
     boundary,
-    ...(overrides.rateLimit ? { rateLimit: overrides.rateLimit } : {}),
+    rateLimit: overrides.rateLimit ?? new ApiRateLimits("cbd266-prototype-v1", undefined, undefined, undefined, ceremonyContext),
     // The rate-limit preHandler already denied any unregistered or unapproved surface before canActivate runs (CBD-266 section 8.1); this flag is that gate's duplicate notion (CBD266-COMPLETION-001 follow-up).
     surfaceApproved: async () => true,
     sessionLocator: (request) => readSessionCookieValue(typeof request.headers.cookie === "string" ? request.headers.cookie : undefined),
+    // A1 (CBD-191 section 5.1): exact application origin, same-origin fetch metadata and the keyed CSRF digest of this session.
+    csrf: async (request) => {
+      const header = (name: string): string | undefined => { const value = request.headers[name]; return typeof value === "string" ? value : undefined; };
+      const session = await ceremony.csrfDigestFor(readSessionCookieValue(header("cookie")));
+      if (!session) return false;
+      return checkCsrf(runtime.sessionPepper, { method: request.method, origin: header("origin"), allowedOrigin: identityConfig.applicationOrigin, secFetchSite: header("sec-fetch-site"), csrfHeaderValue: header("x-cobudget-csrf"), csrfDigest: session.csrfDigest });
+    },
     // Uniform denial pending the PR-94-003 response contract (OPEN-266-RESPONSE): one status, one body, for every denial class.
     deny: (response) => { throw new HttpException(response, 403); },
   };

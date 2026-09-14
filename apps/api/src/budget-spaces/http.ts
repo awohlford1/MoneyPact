@@ -15,10 +15,12 @@ export async function listOwnSpaces(client: DataAccessClient, subject: string): 
   const spaces: unknown[] = [];
   for (const row of memberships.rows as { budget_space_id: string; membership_id: string }[]) {
     const result = await client.tenantSelect({ table: "budget_space", budgetSpaceId: row.budget_space_id,
-      columns: ["budget_space_id", "name", "name_version", "lifecycle", "lifecycle_version"] });
+      columns: ["budget_space_id", "name", "name_version", "lifecycle", "lifecycle_version", "currency_code", "time_zone"] });
     const space = result.rows[0] as Record<string, unknown> | undefined;
+    // PROTO-ACTIVATION-001: the web budget list shows currency and time zone; both are budget settings (CBD-231), so the listing carries them.
     if (space) spaces.push({ budgetSpaceId: row.budget_space_id, membershipId: row.membership_id,
-      name: space.name, nameVersion: space.name_version, lifecycle: space.lifecycle, lifecycleVersion: space.lifecycle_version });
+      name: space.name, nameVersion: space.name_version, lifecycle: space.lifecycle, lifecycleVersion: space.lifecycle_version,
+      currencyCode: space.currency_code, timeZone: space.time_zone });
   }
   return { spaces };
 }
@@ -29,7 +31,8 @@ export function budgetSpacesHttp(dependencies: BudgetSpacesDependencies): Dynami
   @Controller("v1/budget-spaces")
   class BudgetSpacesController {
     @Get()
-    @Authorize({ action: "membership.list_own", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default" }) })
+    // PROTO-ACTIVATION-001: the p2 subject-self cell (CBD-236 section 8.5.1); the listing is loaded by the acting subject only.
+    @Authorize({ action: "membership.list_own", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default", scope: "subject" }) })
     async list(@Authorization() effect: EffectContext): Promise<unknown> {
       return listOwnSpaces(effect.transaction as DataAccessClient, effect.input.subject?.accountSubjectId ?? "");
     }

@@ -37,7 +37,7 @@ export interface TokenResponse {
 
 export type ExchangeTransportResult =
   | { readonly ok: true; readonly tokens: TokenResponse }
-  | { readonly ok: false; readonly error: "invalid_grant" | "invalid_client" | "outage" };
+  | { readonly ok: false; readonly error: "invalid_grant" | "invalid_client" | "outage" | "cancelled" };
 
 export type RevocationTransportResult = "revoked" | "failed" | "ambiguous" | "outage";
 
@@ -52,7 +52,12 @@ export interface Jwk {
 
 /** The declared network seam (§9): the only thing a fixture or local adapter may replace. */
 export interface ProviderTransport {
-  exchange(input: { readonly code: string; readonly codeVerifier: string; readonly redirectUri: string; readonly clientId: string }): Promise<ExchangeTransportResult>;
+  /**
+   * PROTO-ACTIVATION-001 B2 (SEC-ACT-R2-F01): `signal` is the exchange's cancellation contract. A transport
+   * that observes it aborted before minting must not mint (it answers `cancelled`); a transport that has
+   * already sent the request may still answer late, and the caller retains ownership of that answer.
+   */
+  exchange(input: { readonly code: string; readonly codeVerifier: string; readonly redirectUri: string; readonly clientId: string; readonly signal?: AbortSignal | undefined }): Promise<ExchangeTransportResult>;
   revoke(input: { readonly token: string; readonly clientId: string }): Promise<RevocationTransportResult>;
   jwks(): Promise<{ readonly keys: readonly Jwk[] } | undefined>;
 }
@@ -235,6 +240,12 @@ export class LocalIssuer implements ProviderTransport {
   }
 
   /** The synthetic chooser's selection: returns the exact callback navigation for `scenario`, or `undefined` for an unknown/used request. */
+  /** PROTO-ACTIVATION-001 A7: the raw state of a pending hosted request, so the chooser route's rate-limit context can name its ceremony. */
+  stateOf(requestId: string): string | undefined {
+    const pending = this.#pending[requestId];
+    return pending && !pending.used && pending.expiresAt > this.#now().getTime() ? pending.state : undefined;
+  }
+
   choose(requestId: string, scenario: LocalScenario): string | undefined {
     const pending = this.#pending[requestId];
     if (!pending || pending.used || pending.expiresAt <= this.#now().getTime()) return undefined;
@@ -296,7 +307,9 @@ export class LocalIssuer implements ProviderTransport {
     return this.#signedToken(header, payload, key);
   }
 
-  async exchange(input: { readonly code: string; readonly codeVerifier: string; readonly redirectUri: string; readonly clientId: string }): Promise<ExchangeTransportResult> {
+  async exchange(input: { readonly code: string; readonly codeVerifier: string; readonly redirectUri: string; readonly clientId: string; readonly signal?: AbortSignal | undefined }): Promise<ExchangeTransportResult> {
+    // B2: a cancelled exchange mints nothing (the code stays unused until its own expiry).
+    if (input.signal?.aborted) return { ok: false, error: "cancelled" };
     this.egress.push({ destination: "token", at: this.#now() });
     if (this.#tokenEndpoint === "outage") return { ok: false, error: "outage" };
     if (input.clientId !== this.clientId) return { ok: false, error: "invalid_client" };
