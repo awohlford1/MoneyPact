@@ -1,10 +1,24 @@
 /**
- * PROTO-ACTIVATION-001 A6 (review R06, SEC-ACT-F01): the interim owner-only consent derivation of
- * docs/cbd-236-consent-facts-proposal.md section 9 (`CF-236-008`). Each condition a to e failing on
- * its own yields no consent fact, and through the real FactAssembler + released policy such an
- * ordinary input denies `input_invalid`; only the self-created sole Primary Owner under the local
- * runtime is admitted, with the labelled interim values. The migration literals the interim relies on
- * are pinned: widening `role`/`status` fails here before it can recreate R06.
+ * CBD-236 consent landing (CBD236-CONSENT-SEMANTICS-001 item 4;
+ * docs/cbd-236-consent-facts-proposal.md section 8, `CF-236-007`).
+ *
+ * The assembler reads consent from `budget_space_consent` and derives nothing.
+ * These tests drive the real `FactAssembler` and the real released policy, so
+ * what they assert is what an ordinary cell actually decides:
+ *
+ *  * a `current` consent row for the acting membership and subject is emitted
+ *    verbatim -- identifier, disclosure version and state are the row's own
+ *    columns -- and the Primary Owner is allowed;
+ *  * a space with no consent row for the membership emits no consent fact and
+ *    every ordinary cell denies `input_invalid`;
+ *  * a row that has left `current` is emitted with its stored state, so the
+ *    denial is the contract's `consent_not_current` rather than a fabricated
+ *    `current`;
+ *  * nothing about the membership row -- its role, its
+ *    `authorization_version`, who created it, or the runtime the process
+ *    happens to be in -- can produce a consent fact. The interim derivation of
+ *    section 9 is deleted, and the last block proves its identifiers are gone
+ *    from the source rather than merely unused.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -14,47 +28,45 @@ import { describe, it } from "node:test";
 import { decide } from "@cobudget/contracts/authorization";
 import type { DataAccessClient } from "@cobudget/data-access";
 import { FactAssembler, FactFailure } from "../authorization/facts.js";
-import { budgetFactReader, INTERIM_CONSENT_ID_PREFIX, INTERIM_CONSENT_SOURCE, INTERIM_DISCLOSURE_VERSION, INTERIM_MEMBERSHIP_ROLE, INTERIM_MEMBERSHIP_STATUS, interimOwnerSelfConsent } from "./budget-facts.ts";
+import { budgetFactReader, consentFactsOf, currentConsentRow } from "./budget-facts.ts";
 import { createApiFactSource } from "./fact-source.ts";
 
 const SPACE = "11111111-1111-4111-8111-111111111111";
 const MEMBERSHIP = "22222222-2222-4222-8222-222222222222";
 const SUBJECT = "33333333-3333-4333-8333-333333333333";
-const owner = () => ({ membership_id: MEMBERSHIP, role: "primary_owner", status: "active", account_subject_id: SUBJECT, created_by_subject_id: SUBJECT, authorization_version: 1 });
-const base = () => ({ primaryOwnerMembershipId: MEMBERSHIP, membership: owner(), actingSubjectId: SUBJECT, localRuntime: true });
+const CONSENT = "88888888-8888-4888-8888-888888888888";
 
-describe("interimOwnerSelfConsent (section 9 conditions a to e)", () => {
-  it("emits the labelled interim values only when every condition holds", () => {
-    assert.deepEqual(interimOwnerSelfConsent(base()), {
-      "consent.consentId": `${INTERIM_CONSENT_ID_PREFIX}${MEMBERSHIP}`, "consent.disclosureVersion": INTERIM_DISCLOSURE_VERSION, "consent.state": "current", "consent.source": INTERIM_CONSENT_SOURCE,
-    });
-    assert.equal(INTERIM_DISCLOSURE_VERSION, 1, "a labelled constant, never the membership's authorization_version");
-  });
-  for (const [label, input] of [
-    ["a: no membership row for the acting subject", { ...base(), membership: undefined }],
-    ["a: a membership row of another subject", { ...base(), membership: { ...owner(), account_subject_id: "44444444-4444-4444-8444-444444444444", created_by_subject_id: "44444444-4444-4444-8444-444444444444" } }],
-    ["b: role co_owner", { ...base(), membership: { ...owner(), role: "co_owner" } }],
-    ["b: role collaborator", { ...base(), membership: { ...owner(), role: "collaborator" } }],
-    ["b: role viewer", { ...base(), membership: { ...owner(), role: "viewer" } }],
-    ["b: role accountability_partner", { ...base(), membership: { ...owner(), role: "accountability_partner" } }],
-    ["b: status pending", { ...base(), membership: { ...owner(), status: "pending" } }],
-    ["b: status revoked", { ...base(), membership: { ...owner(), status: "revoked" } }],
-    ["c: not the space's primary_owner_membership_id", { ...base(), primaryOwnerMembershipId: "55555555-5555-4555-8555-555555555555" }],
-    ["d: not self-created", { ...base(), membership: { ...owner(), created_by_subject_id: "66666666-6666-4666-8666-666666666666" } }],
-    ["e: not the local runtime", { ...base(), localRuntime: false }],
-  ] as const) it(`emits no consent fact when ${label}`, () => {
-    assert.equal(interimOwnerSelfConsent(input), undefined);
-  });
+const owner = () => ({ membership_id: MEMBERSHIP, role: "primary_owner", status: "active", authorization_version: 1 });
+const consentRow = (overrides: Record<string, unknown> = {}) => ({
+  consent_id: CONSENT, disclosure_version: 1, state: "current", recorded_at: "2026-09-14T12:00:00.000Z", ...overrides,
+});
 
-  it("pins the CBD-231 membership migration literals the interim's safety rests on", () => {
-    const migration = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../../packages/migrations/migrations/20260913T090100Z__create_budget_space_membership.sql"), "utf8");
-    assert.match(migration, new RegExp(`CHECK \\(role = '${INTERIM_MEMBERSHIP_ROLE}'\\)`), "widening the role constraint ends the interim's owner-only guarantee");
-    assert.match(migration, new RegExp(`CHECK \\(status = '${INTERIM_MEMBERSHIP_STATUS}'\\)`), "widening the status constraint ends the interim's active-only guarantee");
+describe("row selection and the consent leaves (section 8 steps 2 and 3)", () => {
+  it("prefers the single current row", () => {
+    const superseded = consentRow({ consent_id: "old", state: "superseded", recorded_at: "2026-09-14T13:00:00.000Z" });
+    assert.equal(currentConsentRow([superseded, consentRow()])?.consent_id, CONSENT);
+  });
+  it("falls back to the most recently recorded terminal row, with its own state", () => {
+    const older = consentRow({ consent_id: "older", state: "superseded", recorded_at: "2026-09-13T00:00:00.000Z" });
+    const newer = consentRow({ consent_id: "newer", state: "ended", recorded_at: "2026-09-14T00:00:00.000Z" });
+    const chosen = currentConsentRow([older, newer]);
+    assert.equal(chosen?.consent_id, "newer");
+    assert.equal(consentFactsOf(chosen)?.["consent.state"], "ended", "the stored state, never a substituted current");
+  });
+  it("emits nothing when there is no row, and never invents a value", () => {
+    assert.equal(currentConsentRow([]), undefined);
+    assert.equal(consentFactsOf(undefined), undefined);
+    assert.equal(consentFactsOf(consentRow({ consent_id: "" })), undefined);
+    assert.equal(consentFactsOf(consentRow({ disclosure_version: 0 })), undefined);
+    assert.equal(consentFactsOf(consentRow({ state: "" })), undefined);
+  });
+  it("refuses two current rows rather than choosing one", () => {
+    assert.equal(currentConsentRow([consentRow(), consentRow({ consent_id: "second" })]), undefined);
   });
 });
 
 describe("through the real fact assembler and the released policy", () => {
-  function assembler(membership: Record<string, unknown> | undefined, localRuntime = true) {
+  function assembler(membership: Record<string, unknown> | undefined, consents: readonly Record<string, unknown>[]) {
     const client = {
       tenantSelect: async (query: { table: string; budgetSpaceId: string; conditions?: { column: string; value: unknown }[] }) => {
         assert.equal(query.budgetSpaceId, SPACE);
@@ -62,7 +74,13 @@ describe("through the real fact assembler and the released policy", () => {
         if (query.table === "budget_space_membership") {
           // The reader must ask for the acting subject's own row: (space, membership id, account subject).
           assert.deepEqual(query.conditions?.map((c) => c.column), ["membership_id", "account_subject_id"]);
-          return { rows: membership && query.conditions?.[1]?.value === membership.account_subject_id ? [membership] : [] };
+          return { rows: membership ? [membership] : [] };
+        }
+        if (query.table === "budget_space_consent") {
+          // Tenant-scoped, keyed on the acting membership and the acting subject; never on the space alone.
+          assert.deepEqual(query.conditions?.map((c) => c.column), ["membership_id", "account_subject_id"]);
+          assert.equal(query.conditions?.[1]?.value, SUBJECT);
+          return { rows: consents };
         }
         return { rows: [] };
       },
@@ -70,32 +88,62 @@ describe("through the real fact assembler and the released policy", () => {
     const sessions = { read: async () => ({ "subject.accountSubjectId": SUBJECT, "subject.sessionRef": "session-ref-1", "subject.sessionVersion": 1 }) };
     const source = createApiFactSource({ sessions, client: {
       ...client,
-      // subject and profile rows for the identity leaves
       platformSelect: async (query: { table: string }) => ({ rows: query.table === "account_subject" ? [{ account_subject_id: SUBJECT, lifecycle_state: "active", lifecycle_version: 1 }] : [] }),
       profileSelect: async () => ({ rows: [{ profile_id: "77777777-7777-4777-8777-777777777777", account_subject_id: SUBJECT, profile_state: "active", version: 1 }] }),
-    } as unknown as DataAccessClient, extend: budgetFactReader("development", localRuntime) });
+    } as unknown as DataAccessClient, extend: budgetFactReader("development") });
     return new FactAssembler("api", source, () => new Date(), 5_000, undefined, { environmentId: "development" });
   }
   const lookup = { credential: "opaque", operation: { action: "1.view_space", purpose: "user_delegated" as const, mode: "user_delegated" as const, fieldSet: "default" as const, resourceType: "space" as const, resourceId: SPACE, actingSpaceId: SPACE, actingMembershipId: MEMBERSHIP } };
 
-  it("the self-created sole Primary Owner under the local runtime assembles with the interim consent and is allowed", async () => {
-    const input = await assembler(owner()).assemble(lookup);
-    assert.equal(input.consent?.consentId, `${INTERIM_CONSENT_ID_PREFIX}${MEMBERSHIP}`);
-    assert.equal(input.consent?.disclosureVersion, INTERIM_DISCLOSURE_VERSION);
+  it("the owner with a current consent row assembles the row's own facts and is allowed", async () => {
+    const input = await assembler(owner(), [consentRow({ disclosure_version: 4 })]).assemble(lookup);
+    assert.equal(input.consent?.consentId, CONSENT);
+    assert.equal(input.consent?.disclosureVersion, 4, "the row's disclosure version, not the membership's authorization_version");
     assert.equal(input.consent?.state, "current");
-    assert.equal((input as unknown as { consent: Record<string, unknown> }).consent.source, undefined, "the label is not a policy leaf");
+    assert.notEqual(input.consent?.disclosureVersion, input.membership?.authorizationVersion);
     assert.equal(decide(input).outcome, "allow");
   });
 
-  for (const [label, membership, localRuntime] of [
-    ["a non-owner active membership (co_owner)", { ...owner(), role: "co_owner" }, true],
-    ["a viewer", { ...owner(), role: "viewer" }, true],
-    ["a membership that is not the space's primary owner", { ...owner(), membership_id: "55555555-5555-4555-8555-555555555555" }, true],
-    ["a membership created by someone else", { ...owner(), created_by_subject_id: "66666666-6666-4666-8666-666666666666" }, true],
-    ["the owner outside the local runtime", owner(), false],
-  ] as const) it(`${label} gets no consent fact and the ordinary cell denies input_invalid`, async () => {
-    const a = assembler(membership, localRuntime);
-    const operation = membership.membership_id === MEMBERSHIP ? lookup : { ...lookup, operation: { ...lookup.operation, actingMembershipId: membership.membership_id } };
-    await assert.rejects(a.assemble(operation), (error: unknown) => error instanceof FactFailure && error.reason === "input_invalid");
+  it("a space whose membership has no consent row denies every ordinary cell input_invalid", async () => {
+    for (const action of ["1.view_space", "4.edit_category", "2a.edit_target"]) {
+      const a = assembler(owner(), []);
+      await assert.rejects(a.assemble({ ...lookup, operation: { ...lookup.operation, action } }),
+        (error: unknown) => error instanceof FactFailure && error.reason === "input_invalid", action);
+    }
+  });
+
+  it("a membership whose consent has left current denies consent_not_current, not input_invalid", async () => {
+    const input = await assembler(owner(), [consentRow({ state: "ended" })]).assemble(lookup);
+    assert.equal(input.consent?.state, "ended");
+    const decision = decide(input);
+    assert.equal(decision.outcome, "deny");
+    assert.equal(decision.reasonClass, "consent_not_current");
+  });
+
+  it("no property of the membership row can produce a consent fact", async () => {
+    for (const membership of [owner(), { ...owner(), role: "co_owner" }, { ...owner(), status: "pending" }, { ...owner(), authorization_version: 7 }]) {
+      const a = assembler(membership, []);
+      await assert.rejects(a.assemble(lookup), (error: unknown) => error instanceof FactFailure && error.reason === "input_invalid", JSON.stringify(membership));
+    }
+  });
+});
+
+describe("the interim derivation is deleted, not disabled", () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  it("no interim identifier survives anywhere in the API or worker fact path", () => {
+    for (const relative of ["./budget-facts.ts", "./runtime.ts", "../authorization/facts.ts", "../../../worker/src/authorization/facts.ts"]) {
+      const source = readFileSync(join(here, relative), "utf8");
+      for (const identifier of ["interimOwnerSelfConsent", "INTERIM_DISCLOSURE_VERSION", "INTERIM_CONSENT_ID_PREFIX", "INTERIM_CONSENT_SOURCE", "interim-owner-self:", "runtime_prototype_derivation"]) {
+        assert.equal(source.includes(identifier), false, `${relative} still carries ${identifier}`);
+      }
+    }
+  });
+  it("the reader takes no local-runtime argument that could re-admit a derivation", () => {
+    assert.equal(budgetFactReader.length, 1, "budgetFactReader(environmentId) only");
+  });
+  it("the consent record's own migration is the source of the facts", () => {
+    const migration = readFileSync(join(here, "../../../../packages/migrations/migrations/20260914T170000Z__create_budget_space_consent.sql"), "utf8");
+    assert.match(migration, /CREATE TABLE budget_space_consent/u);
+    assert.match(migration, /CHECK \(state IN \('current', 'superseded', 'ended'\)\)/u);
   });
 });

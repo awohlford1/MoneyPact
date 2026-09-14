@@ -65,6 +65,9 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     page.on("response", capture);
     await clickText("Create a budget"); await waitText("Budget and schedule");
     await page.type('[id="field-name"]', "Restored draft"); await waitText("Complete current period");
+    // CBD-236: the confirm control stays disabled until the disclosure is explicitly acknowledged.
+    assert.equal(await page.$eval('[id="field-acknowledged-disclosure"]', node => node.checked), false, "no box is ticked by default");
+    await page.click('[id="field-acknowledged-disclosure"]');
     await page.waitForFunction(() => [...document.querySelectorAll("button")].some(node => node.textContent === "Confirm and create budget" && !node.disabled));
     const first = issued.at(-1).proposalId;
     await page.reload(); await waitText("Complete current period");
@@ -98,12 +101,21 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     assert.equal(await page.$eval('[id="field-timeZone"]', node => node.value), "America/New_York");
     assert.equal(await page.$eval('[id="field-name"]', node => node.getAttribute("aria-invalid")), "true");
     await page.type('[id="field-name"]', "Our household"); await waitText("Complete current period");
+    // CBD-236 (CBD236-CONSENT-SEMANTICS-001 item 1): the disclosure is presented above the confirm
+    // control, no box is ticked for the person, and confirming is impossible until they tick it.
+    await waitText("Before you create this budget");
+    assert.equal(await page.$eval('[id="field-acknowledged-disclosure"]', node => node.checked), false);
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll("button")].find(node => node.textContent === "Confirm and create budget")?.disabled), true);
+    await page.click('[id="field-acknowledged-disclosure"]');
     await page.waitForFunction(() => [...document.querySelectorAll("button")].find(node => node.textContent === "Confirm and create budget")?.disabled === false);
     assert.equal(await page.$$eval("ol li", nodes => nodes.length), 4); await accessibility();
     const confirmationRequest = page.waitForRequest(request => request.url().endsWith("/confirm") && request.method() === "POST");
     await clickText("Confirm and create budget");
     const request = await confirmationRequest;
-    assert.deepEqual(Object.keys(JSON.parse(request.postData())), ["confirmationBinding"]);
+    const body = JSON.parse(request.postData());
+    assert.deepEqual(Object.keys(body).sort(), ["acknowledgedDisclosure", "confirmationBinding"]);
+    assert.equal(body.acknowledgedDisclosure.kind, "primary_owner_self");
+    assert.ok(Number.isSafeInteger(body.acknowledgedDisclosure.version) && body.acknowledgedDisclosure.version >= 1);
     await waitText("No categories yet"); budgetId = new URL(page.url()).pathname.split("/").at(-1);
   });
   await t.test("CBD-218-AC01: plan editing persists across reload and uses server identities", async () => {

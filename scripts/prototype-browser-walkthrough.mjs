@@ -110,6 +110,12 @@ async function main() {
     await clickText("Create a budget"); await waitText("Budget name");
     await page.type('[id="field-name"]', "Household walkthrough");
     await clickText("Preview schedule"); await waitText("Complete current period");
+    // CBD-236: the approved Primary Owner self-disclosure is presented above the confirm control and
+    // must be explicitly acknowledged; nothing is ticked for the person.
+    const acknowledgement = await page.$('[id="field-acknowledged-disclosure"]');
+    if (!acknowledgement) throw new Error("the creation review presents no consent acknowledgement");
+    if (await acknowledgement.evaluate((node) => node.checked)) throw new Error("the consent acknowledgement is ticked by default");
+    await acknowledgement.click();
     await page.waitForFunction(() => [...document.querySelectorAll("button")].find((node) => node.textContent === "Confirm and create budget")?.disabled === false);
     const periods = await page.$$eval("ol li", (nodes) => nodes.map((node) => node.textContent));
     expect(periods.length === 4, "the preview shows the current period plus three");

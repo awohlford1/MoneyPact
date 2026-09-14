@@ -1,6 +1,18 @@
 import type { CadenceDefinition } from "@cobudget/budget-domain/schedule";
 import type { FieldError } from "./client";
 
+/**
+ * CBD-236 consent landing: the approved Primary Owner self-disclosure the
+ * server sends with every preview. The creation surface must present it above
+ * the confirm control and echo `{ kind, version }` back with the confirmation
+ * (CBD236-CONSENT-SEMANTICS-001 items 1 and 3).
+ */
+export interface Disclosure {
+  kind: string;
+  version: number;
+  digest: string;
+  text: { heading: string; items: readonly { id: string; text: string }[]; acknowledgement: string };
+}
 export interface Draft { name: string; timeZone: string; currencyCode: string; schedule: unknown }
 export interface PreviewPeriod { ordinal: number; relation: "current" | "following"; start: string; end: string; lengthInDays: number }
 export interface Proposal {
@@ -17,6 +29,7 @@ export interface Proposal {
   previewDigest: string;
   confirmationBinding: string;
   bindingVersion: "bcp-hmac-sha256/v1";
+  currentDisclosure: Disclosure;
 }
 export interface ProposalRead { proposal: Proposal; lifecycle: { status: "previewed" | "invalidated" | "expired" | "confirmed"; reason: string | null; regenerateRequired: boolean } }
 export interface Confirmation {
@@ -29,13 +42,15 @@ export interface Confirmation {
 export interface ProposalApi {
   createProposal(draft: Draft, idempotency: string, supersedes?: string, signal?: AbortSignal): Promise<Proposal>;
   readProposal(id: string, signal?: AbortSignal): Promise<ProposalRead>;
-  confirmProposal(id: string, binding: string, idempotency: string): Promise<Confirmation>;
+  confirmProposal(id: string, binding: string, idempotency: string, acknowledgedDisclosure: { kind: string; version: number }): Promise<Confirmation>;
 }
 export interface CreationState {
   stage: "draft" | "loading" | "review" | "confirming" | "error" | "complete";
   draft: Draft;
   proposal?: Proposal;
   rendered: boolean;
+  /** The explicit acknowledgement of the current disclosure. Reset by every edit and every new preview. */
+  acknowledged: boolean;
   errors: readonly FieldError[];
   message: string;
 }

@@ -211,19 +211,42 @@ Both scripts drop and recreate the named scratch database. Never point them at
   the sign-in bootstrap response and sent back as `X-CoBudget-CSRF` on every
   mutation.
 - Authorization is policy version p3, deny by default, evaluated on every
-  protected route. Consent facts for the sole Primary Owner come from a
-  labelled interim derivation until the consent record lands
-  (`CBD236-CONSENT-SEMANTICS-001`); the walkthrough works, but no other role
-  can be admitted yet.
+  protected route. Consent is now a record, not a derivation
+  (`CBD236-CONSENT-SEMANTICS-001`): the creation review presents the approved
+  Primary Owner self-disclosure and requires an explicit acknowledgement, the
+  confirmation writes one `budget_space_consent` row inside the same
+  transaction, and the fact assembler reads `consent.{consentId,
+  disclosureVersion, state}` from that row and derives nothing. A budget space
+  whose membership has no current consent row denies every ordinary cell.
+- **A database created before that migration needs a reset.** The migration
+  writes no rows and never synthesizes consent evidence, so a budget space
+  created earlier keeps its membership and has no consent row, and every
+  ordinary cell in it denies from that commit on. Recreate the database and
+  the space:
+
+  ```sh
+  npm run db:reset --workspace=@cobudget/migrations -- --confirm-destroys-all-data
+  npm run db:migrate --workspace=@cobudget/migrations
+  ```
+
+  Then sign in and create the budget again through the confirmation, which now
+  records consent. No hosted database exists under `PROVIDERS-LOCAL-001`, so
+  nothing else is affected.
+- The approved disclosure texts live in `config/consent-disclosure-registry.json`,
+  append-only and digest-pinned, with their content under
+  `docs/consent-disclosures/`. `scripts/check-consent-disclosure-registry.mjs`
+  fails the build on an edited or removed entry, and the API refuses to start
+  on a registry whose digests do not reproduce.
 - Rate limits are the approved local prototype record sets. The sign-in
   ceremony counts on its own ceremony record; the bootstrap record keeps the
   two reserved units per ceremony (first sign-in, initial budget creation).
   A confirm attempt refused before its effect (missing CSRF value, replay,
   unknown proposal) consumes nothing reserved. A confirm admitted past those
   gates but denied inside its effect (expired or superseded proposal, altered
-  binding: `409 proposal_not_current`, `confirmation_stale`) is refunded its
-  reserved unit exactly once, so the corrected confirm on the same session is
-  admitted; only the committed confirm keeps the unit, and a second creation
+  binding, an acknowledged disclosure that is no longer current:
+  `409 proposal_not_current`, `confirmation_stale`, `stale_disclosure`) is
+  refunded its reserved unit exactly once, so the corrected confirm on the same
+  session is admitted; only the committed confirm keeps the unit, and a second creation
   on the same ceremony is denied. Counters are process-local: a restart or a
   second API process starts from empty.
 - Manual accounts, transactions, spent and remaining are the next increment

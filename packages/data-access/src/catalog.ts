@@ -63,6 +63,10 @@ export const PRODUCTION_TABLE_CATALOG: TableCatalog = {
   budget_category: "budget-space",
   budget_category_base_target: "budget-space",
   budget_category_period_target: "budget-space",
+  // --- BEGIN PROTO-CONSENT-LANDING-001 (CBD-236 consent record) ---
+  // CBD236-CONSENT-SEMANTICS-001 item 2, 20260914T170000Z.
+  budget_space_consent: "budget-space",
+  // --- END PROTO-CONSENT-LANDING-001 ---
   // --- BEGIN PROTO-INCREMENT-A-001 (CBD-196/CBD-199/CBD-201), 20260914T1800xxZ ---
   financial_account: "budget-space",
   manual_transaction: "budget-space",

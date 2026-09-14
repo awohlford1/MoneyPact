@@ -7,10 +7,13 @@ import { ConfirmationError, type ConfirmBudgetCreationResponse, type CreationPla
 import { proposalUuid } from "../../../../packages/budget-application/src/persistence/proposal-store.ts";
 import type { ProposalRecord } from "../../../../packages/budget-application/src/creation-proposals/ports.ts";
 import { lookupConfirmation } from "../../../../packages/budget-application/src/persistence/confirmation-store.ts";
+import { PRIMARY_OWNER_SELF_DISCLOSURE } from "../../../../packages/budget-application/src/creation-confirmation/disclosure.ts";
 
 export function confirmationFailure(error: ConfirmationError): RouteFailure {
   const status = error.code === "invalid_request" ? 400 : error.code === "unauthenticated" ? 401
     : error.code === "proposal_not_found" ? 404 : error.code === "authorization_denied" ? 403
+    // `stale_disclosure` (CBD-236 SS7 step 5) falls to the conflict default with every other stable
+    // CBD-233 failure outcome; the amendment adding it to CBD-233 SS3.3 is routed to the CBD-233 owner.
     : error.code === "retryable_conflict" ? 503 : 409;
   return new RouteFailure(status, error.code);
 }
@@ -53,6 +56,13 @@ export class CreationAuthorizationStore implements AuthorizationTransactionStore
     }
   }
   recordPlan(transaction: DataAccessClient, plan: CreationPlan): void { this.#plans.set(transaction, plan); }
+  /**
+   * Publishes a stable route failure raised *inside* the boundary's transaction, so it survives the
+   * boundary's generic `AuthorizationDenied` translation. `transaction()` already captures whatever is
+   * recorded here for the transaction's client and returns it instead of the 403 denial. Used for
+   * `stale_disclosure`, which CBD-233 owes the caller as a named outcome (CBD-236 SS7 step 5).
+   */
+  recordFailure(transaction: DataAccessClient, failure: RouteFailure): void { this.#failures.set(transaction, failure); }
   async transaction<T>(work: (transaction: unknown) => Promise<T>): Promise<T> {
     let plan: CreationPlan | undefined;
     let replay: ConfirmBudgetCreationResponse | undefined;
@@ -107,6 +117,17 @@ export class CreationAuthorizationStore implements AuthorizationTransactionStore
     const memberships = await client.tenantSelect({ table: "budget_space_membership", budgetSpaceId });
     const member = memberships.rows[0] as Record<string, unknown> | undefined;
     const budget = budgets.rows[0] as Record<string, unknown> | undefined;
+    // CBD-236 SS7: the creator's consent row is a postcondition of this transaction. Exactly one current
+    // self_disclosure row for the candidate membership, recorded for the acting subject, carrying the
+    // registry version and digest the composition read server-side -- a handler that omitted or altered
+    // the consent write fails verification here, and the migration's deferred trigger fails it again at
+    // COMMIT. This check never *creates* consent; it refuses to commit a membership without it.
+    const consents = await client.tenantSelect({ table: "budget_space_consent", budgetSpaceId,
+      conditions: [{ column: "membership_id", value: input.bootstrap.candidatePrimaryMembershipId }, { column: "state", value: "current" }] });
+    const consent = consents.rows[0] as Record<string, unknown> | undefined;
+    if (consents.rowCount !== 1 || consent?.source !== "self_disclosure" || consent.account_subject_id !== input.subject.accountSubjectId
+      || consent.disclosure_kind !== PRIMARY_OWNER_SELF_DISCLOSURE || !Number.isSafeInteger(Number(consent.disclosure_version))
+      || Number(consent.disclosure_version) < 1 || typeof consent.disclosure_digest !== "string" || !consent.disclosure_digest) return false;
     return budgets.rowCount === 1 && memberships.rowCount === 1 && member?.membership_id === input.bootstrap.candidatePrimaryMembershipId
       && member.account_subject_id === input.subject.accountSubjectId && member.profile_id === input.profile.profileId
       && member.role === "primary_owner" && member.status === "active" && member.authorization_version === 1

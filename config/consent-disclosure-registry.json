@@ -1,0 +1,10 @@
+[
+  {
+    "kind": "primary_owner_self",
+    "version": 1,
+    "digest": "093f199283c75721e1d197bbe7c64452e3689715a0a1470a1fe557c805421e34",
+    "approved_by": "CBD236-CONSENT-SEMANTICS-001",
+    "approved_at": "2026-09-14T12:09:08Z",
+    "text_ref": "docs/consent-disclosures/primary-owner-self.v1.json"
+  }
+]

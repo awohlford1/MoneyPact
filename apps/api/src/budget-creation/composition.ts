@@ -32,6 +32,8 @@ import type { DataAccessClient } from "@cobudget/data-access";
 import { readSessionCookieValue } from "@cobudget/sessions";
 import type { MinimalFactSourceAdapter } from "@cobudget/sessions";
 import { hmacSha256Base64Url } from "../../../../packages/budget-application/src/creation-proposals/canonical-json.ts";
+import { consentDependency } from "../../../../packages/budget-application/src/persistence/consent-store.ts";
+import { loadConsentDisclosureRegistry } from "./consent-registry.ts";
 import type { AuthenticatedSubjectContext, BindingKeyring, CurrencyContextReader, Ports } from "../../../../packages/budget-application/src/creation-proposals/ports.ts";
 import { DurableProposalStore } from "../../../../packages/budget-application/src/persistence/proposal-store.ts";
 import { ISO4217_MINOR_UNITS, SUPPORTED_MINOR_UNIT_PRECISIONS } from "../../../../packages/budget-application/src/targets/index.ts";
@@ -100,6 +102,10 @@ export function composeBudgetApi(options: BudgetCompositionOptions) {
   const attempts = options.attempts ?? 3;
   const keyring = deriveBindingKeyring(options.pepper);
   const timeZoneDataVersion = `icu-tz-${process.versions.tz ?? "unknown"}`;
+  // CBD-236 startup guard (CBD236-CONSENT-SEMANTICS-001 item 3): a registry whose digests do not
+  // reproduce, or that does not carry every kind these routes need, fails the process here -- before
+  // any listener effect -- exactly as an unsupported policy version does.
+  const disclosures = loadConsentDisclosureRegistry();
   const proposals = new DurableProposalStore(client, randomUUID, () => now().toISOString());
 
   // A2: inside the boundary transaction the session is resolved through the transaction-bound store (the root store's
@@ -116,12 +122,18 @@ export function composeBudgetApi(options: BudgetCompositionOptions) {
   const ports = async (_context: AuthenticatedSubjectContext, scoped: DataAccessClient = client): Promise<Ports> => ({
     clock: { now }, idGenerator: { proposalId: () => "bcp_" + randomUUID().replaceAll("-", "") }, bindingKeyring: keyring,
     currencyContextReader: prototypeCurrencyContextReader, constraintReader: { currentConstraintVersion: () => CBD231_CONSTRAINT_VERSION },
-    store: scoped === client ? proposals : new DurableProposalStore(joined(scoped), randomUUID, () => now().toISOString()), timeZoneDataVersion,
+    store: scoped === client ? proposals : new DurableProposalStore(joined(scoped), randomUUID, () => now().toISOString()), timeZoneDataVersion, disclosures,
   });
+
+  // CBD-236 SS7 steps 5 and 6, on the confirmation transaction's own client: the request's claim is
+  // compared with the registry verified at startup and inequality denies `stale_disclosure` before
+  // anything is written; the row that is written carries the registry's version and digest, never the
+  // claim. The same function backs every test and live proof of the write.
+  const consent = consentDependency(disclosures, randomUUID);
 
   const creationStore = new CreationAuthorizationStore(client, attempts);
   const budget = budgetApiHttp(
-    { client, proposals, transactions: creationStore, persistence: { attempts, reload: async (scoped, reloaded) => ({ context: reloaded, ports: await ports(reloaded, scoped) }), authorize: async () => { throw new Error("authorize is supplied by the route"); }, allowAudit: async () => { throw new Error("allowAudit is supplied by the route"); } }, context },
+    { client, proposals, transactions: creationStore, persistence: { attempts, reload: async (scoped, reloaded) => ({ context: reloaded, ports: await ports(reloaded, scoped) }), authorize: async () => { throw new Error("authorize is supplied by the route"); }, allowAudit: async () => { throw new Error("allowAudit is supplied by the route"); }, consent }, context },
     { context, ports: (subjectContext, transaction) => ports(subjectContext, transaction as DataAccessClient | undefined) },
     { client, clock: { now } },
   );

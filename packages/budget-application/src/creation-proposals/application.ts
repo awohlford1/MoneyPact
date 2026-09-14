@@ -7,6 +7,7 @@
  * types to the §4 HTTP contract; that binding is out of this packet's scope.
  */
 
+import { PRIMARY_OWNER_SELF_DISCLOSURE } from "../creation-confirmation/disclosure.ts";
 import { canonicalBindingEnvelope } from "./binding.ts";
 import { digestOf } from "./canonical-json.ts";
 import { EXPIRY_TIME_LIMIT_MS, PERIOD_CONTRACT_VERSION, PROPOSAL_CONTRACT_VERSION } from "./constants.ts";
@@ -101,7 +102,7 @@ function buildDependencyFingerprint(input: {
   });
 }
 
-function toResponse(record: ProposalRecord): BudgetCreationProposalResponse {
+function toResponse(record: ProposalRecord, ports: Ports): BudgetCreationProposalResponse {
   return {
     proposalId: record.proposalId,
     proposalVersion: 1,
@@ -116,6 +117,8 @@ function toResponse(record: ProposalRecord): BudgetCreationProposalResponse {
     previewDigest: record.previewDigest,
     confirmationBinding: record.confirmationBinding,
     bindingVersion: record.bindingVersion,
+    // Always the registry's current row, never a value frozen into the stored proposal (CBD-236 SS5).
+    currentDisclosure: ports.disclosures.current(PRIMARY_OWNER_SELF_DISCLOSURE),
   };
 }
 
@@ -221,7 +224,7 @@ export async function createOrRegenerateProposal(
     statusReason: null,
     confirmedBudgetSpaceId: null,
   };
-  const response = toResponse(record);
+  const response = toResponse(record, ports);
   const idempotency: IdempotencyRecord = {
     key: suppliedIdempotency,
     environment: command.subjectContext.environment,
@@ -347,7 +350,7 @@ export async function readProposal(
   return {
     kind: "found",
     status: 200,
-    response: { proposal: toResponse(record), lifecycle },
+    response: { proposal: toResponse(record, ports), lifecycle },
   };
 }
 

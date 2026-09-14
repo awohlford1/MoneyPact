@@ -176,13 +176,23 @@ async function main() {
     const confirmUnknown = await browser.fetch(`/v1/budget-creation-proposals/bcp_${"f".repeat(32)}/confirm`, { method: "POST", body: { confirmationBinding: current.confirmationBinding }, headers: { "idempotency-key": randomUUID() } });
     expect(confirmUnknown.status === 404, `confirm of an unknown proposal returned ${confirmUnknown.status} ${confirmUnknown.text}`);
     log("POST .../{unknown proposal}/confirm", `404 ${confirmUnknown.json?.error} (locator denial; reserved unit untouched)`);
+    // CBD-236 (CBD236-CONSENT-SEMANTICS-001): the confirmation echoes the disclosure the preview
+    // carried. The server compares it with the approved registry and records the registry's values.
+    const disclosure = current.currentDisclosure;
+    expect(disclosure && typeof disclosure.kind === "string" && Number.isSafeInteger(disclosure.version) && /^[0-9a-f]{64}$/u.test(disclosure.digest ?? ""),
+      `the preview carried no approved disclosure: ${JSON.stringify(disclosure)}`);
+    log("Preview carries the current consent disclosure", `${disclosure.kind} v${disclosure.version}, digest ${disclosure.digest.slice(0, 12)}..., ${disclosure.text.items.length} items and an acknowledgement sentence`);
+    const acknowledgedDisclosure = { kind: disclosure.kind, version: disclosure.version };
+    const disclosureStaleConfirm = await browser.fetch(`/v1/budget-creation-proposals/${current.proposalId}/confirm`, { method: "POST", body: { confirmationBinding: current.confirmationBinding, acknowledgedDisclosure: { kind: disclosure.kind, version: disclosure.version + 1 } }, headers: { "idempotency-key": randomUUID() } });
+    expect(disclosureStaleConfirm.status === 409 && disclosureStaleConfirm.json?.error === "stale_disclosure", `stale acknowledgement returned ${disclosureStaleConfirm.status} ${disclosureStaleConfirm.text}`);
+    log("POST .../{proposalId}/confirm with a superseded acknowledgedDisclosure", `409 stale_disclosure (no rows written; the reserved unit is refunded)`);
     const confirmKey = randomUUID();
-    const confirmed = await browser.fetch(`/v1/budget-creation-proposals/${current.proposalId}/confirm`, { method: "POST", body: { confirmationBinding: current.confirmationBinding }, headers: { "idempotency-key": confirmKey } });
+    const confirmed = await browser.fetch(`/v1/budget-creation-proposals/${current.proposalId}/confirm`, { method: "POST", body: { confirmationBinding: current.confirmationBinding, acknowledgedDisclosure }, headers: { "idempotency-key": confirmKey } });
     expect(confirmed.status === 200 || confirmed.status === 201, `confirm returned ${confirmed.status} ${confirmed.text}`);
     const budgetSpaceId = confirmed.json.budgetSpaceId;
     expect(typeof budgetSpaceId === "string" && typeof confirmed.json.currentPeriodId === "string", "confirmation must name the budget space and current period");
     log("POST /v1/budget-creation-proposals/{proposalId}/confirm", `${confirmed.status}, budgetSpaceId=${budgetSpaceId}, currentPeriodId=${confirmed.json.currentPeriodId}, authorization=${confirmed.json.authorization?.policyVersion}`);
-    const confirmReplay = await browser.fetch(`/v1/budget-creation-proposals/${current.proposalId}/confirm`, { method: "POST", body: { confirmationBinding: current.confirmationBinding }, headers: { "idempotency-key": confirmKey } });
+    const confirmReplay = await browser.fetch(`/v1/budget-creation-proposals/${current.proposalId}/confirm`, { method: "POST", body: { confirmationBinding: current.confirmationBinding, acknowledgedDisclosure }, headers: { "idempotency-key": confirmKey } });
     expect(confirmReplay.status === confirmed.status && confirmReplay.text === confirmed.text, `confirm replay returned ${confirmReplay.status} ${confirmReplay.text}`);
     log("POST .../{proposalId}/confirm (same Idempotency-Key)", `${confirmReplay.status}, exact replay (no surface decision, reserved unit consumed exactly once by the committed confirm)`);
 

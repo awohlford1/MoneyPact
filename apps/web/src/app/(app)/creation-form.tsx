@@ -9,6 +9,7 @@ import { Input } from "../../components/Input";
 import { Select } from "../../components/Select";
 import { Button } from "../../components/Button";
 import { Alert } from "../../components/Alert";
+import { Checkbox } from "../../components/Choice";
 
 const initial: Draft = { name: "", timeZone: "America/New_York", currencyCode: "USD", schedule: { cadence: "monthly", anchor: { kind: "day-of-month", day: 1 } } };
 const weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -120,6 +121,18 @@ export function CreationForm() {
       <p className="break-words font-semibold">{state.proposal.normalizedInputs.name}</p><p>{state.proposal.normalizedInputs.timeZone} · {state.proposal.normalizedInputs.currencyCode}</p><p>{state.proposal.preview.cadenceSummary}</p>
       <ol className="grid gap-3 sm:grid-cols-2">{state.proposal.preview.periods.map(period => <li key={period.ordinal} className="rounded-lg border border-border p-4"><h3 className="font-semibold">{period.relation === "current" ? "Complete current period" : `Following period ${period.ordinal}`}</h3><p>{period.start} through {period.end}</p><p>{period.lengthInDays} days · dates inclusive</p></li>)}</ol>
       {state.proposal.preview.warnings.map((warning, index) => <Alert key={`${warning.code}:${index}`}>{warning.message}</Alert>)}
+    </section>}
+    {/* CBD-236 (CBD236-CONSENT-SEMANTICS-001 item 1): the complete current-version Primary Owner
+        self-disclosure is presented above the confirm control, and confirming is consent only after
+        an explicit acknowledgement. The text and its version come from the server's approved
+        registry; nothing here is hard-coded and no box is ticked by default. */}
+    {state.proposal && <section aria-labelledby="disclosure-heading" className="space-y-4 rounded-lg border border-border p-4">
+      <h2 id="disclosure-heading" className="text-2xl font-semibold">{state.proposal.currentDisclosure.text.heading}</h2>
+      <ul className="list-disc space-y-2 pl-6">{state.proposal.currentDisclosure.text.items.map(item => <li key={item.id}>{item.text}</li>)}</ul>
+      <Checkbox id="field-acknowledged-disclosure" checked={state.acknowledged}
+        label={state.proposal.currentDisclosure.text.acknowledgement}
+        disabled={state.stage !== "review"}
+        onChange={event => controller.acknowledge(event.target.checked)} />
     </section>}
     <Button disabled={!controller.canConfirm()} onClick={() => void confirm()}>Confirm and create budget</Button>
   </section>;

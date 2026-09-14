@@ -243,7 +243,7 @@ describe("PROTO-QA-FIXES-001 F1: a reserved unit consumed for a request is refun
     await app.init(); await app.getHttpAdapter().getInstance().ready();
     return { app, refunds, consumed: () => consumed };
   }
-  for (const [error, status, refunded] of [["proposal_not_current", 409, 1], ["confirmation_stale", 409, 1], ["retryable_conflict", 503, 0]] as const) {
+  for (const [error, status, refunded] of [["proposal_not_current", 409, 1], ["confirmation_stale", 409, 1], ["stale_disclosure", 409, 1], ["retryable_conflict", 503, 0]] as const) {
     it(`an effect denied with ${error} ${refunded ? "refunds the unit exactly once" : "is outside the closed refund set and keeps the unit consumed"}`, async () => {
       const h = new Harness(); h.boundary.execute = async <T>() => new RouteFailure(status, error) as T;
       const { app, refunds, consumed } = await reservedApplication(h);
