@@ -1,0 +1,13 @@
+{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "npx --no-install agent-workflow provider claude hook", "timeout": 10 }] }],
+    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "npx --no-install agent-workflow provider claude hook", "timeout": 10 }] }],
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "npx --no-install agent-workflow provider claude hook", "timeout": 10 }] }],
+    "PostToolUseFailure": [{ "hooks": [{ "type": "command", "command": "npx --no-install agent-workflow provider claude hook", "timeout": 10 }] }],
+    "SubagentStart": [{ "hooks": [{ "type": "command", "command": "npx --no-install agent-workflow provider claude hook", "timeout": 10 }] }],
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "npx --no-install agent-workflow provider claude hook", "timeout": 10 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "npx --no-install agent-workflow provider claude hook", "timeout": 10 }] }],
+    "StopFailure": [{ "hooks": [{ "type": "command", "command": "npx --no-install agent-workflow provider claude hook", "timeout": 10 }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "npx --no-install agent-workflow provider claude hook", "timeout": 10 }] }]
+  }
+}

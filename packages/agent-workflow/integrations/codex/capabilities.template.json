@@ -1,0 +1,13 @@
+{
+  "description": "Installation-time capability declaration; false is the safe default until an operation is detected.",
+  "operations": {
+    "thread": false,
+    "task": false,
+    "delegation": false,
+    "wait": false,
+    "interrupt": false,
+    "handover": false,
+    "acknowledge": false,
+    "raw_response": false
+  }
+}

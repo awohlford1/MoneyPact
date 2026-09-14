@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-workflow.dev/schemas/1.0/records/plan.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "record_id",
+    "record_type",
+    "created_at",
+    "plan_id",
+    "assignment_id",
+    "revision",
+    "purpose",
+    "lifecycle",
+    "approach",
+    "acceptance_criteria"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "record_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+    },
+    "record_type": {
+      "const": "plan"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "plan_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^pln-[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "assignment_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^asn-[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "purpose": {
+      "enum": [
+        "initial",
+        "continuation",
+        "steer"
+      ]
+    },
+    "lifecycle": {
+      "enum": [
+        "draft",
+        "proposed",
+        "active",
+        "superseded"
+      ]
+    },
+    "approach": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "unresolved": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "prior_plan_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^pln-[A-Za-z0-9][A-Za-z0-9._-]*$"
+    }
+  },
+  "additionalProperties": false
+}

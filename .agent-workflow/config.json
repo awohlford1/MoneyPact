@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "1.0",
+  "framework": { "minimumVersion": "0.1.0" },
+  "state": { "directory": ".agent-state" },
+  "approvals": {
+    "initialPlan": "required",
+    "resumePlan": "required",
+    "materialPlanChange": "required"
+  },
+  "intentLogging": { "retryCount": 3, "backoffSeconds": [1, 2, 4] },
+  "referenceValidation": { "retrySeconds": [5, 15, 30], "timeoutSeconds": 60 },
+  "heartbeat": { "enabled": false, "intervalSeconds": 300 },
+  "retention": { "rawResponsesDays": 7, "closedAssignmentsDays": 30 },
+  "execution": { "defaultInterruptionMode": "graceful" },
+  "roles": { "enabled": ["implementation", "reviewer", "security", "qa", "reliability", "ux"] },
+  "materiality": {
+    "alwaysMaterial": ["architecture.dataStorage", "budget.limit", "deployment.production", "scope.acceptanceCriteria", "security.authentication"],
+    "delegatedChanges": ["implementation.details", "retry.withinLimit", "task.order", "test.expansion"],
+    "cumulativeChangeThreshold": 3,
+    "ambiguityBehavior": "hold_affected_work"
+  },
+  "models": { "selectionAuthority": ["executive", "manager_policy"], "fallback": "require_authorization", "roles": {} },
+  "providers": {
+    "claude": { "enabled": true, "captureRawResponses": false },
+    "codex": { "enabled": true, "captureRawResponses": false }
+  },
+  "security": {
+    "executiveApproval": {
+      "mode": "record_only",
+      "trustedPublicKeys": {
+        "executive-2026-01": "MCowBQYDK2VwAyEAnFNMHiGMJxzy/TkvUvg9SaYZn3F4n6ds+6uwEkOAicc="
+      },
+      "receiptMaxAgeSeconds": 900
+    }
+  }
+}

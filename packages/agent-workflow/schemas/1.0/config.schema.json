@@ -1,0 +1,354 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-workflow.dev/schemas/1.0/config.schema.json",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "framework",
+    "state",
+    "approvals",
+    "intentLogging",
+    "referenceValidation",
+    "heartbeat",
+    "retention",
+    "execution",
+    "roles",
+    "materiality",
+    "models",
+    "providers",
+    "security"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "framework": {
+      "type": "object",
+      "required": [
+        "minimumVersion"
+      ],
+      "properties": {
+        "minimumVersion": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "state": {
+      "type": "object",
+      "required": [
+        "directory"
+      ],
+      "properties": {
+        "directory": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "approvals": {
+      "type": "object",
+      "required": [
+        "initialPlan",
+        "resumePlan",
+        "materialPlanChange"
+      ],
+      "properties": {
+        "initialPlan": {
+          "enum": [
+            "required",
+            "not_required"
+          ]
+        },
+        "resumePlan": {
+          "enum": [
+            "required",
+            "not_required"
+          ]
+        },
+        "materialPlanChange": {
+          "enum": [
+            "required",
+            "not_required"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "intentLogging": {
+      "type": "object",
+      "required": [
+        "retryCount",
+        "backoffSeconds"
+      ],
+      "properties": {
+        "retryCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "backoffSeconds": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "referenceValidation": {
+      "type": "object",
+      "required": [
+        "retrySeconds",
+        "timeoutSeconds"
+      ],
+      "properties": {
+        "retrySeconds": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "heartbeat": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "intervalSeconds"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "intervalSeconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "retention": {
+      "type": "object",
+      "required": [
+        "rawResponsesDays",
+        "closedAssignmentsDays",
+        "permanentArchiveDeletion"
+      ],
+      "properties": {
+        "rawResponsesDays": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "closedAssignmentsDays": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "permanentArchiveDeletion": {
+          "const": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "execution": {
+      "type": "object",
+      "required": [
+        "defaultInterruptionMode",
+        "automaticForceEscalation"
+      ],
+      "properties": {
+        "defaultInterruptionMode": {
+          "enum": [
+            "graceful",
+            "force"
+          ]
+        },
+        "automaticForceEscalation": {
+          "const": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "roles": {
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "materiality": {
+      "type": "object",
+      "required": [
+        "alwaysMaterial",
+        "delegatedChanges",
+        "cumulativeChangeThreshold",
+        "ambiguityBehavior"
+      ],
+      "properties": {
+        "alwaysMaterial": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "delegatedChanges": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "cumulativeChangeThreshold": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ambiguityBehavior": {
+          "const": "hold_affected_work"
+        }
+      },
+      "additionalProperties": false
+    },
+    "models": {
+      "type": "object",
+      "required": [
+        "selectionAuthority",
+        "fallback",
+        "roles"
+      ],
+      "properties": {
+        "selectionAuthority": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "executive",
+              "manager_policy"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "fallback": {
+          "enum": [
+            "require_authorization",
+            "reject"
+          ]
+        },
+        "roles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "allowed"
+            ],
+            "properties": {
+              "allowed": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "providers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "captureRawResponses": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "security": {
+      "type": "object",
+      "required": [
+        "stateRootContainment",
+        "secretRedaction",
+        "executeRecordContent",
+        "executiveApproval"
+      ],
+      "properties": {
+        "stateRootContainment": {
+          "const": true
+        },
+        "secretRedaction": {
+          "const": true
+        },
+        "executeRecordContent": {
+          "const": false
+        },
+        "executiveApproval": {
+          "type": "object",
+          "required": [
+            "mode",
+            "trustedPublicKeys",
+            "receiptMaxAgeSeconds"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "record_only",
+                "signed_ed25519"
+              ]
+            },
+            "trustedPublicKeys": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "receiptMaxAgeSeconds": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

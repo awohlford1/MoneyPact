@@ -78,3 +78,40 @@ These instructions apply throughout the repository unless a more specific
   its gate command and its prohibitions, and reports back to the Manager.
 - Specialists do not become Managers and do not dispatch further agents.
 - Pending policies and approvals remain pending.
+
+## Agent Workflow CLI Integration
+
+- Managers use the pinned Agent Workflow CLI (`agent-workflow`) for canonical state changes;
+  direct editing of `.agent-state` is unsupported.
+- Managers pass command inputs as JSON on standard input. A `start` input must
+  include `objective`, `approach`, and `acceptanceCriteria`.
+- The Manager owns framework-ID bookkeeping. Retain the `assignmentId` returned
+  by `start` and reuse it for later commands without asking the Executive to
+  provide or remember an internal ID. Keep the same `managerInstanceId` when a
+  session restarts so the runtime can recover assignments owned by that Manager.
+- Retain the ownership fencing token returned by `start`, `ownership-acquire`,
+  renewal, or handover, and include it in every state-changing command. Never
+  show the token to the Executive or place it in events, results, or prose.
+- If the current assignment ID is unavailable, omit it and let the runtime
+  resolve the applicable owned assignment. If the runtime returns
+  `ASSIGNMENT_SELECTION_REQUIRED`, ask the Executive to choose using the
+  candidates' objectives and lifecycle states. Do not expose or request their
+  assignment IDs. An explicit ID remains an optional advanced override.
+- Record an Executive decision with `approve-plan`, `reject-plan`, or
+  `waive-plan` for the exact returned `approvalId`. When
+  `security.executiveApproval.mode` is `signed_ed25519`, pass the externally
+  signed `approvalReceipt`; `actorType` is not proof of Executive identity.
+  In `record_only` mode, clearly treat approval identity as unauthenticated.
+  Do not begin work until execution authority is `authorized`.
+- If the manager's lease expires while waiting for the Executive, the same
+  manager must run `ownership-acquire` before retrying. A different manager
+  must use the explicit handover workflow.
+- Invoke `npm run agent:doctor` before managed work when integration health is
+  uncertain. Treat its enforced, observed, instructed, and unsupported labels
+  literally.
+- Framework assignment, task, execution, action, and manager-instance IDs are
+  durable. Provider thread, session, task, and process IDs are provenance only.
+- Do not claim interruption, acknowledgement, resumption, or handover without
+  observable confirmation. Durable handover does not transfer a live process.
+- Do not silently substitute a provider or model. Stop the affected operation
+  when the shared runtime returns a validation, approval, or capability error.

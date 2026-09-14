@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "1.0",
+  "framework": { "minimumVersion": "0.1.0" },
+  "state": { "directory": ".agent-state" },
+  "approvals": {
+    "initialPlan": "required",
+    "resumePlan": "required",
+    "materialPlanChange": "required"
+  },
+  "intentLogging": { "retryCount": 3, "backoffSeconds": [1, 2, 4] },
+  "referenceValidation": { "retrySeconds": [5, 15, 30], "timeoutSeconds": 60 },
+  "heartbeat": { "enabled": false, "intervalSeconds": 300 },
+  "retention": {
+    "rawResponsesDays": 7,
+    "closedAssignmentsDays": 30,
+    "permanentArchiveDeletion": false
+  },
+  "execution": {
+    "defaultInterruptionMode": "graceful",
+    "automaticForceEscalation": false
+  },
+  "roles": {
+    "enabled": ["implementation", "reviewer", "security", "qa"]
+  },
+  "materiality": {
+    "alwaysMaterial": [
+      "architecture.dataStorage",
+      "budget.limit",
+      "deployment.production",
+      "scope.acceptanceCriteria",
+      "security.authentication"
+    ],
+    "delegatedChanges": [
+      "implementation.details",
+      "retry.withinLimit",
+      "task.order",
+      "test.expansion"
+    ],
+    "cumulativeChangeThreshold": 3,
+    "ambiguityBehavior": "hold_affected_work"
+  },
+  "models": {
+    "selectionAuthority": ["executive", "manager_policy"],
+    "fallback": "require_authorization",
+    "roles": {}
+  },
+  "providers": {},
+  "security": {
+    "stateRootContainment": true,
+    "secretRedaction": true,
+    "executeRecordContent": false,
+    "executiveApproval": {
+      "mode": "record_only",
+      "trustedPublicKeys": {},
+      "receiptMaxAgeSeconds": 900
+    }
+  }
+}

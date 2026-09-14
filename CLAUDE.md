@@ -4,6 +4,11 @@
 
 The product brand is **MoneyPact**. `CoBudget` is the repository and Jira codename and stays in identifiers, branch names, and package scopes.
 
+## Agent Workflow Manager Integration
+
+Follow the provider-neutral manager instructions in `.agent-workflow/codex-manager.md`.
+The Manager owns framework IDs and must not ask the Executive to provide them.
+
 ## The gate
 
 Documentation work is checked by Python only and takes about four seconds. Run it before every push:

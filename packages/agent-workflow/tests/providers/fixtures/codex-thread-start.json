@@ -1,0 +1,15 @@
+{
+  "event_type": "thread.started",
+  "thread_id": "codex-thread-fixture",
+  "manager_instance_id": "manager-fixture",
+  "actor": {
+    "actor_id": "manager-fixture",
+    "actor_type": "manager",
+    "display_name": "Fixture manager"
+  },
+  "assignment_id": "assignment-fixture",
+  "occurred_at": "2026-01-02T03:04:05.000Z",
+  "data": {
+    "source": "synthetic-fixture"
+  }
+}

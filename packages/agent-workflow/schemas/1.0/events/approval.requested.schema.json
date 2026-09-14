@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-workflow.dev/schemas/1.0/events/approval.requested.schema.json",
+  "type": "object",
+  "required": [
+    "approval_id",
+    "subject",
+    "subject_revision"
+  ],
+  "properties": {
+    "approval_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^apr-[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "subject": {
+      "type": "object",
+      "required": [
+        "record_type",
+        "record_id"
+      ],
+      "properties": {
+        "record_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "record_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "subject_revision": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "additionalProperties": false
+}

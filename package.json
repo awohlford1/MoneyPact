@@ -5,7 +5,13 @@
   "description": "Collaborative budgeting for individuals, partners, and families.",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/budget-application",
+    "packages/budget-domain",
+    "packages/contracts",
+    "packages/data-access",
+    "packages/migrations",
+    "packages/rate-limit",
+    "packages/sessions"
   ],
   "scripts": {
     "dev": "npm run dev --workspace=@cobudget/web",
@@ -30,13 +36,22 @@
     "check:migrations": "node scripts/check-migrations.mjs",
     "check:authorization-policy-history": "node --test scripts/check-authorization-policy-history.test.mjs && node scripts/check-authorization-policy-history.mjs",
     "check:rate-limit-registry": "node --test scripts/check-rate-limit-registry.test.mjs && node scripts/check-rate-limit-registry.mjs",
-    "check:pages": "node scripts/check-public-pages.mjs"
+    "check:pages": "node scripts/check-public-pages.mjs",
+    "agent:init": "npx --no-install agent-workflow init",
+    "agent:doctor": "npx --no-install agent-workflow doctor",
+    "agent:validate": "npx --no-install agent-workflow validate",
+    "agent:capabilities": "npx --no-install agent-workflow capabilities",
+    "agent:cleanup": "npx --no-install agent-workflow cleanup --apply",
+    "agent:cleanup:dry-run": "npx --no-install agent-workflow cleanup --dry-run",
+    "agent:archive": "npx --no-install agent-workflow archive --apply",
+    "agent:archive:dry-run": "npx --no-install agent-workflow archive --dry-run"
   },
   "engines": {
     "node": ">=24 <25"
   },
   "packageManager": "npm@11.12.1",
   "devDependencies": {
+    "@agent-workflow/cli": "file:.agent-workflow/vendor/agent-workflow-cli-0.1.6.tgz",
     "@eslint/js": "10.0.1",
     "@mermaid-js/mermaid-cli": "11.16.0",
     "eslint": "9.39.5"

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-workflow.dev/schemas/1.0/events/action.reconciled.schema.json",
+  "type": "object",
+  "required": [
+    "action_id",
+    "concrete_outcome"
+  ],
+  "properties": {
+    "action_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^act-[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "concrete_outcome": {
+      "enum": [
+        "succeeded",
+        "failed",
+        "prevented",
+        "cancelled"
+      ]
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false
+}

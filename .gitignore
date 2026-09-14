@@ -75,3 +75,7 @@ __pycache__/
 # Nesting also keeps the tree out of the Confluence publication inventory,
 # which collects docs/*.md at depth 1 only (scripts/publication.py inventory()).
 docs/agent-operations/
+
+# Agent Workflow local runtime state and machine-local configuration
+.agent-state/
+.agent-workflow/local.json

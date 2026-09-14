@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-workflow.dev/schemas/1.0/events/manager.command_failed.schema.json",
+  "type": "object",
+  "required": [
+    "command_id",
+    "command"
+  ],
+  "properties": {
+    "message": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "minLength": 1
+    },
+    "record_ref": {
+      "type": "object",
+      "required": [
+        "record_type",
+        "record_id"
+      ],
+      "properties": {
+        "record_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "record_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object"
+    },
+    "details": {
+      "type": "object"
+    },
+    "command_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+    },
+    "command": {
+      "enum": [
+        "start",
+        "resume",
+        "status",
+        "ask",
+        "steer",
+        "pause",
+        "handover",
+        "approve-plan",
+        "reject-plan",
+        "waive-plan",
+        "task-create",
+        "task-transition",
+        "execution-begin",
+        "execution-outcome",
+        "result-submit",
+        "result-rework",
+        "result-accept",
+        "task-close",
+        "action-create",
+        "action-outcome",
+        "action-reconcile",
+        "decision-record",
+        "cancel",
+        "close",
+        "reopen",
+        "ownership-acquire"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

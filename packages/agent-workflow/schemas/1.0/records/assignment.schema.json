@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-workflow.dev/schemas/1.0/records/assignment.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "record_id",
+    "record_type",
+    "created_at",
+    "assignment_id",
+    "objective",
+    "lifecycle_state",
+    "execution_authority",
+    "ownership",
+    "policy_snapshot"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "record_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+    },
+    "record_type": {
+      "const": "assignment"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "assignment_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^asn-[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "lifecycle_state": {
+      "enum": [
+        "planning",
+        "awaiting_approval",
+        "running",
+        "blocked",
+        "pausing",
+        "paused",
+        "handing_over",
+        "handover_ready",
+        "cancelling",
+        "closed"
+      ]
+    },
+    "closure_disposition": {
+      "enum": [
+        "completed",
+        "cancelled"
+      ]
+    },
+    "execution_authority": {
+      "enum": [
+        "unauthorized",
+        "authorized",
+        "held"
+      ]
+    },
+    "current_plan_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^pln-[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "ownership": {
+      "type": "object",
+      "required": [
+        "manager_instance_id"
+      ],
+      "properties": {
+        "manager_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^mgr-[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "lease_expires_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "policy_snapshot": {
+      "type": "object"
+    },
+    "task_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^tsk-[A-Za-z0-9][A-Za-z0-9._-]*$"
+      },
+      "uniqueItems": true
+    },
+    "checkpoint_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$"
+    },
+    "pending_action_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^act-[A-Za-z0-9][A-Za-z0-9._-]*$"
+      },
+      "uniqueItems": true
+    },
+    "holds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "nonmaterial_change_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "closure_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "disposition",
+          "closed_at"
+        ],
+        "properties": {
+          "disposition": {
+            "enum": [
+              "completed",
+              "cancelled"
+            ]
+          },
+          "closed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "lifecycle_state": {
+            "const": "closed"
+          }
+        },
+        "required": [
+          "lifecycle_state"
+        ]
+      },
+      "then": {
+        "required": [
+          "closure_disposition"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "machineId": "developer-workstation",
+  "providerExecutables": {
+    "example-provider": "path/to/provider"
+  },
+  "concurrency": { "maxOperations": 4 },
+  "secretReferences": {
+    "externalArchive": "AGENT_WORKFLOW_ARCHIVE_CREDENTIAL"
+  }
+}

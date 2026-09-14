@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "event_id": "evt-example",
+  "event_type": "assignment.created",
+  "sequence": 1,
+  "occurred_at": "2026-09-13T12:00:00Z",
+  "recorded_at": "2026-09-13T12:00:01Z",
+  "actor": { "actor_id": "mgr-example", "actor_type": "manager" },
+  "recorded_by": { "actor_id": "runtime-example", "actor_type": "runtime" },
+  "assignment_id": "asn-example",
+  "data": { "record_ref": { "record_type": "assignment", "record_id": "asn-example" } }
+}

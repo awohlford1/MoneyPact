@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "providers": {
+    "claude": { "enabled": true, "captureRawResponses": false },
+    "codex": { "enabled": true, "captureRawResponses": false }
+  },
+  "heartbeat": { "enabled": false, "intervalSeconds": 300 },
+  "retention": { "rawResponsesDays": 7, "closedAssignmentsDays": 30 },
+  "security": {
+    "executiveApproval": { "mode": "record_only", "trustedPublicKeys": {}, "receiptMaxAgeSeconds": 900 }
+  }
+}

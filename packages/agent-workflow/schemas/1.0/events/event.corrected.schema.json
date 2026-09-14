@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-workflow.dev/schemas/1.0/events/event.corrected.schema.json",
+  "type": "object",
+  "required": [
+    "corrected_event_id",
+    "correction"
+  ],
+  "properties": {
+    "corrected_event_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^evt-[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "correction": {
+      "type": "object"
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false
+}
