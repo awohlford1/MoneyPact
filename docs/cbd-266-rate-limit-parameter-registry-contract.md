@@ -2,13 +2,13 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Proposed v0.2 - conservative prototype-only values and Executive set approval recorded; implementation, Security/Reliability review, and negative-test evidence pending** |
-| Document version | 0.3 |
+| Status | **Approved v0.3.1 (`PO-CONTRACT-APPROVALS-002`, September 14, 2026) - the four prototype value sets approved as a whole by `CBD266-PROTOTYPE-DEFAULTS-001` and the terminal recovery set by `CBD266-RECOVERY-RECORD-001`; approval projection, resolver and fail-closed guard merged (PR #322); Security/Reliability review of the merged mechanism and hosted-environment evidence remain open and are not waived** |
+| Document version | 0.3.1 |
 | Jira subtask | [CBD-266](https://cobudget.atlassian.net/browse/CBD-266) |
 | Parent | [CBD-123](https://cobudget.atlassian.net/browse/CBD-123) |
 | Repository baseline | `ce49e3dd6f795073132d82f4c077b9365045a0e7` |
 | Related contract | CBD-236 proposed v0.4, especially section 7 and `OQ-236-003` |
-| Last updated | September 13, 2026 |
+| Last updated | September 14, 2026 |
 
 ## 1. Purpose, authority, and delivery boundary
 
@@ -792,6 +792,7 @@ Done.
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.3.1 (approval) | September 14, 2026 | Product Owner approval recorded (`PO-CONTRACT-APPROVALS-002`). Status Proposed → Approved at the same version; status field reconciled with the document version, the two Executive value decisions and the merged projection mechanism (PR #322); no decision, identifier or contract text changed. |
 | 0.3 | September 14, 2026 | Documented the local approval evidence file, resolver, and fail-closed registry guard; added the terminal recovery set approved by `CBD266-RECOVERY-RECORD-001`; original parameter values and hosted gates unchanged |
 | 0.2 | September 13, 2026 | Added the four conservative local-prototype parameter-record sets approved as a whole by `CBD266-PROTOTYPE-DEFAULTS-001`; resolved `OPEN-266-VALUES` and `OPEN-266-APPROVALS` only for that prototype scope; retained implementation, review, evidence, and hosted-environment gates |
 | 0.1 | September 13, 2026 | Initial Architecture proposal for CBD-266; no parameter value or Product Owner approval granted |
