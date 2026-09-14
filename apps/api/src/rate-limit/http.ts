@@ -20,7 +20,9 @@ export interface ApiSurfaceGate {
    * bootstrap record's *reserved* units (a stage other than `ordinary`). The contract routes a reserved unit only
    * to the eligible effect of the valid ceremony (section 4.7 `proto-bootstrap-v1`), so the guard consumes it
    * only once the session gate, the CSRF check, the replay lookup and the locator validation have succeeded --
-   * a denied attempt spends nothing reserved.
+   * a denied attempt spends nothing reserved. PROTO-QA-FIXES-001 F1: an attempt admitted past those gates but
+   * denied inside its effect (proposal_not_current, confirmation_stale) is refunded through the decision's
+   * `refund`, exactly once, so only a committed effect keeps the ceremony's reserved unit.
    */
   reserved?(request: FastifyRequest, actorId: string | undefined): Promise<boolean>;
 }

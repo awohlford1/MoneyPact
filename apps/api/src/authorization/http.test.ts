@@ -219,6 +219,58 @@ describe("PROTO-IDENTITY-API-001 C7: @PreAuthenticationSurface is restricted to 
   });
 });
 
+describe("PROTO-QA-FIXES-001 F1: a reserved unit consumed for a request is refunded once when its effect is denied", () => {
+  async function reservedApplication(h: Harness) {
+    const refunds: string[] = []; let consumed = 0;
+    const module = await Test.createTestingModule({
+      imports: [AppModule.register(config, () => undefined, {
+        boundary: h.boundary, surfaceApproved: async () => true, csrf: async () => true,
+        rateLimit: {
+          evidence: (request) => invocation(apiIdentity(request.method, request.routeOptions.url!), "api_route", "test-only", "test-only"),
+          reserved: async (request) => request.routeOptions.url === "/protected/bootstrap",
+          enforce: async (request) => {
+            if (request.routeOptions.url !== "/protected/bootstrap") return { outcome: "deny_unregistered" };
+            consumed++; let refunded = false;
+            return { outcome: "allow", provenance: "test-only", release: async () => undefined, refund: async () => { refunds.push(request.routeOptions.url!); if (refunded) return false; refunded = true; return true; } };
+          },
+        },
+        sessionLocator: (request) => request.headers.cookie,
+        deny: (response) => { throw new HttpException(response, 403); },
+      }, testHistory)],
+      controllers: [ProtectedController],
+    }).compile();
+    const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { logger: false });
+    await app.init(); await app.getHttpAdapter().getInstance().ready();
+    return { app, refunds, consumed: () => consumed };
+  }
+  for (const [error, status, refunded] of [["proposal_not_current", 409, 1], ["confirmation_stale", 409, 1], ["retryable_conflict", 503, 0]] as const) {
+    it(`an effect denied with ${error} ${refunded ? "refunds the unit exactly once" : "is outside the closed refund set and keeps the unit consumed"}`, async () => {
+      const h = new Harness(); h.boundary.execute = async <T>() => new RouteFailure(status, error) as T;
+      const { app, refunds, consumed } = await reservedApplication(h);
+      try {
+        const response = await app.inject({ method: "POST", url: "/protected/bootstrap", headers: { cookie: "opaque" } });
+        assert.equal(response.statusCode, status); assert.deepEqual(response.json(), { error });
+        assert.equal(consumed(), 1, "the reserved unit was consumed once, after the pre-policy gates");
+        assert.equal(refunds.length, refunded);
+        assert.equal(h.state.spaces.length, 0);
+      } finally { await app.close(); }
+    });
+  }
+  it("a committed effect keeps its unit consumed (no refund), and a pre-consumption replay failure has nothing to refund", async () => {
+    const h = new Harness();
+    const { app, refunds, consumed } = await reservedApplication(h);
+    try {
+      const committed = await app.inject({ method: "POST", url: "/protected/bootstrap", headers: { cookie: "opaque" } });
+      assert.equal(committed.statusCode, 201, committed.body);
+      assert.equal(consumed(), 1); assert.deepEqual(refunds, []);
+      replayResult = new RouteFailure(409, "proposal_not_current");
+      const precheck = await app.inject({ method: "POST", url: "/protected/bootstrap", headers: { cookie: "opaque" } });
+      assert.equal(precheck.statusCode, 409);
+      assert.equal(consumed(), 1, "a replay-stage denial never consumed the unit"); assert.deepEqual(refunds, []);
+    } finally { replayResult = { kind: "absent" }; await app.close(); }
+  });
+});
+
 for (const stage of ["precheck", "rolled-back"] as const) {
   it("preserves the application conflict status at " + stage, async () => {
     const h = new Harness(); const failure = new RouteFailure(409, "proposal_not_current");

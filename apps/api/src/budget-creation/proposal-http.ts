@@ -17,7 +17,15 @@ export class ProposalModule {}
  * untrusted locator by the route's pre-policy `select`, and the boundary then
  * evaluates the server-selected action -- `proposal.regenerate` with the
  * predecessor as the subject-owned target row (its lifecycle revision captured
- * and rechecked at commit) or `proposal.create` when there is none. */
+ * and rechecked at commit) or `proposal.create` when there is none.
+ * PROTO-QA-FIXES-001 F2: only a well-formed locator names a target row. A
+ * value that is not a proposal identifier (wrong type or shape) selects
+ * `proposal.create` with no target row so the request reaches the canonical
+ * CBD-232 section 5.2 validation, which reports
+ * `supersedes-proposal-id.expected-string` / `.invalid` in section 5.1 order
+ * next to every other field error; the absent or foreign well-formed
+ * predecessor keeps the uniform 404. */
+const PROPOSAL_ID_PATTERN = /^bcp_[0-9a-f]{32}$/u;
 export function proposalHttp(dependencies: ProposalHttpDependencies): DynamicModule {
   const handlers = new ProposalHandlers(dependencies);
   @Controller("v1/budget-creation-proposals")
@@ -27,9 +35,9 @@ export function proposalHttp(dependencies: ProposalHttpDependencies): DynamicMod
       resourceLocator: () => ({ fieldSet: "default", scope: "subject" }),
       select: async (request) => {
         const supersedes = (request.body as Record<string, unknown> | undefined)?.supersedesProposalId;
-        if (supersedes === undefined || supersedes === null) return { action: "proposal.create", fieldSet: "default", scope: "subject" };
-        // A malformed predecessor locator is not a row; the boundary denies it as it denies any absent target row.
-        if (typeof supersedes !== "string" || !/^bcp_[0-9a-f]{32}$/u.test(supersedes)) throw new RouteFailure(404, "proposal_not_found");
+        // Not a proposal identifier (absent, null, wrong type, wrong shape): no target row; the handler's
+        // validation owns the field error (F2). The body never becomes an authority fact either way.
+        if (typeof supersedes !== "string" || !PROPOSAL_ID_PATTERN.test(supersedes)) return { action: "proposal.create", fieldSet: "default", scope: "subject" };
         return { action: "proposal.regenerate", fieldSet: "default", scope: "subject", resourceType: "proposal", resourceId: supersedes };
       } })
     async create(@Req() request: FastifyRequest, @Authorization() effect: EffectContext,
@@ -41,7 +49,7 @@ export function proposalHttp(dependencies: ProposalHttpDependencies): DynamicMod
     @Authorize({ action: "proposal.read", purpose: "user_delegated", resourceLocator: (request) => {
       const proposalId = (request.params as Record<string, unknown>).proposalId;
       // The identifier is only a locator; the datastore loads the row by environment and subject first (section 4.4).
-      if (typeof proposalId !== "string" || !/^bcp_[0-9a-f]{32}$/u.test(proposalId)) throw new RouteFailure(404, "proposal_not_found");
+      if (typeof proposalId !== "string" || !PROPOSAL_ID_PATTERN.test(proposalId)) throw new RouteFailure(404, "proposal_not_found");
       return { fieldSet: "default", scope: "subject", resourceType: "proposal", resourceId: proposalId };
     } })
     async read(@Req() request: FastifyRequest, @Authorization() effect: EffectContext,

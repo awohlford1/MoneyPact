@@ -216,8 +216,16 @@ Both scripts drop and recreate the named scratch database. Never point them at
   (`CBD236-CONSENT-SEMANTICS-001`); the walkthrough works, but no other role
   can be admitted yet.
 - Rate limits are the approved local prototype record sets. The sign-in
-  ceremony currently counts on the bootstrap record's per-ceremony buckets;
-  its own record activates with `CBD266-SURFACE-STAGES-001`.
+  ceremony counts on its own ceremony record; the bootstrap record keeps the
+  two reserved units per ceremony (first sign-in, initial budget creation).
+  A confirm attempt refused before its effect (missing CSRF value, replay,
+  unknown proposal) consumes nothing reserved. A confirm admitted past those
+  gates but denied inside its effect (expired or superseded proposal, altered
+  binding: `409 proposal_not_current`, `confirmation_stale`) is refunded its
+  reserved unit exactly once, so the corrected confirm on the same session is
+  admitted; only the committed confirm keeps the unit, and a second creation
+  on the same ceremony is denied. Counters are process-local: a restart or a
+  second API process starts from empty.
 - Manual accounts, transactions, spent and remaining are the next increment
   and are not present.
 

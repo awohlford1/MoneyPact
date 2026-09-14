@@ -132,8 +132,11 @@ export function identityHttp(runtime: IdentityRuntime | undefined): IdentityHttp
       await reply.code(200).send({ navigateTo: result.navigateTo });
     }
 
+    // PROTO-QA-FIXES-001 F4: a callback from which no ceremony resolves is denied by the surface gate before any
+    // counter is touched (SEC-STAGES-F02); it is answered by the same 303 to the result page as every other
+    // malformed callback (section 7 uniformity), never a bare JSON denial. Nothing is consumed, no session exists.
     @Get("callback")
-    @PreAuthenticationSurface()
+    @PreAuthenticationSurface({ deniedNavigation: () => runtime ? `${runtime.ceremony.config.applicationOrigin}${runtime.ceremony.config.resultPath}?outcome=invalid_or_expired` : undefined })
     async callback(@Req() request: FastifyRequest, @Res() reply: FastifyReply): Promise<void> {
       if (!runtime) { await reply.code(503).send({ error: "identity_unavailable" }); return; }
       const result = await runtime.ceremony.complete({ rawQuery: rawQuery(request), method: request.method, observedOrigin: observedOrigin(request), path: request.url.split("?")[0] ?? request.url, receiptTime: new Date() });
