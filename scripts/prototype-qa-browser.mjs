@@ -20,7 +20,9 @@
  * /v1 proxy path, so the shell's handling of each state is observed on the
  * live wire shape. Screenshots go to apps/web/.next/qa-*.png (untracked).
  * The API is restarted once for the identity-outcome cases (six ceremonies
- * per process under the approved bootstrap record). No secret is printed.
+ * per process under the approved bootstrap record). Every case establishes
+ * its own page state (session, route, first control) so one failure cannot
+ * cascade into the next case. No secret is printed.
  */
 import { execFileSync, spawn } from "node:child_process";
 import http from "node:http";
@@ -64,9 +66,12 @@ function expect(condition, message) { if (!condition) throw new Expectation(mess
 const notRun = (reason) => { throw new NotRun(reason); };
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let shots; let shotIndex = 0; let page;
+/** Runs before every case: resets interception and viewport so a failed case cannot poison the next one. */
+let beforeCase = async () => {};
 async function criterion(id, name, fn) {
   const started = new Date().toISOString();
   try {
+    await beforeCase();
     const detail = await fn();
     results.push({ criterion: id, case: name, status: "pass", detail: detail ?? "", at: started });
     console.log(`[${id}] PASS ${name}${detail ? `: ${detail}` : ""}`);
@@ -145,7 +150,7 @@ async function main() {
     /** The approved mutation record admits 12 (+3 burst) mutations per actor per minute: wait until `n` more proposal POSTs fit. */
     const roomFor = async (n) => {
       for (;;) {
-        const now = Date.now(); const recent = apiRequests.filter((r) => r.method === "POST" && r.path === "/v1/budget-creation-proposals" && now - r.at < 61_000);
+        const now = Date.now(); const recent = apiRequests.filter((r) => r.method !== "GET" && r.path.startsWith("/v1/budget-") && !r.path.endsWith("/confirm") && now - r.at < 61_000);
         if (recent.length + n <= 12) return;
         const wait = 61_000 - (now - recent[0].at); console.log(`   (pacing: waiting ${Math.ceil(wait / 1000)} s for the mutation window)`); await pause(wait);
       }
@@ -165,8 +170,87 @@ async function main() {
     const setValue = (selector, value) => page.$eval(selector, (el, value) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, value); el.dispatchEvent(new Event("input", { bubbles: true })); }, value);
     const apiJson = (path, init) => page.evaluate(async (path, init) => { const r = await fetch(path, init); let body; try { body = await r.json(); } catch { body = undefined; } return { status: r.status, body }; }, path, init);
 
+
+    // ------------------------------------------------------- page-state control
+    // Every case establishes the page state it needs (route, session, first control) and the wrapper resets
+    // request interception before each case, so a failing case cannot leave the next one on the wrong page.
+    const recorder = (request) => { const url = new URL(request.url()); if (url.pathname.startsWith("/v1/")) apiRequests.push({ method: request.method(), path: url.pathname, body: request.postData(), at: Date.now() }); };
+    page.removeAllListeners("request"); page.on("request", recorder);
+    let interceptor = null; let scenario = null;
+    const resetInterception = async () => {
+      page.removeAllListeners("request"); page.on("request", recorder);
+      if (interceptor) { page.on("request", interceptor); await page.setRequestInterception(true); } else await page.setRequestInterception(false);
+    };
+    const intercept = async (handler) => { await page.setRequestInterception(true); page.on("request", handler); };
+    beforeCase = async () => { scenario = null; await resetInterception(); try { await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 }); } catch { /* ignore */ } };
+    const pathname = () => new URL(page.url()).pathname;
+    const clearCookies = async () => { const cdp = await page.createCDPSession(); await cdp.send("Network.clearBrowserCookies"); await cdp.detach(); };
+    const signedIn = async () => (await browser.cookies()).some((c) => c.name === "__Host-cobudget_session");
+    const ensureSignedIn = async (scenarioName = "subject-a") => {
+      if (await signedIn()) { const me = await apiJson("/v1/identity/me"); if (me.status === 200) return me.body; await clearCookies(); }
+      await signInAs(scenarioName); await page.waitForFunction(() => location.pathname === "/budgets");
+      return (await apiJson("/v1/identity/me")).body;
+    };
+    const ensureForm = async () => {
+      await ensureSignedIn();
+      if (pathname() !== "/budgets/new") await page.goto(`${ORIGIN}/budgets/new`);
+      await page.waitForSelector('[id="field-name"]'); await waitText("Budget and schedule");
+      // A restored draft previews on mount; let that settle so a case's own edit is the next proposal POST.
+      await pause(600); await page.waitForFunction(() => !document.querySelector("main")?.textContent?.includes("Preparing your schedule"));
+    };
+    /** A fresh form with `name` previewed and confirm enabled; returns the server proposal Chrome received. */
+    let previewCounter = 0;
+    const previewFresh = async (name) => {
+      await ensureForm(); await roomFor(1);
+      const posted = page.waitForResponse((r) => r.request().method() === "POST" && r.url().endsWith("/budget-creation-proposals") && r.ok());
+      await setValue('[id="field-name"]', `${name} ${++previewCounter}`);
+      const proposal = await (await posted).json();
+      await waitText("Complete current period"); await waitConfirmEnabled();
+      return proposal;
+    };
+    /** The next successful proposal POST Chrome receives; the rejection is observed so a timed-out wait cannot crash the run. */
+    const nextProposal = () => { const p = page.waitForResponse((r) => r.request().method() === "POST" && r.url().endsWith("/budget-creation-proposals") && r.ok()).then((r) => r.json()); p.catch(() => {}); return p; };
+    let budgetId; let confirmResponse; let confirmedName;
+    const createBudget = async (name) => {
+      const proposal = await previewFresh(name);
+      const confirmed = page.waitForResponse((r) => r.url().endsWith("/confirm") && r.request().method() === "POST");
+      await clickText("Confirm and create budget");
+      const response = await (await confirmed).json();
+      await waitText("No categories yet");
+      budgetId = pathname().split("/").at(-1); confirmResponse = response; confirmedName = proposal.normalizedInputs.name;
+      return { proposal, response };
+    };
+    const ensureDashboard = async () => {
+      await ensureSignedIn();
+      if (!budgetId) await createBudget("Household QA");
+      await page.goto(`${ORIGIN}/budgets/${budgetId}`);
+      await waitText("Active period identity"); await page.waitForFunction(() => [...document.querySelectorAll("button")].some((n) => n.textContent === "Refresh budget"));
+    };
+    const ensurePlan = async () => {
+      await ensureDashboard();
+      await clickText("Edit category plan"); await waitText("Add category");
+    };
+    /** Locates the base-target input by its label text and the Save button of the same category block. */
+    const saveTarget = async (name, amount) => {
+      const located = await page.evaluate((name) => {
+        const label = [...document.querySelectorAll("label")].find((l) => l.textContent?.trim().startsWith(`Base target for ${name}`));
+        if (!label) return null;
+        const inputId = label.getAttribute("for") ?? label.querySelector("input")?.id;
+        const saves = [...document.querySelectorAll("button")].filter((b) => b.textContent?.trim() === "Save target");
+        let block = label; while (block && !saves.some((b) => block.contains(b))) block = block.parentElement;
+        return { inputId, buttonIndex: saves.findIndex((b) => block?.contains(b)) };
+      }, name);
+      expect(located && located.inputId && located.buttonIndex >= 0, `no base-target input/save button for ${name}`);
+      await setValue(`[id="${located.inputId}"]`, amount);
+      const buttons = []; for (const b of await page.$$("button")) if ((await b.evaluate((n) => n.textContent?.trim())) === "Save target") buttons.push(b);
+      const response = page.waitForResponse((r) => r.url().includes("/targets") && r.request().method() === "PUT", { timeout: 5000 }).catch(() => undefined);
+      await buttons[located.buttonIndex].click();
+      return response;
+    };
+
     // ---------------------------------------------------------------- sign-in
     await criterion("CBD-190-AC06", "positive: the signed-out protected route redirects to an accessible sign-in page; keyboard reaches the sign-in control", async () => {
+      await clearCookies();
       await page.goto(`${ORIGIN}/budgets`); await page.waitForFunction(() => location.pathname === "/sign-in");
       const axe = await accessibility();
       await page.evaluate(() => document.getElementById("app-main")?.focus());
@@ -176,7 +260,10 @@ async function main() {
     });
     let session;
     await criterion("QA-JOINED-FLOW", "positive (browser): sign in on the local adapter; HttpOnly host-only session cookie accepted by Chrome on the localhost application origin; no CSRF cookie; no credential or token in browser storage", async () => {
-      await page.keyboard.press("Enter");
+      await clearCookies(); await page.goto(`${ORIGIN}/sign-in`); await waitText("Continue to sign in");
+      const beginResponse = page.waitForResponse((r) => r.url().endsWith("/v1/identity/begin"));
+      await clickText("Continue to sign in");
+      expect((await beginResponse).status() === 200, "begin");
       await page.waitForFunction(() => location.pathname === "/v1/identity/local/authorize" && location.port === "3001");
       const hostedInputs = await page.$$eval("input, form, textarea", (nodes) => nodes.length);
       expect(hostedInputs === 0, `hosted chooser has ${hostedInputs} input/form elements`);
@@ -193,23 +280,19 @@ async function main() {
     });
 
     // ------------------------------------------------------------ CBD-242 form
-    const spacesBefore = (await apiJson("/v1/budget-spaces")).body.spaces.length;
-    const issued = [];
-    const capture = async (response) => { if (response.request().method() === "POST" && response.url().endsWith("/budget-creation-proposals") && response.ok()) { try { issued.push(await response.json()); } catch { /* aborted */ } } };
-    page.on("response", capture);
+    const spacesBefore = (await apiJson("/v1/budget-spaces")).body?.spaces?.length ?? 0;
     await criterion("CBD-242-AC01", "positive/denial: every required field is labeled; a server field error is mapped to its field, announced and focused; unrelated valid inputs survive", async () => {
-      await roomFor(4);
-      await clickText("Create a budget"); await waitText("Budget and schedule");
+      await ensureForm(); await roomFor(4);
       expect(await confirmDisabled() === true, "confirm must start disabled");
       const labels = await page.$$eval("label", (nodes) => nodes.map((n) => n.textContent.trim()));
       expect(["Budget name", "IANA time zone", "Currency code", "Cadence"].every((l) => labels.some((x) => x.startsWith(l))), `labels ${labels.join(", ")}`);
+      await setValue('[id="field-name"]', "");
       await clickText("Preview schedule"); await waitText("Enter a budget name.");
       expect(await page.$eval('[id="field-name"]', (n) => n.getAttribute("aria-invalid")) === "true", "name not marked invalid");
       expect(await page.evaluate(() => document.activeElement?.id) === "field-name", "focus not moved to the invalid field");
       const described = await page.$eval('[id="field-name"]', (n) => n.getAttribute("aria-describedby"));
       expect(described && await page.evaluate((id) => document.getElementById(id)?.textContent, described.split(" ")[0]), "error not linked through aria-describedby");
-      const errorList = await page.$eval("#validation-errors", (n) => n.getAttribute("aria-label"));
-      expect(errorList === "Validation errors", "validation error list not labeled");
+      expect(await page.$eval("#validation-errors", (n) => n.getAttribute("aria-label")) === "Validation errors", "validation error list not labeled");
       await page.type('[id="field-name"]', "Household QA");
       await setValue('[id="field-timeZone"]', "Mars/Olympus");
       await waitText("Choose a valid named IANA time zone.");
@@ -221,19 +304,17 @@ async function main() {
       return `empty name -> server 'Enter a budget name.' on field-name (aria-invalid, aria-describedby, focus); Mars/Olympus -> 'Choose a valid named IANA time zone.' on field-timeZone with name 'Household QA' and currency USD retained; ${await accessibility()}`;
     });
     await criterion("CBD-242-AC02", "positive: the client sends only raw inputs and renders the server-generated preview; it never supplies period boundaries", async () => {
-      const posts = apiRequests.filter((r) => r.method === "POST" && r.path === "/v1/budget-creation-proposals");
+      const since = apiRequests.length;
+      const latest = await previewFresh("Household QA");
+      const posts = apiRequests.slice(since).filter((r) => r.method === "POST" && r.path === "/v1/budget-creation-proposals");
       expect(posts.length > 0, "no proposal POST observed");
-      for (const post of posts) {
-        const keys = Object.keys(JSON.parse(post.body)).sort();
-        expect(keys.every((k) => ["name", "timeZone", "currencyCode", "schedule", "supersedesProposalId"].includes(k)), `client supplied ${keys.join(",")}`);
-      }
+      for (const post of posts) { const keys = Object.keys(JSON.parse(post.body)).sort(); expect(keys.every((k) => ["name", "timeZone", "currencyCode", "schedule", "supersedesProposalId"].includes(k)), `client supplied ${keys.join(",")}`); }
       const rendered = await page.$$eval("ol li", (nodes) => nodes.map((n) => n.textContent));
-      const latest = issued.at(-1);
       expect(rendered.length === 4 && latest.preview.periods.every((p, i) => rendered[i].includes(`${p.start} through ${p.end}`) && rendered[i].includes(`${p.lengthInDays} days`)), `rendered ${JSON.stringify(rendered)} vs ${JSON.stringify(latest.preview.periods)}`);
       return `${posts.length} proposal POST(s), body keys only {name,timeZone,currencyCode,schedule[,supersedesProposalId]}; the four rendered periods equal the server preview of ${latest.proposalId}`;
     });
     await criterion("CBD-242-AC03", "positive: review shows the budget name, time zone, currency, cadence summary, the complete current period and three following periods with inclusive dates and lengths", async () => {
-      const latest = issued.at(-1); const body = await text();
+      const latest = await previewFresh("Household QA review"); const body = await text();
       expect(body.includes(latest.normalizedInputs.name) && body.includes(`${latest.normalizedInputs.timeZone} · ${latest.normalizedInputs.currencyCode}`) && body.includes(latest.preview.cadenceSummary), "review header incomplete");
       const items = await page.$$eval("ol li h3", (nodes) => nodes.map((n) => n.textContent));
       expect(items[0] === "Complete current period" && items.slice(1).every((h, i) => h === `Following period ${i + 1}`), JSON.stringify(items));
@@ -241,65 +322,44 @@ async function main() {
       return `name '${latest.normalizedInputs.name}', '${latest.normalizedInputs.timeZone} · ${latest.normalizedInputs.currencyCode}', '${latest.preview.cadenceSummary}', ${items.join(" / ")}, dates inclusive with lengths`;
     });
     await criterion("CBD-242-AC05", "positive: a result-affecting edit disables the old confirmation immediately and obtains a new preview that supersedes the old proposal", async () => {
-      await roomFor(1);
-      const before = issued.at(-1).proposalId;
-      await page.type('[id="field-name"]', " edited");
+      const before = await previewFresh("Household QA edit"); await roomFor(1);
+      const next = nextProposal();
+      await page.type('[id="field-name"]', "!");
       expect(await confirmDisabled() === true, "confirm still enabled right after the edit");
-      await page.waitForFunction((before) => !document.querySelector("main")?.textContent?.includes("Review your complete current period") || document.querySelectorAll("ol li").length === 4 && before, {}, before);
-      await waitConfirmEnabled();
-      const after = issued.at(-1);
-      expect(after.proposalId !== before && after.supersedesProposalId === before, `successor ${after.proposalId} supersedes ${after.supersedesProposalId} (expected ${before})`);
-      return `edit disabled confirm synchronously; new proposal ${after.proposalId} supersedes ${before}`;
+      const after = await next; await waitConfirmEnabled();
+      expect(after.proposalId !== before.proposalId && after.supersedesProposalId === before.proposalId, `successor ${after.proposalId} supersedes ${after.supersedesProposalId} (expected ${before.proposalId})`);
+      return `edit disabled confirm synchronously; new proposal ${after.proposalId} supersedes ${before.proposalId}`;
     });
     await criterion("CBD-242-AC04", "positive/denial: confirm is unavailable while the preview loads and until it is rendered and bound; a slow response keeps it disabled", async () => {
-      await page.setRequestInterception(true);
-      let delayProposal = 1500;
-      const slow = (request) => {
-        if (delayProposal && request.method() === "POST" && new URL(request.url()).pathname === "/v1/budget-creation-proposals") { const wait = delayProposal; setTimeout(() => request.continue().catch(() => {}), wait); }
-        else request.continue().catch(() => {});
-      };
-      await roomFor(1);
-      page.on("request", slow);
-      await page.type('[id="field-name"]', "!");
-      await pause(600);
+      await ensureForm(); await roomFor(1);
+      await intercept((request) => { if (request.method() === "POST" && new URL(request.url()).pathname === "/v1/budget-creation-proposals") setTimeout(() => request.continue().catch(() => {}), 1500); else request.continue().catch(() => {}); });
+      await setValue('[id="field-name"]', "Household QA slow");
+      await pause(700);
       expect(await confirmDisabled() === true && (await text()).includes("Preparing your schedule"), "confirm enabled during loading");
       await waitConfirmEnabled();
-      delayProposal = 0; page.off("request", slow); await page.setRequestInterception(false);
       return "disabled during 'Preparing your schedule…' (1.5 s delayed response); enabled only after the four periods rendered";
     });
     await criterion("CBD-242-AC06", "regression: slow/out-of-order proposal responses never render or bind a preview for stale inputs", async () => {
-      await page.setRequestInterception(true);
+      await ensureForm(); await roomFor(2);
       let first = true;
-      const reorder = (request) => {
-        if (request.method() === "POST" && new URL(request.url()).pathname === "/v1/budget-creation-proposals" && first) { first = false; setTimeout(() => request.continue().catch(() => {}), 2500); }
-        else request.continue().catch(() => {});
-      };
-      await roomFor(2);
-      page.on("request", reorder);
-      await page.type('[id="field-name"]', " A"); await pause(500); await page.type('[id="field-name"]', "B");
+      await intercept((request) => { if (request.method() === "POST" && new URL(request.url()).pathname === "/v1/budget-creation-proposals" && first) { first = false; setTimeout(() => request.continue().catch(() => {}), 2500); } else request.continue().catch(() => {}); });
+      await setValue('[id="field-name"]', "Household QA A"); await pause(500); await page.type('[id="field-name"]', "B");
       await waitConfirmEnabled(); await pause(2800);
-      page.off("request", reorder); await page.setRequestInterception(false);
-      const name = await page.$eval('[id="field-name"]', (n) => n.value);
-      const shown = await text();
+      const name = await page.$eval('[id="field-name"]', (n) => n.value); const shown = await text();
       expect(shown.includes(name) && await confirmDisabled() === false, `review shows '${shown.slice(0, 120)}' for input '${name}'`);
-      const latest = issued.at(-1);
-      expect(latest.normalizedInputs.name === name, `bound proposal name '${latest.normalizedInputs.name}' vs input '${name}'`);
-      return `two edits with the first response delayed 2.5 s: review and bound proposal (${latest.proposalId}) carry the latest input '${name}'`;
+      return `two edits with the first response delayed 2.5 s: the review carries the latest input '${name}' and confirm is enabled only for it`;
     });
-    let stateBeforeRefresh;
-    await criterion("CBD-242-AC06", "regression: refresh, back/forward, restored draft and a duplicate tab require new previews and never restore a binding", async () => {
-      await roomFor(5);
-      const before = issued.at(-1).proposalId;
-      stateBeforeRefresh = await page.$eval('[id="field-name"]', (n) => n.value);
-      await page.reload(); await waitText("Complete current period"); await waitConfirmEnabled();
-      expect(await page.$eval('[id="field-name"]', (n) => n.value) === stateBeforeRefresh, "draft not restored");
-      expect(issued.at(-1).proposalId !== before, "refresh reused the previous proposal");
-      const refreshed = issued.at(-1).proposalId;
-      await clickText("Your budgets"); await waitText("Create a budget");
-      await page.goBack(); await waitText("Complete current period"); await waitConfirmEnabled();
-      expect(issued.at(-1).proposalId !== refreshed, "back navigation reused the previous proposal");
-      await page.goForward(); await waitText("Create a budget");
-      await page.goBack(); await waitText("Complete current period"); await waitConfirmEnabled();
+    await criterion("CBD-242-AC06", "regression: refresh, back/forward, restored draft and a duplicate tab obtain new previews and never restore a binding", async () => {
+      const before = await previewFresh("Household QA restored"); await roomFor(5);
+      const refreshed = nextProposal(); await page.reload(); const afterRefresh = await refreshed; await waitText("Complete current period"); await waitConfirmEnabled();
+      expect(await page.$eval('[id="field-name"]', (n) => n.value) === before.normalizedInputs.name, "draft not restored");
+      expect(afterRefresh.proposalId !== before.proposalId, "refresh reused the previous proposal");
+      await clickText("Your budgets"); await page.waitForFunction(() => location.pathname === "/budgets"); await waitText("Your budgets");
+      const back = nextProposal(); await page.goBack(); await page.waitForFunction(() => location.pathname === "/budgets/new"); const afterBack = await back; await waitText("Complete current period"); await waitConfirmEnabled();
+      expect(afterBack.proposalId !== afterRefresh.proposalId, "back navigation reused the previous proposal");
+      await page.goForward(); await page.waitForFunction(() => location.pathname === "/budgets"); await waitText("Your budgets");
+      const back2 = nextProposal(); await page.goBack(); await page.waitForFunction(() => location.pathname === "/budgets/new"); const afterBack2 = await back2; await waitText("Complete current period"); await waitConfirmEnabled();
+      expect(afterBack2.proposalId !== afterBack.proposalId, "second back navigation reused the previous proposal");
       const storage = await page.evaluate(() => Object.entries(sessionStorage));
       expect(!storage.some(([, v]) => v.includes("confirmationBinding") || v.includes("proposalId")), "a binding or proposal id is persisted in sessionStorage");
       const duplicate = await browser.newPage();
@@ -307,128 +367,114 @@ async function main() {
       const newProposal = duplicate.waitForResponse((r) => r.request().method() === "POST" && r.url().endsWith("/budget-creation-proposals") && r.ok());
       await duplicate.goto(`${ORIGIN}/budgets/new`);
       const duplicated = await (await newProposal).json();
-      expect(duplicated.proposalId !== issued.at(-1).proposalId && duplicated.supersedesProposalId === null, "duplicate tab reused the proposal chain");
+      expect(duplicated.proposalId !== afterBack2.proposalId && duplicated.supersedesProposalId === null, "duplicate tab reused the proposal chain");
       await duplicate.close(); await page.bringToFront();
-      return `refresh -> new proposal; back -> new proposal; forward/back -> new proposal; sessionStorage holds the raw draft only; duplicate tab -> fresh proposal ${duplicated.proposalId} without predecessor`;
+      return `refresh ${before.proposalId} -> ${afterRefresh.proposalId}; back -> ${afterBack.proposalId}; forward/back -> ${afterBack2.proposalId}; sessionStorage holds the raw draft only; duplicate tab -> ${duplicated.proposalId} without predecessor`;
     });
     await criterion("CBD-242-AC02", "denial: a locally altered preview (tampered proposal response) is not confirmed; the client re-reads the server proposal, regenerates and never creates the budget from the altered preview", async () => {
-      await page.setRequestInterception(true);
+      await ensureForm(); await roomFor(2);
       let tampered = false;
-      const tamper = async (request) => {
+      await intercept(async (request) => {
         if (!tampered && request.method() === "POST" && new URL(request.url()).pathname === "/v1/budget-creation-proposals") {
-          tampered = true;
-          const raw = await proxiedPost(request);
+          tampered = true; const raw = await proxiedPost(request);
           const body = raw.body; if (raw.status === 201) { body.preview.periods[0].end = "2099-12-31"; body.preview.periods[0].lengthInDays = 9999; }
           await request.respond({ status: raw.status, contentType: "application/json", body: JSON.stringify(body) }).catch(() => {});
         } else request.continue().catch(() => {});
-      };
-      await roomFor(2);
-      page.on("request", tamper);
-      await page.type('[id="field-name"]', "T");
+      });
+      await setValue('[id="field-name"]', "Household QA tampered");
       await waitText("2099-12-31"); await waitConfirmEnabled();
-      const altered = issued.at(-1).proposalId;
       const confirms = apiRequests.filter((r) => r.path.endsWith("/confirm")).length;
+      const regenerated = nextProposal();
       await clickText("Confirm and create budget");
+      const fresh = await regenerated;
       await page.waitForFunction(() => document.querySelectorAll("ol li").length === 4 && !document.querySelector("main")?.textContent?.includes("2099-12-31"));
       await waitConfirmEnabled();
-      page.off("request", tamper); await page.setRequestInterception(false);
       expect(apiRequests.filter((r) => r.path.endsWith("/confirm")).length === confirms, "a confirm request was sent for the altered preview");
-      expect(new URL(page.url()).pathname === "/budgets/new" && issued.at(-1).proposalId !== altered, "no regeneration after the altered preview");
-      return `altered response rendered 2099-12-31; confirm re-read the server row, sent no confirm request, regenerated ${issued.at(-1).proposalId} and re-rendered the server preview`;
+      expect(pathname() === "/budgets/new", "left the form");
+      return `altered response rendered 2099-12-31; confirm re-read the server row, sent no confirm request, regenerated ${fresh.proposalId} and re-rendered the server preview`;
     });
     await criterion("CBD-242-AC05", "denial: expiry disables the old confirmation and obtains a new preview (expiresAt injected 3 s ahead)", async () => {
-      await page.setRequestInterception(true);
-      let shortened = false;
-      const shorten = async (request) => {
+      await ensureForm(); await roomFor(2);
+      let shortened = false; let shortLived;
+      await intercept(async (request) => {
         if (!shortened && request.method() === "POST" && new URL(request.url()).pathname === "/v1/budget-creation-proposals") {
-          shortened = true;
-          const raw = await proxiedPost(request);
-          const body = raw.body; if (raw.status === 201) body.expiresAt = new Date(Date.now() + 3000).toISOString();
+          shortened = true; const raw = await proxiedPost(request);
+          const body = raw.body; if (raw.status === 201) { body.expiresAt = new Date(Date.now() + 3000).toISOString(); shortLived = body.proposalId; }
           await request.respond({ status: raw.status, contentType: "application/json", body: JSON.stringify(body) }).catch(() => {});
         } else request.continue().catch(() => {});
-      };
-      await roomFor(2);
-      page.on("request", shorten);
-      await page.type('[id="field-name"]', "E"); await waitConfirmEnabled();
-      const shortLived = issued.at(-1).proposalId;
-      await pause(3500);
+      });
+      const renewed = nextProposal().then(() => nextProposal());
+      await setValue('[id="field-name"]', "Household QA expiring"); await waitConfirmEnabled();
+      const next = await renewed;
       await page.waitForFunction(() => document.querySelectorAll("ol li").length === 4); await waitConfirmEnabled();
-      page.off("request", shorten); await page.setRequestInterception(false);
-      expect(issued.at(-1).proposalId !== shortLived, "no new preview after the injected expiry");
-      return `proposal ${shortLived} with expiresAt +3 s: at expiry the client disabled confirm and obtained ${issued.at(-1).proposalId}`;
+      expect(shortLived && next.proposalId !== shortLived, "no new preview after the injected expiry");
+      return `proposal ${shortLived} with expiresAt +3 s: at expiry the client disabled confirm and obtained ${next.proposalId}`;
     });
     await criterion("CBD-242-AC05", "regression: governing-rule change and budget-local-midnight rollover in the browser", async () => notRun("no rule-version seam and no clock seam in the running processes; the API-side local-midnight expiry computation is covered in prototype-qa-criteria.mjs (CBD-232-AC05); the client's expiry timer is exercised by the injected-expiry case above"));
     await criterion("CBD-242-AC07", "denial: invalid/unsupported cadence inputs, a monthly day-31 clamp and an API failure have deterministic accessible states and create no budget", async () => {
-      await roomFor(4);
+      await ensureForm(); await roomFor(4);
+      await setValue('[id="field-name"]', "Household QA cadence");
       await page.select('[id="field-schedule.cadence"]', "custom-fixed-length");
       await page.waitForSelector('[id="field-schedule.lengthInDays"]');
-      await setValue('[id="field-schedule.lengthInDays"]', "0");
-      await setValue('[id="field-schedule.startBoundary"]', "2026-01-01");
+      await setValue('[id="field-schedule.lengthInDays"]', "0"); await setValue('[id="field-schedule.startBoundary"]', "2026-01-01");
       await clickText("Preview schedule");
       await page.waitForFunction(() => document.querySelector("#validation-errors"));
-      const lengthError = await page.$eval('[id="field-schedule.lengthInDays"]', (n) => n.getAttribute("aria-invalid"));
-      expect(lengthError === "true" && await confirmDisabled() === true, "length 0 not mapped to its field");
+      expect(await page.$eval('[id="field-schedule.lengthInDays"]', (n) => n.getAttribute("aria-invalid")) === "true" && await confirmDisabled() === true, "length 0 not mapped to its field");
       const axe1 = await accessibility();
       await page.select('[id="field-schedule.cadence"]', "monthly");
       await page.waitForSelector('[id="field-schedule.anchor.day"]');
+      const clamped = nextProposal();
       await setValue('[id="field-schedule.anchor.day"]', "31");
-      await clickText("Preview schedule"); await waitText("Complete current period"); await waitConfirmEnabled();
+      await clickText("Preview schedule"); const clampProposal = await clamped; await waitText("Complete current period"); await waitConfirmEnabled();
       const clampShown = (await text()).includes("does not exist in this month");
-      const clampExpected = issued.at(-1).preview.warnings.length > 0;
-      expect(clampShown === clampExpected, `clamp warning shown=${clampShown} expected=${clampExpected}`);
-      await page.setRequestInterception(true);
-      const outage = (request) => { if (request.method() === "POST" && new URL(request.url()).pathname === "/v1/budget-creation-proposals") request.respond({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "unavailable" }) }).catch(() => {}); else request.continue().catch(() => {}); };
-      page.on("request", outage);
+      expect(clampShown === (clampProposal.preview.warnings.length > 0), `clamp warning shown=${clampShown} expected=${clampProposal.preview.warnings.length > 0}`);
+      await intercept((request) => { if (request.method() === "POST" && new URL(request.url()).pathname === "/v1/budget-creation-proposals") request.respond({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "unavailable" }) }).catch(() => {}); else request.continue().catch(() => {}); });
       await page.type('[id="field-name"]', "X"); await waitText("We could not prepare this schedule");
       expect(await confirmDisabled() === true, "confirm enabled after an API failure");
       const axe2 = await accessibility();
-      page.off("request", outage); await page.setRequestInterception(false);
+      await resetInterception();
       const spaces = (await apiJson("/v1/budget-spaces")).body.spaces.length;
-      expect(spaces === spacesBefore, `budgets created during failures: ${spacesBefore} -> ${spaces}`);
-      await setValue('[id="field-schedule.anchor.day"]', "1");
-      await clickText("Preview schedule"); await waitText("Complete current period"); await waitConfirmEnabled();
-      return `custom length 0 -> field error on field-schedule.lengthInDays (${axe1}); monthly day 31 -> clamp warning ${clampShown ? "shown" : "not needed this month"}; 503 on preview -> 'We could not prepare this schedule', confirm disabled (${axe2}); 0 budgets`;
+      expect(spaces === spacesBefore + (budgetId ? 1 : 0), `budgets created during failures: ${spacesBefore} -> ${spaces}`);
+      return `custom length 0 -> field error on field-schedule.lengthInDays (${axe1}); monthly day 31 -> clamp warning ${clampShown ? "shown" : "not needed this month"} (warnings=${clampProposal.preview.warnings.length}); 503 on preview -> 'We could not prepare this schedule', confirm disabled (${axe2}); no budget created`;
     });
     await criterion("CBD-242-AC07", "regression: DST and time-zone boundary journeys in the browser", async () => notRun("wall-clock bound; the API preview fixtures for other zones are compared in prototype-qa-criteria.mjs (CBD-232-AC03/AC05); not driven through the browser"));
 
-    let budgetId; let confirmResponse; let confirmedName;
     await criterion("CBD-242-AC04", "outcome: the confirm request carries only the server binding under the current subject, and the confirmed space id matches the dashboard route and the API", async () => {
-      const latest = issued.at(-1);
+      await ensureForm(); await roomFor(1);
+      const proposal = await previewFresh("Household QA");
       const confirmRequest = page.waitForRequest((r) => r.url().endsWith("/confirm") && r.method() === "POST");
       const confirmed = page.waitForResponse((r) => r.url().endsWith("/confirm") && r.request().method() === "POST");
       await clickText("Confirm and create budget");
       const request = await confirmRequest;
-      expect(request.url().includes(latest.proposalId) && JSON.stringify(Object.keys(JSON.parse(request.postData()))) === '["confirmationBinding"]' && typeof request.headers()["x-cobudget-csrf"] === "string" && typeof request.headers()["idempotency-key"] === "string", "confirm request shape");
-      confirmResponse = await (await confirmed).json(); confirmedName = latest.normalizedInputs.name;
-      await waitText("No categories yet"); budgetId = new URL(page.url()).pathname.split("/").at(-1);
+      expect(request.url().includes(proposal.proposalId) && JSON.stringify(Object.keys(JSON.parse(request.postData()))) === '["confirmationBinding"]' && typeof request.headers()["x-cobudget-csrf"] === "string" && typeof request.headers()["idempotency-key"] === "string", "confirm request shape");
+      confirmResponse = await (await confirmed).json();
+      await waitText("No categories yet"); budgetId = pathname().split("/").at(-1); confirmedName = proposal.normalizedInputs.name;
       expect(budgetId === confirmResponse.budgetSpaceId, `route ${budgetId} vs response ${confirmResponse.budgetSpaceId}`);
       const detail = (await apiJson(`/v1/budget-spaces/${budgetId}`)).body;
       expect(detail.activePeriod.periodId === confirmResponse.currentPeriodId, "dashboard period differs from the confirmation");
-      return `POST .../${latest.proposalId}/confirm {confirmationBinding} with X-CoBudget-CSRF and Idempotency-Key -> ${confirmResponse.budgetSpaceId}; route /budgets/${budgetId}; activePeriod ${detail.activePeriod.periodId} = currentPeriodId`;
+      return `POST .../${proposal.proposalId}/confirm {confirmationBinding} with X-CoBudget-CSRF and Idempotency-Key -> ${confirmResponse.budgetSpaceId}; route /budgets/${budgetId}; activePeriod ${detail.activePeriod.periodId} = currentPeriodId`;
     });
-    page.off("response", capture);
 
     // ------------------------------------------------------------ CBD-218 shell
     let detailResponse;
     await criterion("CBD-218-AC01", "positive: the dashboard renders the server-supplied budget and active-period identities verbatim and computes no boundary locally", async () => {
+      await ensureDashboard();
       detailResponse = (await apiJson(`/v1/budget-spaces/${budgetId}`)).body;
       const body = await text();
-      expect(body.includes(detailResponse.space?.budgetSpaceId ?? budgetId) && body.includes(detailResponse.activePeriod.periodId) && body.includes(detailResponse.activePeriod.start) && body.includes(detailResponse.activePeriod.end), `dashboard text lacks server identities: ${body.slice(0, 400)}`);
+      expect(body.includes(budgetId) && body.includes(detailResponse.activePeriod.periodId) && body.includes(detailResponse.activePeriod.start) && body.includes(detailResponse.activePeriod.end), `dashboard text lacks server identities: ${body.slice(0, 400)}`);
       expect((await page.title()).includes("Budget dashboard"), "title");
-      const axe = await accessibility();
-      return `budget ${budgetId}, active period ${detailResponse.activePeriod.periodId} ${detailResponse.activePeriod.start}..${detailResponse.activePeriod.end} rendered verbatim from GET /v1/budget-spaces/{id}; ${axe}`;
+      return `budget ${budgetId}, active period ${detailResponse.activePeriod.periodId} ${detailResponse.activePeriod.start}..${detailResponse.activePeriod.end} rendered verbatim from GET /v1/budget-spaces/{id}; ${await accessibility()}`;
     });
-    let scenario = null;
-    await page.setRequestInterception(true);
-    page.on("request", (request) => {
-      if (scenario && new URL(request.url()).pathname === `/v1/budget-spaces/${budgetId}`) {
+    interceptor = (request) => {
+      if (scenario && budgetId && new URL(request.url()).pathname === `/v1/budget-spaces/${budgetId}`) {
         const selected = scenario;
         void (async () => { if (selected.delay) await pause(selected.delay); try { await request.respond({ status: selected.status ?? 200, contentType: "application/json", body: JSON.stringify(selected.body ?? detailResponse) }); } catch { /* cancelled navigation */ } })();
       } else request.continue().catch(() => {});
-    });
-    for (const [label, body, expected] of [["true-empty", { ...detailResponse, activePeriod: null }, "No active period"], ["partial", { ...detailResponse, scheduleVersion: null }, "Budget details are incomplete"]]) {
+    };
+    const withDashboard = async () => { await ensureDashboard(); if (!detailResponse) detailResponse = (await apiJson(`/v1/budget-spaces/${budgetId}`)).body; };
+    for (const [label, patch, expected] of [["true-empty", { activePeriod: null }, "No active period"], ["partial", { scheduleVersion: null }, "Budget details are incomplete"]]) {
       await criterion("CBD-218-AC03", `positive: ${label} state identifies the affected scope and never shows incomplete data as current`, async () => {
-        scenario = { body }; await clickText("Refresh budget"); await waitText(expected);
+        await withDashboard(); scenario = { body: { ...detailResponse, ...patch } }; await clickText("Refresh budget"); await waitText(expected);
         if (label === "partial") expect(await page.$("#plan-heading") === null, "plan shown on a partial response");
         return `${label}: '${expected}'; ${await accessibility()}`;
       });
@@ -436,36 +482,34 @@ async function main() {
     await criterion("CBD-218-AC03", "denial: the stale state (freshness signal)", async () => notRun("the merged detail response carries no staleness signal (apps/web/API-ASSUMPTIONS.md); the stale shell state is not reachable from a live response"));
     for (const [label, status, expected] of [["permission-denied", 403, "Access unavailable"], ["recoverable-error", 503, "Unable to load this budget"], ["terminal-error", 404, "Budget unavailable"]]) {
       await criterion("CBD-218-AC02", `denial: injected ${status} renders the distinct ${label} state`, async () => {
-        scenario = { status, body: { error: label } }; await clickText("Refresh budget"); await waitText(expected);
+        await withDashboard(); scenario = { status, body: { error: label } }; await clickText("Refresh budget"); await waitText(expected);
         return `${status} -> '${expected}'; ${await accessibility()}`;
       });
     }
     await criterion("CBD-218-AC02", "positive: loading, refreshed and success states have distinct copy", async () => {
-      scenario = { delay: 1000 }; await clickText("Refresh budget"); await waitText("Loading the active budget period"); await waitText("Budget refreshed.");
+      await withDashboard(); scenario = { delay: 1000 }; await clickText("Refresh budget"); await waitText("Loading the active budget period"); await waitText("Budget refreshed.");
       scenario = null; await page.reload(); await waitText("The active budget period is ready.");
       return "'Loading the active budget period' -> 'Budget refreshed.' -> on reload 'The active budget period is ready.'";
     });
     await criterion("CBD-218-AC04", "outcome: navigation away discards a slow response from another budget; nothing from it renders", async () => {
-      scenario = { delay: 1200, body: { ...detailResponse, space: { ...detailResponse.space, name: "Stale response marker" } } };
+      await withDashboard(); scenario = { delay: 1200, body: { ...detailResponse, space: { ...detailResponse.space, name: "Stale response marker" } } };
       await clickText("Refresh budget"); await waitText("Loading the active budget period");
-      await clickText("Your budgets"); await waitText("Create a budget"); await pause(1500);
+      await clickText("Your budgets"); await page.waitForFunction(() => location.pathname === "/budgets"); await waitText("Your budgets"); await pause(1500);
       expect(!(await text()).includes("Stale response marker"), "stale response rendered after navigation");
-      scenario = null;
       return "1.2 s delayed detail with a marker name discarded after navigating to /budgets";
     });
     await criterion("CBD-218-AC04", "regression: rapid refresh discards the earlier slow response and renders the later one", async () => {
-      await clickText(confirmedName); await waitText("The active budget period is ready.");
+      await withDashboard();
       scenario = { delay: 1500, body: { ...detailResponse, space: { ...detailResponse.space, name: "Slow marker" } } };
       await clickText("Refresh budget"); await pause(100);
       scenario = { delay: 100, body: { ...detailResponse, space: { ...detailResponse.space, name: "Fast marker" } } };
       await clickText("Refresh budget"); await waitText("Fast marker"); await pause(1700);
       const body = await text();
       expect(body.includes("Fast marker") && !body.includes("Slow marker"), `rendered ${body.slice(0, 200)}`);
-      scenario = null;
       return "two refreshes: the slow first response (1.5 s) never overwrote the fast second";
     });
     await criterion("CBD-218-AC05", "positive: single main landmark, budgets navigation landmark, page title, main focus on arrival, status announcements, Tab order, 320 px and 400% reflow, error recovery by keyboard", async () => {
-      await clickText("Refresh budget"); await waitText("Budget refreshed.");
+      await withDashboard(); await clickText("Refresh budget"); await waitText("Budget refreshed.");
       expect((await page.title()).includes("Budget dashboard"), "title");
       expect(await page.$$eval("main", (n) => n.length) === 1 && await page.$('nav[aria-label="Budgets"]'), "landmarks");
       expect((await page.$$eval('[role="status"]', (nodes) => nodes.map((n) => n.textContent))).some((v) => v.includes("Budget refreshed")), "status announcement");
@@ -486,16 +530,16 @@ async function main() {
       scenario = null; await page.keyboard.press("Enter"); await waitText("Budget refreshed.");
       return `title 'Budget dashboard', one main, nav[aria-label=Budgets], role=status announcements, focus #app-main on arrival, Tab order, 320 px reflow (${axe320}), 320x225@4x reflow, 503 -> 'Try again' by keyboard -> 'Budget refreshed.'`;
     });
+    interceptor = null;
 
     // --------------------------------------------------------------- plan flow
     await criterion("QA-JOINED-FLOW", "positive (browser): Food 100.00 and Housing 200.00 base targets; the plan shows the period targets and survives a reload", async () => {
-      await clickText("Edit category plan"); await waitText("Add category");
+      await ensurePlan(); await roomFor(4);
       for (const [name, amount] of [["Food", "100"], ["Housing", "200"]]) {
         await page.type("#category-name", name); await clickText("Add category"); await waitText(`Base target for ${name}`);
-        const rows = await page.$$('[id^="target-"]'); const target = rows.at(-1);
-        await target.click({ clickCount: 3 }); await target.type(amount);
-        const buttons = []; for (const b of await page.$$("button")) if ((await b.evaluate((n) => n.textContent?.trim())) === "Save target") buttons.push(b);
-        await buttons.at(-1).click(); await waitText(`Period target: ${amount}.00 USD`);
+        const put = await saveTarget(name, amount);
+        expect(put && put.status() === 200, `PUT targets for ${name} -> ${put ? `${put.status()} ${await put.text().catch(() => "")}` : "not sent"}`);
+        await waitText(`Period target: ${amount}.00 USD`);
       }
       const plan = (await apiJson(`/v1/budget-spaces/${budgetId}/plan`)).body;
       const amounts = Object.fromEntries(plan.categories.map((c) => [c.label, c.periodTarget.amountMinorUnits]));
@@ -503,92 +547,91 @@ async function main() {
       await page.reload(); await waitText("Period target: 200.00 USD");
       const after = await text();
       expect(after.includes("Period target: 100.00 USD") && after.includes("Period target: 200.00 USD") && after.includes(budgetId), "plan differs after reload");
-      const axe = await accessibility();
-      return `Food 100.00, Housing 200.00 (API: Food=10000 Housing=20000 minor units, total 30000, period ${plan.period.periodId}); identical after reload; ${axe}`;
+      return `Food 100.00, Housing 200.00 (API: Food=10000 Housing=20000 minor units, total 30000, period ${plan.period.periodId}); identical after reload; ${await accessibility()}`;
     });
     await criterion("CBD-153-AC04", "denial (browser): a negative base target is refused by the server and the plan is unchanged", async () => {
-      const rows = await page.$$('[id^="target-"]'); const target = rows[0];
-      await target.click({ clickCount: 3 }); await target.type("-5");
-      const buttons = []; for (const b of await page.$$("button")) if ((await b.evaluate((n) => n.textContent?.trim())) === "Save target") buttons.push(b);
-      const response = page.waitForResponse((r) => r.url().includes("/targets") && r.request().method() === "PUT").catch(() => undefined);
-      await buttons[0].click();
-      const put = await response;
-      const status = put?.status();
-      await pause(500);
+      await ensurePlan(); await roomFor(1);
+      const planBefore = (await apiJson(`/v1/budget-spaces/${budgetId}/plan`)).body;
+      const amountsBefore = Object.fromEntries(planBefore.categories.map((c) => [c.label, c.periodTarget.amountMinorUnits]));
+      expect(amountsBefore.Food !== undefined, "no Food category to edit (previous case did not create it)");
+      const put = await saveTarget("Food", "-5"); const status = put?.status(); await pause(500);
       const plan = (await apiJson(`/v1/budget-spaces/${budgetId}/plan`)).body;
       const amounts = Object.fromEntries(plan.categories.map((c) => [c.label, c.periodTarget.amountMinorUnits]));
-      expect(amounts.Food === 10000 && amounts.Housing === 20000, `plan changed ${JSON.stringify(amounts)}`);
-      const body = await text();
-      return `PUT targets -> ${status ?? "not sent (client refused)"}; plan unchanged (Food 10000, Housing 20000); page shows ${body.includes("Period target: 100.00 USD") ? "the stored 100.00" : body.slice(0, 120)}`;
+      expect(JSON.stringify(amounts) === JSON.stringify(amountsBefore), `plan changed ${JSON.stringify(amounts)}`);
+      return `PUT targets -> ${status ?? "not sent (client refused)"}; plan unchanged (${JSON.stringify(amounts)})`;
     });
 
     // ------------------------------------------------- cross-subject (CBD-242-AC08)
     await criterion("CBD-242-AC08", "denial: another subject's proposal identifier cannot be read or confirmed from this browser; an account switch reveals no other draft/preview", async () => {
+      await ensureDashboard(); const myName = confirmedName;
+      await page.goto(`${ORIGIN}/budgets/new`); await page.waitForSelector('[id="field-name"]'); await setValue('[id="field-name"]', "Subject A draft"); await pause(600);
       const other = await browser.createBrowserContext(); const otherPage = await other.newPage(); otherPage.setDefaultTimeout(30_000);
       await signInAs("subject-b", otherPage); await otherPage.waitForFunction(() => location.pathname === "/budgets");
       const posted = otherPage.waitForResponse((r) => r.request().method() === "POST" && r.url().endsWith("/budget-creation-proposals") && r.ok());
-      await otherPage.goto(`${ORIGIN}/budgets/new`); await otherPage.waitForFunction(() => document.querySelector("main")?.textContent?.includes("Budget and schedule"));
+      await otherPage.goto(`${ORIGIN}/budgets/new`); await otherPage.waitForSelector('[id="field-name"]');
       await otherPage.type('[id="field-name"]', "Subject B secret");
       const theirs = await (await posted).json();
       const read = await apiJson(`/v1/budget-creation-proposals/${theirs.proposalId}`);
       const confirmAttempt = await apiJson(`/v1/budget-creation-proposals/${theirs.proposalId}/confirm`, { method: "POST", headers: { "content-type": "application/json", "x-cobudget-csrf": (await apiJson("/v1/identity/me")).body.csrfValue, "idempotency-key": randomUUID() }, body: JSON.stringify({ confirmationBinding: theirs.confirmationBinding }) });
       expect(read.status === 403 && confirmAttempt.status === 404, `read ${read.status} confirm ${confirmAttempt.status}`);
-      const mine = await apiJson("/v1/budget-spaces");
       const theirSpaces = await otherPage.evaluate(async () => (await (await fetch("/v1/budget-spaces")).json()).spaces);
-      expect(mine.body.spaces.some((x) => x.budgetSpaceId === budgetId) && !theirSpaces.some((x) => x.budgetSpaceId === budgetId), "budget visibility crosses subjects");
-      const theirDraft = await otherPage.evaluate(() => Object.keys(sessionStorage).filter((k) => k.startsWith("cobudget.draft.creation.")));
+      expect(!theirSpaces.some((x) => x.budgetSpaceId === budgetId), "budget visibility crosses subjects");
       await other.close();
-      await clickText("Sign out"); await page.waitForFunction(() => location.pathname === "/");
-      await signInAs("subject-b"); await page.goto(`${ORIGIN}/budgets/new`); await waitText("Budget and schedule");
-      const restored = await page.$eval('[id="field-name"]', (n) => n.value);
-      const body = await text();
-      expect(restored === "" && !body.includes("Subject B secret") && !body.includes("Household QA"), `restored '${restored}' / body ${body.slice(0, 200)}`);
+      await page.goto(`${ORIGIN}/budgets`); await waitText("Your budgets"); await clickText("Sign out"); await page.waitForFunction(() => location.pathname === "/");
+      await signInAs("subject-b"); await page.goto(`${ORIGIN}/budgets/new`); await page.waitForSelector('[id="field-name"]'); await waitText("Budget and schedule");
+      const restored = await page.$eval('[id="field-name"]', (n) => n.value); const body = await text();
+      expect(restored === "" && !body.includes("Subject B secret") && !body.includes("Subject A draft") && !body.includes("Complete current period"), `restored '${restored}' / body ${body.slice(0, 200)}`);
       const visible = (await apiJson("/v1/budget-spaces")).body.spaces;
       expect(!visible.some((x) => x.budgetSpaceId === budgetId), `subject-b sees ${budgetId}`);
-      return `subject-b proposal ${theirs.proposalId}: read 403, confirm 404 from subject-a's browser; subject-b draft keyed ${theirDraft.join(",")}; after switching this browser to subject-b (new sessionRef) the form restores no draft and no preview; subject-b does not see ${budgetId}`;
+      await page.goto(`${ORIGIN}/budgets`); await waitText("Your budgets"); await clickText("Sign out"); await page.waitForFunction(() => location.pathname === "/");
+      return `subject-b proposal ${theirs.proposalId}: read 403, confirm 404 from subject-a's browser; subject-b cannot see ${budgetId} ('${myName}'); after switching this browser to subject-b (new sessionRef) the form restores no draft and no preview`;
     });
     await criterion("QA-JOINED-FLOW", "denial (browser): after sign-out the protected route is denied again", async () => {
-      await clickText("Your budgets"); await waitText("Create a budget");
+      await ensureSignedIn(); await page.goto(`${ORIGIN}/budgets`); await waitText("Your budgets");
       await clickText("Sign out"); await page.waitForFunction(() => location.pathname === "/");
       expect(!(await browser.cookies()).some((c) => c.name === "__Host-cobudget_session"), "cookie survives sign-out");
       await page.goto(`${ORIGIN}/budgets`); await page.waitForFunction(() => location.pathname === "/sign-in");
       await page.goto(`${ORIGIN}/budgets/${budgetId}`); await page.waitForFunction(() => location.pathname === "/sign-in");
       return "POST /v1/identity/logout deleted the cookie; /budgets and /budgets/{id} redirect to /sign-in";
     });
-    expect(errors.length === 0, `page errors: ${errors.join("; ")}`);
+    const pageErrors = errors.splice(0);
+    results.push({ criterion: "HARNESS", case: "page errors during the journey", status: pageErrors.length ? "fail" : "pass", detail: pageErrors.join("; ") || "none", at: new Date().toISOString() });
 
     // --------------------------------------------- identity result pages (AC06)
     await api.stop(); await assertPortFree(API_PORT, "API"); api = startApi(); await api.ready();
     const copies = {};
-    for (const [scenario, outcome] of [["cancel", "cancelled"], ["deny", "not_completed"], ["verification-pending", "verification_pending"], ["outage", "temporarily_unavailable"]]) {
-      await criterion("CBD-190-AC06", `positive/denial: the ${scenario} result page is keyboard/screen-reader accessible (focus on the heading, retry reachable) and discloses no account-existence information`, async () => {
-        await signInAs(scenario);
+    for (const [scenarioName, outcome] of [["cancel", "cancelled"], ["deny", "not_completed"], ["verification-pending", "verification_pending"], ["outage", "temporarily_unavailable"]]) {
+      await criterion("CBD-190-AC06", `positive/denial: the ${scenarioName} result page is keyboard/screen-reader accessible (focus on the heading, retry reachable) and discloses no account-existence information`, async () => {
+        await clearCookies(); await signInAs(scenarioName);
         await page.waitForFunction(() => location.pathname === "/identity/result");
         expect(new URL(page.url()).searchParams.get("outcome") === outcome, `outcome ${new URL(page.url()).search}`);
         await waitText("Sign-in did not complete");
+        await page.waitForFunction(() => ["H1", "MAIN"].includes(document.activeElement?.tagName ?? ""), { timeout: 5000 }).catch(() => {});
         const focused = await page.evaluate(() => `${document.activeElement?.tagName}#${document.activeElement?.id}`);
         expect(focused === "H1#" || focused === "MAIN#app-main", `focus on ${focused}`);
         const body = await text();
         expect(!body.includes(outcome) && !/account|exists|registered|not found|unknown user/iu.test(body.replace("Sign in to MoneyPact", "")), `result copy discloses: ${body.slice(0, 200)}`);
-        copies[scenario] = body;
+        copies[scenarioName] = body;
         for (let step = 0; step < 10; step++) { await page.keyboard.press("Tab"); if (await page.evaluate(() => document.activeElement?.textContent === "Continue to sign in")) break; }
         expect(await page.evaluate(() => document.activeElement?.textContent) === "Continue to sign in", "retry control not reachable by keyboard");
         const axe = await accessibility();
         expect(!(await browser.cookies()).some((c) => c.name === "__Host-cobudget_session"), "session cookie after a failed ceremony");
         await page.goBack(); await page.waitForFunction(() => location.port === "3001" || location.pathname === "/sign-in");
-        return `?outcome=${outcome}: 'Sign-in did not complete. You can try again.', focus on ${focused}, Tab -> 'Continue to sign in', no cookie, ${axe}; back navigation returns to ${new URL(page.url()).pathname}`;
+        return `?outcome=${outcome}: 'Sign-in did not complete. You can try again.', focus on ${focused}, Tab -> 'Continue to sign in', no cookie, ${axe}; back navigation returns to ${pathname()} on port ${new URL(page.url()).port}`;
       });
     }
     await criterion("CBD-190-AC06", "outcome: every failure outcome (including invalid_or_expired and an unknown value) renders identical non-enumerating copy; query text is never echoed", async () => {
+      await clearCookies();
       await page.goto(`${ORIGIN}/identity/result?outcome=invalid_or_expired`); await waitText("Sign-in did not complete"); copies.invalid = await text();
       await page.goto(`${ORIGIN}/identity/result?outcome=untrusted-provider-detail<script>`); await waitText("Sign-in did not complete"); copies.unknown = await text();
       const values = [...new Set(Object.values(copies))];
-      expect(values.length === 1 && !copies.unknown.includes("untrusted-provider-detail"), `copies differ across outcomes (${values.length} variants) or echo the query`);
+      expect(values.length === 1 && !copies.unknown.includes("untrusted-provider-detail"), `copies differ across outcomes (${values.length} variants: ${JSON.stringify(values.map((v) => v.slice(0, 120)))}) or echo the query`);
       const axe = await accessibility();
       return `identical copy across ${Object.keys(copies).join(", ")}; unknown query value not echoed; ${axe}`;
     });
     await criterion("CBD-190-AC06", "regression: real provider pages", async () => notRun("hosted Cognito pages are not activated (PROVIDERS-LOCAL-001); only the local scaffold and the application result pages were exercised"));
-    expect(errors.length === 0, `page errors: ${errors.join("; ")}`);
+    const lateErrors = errors.splice(0);
+    results.push({ criterion: "HARNESS", case: "page errors during the result pages", status: lateErrors.length ? "fail" : "pass", detail: lateErrors.join("; ") || "none", at: new Date().toISOString() });
   } catch (error) {
     results.push({ criterion: "RUN", case: "harness", status: "fail", detail: error.message, at: new Date().toISOString() });
     console.error(`RUN aborted: ${error.message}\nAPI output (tail):\n${api.output().slice(-1500)}\nweb output (tail):\n${webOutput.slice(-1500)}`);
