@@ -87,9 +87,17 @@ export interface ExchangeInput {
   readonly cachedKeys?: readonly Jwk[] | undefined;
   /** PROTO-ACTIVATION-001 A9 (RC-01): upper bound for the cleanup revocation of a received family after a fault; default `maxLifetimeMs`. */
   readonly cleanupDeadlineMs?: number | undefined;
-  /** Settlement of a timed-out initial exchange: resolves once the abandoned transport call settled and its late family (if any) got its one cleanup attempt, or the cleanup deadline passed. Test/evidence seam. */
-  readonly onLateSettlement?: ((settled: "revoked" | "no_family" | "abandoned") => void) | undefined;
+  /**
+   * Settlement of a timed-out initial exchange (test/evidence seam). Reports `revoked` or `no_family` when the
+   * abandoned transport call settled within the cleanup deadline; `abandoned` when the deadline passed (the
+   * exchange is cancelled through its `AbortSignal` at that moment); and, B2 (SEC-ACT-R2-F01), because this
+   * execution retains ownership of the cancelled call, a response that still arrives afterwards is reported as
+   * `late_revoked`, `late_revocation_failed` or `late_no_family` -- a late family is never left live.
+   */
+  readonly onLateSettlement?: ((settled: LateSettlement) => void) | undefined;
 }
+
+export type LateSettlement = "revoked" | "no_family" | "abandoned" | "late_revoked" | "late_revocation_failed" | "late_no_family";
 
 class ExchangeTimeout extends Error {
   constructor() { super("exchange_timeout"); this.name = "ExchangeTimeout"; }
@@ -150,18 +158,28 @@ export async function runBoundedExchange(input: ExchangeInput): Promise<Exchange
   };
   /**
    * A9 (RC-01): settles a timed-out *initial* exchange call instead of leaving it dangling. The late
-   * family, if one is minted, gets exactly one cleanup attempt, itself bounded by the cleanup deadline;
-   * the whole settlement is bounded too, so nothing here can run unbounded after this execution
-   * returned. The returned outcome is never affected.
+   * family, if one is minted, gets exactly one cleanup attempt, itself bounded by the cleanup deadline.
+   * B2 (SEC-ACT-R2-F01): when the cleanup deadline passes, the call is cancelled through its abort signal
+   * (a transport that honours it mints nothing), and this execution still retains ownership of the
+   * cancelled call: a response that arrives after the abandonment gets the same one bounded cleanup
+   * revocation and is reported, so no late family settles unrevoked. The returned outcome is never affected.
    */
-  const settleLateExchange = (pending: Promise<ExchangeTransportResult>): void => {
-    void (async () => {
-      const late = await withDeadline(pending.catch(() => undefined), cleanupDeadlineMs);
-      if (late === "deadline") { input.onLateSettlement?.("abandoned"); return; }
+  const settleLateExchange = (pending: Promise<ExchangeTransportResult>, cancel: AbortController): void => {
+    const cleanup = async (late: ExchangeTransportResult | undefined, tag: "" | "late_"): Promise<void> => {
       const refresh = late?.ok ? late.tokens.refresh_token : undefined;
-      if (!refresh) { input.onLateSettlement?.("no_family"); return; }
+      if (!refresh) { input.onLateSettlement?.(`${tag}no_family`); return; }
       const result = await withDeadline(input.transport.revoke({ token: refresh, clientId: input.clientId }).catch(() => "failed" as const), cleanupDeadlineMs);
-      input.onLateSettlement?.(result === "deadline" ? "abandoned" : "revoked");
+      if (result === "revoked") { input.onLateSettlement?.(`${tag}revoked`); return; }
+      input.onLateSettlement?.(tag === "late_" ? "late_revocation_failed" : "abandoned");
+    };
+    void (async () => {
+      const settled = pending.catch(() => undefined);
+      const late = await withDeadline(settled, cleanupDeadlineMs);
+      if (late !== "deadline") { await cleanup(late, ""); return; }
+      cancel.abort();
+      input.onLateSettlement?.("abandoned");
+      // Ownership retained past the deadline: this continuation holds no buffers and no timer, only the cleanup duty.
+      await cleanup(await settled, "late_");
     })();
   };
 
@@ -180,12 +198,13 @@ export async function runBoundedExchange(input: ExchangeInput): Promise<Exchange
   };
 
   try {
-    const exchangePromise = input.transport.exchange({ code: codeBuffer.toString("utf8"), codeVerifier: verifierBuffer.toString("ascii"), redirectUri: input.redirectUri, clientId: input.clientId });
+    const cancel = new AbortController();
+    const exchangePromise = input.transport.exchange({ code: codeBuffer.toString("utf8"), codeVerifier: verifierBuffer.toString("ascii"), redirectUri: input.redirectUri, clientId: input.clientId, signal: cancel.signal });
     let exchanged: ExchangeTransportResult;
     try {
       exchanged = await bounded(exchangePromise);
     } catch (error) {
-      if (error instanceof ExchangeTimeout) settleLateExchange(exchangePromise);
+      if (error instanceof ExchangeTimeout) settleLateExchange(exchangePromise, cancel);
       throw error;
     }
     if (!exchanged.ok) return rejected(exchanged.error === "outage" ? "provider_unavailable" : "grant_rejected");

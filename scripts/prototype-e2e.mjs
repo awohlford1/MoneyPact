@@ -167,11 +167,24 @@ async function main() {
     log("POST /v1/budget-creation-proposals without X-CoBudget-CSRF", "403 (uniform denial at the session gate; no effect)");
 
     const current = regenerated.json;
-    const confirmed = await browser.fetch(`/v1/budget-creation-proposals/${current.proposalId}/confirm`, { method: "POST", body: { confirmationBinding: current.confirmationBinding }, headers: { "idempotency-key": randomUUID() } });
+    // B1: a denied confirm (session gate, then locator) spends nothing of the ceremony's reserved initial space.create unit.
+    browser.csrf = undefined;
+    const confirmNoCsrf = await browser.fetch(`/v1/budget-creation-proposals/${current.proposalId}/confirm`, { method: "POST", body: { confirmationBinding: current.confirmationBinding }, headers: { "idempotency-key": randomUUID() } });
+    browser.csrf = held;
+    expect(confirmNoCsrf.status === 403, `confirm without X-CoBudget-CSRF returned ${confirmNoCsrf.status}`);
+    log("POST .../{proposalId}/confirm without X-CoBudget-CSRF", "403 (uniform denial at the session gate; reserved unit untouched)");
+    const confirmUnknown = await browser.fetch(`/v1/budget-creation-proposals/bcp_${"f".repeat(32)}/confirm`, { method: "POST", body: { confirmationBinding: current.confirmationBinding }, headers: { "idempotency-key": randomUUID() } });
+    expect(confirmUnknown.status === 404, `confirm of an unknown proposal returned ${confirmUnknown.status} ${confirmUnknown.text}`);
+    log("POST .../{unknown proposal}/confirm", `404 ${confirmUnknown.json?.error} (locator denial; reserved unit untouched)`);
+    const confirmKey = randomUUID();
+    const confirmed = await browser.fetch(`/v1/budget-creation-proposals/${current.proposalId}/confirm`, { method: "POST", body: { confirmationBinding: current.confirmationBinding }, headers: { "idempotency-key": confirmKey } });
     expect(confirmed.status === 200 || confirmed.status === 201, `confirm returned ${confirmed.status} ${confirmed.text}`);
     const budgetSpaceId = confirmed.json.budgetSpaceId;
     expect(typeof budgetSpaceId === "string" && typeof confirmed.json.currentPeriodId === "string", "confirmation must name the budget space and current period");
     log("POST /v1/budget-creation-proposals/{proposalId}/confirm", `${confirmed.status}, budgetSpaceId=${budgetSpaceId}, currentPeriodId=${confirmed.json.currentPeriodId}, authorization=${confirmed.json.authorization?.policyVersion}`);
+    const confirmReplay = await browser.fetch(`/v1/budget-creation-proposals/${current.proposalId}/confirm`, { method: "POST", body: { confirmationBinding: current.confirmationBinding }, headers: { "idempotency-key": confirmKey } });
+    expect(confirmReplay.status === confirmed.status && confirmReplay.text === confirmed.text, `confirm replay returned ${confirmReplay.status} ${confirmReplay.text}`);
+    log("POST .../{proposalId}/confirm (same Idempotency-Key)", `${confirmReplay.status}, exact replay (no surface decision, reserved unit consumed exactly once by the committed confirm)`);
 
     const list = await browser.fetch("/v1/budget-spaces");
     expect(list.status === 200 && list.json.spaces?.some((space) => space.budgetSpaceId === budgetSpaceId), `list returned ${list.status} ${list.text}`);

@@ -129,6 +129,8 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
   readonly #missing: string[] = [];
   readonly #leases = new WeakMap<object, () => Promise<void>>();
   readonly #surfacePassed = new WeakSet<object>();
+  /** B1: requests whose surface unit is reserved and therefore consumed in canActivate, keyed to the resolved actor. */
+  readonly #deferred = new WeakMap<object, string>();
   readonly #rateLimit: ApiSurfaceGate;
 
   constructor(@Inject(API_AUTHORIZATION) options: ApiAuthorizationOptions, @Inject(Reflector) reflector: Reflector,
@@ -182,6 +184,9 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
             return await this.#options.boundary.rejectEnforcement({ ...surfaceOutcome(evidence, "deny_input_invalid"), earliest_decisive_gate: "session", safe_reason_class: "not_authenticated" });
           }
         }
+        // B1 (R2-02, SEC-ACT-R2-F02): a reserved bootstrap unit is not spent by an attempt that may still be denied
+        // before its effect; canActivate consumes it after the CSRF check, the replay lookup and the locator validation.
+        if (actor !== undefined && await this.#rateLimit.reserved?.(request, actor)) { this.#deferred.set(request, actor); return; }
         const decision = await this.#rateLimit.enforce(request, actor);
         if (decision.outcome !== "allow") return await this.#options.boundary.rejectEnforcement(surfaceOutcome(evidence, decision.outcome));
         this.#leases.set(request, decision.release); this.#surfacePassed.add(request);
@@ -215,7 +220,7 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
     if (context.getClass() === HealthController && context.getHandler() === HealthController.prototype.getReadiness) return true;
     const request = context.switchToHttp().getRequest<FastifyRequest>();
     try {
-      if (!this.#surfacePassed.has(request)) return await this.#options.boundary.reject();
+      if (!this.#surfacePassed.has(request) && !this.#deferred.has(request)) return await this.#options.boundary.reject();
       if (!await this.#options.surfaceApproved(request)) return await this.#options.boundary.rejectEnforcement(surfaceOutcome(this.#rateLimit.evidence(request), "deny_policy_unavailable"));
       if (this.#reflector.get<true | undefined>(PRE_AUTHENTICATION, context.getHandler())) return true;
       // A1: every cookie-authenticated non-safe request proves Origin, fetch metadata and the CSRF value before any
@@ -240,6 +245,14 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
         if (!metadata.actions?.includes(selected.action)) return await this.#options.boundary.reject();
         operation = { ...selected, purpose: metadata.purpose, mode: "user_delegated" as const };
       } else operation = { ...metadata.resourceLocator(request), action: metadata.action, purpose: metadata.purpose, mode: "user_delegated" as const };
+      // B1: the reserved unit is consumed here -- the request is authenticated, CSRF-proven, not a replay and names a
+      // valid target -- and still before policy evaluation (CBD-266 section 8.1: the surface decision precedes policy).
+      if (this.#deferred.has(request)) {
+        const decision = await this.#rateLimit.enforce(request, this.#deferred.get(request));
+        this.#deferred.delete(request);
+        if (decision.outcome !== "allow") return await this.#options.boundary.rejectEnforcement(surfaceOutcome(this.#rateLimit.evidence(request), decision.outcome));
+        this.#leases.set(request, decision.release); this.#surfacePassed.add(request);
+      }
       const authorized = await this.#options.boundary.authorize({ operation, credential: this.#options.sessionLocator(request) }, this.#rateLimit.evidence(request));
       this.#pending.set(request, authorized);
       return true;
