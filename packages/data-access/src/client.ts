@@ -32,6 +32,7 @@ export interface TransactionOptions {
 }
 
 export interface DataAccessClient {
+  readonly readOwnBudgetMemberships?: (subject: string) => Promise<QueryResult>;
   readonly transaction: <T>(options: TransactionOptions, work: (scoped: DataAccessClient) => Promise<T>) => Promise<T>;
   readonly tenantSelect: (query: TenantSelectQuery) => Promise<QueryResult>;
   readonly tenantInsert: (query: TenantInsertQuery) => Promise<QueryResult>;

@@ -1,0 +1,285 @@
+{
+  "status": "pending Manager activation after approval projection",
+  "records": [
+    {
+      "schema_version": 1,
+      "record_id": "rlp-266-authenticated-read-proposals-v1",
+      "surface_id": "surf-266-budget-read",
+      "window": {
+        "duration_ms": 60000,
+        "kind": "sliding",
+        "anchor": "request_time"
+      },
+      "threshold": 60,
+      "burst": {
+        "additional_units": 10,
+        "refill_units": 1,
+        "refill_interval_ms": 6000
+      },
+      "safe_counting_key": {
+        "phase": "post_authentication",
+        "components": [
+          "verified_actor_id_v1",
+          "exact_surface_id"
+        ],
+        "derivation_version": "hmac-sha256-v1",
+        "normalization": "verified-id-v1",
+        "rotation_behavior": "dual-read/single-write for at least 120000 ms; carry forward the greater count",
+        "privacy_basis": "Actor from verified server context only; correlation limited to actor plus exact surface; no shared space dimension.",
+        "subject_bound_after_authentication": true
+      },
+      "counter_store": {
+        "binding": "LOCAL_PROTOTYPE_COUNTER_STORE",
+        "namespace": "cbd266:prototype:authenticated-read:v1",
+        "atomic_operation": "one process-linearizable atomic consume",
+        "consistency": "single-process-linearizable",
+        "region": "local-process",
+        "ttl_ms": 120000,
+        "clock_source": "monotonic process clock",
+        "failure_mode": "deny"
+      },
+      "quota": {
+        "unit": "request",
+        "ceiling": 70,
+        "scope": "verified actor plus exact surface",
+        "reset": "sliding expiry plus burst refill",
+        "resource_dimensions": []
+      },
+      "anti_lockout_rule": {
+        "attackable_dimensions": [],
+        "victim_bound_dimensions": [
+          "verified_actor_id_v1"
+        ],
+        "independent_recovery_surface_id": "surf-266-recovery",
+        "pool_isolation": "| `proto-authenticated-read-v1` | `attackable_dimensions: []`; `victim_bound_dimensions: [verified_actor_id_v1]`; `independent_recovery_surface_id: surf-266-recovery`; unauthenticated and other authenticated actors cannot consume the verified actor's pool, and recovery has a separate namespace/key (`FX-266-LOCKOUT-RECOVERY`); `exhaustion_state_effect: none`; reset authority is `local prototype operator / restore counter service only`; notification is uniform and reveals neither existence nor remaining quota; verify `FX-266-AUTHENTICATED-ACTOR-ISOLATION`, `FX-266-LOCKOUT-RECOVERY`, and `VT-94-066`. |",
+        "exhaustion_state_effect": "none",
+        "reset_authority": "local prototype operator / restore counter service only",
+        "notification_behavior": "uniform, content-safe; neither existence nor remaining quota",
+        "rationale": "| `proto-authenticated-read-v1` | `attackable_dimensions: []`; `victim_bound_dimensions: [verified_actor_id_v1]`; `independent_recovery_surface_id: surf-266-recovery`; unauthenticated and other authenticated actors cannot consume the verified actor's pool, and recovery has a separate namespace/key (`FX-266-LOCKOUT-RECOVERY`); `exhaustion_state_effect: none`; reset authority is `local prototype operator / restore counter service only`; notification is uniform and reveals neither existence nor remaining quota; verify `FX-266-AUTHENTICATED-ACTOR-ISOLATION`, `FX-266-LOCKOUT-RECOVERY`, and `VT-94-066`. |",
+        "verification_cases": [
+          "FX-266-AUTHENTICATED-ACTOR-ISOLATION",
+          "FX-266-LOCKOUT-RECOVERY",
+          "VT-94-066"
+        ]
+      },
+      "capacity_basis": {
+        "evidence_locator": "CBD266-PROTOTYPE-DEFAULTS-001 / single-local-process planning basis",
+        "measured_at": "2026-09-13T00:00:00-04:00",
+        "sustained_capacity": "10 requests/second in one local process; not measured - Product estimate dated 2026-09-13",
+        "peak_assumption": "At most 70 requests in 60 seconds; at least 88% request-rate headroom against the estimate",
+        "headroom": "At most 70 requests in 60 seconds; at least 88% request-rate headroom against the estimate",
+        "failure_budget": "zero uncounted protected effects when the store is unavailable or uncertain",
+        "workload_assumptions": [
+          "One developer, one process, local data, no background consumers, no hosted traffic"
+        ],
+        "reviewer_role": "Product; ME-94-010 specialist review pending"
+      },
+      "source_requirements": [
+        "RL-92-001",
+        "RL-92-002",
+        "RL-92-007",
+        "EP-92-003",
+        "SR-94-037",
+        "ME-94-010",
+        "CBD266-PROTOTYPE-DEFAULTS-001"
+      ],
+      "created_at": "2026-09-13T04:00:00Z",
+      "supersedes_record_id": null,
+      "product_owner_approval": {
+        "status": "pending",
+        "approval_id": null,
+        "approved_by_actor_id": null,
+        "decided_at": null,
+        "candidate_digest": "bb4f732acc4ee396c3349e3edeaff346cfa94b512110e42164189e2f018d01c4",
+        "conditions": [
+          "prototype-only",
+          "revisit before any hosted environment"
+        ],
+        "expires_at": null
+      },
+      "record_digest": "0b414128f21d105332e10b876dbcd20436c641eccfc02394759c57a15121b7d3"
+    },
+    {
+      "schema_version": 1,
+      "record_id": "rlp-266-mutation-proposals-v1",
+      "surface_id": "surf-266-budget-mutation",
+      "window": {
+        "duration_ms": 60000,
+        "kind": "sliding",
+        "anchor": "request_time"
+      },
+      "threshold": 12,
+      "burst": {
+        "additional_units": 3,
+        "refill_units": 1,
+        "refill_interval_ms": 20000
+      },
+      "safe_counting_key": {
+        "phase": "post_authentication",
+        "components": [
+          "verified_actor_id_v1",
+          "exact_surface_id"
+        ],
+        "derivation_version": "hmac-sha256-v1",
+        "normalization": "verified-id-v1",
+        "rotation_behavior": "dual-read/single-write for at least 120000 ms; carry forward the greater count",
+        "privacy_basis": "Actor from verified server context only; correlation limited to actor plus exact surface; no shared space dimension.",
+        "subject_bound_after_authentication": true
+      },
+      "counter_store": {
+        "binding": "LOCAL_PROTOTYPE_COUNTER_STORE",
+        "namespace": "cbd266:prototype:mutation:v1",
+        "atomic_operation": "one process-linearizable atomic consume",
+        "consistency": "single-process-linearizable",
+        "region": "local-process",
+        "ttl_ms": 120000,
+        "clock_source": "monotonic process clock",
+        "failure_mode": "deny"
+      },
+      "quota": {
+        "unit": "request",
+        "ceiling": 15,
+        "scope": "verified actor plus exact surface",
+        "reset": "sliding expiry plus burst refill",
+        "resource_dimensions": [
+          "concurrency=1"
+        ]
+      },
+      "anti_lockout_rule": {
+        "attackable_dimensions": [],
+        "victim_bound_dimensions": [
+          "verified_actor_id_v1"
+        ],
+        "independent_recovery_surface_id": "surf-266-recovery",
+        "pool_isolation": "| `proto-mutation-v1` | `attackable_dimensions: []`; `victim_bound_dimensions: [verified_actor_id_v1]`; `independent_recovery_surface_id: surf-266-recovery`; no caller-controlled or shared-space dimension can consume another actor's pool, and recovery remains separately keyed and budgeted (`FX-266-LOCKOUT-RECOVERY`); `exhaustion_state_effect: none`; reset authority is `local prototype operator / restore counter service only`; notification is uniform and reveals neither existence nor remaining quota; verify `FX-266-MUTATION-ACTOR-ISOLATION`, `FX-266-LOCKOUT-RECOVERY`, and `VT-94-068`. |",
+        "exhaustion_state_effect": "none",
+        "reset_authority": "local prototype operator / restore counter service only",
+        "notification_behavior": "uniform, content-safe; neither existence nor remaining quota",
+        "rationale": "| `proto-mutation-v1` | `attackable_dimensions: []`; `victim_bound_dimensions: [verified_actor_id_v1]`; `independent_recovery_surface_id: surf-266-recovery`; no caller-controlled or shared-space dimension can consume another actor's pool, and recovery remains separately keyed and budgeted (`FX-266-LOCKOUT-RECOVERY`); `exhaustion_state_effect: none`; reset authority is `local prototype operator / restore counter service only`; notification is uniform and reveals neither existence nor remaining quota; verify `FX-266-MUTATION-ACTOR-ISOLATION`, `FX-266-LOCKOUT-RECOVERY`, and `VT-94-068`. |",
+        "verification_cases": [
+          "FX-266-MUTATION-ACTOR-ISOLATION",
+          "FX-266-LOCKOUT-RECOVERY",
+          "VT-94-068"
+        ]
+      },
+      "capacity_basis": {
+        "evidence_locator": "CBD266-PROTOTYPE-DEFAULTS-001 / single-local-process planning basis",
+        "measured_at": "2026-09-13T00:00:00-04:00",
+        "sustained_capacity": "2 requests/second in one local process; not measured - Product estimate dated 2026-09-13",
+        "peak_assumption": "At most 15 requests in 60 seconds; at least 87% request-rate headroom against the estimate",
+        "headroom": "At most 15 requests in 60 seconds; at least 87% request-rate headroom against the estimate",
+        "failure_budget": "zero uncounted protected effects when the store is unavailable or uncertain",
+        "workload_assumptions": [
+          "One developer, one process, local data, serialized prototype writes, no provider calls"
+        ],
+        "reviewer_role": "Product; ME-94-010 specialist review pending"
+      },
+      "source_requirements": [
+        "RL-92-001",
+        "RL-92-002",
+        "RL-92-007",
+        "EP-92-003",
+        "SR-94-037",
+        "ME-94-010",
+        "CBD266-PROTOTYPE-DEFAULTS-001"
+      ],
+      "created_at": "2026-09-13T04:00:00Z",
+      "supersedes_record_id": null,
+      "product_owner_approval": {
+        "status": "pending",
+        "approval_id": null,
+        "approved_by_actor_id": null,
+        "decided_at": null,
+        "candidate_digest": "026de76b95d864e1bd3abf878d1715d75b26c52edb7853680dc4b2b912321e2e",
+        "conditions": [
+          "prototype-only",
+          "revisit before any hosted environment"
+        ],
+        "expires_at": null
+      },
+      "record_digest": "40e965ce4ff78549b8331ec722dd65d6eb0df51aad653ae13f4c69f17a48075b"
+    }
+  ],
+  "registrations": [
+    {
+      "registration_id": "api:POST:/v1/budget-creation-proposals",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/budget-creation/proposal-http.ts#ProposalController.create",
+      "surface_id": "surf-266-budget-mutation",
+      "parameter_record_id": "rlp-266-mutation-proposals-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-232",
+      "authorization_metadata_id": "proposal.create"
+    },
+    {
+      "registration_id": "api:GET:/v1/budget-creation-proposals/{proposalId}",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/budget-creation/proposal-http.ts#ProposalController.read",
+      "surface_id": "surf-266-budget-read",
+      "parameter_record_id": "rlp-266-authenticated-read-proposals-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-232",
+      "authorization_metadata_id": "proposal.read"
+    },
+    {
+      "registration_id": "api:HEAD:/v1/budget-creation-proposals/{proposalId}",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/budget-creation/proposal-http.ts#ProposalController.read",
+      "surface_id": "surf-266-budget-read",
+      "parameter_record_id": "rlp-266-authenticated-read-proposals-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-232",
+      "authorization_metadata_id": "proposal.read"
+    },
+    {
+      "registration_id": "api:POST:/v1/budget-creation-proposals/{proposalId}/confirm",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/budget-creation/http.ts#ConfirmationController.confirm",
+      "surface_id": "surf-266-budget-mutation",
+      "parameter_record_id": "rlp-266-mutation-proposals-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-232",
+      "authorization_metadata_id": "space.create"
+    },
+    {
+      "registration_id": "api:GET:/v1/budget-spaces",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/budget-spaces/http.ts#BudgetSpacesController.list",
+      "surface_id": "surf-266-budget-read",
+      "parameter_record_id": "rlp-266-authenticated-read-proposals-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-232",
+      "authorization_metadata_id": "membership.list_own"
+    },
+    {
+      "registration_id": "api:HEAD:/v1/budget-spaces",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/budget-spaces/http.ts#BudgetSpacesController.list",
+      "surface_id": "surf-266-budget-read",
+      "parameter_record_id": "rlp-266-authenticated-read-proposals-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-232",
+      "authorization_metadata_id": "membership.list_own"
+    },
+    {
+      "registration_id": "api:GET:/v1/budget-spaces/{budgetSpaceId}",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/budget-spaces/http.ts#BudgetSpacesController.detail",
+      "surface_id": "surf-266-budget-read",
+      "parameter_record_id": "rlp-266-authenticated-read-proposals-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-232",
+      "authorization_metadata_id": "1.view_space"
+    },
+    {
+      "registration_id": "api:HEAD:/v1/budget-spaces/{budgetSpaceId}",
+      "executor_kind": "api_route",
+      "source_locator": "apps/api/src/budget-spaces/http.ts#BudgetSpacesController.detail",
+      "surface_id": "surf-266-budget-read",
+      "parameter_record_id": "rlp-266-authenticated-read-proposals-v1",
+      "registration_lifecycle": "active",
+      "introduced_by": "CBD-232",
+      "authorization_metadata_id": "1.view_space"
+    }
+  ]
+}
