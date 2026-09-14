@@ -59,6 +59,10 @@ export const PRODUCTION_TABLE_CATALOG: TableCatalog = {
   session_delivery_result: "identity",
   provider_security_event: "identity",
   revocation_outbox: "identity",
+  // CBD-153 category targets (PROTO-TARGETS-001), 20260913T1300xxZ.
+  budget_category: "budget-space",
+  budget_category_base_target: "budget-space",
+  budget_category_period_target: "budget-space",
 };
 
 export function isTenantTable(catalog: TableCatalog, table: string): boolean {
