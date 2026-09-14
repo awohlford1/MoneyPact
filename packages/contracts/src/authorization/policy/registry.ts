@@ -3,10 +3,10 @@ import * as v1 from "./v1.ts";
 import * as v2 from "./v2.ts";
 import * as v3 from "./v3.ts";
 
-/** The deployed version. p2 was released by docs/cbd-236-p2-release-step.md. p3 is registered and not
- * released: docs/cbd-236-p3-release-step.md flips this to "p3" only after the release-history row carrying
- * both approvals exists (PC-236-011, CBD236-POLICY-APPROVAL-001). */
-export const CURRENT_POLICY_VERSION = "p2" as const;
+/** The deployed version. p2 was released by docs/cbd-236-p2-release-step.md; p3 was released by
+ * docs/cbd-236-p3-release-step.md after the release-history row carrying both approvals
+ * (PO-P3-APPROVAL-001, PROTO-POLICY-V3-SEC-001-RESULT-001) was appended (PC-236-011, CBD236-POLICY-APPROVAL-001). */
+export const CURRENT_POLICY_VERSION = "p3" as const;
 
 function serialization<V extends string>(version: V, set: { actionDefinitions: readonly v1.ActionDefinition[]; userCells: readonly v2.P2UserCell[]; serviceCells: readonly v1.ServiceCell[] }) {
   return Object.freeze({ version, schemaVersion: 1, actionDefinitions: set.actionDefinitions, userCells: set.userCells, serviceCells: set.serviceCells });

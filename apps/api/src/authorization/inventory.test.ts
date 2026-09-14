@@ -67,7 +67,7 @@ it("limits lifecycle test launchers to release fixtures and a signal-only proces
     assert.equal(readFileSync(join(src, "authorization/process-fixture.ts"), "utf8").replaceAll("\r\n", "\n"), expected);
   }
 });
-it("real API and worker processes start on the released policy p2 and refuse an empty history", () => {
+it("real API and worker processes start on the released policy p3 and refuse an empty history", () => {
   // The two real processes are spawned under tsx while the rest of the workspace
   // suites run in parallel; 15 s was not enough on a loaded machine and the
   // test flaked for three separate agents. The processes exit on their own
