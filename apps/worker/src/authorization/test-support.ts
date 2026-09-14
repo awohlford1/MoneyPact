@@ -22,7 +22,7 @@ function leaf(input: unknown, path: string): unknown {
 }
 export function operationFor(input: PolicyInput): Operation {
   return { action: input.request.action, purpose: input.request.purpose, mode: input.authority.mode, fieldSet: input.request.fieldSet,
-    ...(input.resource ? { resourceType: input.resource.type, resourceId: input.resource.id, actingSpaceId: input.space.spaceId } : {}),
+    ...(input.resource && input.space ? { resourceType: input.resource.type, resourceId: input.resource.id, actingSpaceId: input.space.spaceId } : {}),
     ...(input.membership ? { actingMembershipId: input.membership.membershipId } : {}),
     ...(input.subject?.delegationRef ? { delegationRef: input.subject.delegationRef } : {}),
   };
