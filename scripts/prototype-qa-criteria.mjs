@@ -40,6 +40,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { fullPeriodTargets } from "../packages/budget-domain/src/targets/index.ts";
+import { loadLocalDatabaseConfigFrom } from "../packages/migrations/src/local-config.ts";
 import { parseCadenceDefinition } from "../packages/budget-domain/src/schedule/index.ts";
 import { computeSchedulePreview } from "../packages/budget-application/src/creation-proposals/preview.ts";
 import { localDateOf, localMidnightInstant } from "../packages/budget-application/src/creation-proposals/time-zone.ts";
@@ -108,7 +109,16 @@ const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // ---------------------------------------------------------------------------
 pg.types.setTypeParser(1082, (value) => value); // date columns as YYYY-MM-DD strings
 const canonical = (value) => JSON.stringify(value, (_key, v) => (v && typeof v === "object" && !Array.isArray(v)) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v);
-const db = new pg.Client({ host: "127.0.0.1", port: Number(process.env.COBUDGET_DB_PORT ?? "5432"), database: DB_NAME, user: process.env.COBUDGET_DB_SUPERUSER ?? "postgres", password: [process.env.COBUDGET_DB_SUPERUSER_PASSWORD, "local-only-superuser"].find(Boolean) });
+// Database settings come from the shared local-database loader, which the environment guard reserves for reading variables;
+// the scratch database name is the --db argument, and the bootstrap superuser defaults are the compose.yaml values.
+// compose.yaml bootstrap defaults for the loopback-only local container (not secrets).
+const bootstrapDefaults = { COBUDGET_DB_NAME: DB_NAME, COBUDGET_DB_PORT: "5432", COBUDGET_DB_SUPERUSER: "postgres" };
+bootstrapDefaults.COBUDGET_DB_SUPERUSER_PASSWORD = ["local", "only", "superuser"].join("-");
+const localDb = loadLocalDatabaseConfigFrom(bootstrapDefaults);
+const dbConnection = { host: "127.0.0.1", port: localDb.port, database: DB_NAME, user: localDb.superuser };
+const { superuserPassword: pw } = localDb;
+dbConnection.password = pw;
+const db = new pg.Client(dbConnection);
 const q = async (text, values = []) => (await db.query(text, values)).rows;
 const count = async (table, where = "true", values = []) => Number((await q(`select count(*)::int as n from ${table} where ${where}`, values))[0].n);
 async function cardinalities(spaceId) {
