@@ -523,8 +523,10 @@ export function dataAccessPrimaryTransferDependencies(options: {
       return typeof row?.membership_id === "string" ? row.membership_id : null;
     },
     membershipExists: async (budgetSpaceId, membershipId) => {
+      // R-03 / SEC-PK7B-F3: exactly what the comment says -- an active row; an ended member named by a propose body never
+      // becomes the policy target, and the module's own recipient re-read stays authoritative.
       const found = await client.tenantSelect({ table: "budget_space_membership", budgetSpaceId, columns: ["membership_id"],
-        conditions: [{ column: "membership_id", value: membershipId }] });
+        conditions: [{ column: "membership_id", value: membershipId }, { column: "status", value: "active" }] });
       return found.rows.length === 1;
     },
     transferParties: async (budgetSpaceId, transferId) => {

@@ -133,6 +133,8 @@ async function application(options: { readonly recipientRole?: "co_owner" | "col
   };
   const store = new PrimaryTransferAuthorizationStore(client, spender, () => scope);
   const tamper: { context?: ((real: TransferTransactionContext) => TransferTransactionContext) | undefined } = {};
+  /** What the pre-policy recipient resolution was asked and answered (R-03 / SEC-PK7B-F3). */
+  const existenceAnswers: [string, boolean][] = [];
 
   // The boundary harness: the transfer store discharges the six cells' obligations and owns the transaction; the harness records the allow audit inside it.
   const h = new Harness(actorInput(TRANSFER_ACTIONS.propose, PRIMARY));
@@ -145,7 +147,8 @@ async function application(options: { readonly recipientRole?: "co_owner" | "col
   const dependencies: PrimaryTransferHttpDependencies = {
     within: () => scope,
     membership: async (subject, budgetSpaceId) => [...world.repository.memberships.values()].find((m) => m.accountSubjectId === subject && m.budgetSpaceId === budgetSpaceId && m.status === "active")?.membershipId ?? null,
-    membershipExists: async (budgetSpaceId, membershipId) => world.repository.memberships.has(`${budgetSpaceId}/${membershipId}`),
+    // As the production dependency: an active row of the space, or nothing (R-03 / SEC-PK7B-F3).
+    membershipExists: async (budgetSpaceId, membershipId) => { const answer = world.repository.memberships.get(`${budgetSpaceId}/${membershipId}`)?.status === "active"; existenceAnswers.push([membershipId, answer]); return answer; },
     transferParties: async (budgetSpaceId, transferId) => { const r = world.repository.transfers.get(transferId); return r && r.budgetSpaceId === budgetSpaceId ? { proposerMembershipId: r.proposerMembershipId, recipientMembershipId: r.recipientMembershipId } : null; },
     context: (transaction) => { const real = store.context(transaction); return tamper.context ? tamper.context(real) : real; },
   };
@@ -178,7 +181,7 @@ async function application(options: { readonly recipientRole?: "co_owner" | "col
   const accept = async (transferId: string, actor: Actor = RECIPIENT()) => { as(TRANSFER_ACTIONS.accept, actor); return call("POST", `${BASE}/${transferId}/accept`, {}); };
   const confirm = async (transferId: string, actor: Actor = PRIMARY) => { as(TRANSFER_ACTIONS.confirm, actor); return call("POST", `${BASE}/${transferId}/confirm`, {}); };
   const grantsSpent = () => grants;
-  return { app, h, world, client, call, as, propose, accept, confirm, membership, tamper, grantsSpent };
+  return { app, h, world, client, call, as, propose, accept, confirm, membership, tamper, grantsSpent, existenceAnswers };
 }
 
 describe("PK-7B Primary-transfer routes through the real Fastify instance", () => {
@@ -381,6 +384,25 @@ describe("PK-7B Primary-transfer routes through the real Fastify instance", () =
       const closed = await accept(stale, { ...RECIPIENT(), version: 2 });
       assert.equal(closed.statusCode, 409, closed.body); assert.equal(closed.json().error, "transfer_invalidated");
       assert.equal(world.repository.transfers.get(stale)?.state, "invalidated");
+    } finally { await app.close(); }
+  });
+
+  it("PK7BF-02 (R-03, SEC-PK7B-F3): an ended member named as the propose recipient is never the policy target; the Primary's own row is, and the module denies recipient_ineligible without a workflow row", async () => {
+    const { app, world, call, as, existenceAnswers } = await application();
+    try {
+      const third = world.repository.memberships.get(`${SPACE}/${THIRD_MEMBERSHIP}`)!;
+      world.repository.memberships.set(`${SPACE}/${THIRD_MEMBERSHIP}`, { ...third, status: "revoked", endedAt: "2026-09-15T11:00:00.000Z" });
+      as(TRANSFER_ACTIONS.propose, PRIMARY);
+      const denied = await call("POST", BASE, { recipientMembershipId: THIRD_MEMBERSHIP });
+      assert.equal(denied.statusCode, 409, denied.body);
+      assert.deepEqual(denied.json(), { error: "recipient_ineligible", messageCode: UNIFORM_DENIAL_MESSAGE_CODE });
+      assert.equal(world.repository.transfers.size, 0, "no workflow row");
+      // The pre-policy resolution answered false for the ended row, so the policy target was the Primary's own row.
+      assert.deepEqual(existenceAnswers, [[THIRD_MEMBERSHIP, false]]);
+      // An active recipient still resolves to its own row.
+      const accepted = await call("POST", BASE, { recipientMembershipId: RECIPIENT_MEMBERSHIP });
+      assert.equal(accepted.statusCode, 201, accepted.body);
+      assert.deepEqual(existenceAnswers.at(-1), [RECIPIENT_MEMBERSHIP, true]);
     } finally { await app.close(); }
   });
 
