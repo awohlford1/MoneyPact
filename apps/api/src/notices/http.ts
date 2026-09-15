@@ -16,16 +16,16 @@
  * `budgetSpaceId` (null for a space-less notice), `messageCode`, `createdAt`,
  * `readAt`. The event correlation id stays server-side.
  *
- * **The cell** (Manager ruling recorded in the PK8 API-gaps packet). Both
- * routes run on the released `profile.read` subject-self cell, the one
- * subject-self read the released policy carries (`identity/me`, the local
- * delivery surface). The read fits it exactly; the mark-read is a mutation of
- * the caller's own personal state on a read cell, which the released matrix
- * has no dedicated cell for and this packet may not invent. It is therefore
- * bounded here to the one set-once stamp the PK-2 trigger already admits
- * (`read_at`; `forbid_account_lifecycle_notice_mutation`), and reported as a
- * finding: a dedicated `notice.read` / `notice.mark_read` pair is the policy
- * amendment a later packet should carry.
+ * **The cells** (CBD-236 p6, section 8.9; docs/cbd-236-p6-subject-self-amendment-proposal.md
+ * `P6-E04`; `EXEC-P6-RULINGS-001` P6-D01). The list runs on the dedicated
+ * `notice.read` subject-self read cell and the mark-read runs on the
+ * dedicated `notice.mark_read` subject-self mutate cell, closing `GAPS-F01`
+ * / `SEC-GAPS-R1`: the two routes previously shared the released `profile.read`
+ * cell (a read `effectClass`), so the mark-read mutation never carried
+ * `recheck_at_commit`. The `forbid_account_lifecycle_notice_mutation`
+ * trigger stays defense in depth for the one set-once stamp
+ * (`read_at`) it always admitted; the policy layer never evaluates a
+ * notice's own lifecycle state (`P6-N08`; proposal section 4).
  *
  * Both routes run on the general `ApiTransactionStore`'s serializable
  * transaction and every answer commits: the `404` is a *returned*
@@ -44,8 +44,9 @@ import {
 } from "../../../../packages/data-access/src/account-lifecycle-notice.ts";
 import type { AccountLifecycleNoticeRow } from "../../../../packages/data-access/src/account-lifecycle-notice.ts";
 
-/** The released subject-self read cell both routes run on (see the header). */
-export const NOTICES_ACTION = "profile.read";
+/** The p6 subject-self cells the two routes run on (see the header): the read and the mark-read are separate cells. */
+export const NOTICES_READ_ACTION = "notice.read";
+export const NOTICES_MARK_READ_ACTION = "notice.mark_read";
 
 /** The customer projection of one row: what `apps/web/src/api/invitations.ts` reads as `WireNotice`. */
 export interface NoticeView {
@@ -84,11 +85,11 @@ export class NoticesModule {}
 
 export function noticesHttp(dependencies: NoticesHttpDependencies): { module: DynamicModule } {
   const subjectSelf = () => ({ fieldSet: "default" as const, scope: "subject" as const });
-  /** The caller's subject from the decided input and nowhere else; a request that names no subject is refused. */
-  const subjectOf = (effect: EffectContext): string => {
+  /** The caller's subject from the decided input and nowhere else; a request naming no subject, or the wrong cell, is refused. */
+  const subjectOf = (effect: EffectContext, action: string): string => {
     const subject = effect.input.subject;
     const accountSubjectId = subject && "accountSubjectId" in subject ? subject.accountSubjectId : undefined;
-    if (typeof accountSubjectId !== "string" || !accountSubjectId || effect.input.request.action !== NOTICES_ACTION) throw new AuthorizationDenied();
+    if (typeof accountSubjectId !== "string" || !accountSubjectId || effect.input.request.action !== action) throw new AuthorizationDenied();
     return accountSubjectId;
   };
   /** The UUID shape is validated before any statement sees it; a malformed identifier names no notice. */
@@ -100,18 +101,18 @@ export function noticesHttp(dependencies: NoticesHttpDependencies): { module: Dy
   @Controller("v1/notices")
   class NoticesController {
     @Get()
-    @Authorize({ action: NOTICES_ACTION, purpose: "user_delegated", resourceLocator: subjectSelf })
+    @Authorize({ action: NOTICES_READ_ACTION, purpose: "user_delegated", resourceLocator: subjectSelf })
     async list(@Authorization() effect: EffectContext): Promise<unknown> {
-      const subject = subjectOf(effect);
+      const subject = subjectOf(effect, NOTICES_READ_ACTION);
       const rows = await dependencies.within(effect.transaction as DataAccessClient).list(subject);
       return { notices: newestFirst(rows).map(noticeView) };
     }
 
     @Post(":noticeId/read")
     @HttpCode(200)
-    @Authorize({ action: NOTICES_ACTION, purpose: "user_delegated", resourceLocator: subjectSelf })
+    @Authorize({ action: NOTICES_MARK_READ_ACTION, purpose: "user_delegated", resourceLocator: subjectSelf })
     async markRead(@Req() request: FastifyRequest, @Authorization() effect: EffectContext): Promise<unknown> {
-      const subject = subjectOf(effect);
+      const subject = subjectOf(effect, NOTICES_MARK_READ_ACTION);
       const noticeId = noticeOf(request);
       if (!noticeId) return new RouteFailure(404, "notice_not_found");
       const statements = dependencies.within(effect.transaction as DataAccessClient);

@@ -25,7 +25,7 @@ import { APPLICATION_ORIGIN, localConfig, localEnvironment } from "./test-suppor
 /** C9: there is no CSRF cookie any more; this literal is only used to assert its absence. */
 const CSRF_COOKIE_NAME_LITERAL = "__Host-cobudget_csrf";
 
-const IDENTITY_ROUTES = ["/v1/identity/begin", "/v1/identity/callback", "/v1/identity/local/authorize", "/v1/identity/local/choose", "/v1/identity/me", "/v1/identity/logout", "/protected/probe", "/health"];
+const IDENTITY_ROUTES = ["/v1/identity/begin", "/v1/identity/callback", "/v1/identity/local/authorize", "/v1/identity/local/choose", "/v1/identity/me", "/v1/identity/me/display-name", "/v1/identity/logout", "/protected/probe", "/health"];
 
 /** Synthetic surface approval for these tests only: CBD-266's registry has no approved bounded record yet (see the final report). */
 const syntheticGate: ApiSurfaceGate = {
@@ -39,7 +39,7 @@ interface Browser {
   readonly app: NestFastifyApplication;
   readonly server: FastifyInstance;
   cookies: Record<string, string>;
-  inject(method: "GET" | "POST", url: string, headers?: Record<string, string>, payload?: Record<string, unknown>): Promise<{ statusCode: number; headers: Record<string, unknown>; json<T>(): T; body: string }>;
+  inject(method: "GET" | "POST" | "PUT", url: string, headers?: Record<string, string>, payload?: Record<string, unknown>): Promise<{ statusCode: number; headers: Record<string, unknown>; json<T>(): T; body: string }>;
 }
 
 function cookieHeader(cookies: Record<string, string>): string {
@@ -160,6 +160,41 @@ describe("PROTO-WIRE-01/02 identity routes through the real Fastify instance", (
       const afterLogout = await b.inject("GET", "/v1/identity/me", { cookie: `${SESSION_COOKIE_NAME}=${issuedCookie}` });
       assert.equal(afterLogout.statusCode, 403, "the revoked session no longer resolves");
       assert.ok(runtime.audit!.snapshot().length >= 2, "decisions were appended to the in-process restricted audit stream");
+    } finally { await app.close(); }
+  });
+
+  it("CBD-236 p6: PUT /v1/identity/me/display-name sets the caller's own display name under profile.set_display_name, /me serves it (null when unset), and the 1..80-code-point bound denies 400 with nothing written (the version_conflict 409 branch is proven directly in display-name-write.test.ts: recheck_at_commit re-reads profile.profileVersion inside the same SERIALIZABLE transaction the handler runs in, so a mismatch is not reachable from two sequential HTTP requests)", async () => {
+    const db = new FakeIdentityDatabase();
+    const { app, runtime } = await createComposedApiApplication(localConfig(), () => undefined, testHistory, { client: createFakeIdentityClient(db), rateLimit: syntheticGate });
+    const b = await browser(app);
+    try {
+      await signIn(b);
+      const me = await b.inject("GET", "/v1/identity/me");
+      assert.equal(me.statusCode, 200, me.body);
+      const { csrfValue } = me.json<{ csrfValue: string; displayName: unknown }>();
+      assert.equal(me.json<{ displayName: unknown }>().displayName, null, "unset until this route writes it (P6-F01)");
+      const mutation = { origin: APPLICATION_ORIGIN, "sec-fetch-site": "same-origin", "x-cobudget-csrf": csrfValue, "content-type": "application/json" };
+
+      const noSession = await app.inject({ method: "PUT", url: "/v1/identity/me/display-name", headers: { host: HOST }, payload: { displayName: "Alex" } });
+      assert.equal(noSession.statusCode, 403, "no session is the uniform denial before the handler");
+
+      const set = await b.inject("PUT", "/v1/identity/me/display-name", mutation, { displayName: "  Alex W.  " });
+      assert.equal(set.statusCode, 200, set.body);
+      assert.equal(set.json<{ displayName: string; version: number }>().displayName, "Alex W.", "trimmed");
+      const version = set.json<{ version: number }>().version;
+      assert.equal(db.rows("financial_profile").find((row) => row.display_name === "Alex W.")?.version, version);
+
+      const meAfter = await b.inject("GET", "/v1/identity/me");
+      assert.equal(meAfter.json<{ displayName: unknown }>().displayName, "Alex W.", "P6-D03: the me route now serves it");
+
+      const empty = await b.inject("PUT", "/v1/identity/me/display-name", mutation, { displayName: "   " });
+      assert.equal(empty.statusCode, 400, empty.body);
+      const tooLong = await b.inject("PUT", "/v1/identity/me/display-name", mutation, { displayName: "x".repeat(81) });
+      assert.equal(tooLong.statusCode, 400, tooLong.body);
+      const wrongType = await b.inject("PUT", "/v1/identity/me/display-name", mutation, { displayName: 5 as unknown as string });
+      assert.equal(wrongType.statusCode, 400, wrongType.body);
+      assert.equal(db.rows("financial_profile").find((row) => row.account_subject_id === db.rows("account_subject")[0]!.account_subject_id)?.version, version, "nothing written by any rejected body");
+      assert.equal(runtime.audit!.snapshot().some((event) => event.cellRef === JSON.stringify({ kind: "subject", action: "profile.set_display_name" })), true);
     } finally { await app.close(); }
   });
 
