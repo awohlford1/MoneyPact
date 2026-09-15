@@ -431,7 +431,8 @@ describe("identity view and logout", () => {
     assert.equal(view.sessionRef, signedIn.sessionRef);
     assert.ok(view.csrfValue, "C9: the raw CSRF bootstrap value is recoverable in-process before logout");
     assert.equal(view.sessionVersion, 1, "CBD-191 section 5.1: the per-session version is a permitted client hint");
-    assert.deepEqual(Object.keys(view).sort(), ["accountSubjectId", "assurance", "csrfValue", "environmentId", "identityBindingId", "profileId", "sessionRef", "sessionVersion"]);
+    assert.deepEqual(Object.keys(view).sort(), ["accountSubjectId", "assurance", "csrfValue", "displayName", "environmentId", "identityBindingId", "profileId", "sessionRef", "sessionVersion"]);
+    assert.equal(view.displayName, null, "P6-F01: unset until profile.set_display_name writes it");
     const csrf = await h.ceremony.csrfDigestFor(cookie);
     assert.ok(csrf);
     const deletion = await h.ceremony.logout(csrf.sessionRef);
