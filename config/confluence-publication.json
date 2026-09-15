@@ -1191,7 +1191,7 @@
         "cbd-95-follow-up-register"
       ],
       "policy": "approved",
-      "approved_sha256": "6ab86130136802c0482e8ae2eee9e65360258485bcc22adba36097a028441d89"
+      "approved_sha256": "29cfde48ad7bd0e2261102c47e988a0e0f98a249462dd01aa3837982c4021c19"
     },
     {
       "path": "docs/cbd-73-negative-recovery-test-inventory.md",
