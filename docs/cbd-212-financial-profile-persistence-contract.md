@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | **Proposed — architecture contract for implementation and independent review; Security review of the concurrency and migration behavior is required before implementation is accepted as Done** |
-| Document version | 0.2.1 |
+| Document version | 0.2.2 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-212](https://cobudget.atlassian.net/browse/CBD-212), consuming sibling [CBD-214](https://cobudget.atlassian.net/browse/CBD-214) |
 | Parent | [CBD-22](https://cobudget.atlassian.net/browse/CBD-22) |
@@ -15,7 +15,7 @@
 | Persistence seam | `packages/data-access` (CBD-246) — **open PR, unmerged as of this document.** §10 names the port this document needs rather than assuming CBD-246's shape |
 | Milestone | `PROTOTYPE-SLICE-001` |
 | Repository baseline | `main` at the commit this branch forked from |
-| Last updated | September 13, 2026 |
+| Last updated | September 15, 2026 |
 
 > **Authority.** CBD-82 decides the logical model and the Executive decides profile atomicity. This document supplies the physical schema, the database constraint, the concurrency and lifecycle behavior, the migration/backfill contract, and the CBD-214 read/update seam that CBD-82 §11 explicitly assigns to CBD-212 (`HO-82-01`). Where it appears to change `CD-82-01`, `CBD190-PROFILE-ATOMIC-001`, or CBD-190 §5, the governing source wins and this document is wrong.
 
@@ -79,6 +79,7 @@ schema; this section is the physical realization CBD-190 §5.1 defers to
 | `created_at` | `timestamptz` | Not null. Set once, at insert |
 | `updated_at` | `timestamptz` | Not null. Set on every state or version change |
 | `version` | integer | Not null, default `1`. Bumped by exactly one on every committed mutation, including the ones CBD-214 makes to the preference columns in §9. Optimistic-concurrency token for CBD-214's atomic update (`CBD-214-AC04`) |
+| `display_name` | `text` NULL | `CBD-91 DI-91-065`; subject-owned. Set by the subject through `profile.set_display_name` once the CBD-236 `p6` amendment releases; 1–80 code points or `NULL`; bumps `version` on the same compare-and-set every other committed mutation in this table already uses, as `docs/cbd-236-p6-subject-self-amendment-proposal.md` §11 states |
 
 CBD-214-owned preference columns (locale, time zone, notification defaults) are
 added to this same table by a focused CBD-214 migration under §9's contract; this
@@ -495,4 +496,5 @@ of its `PB-82-*` prohibitions.
 | --- | --- | --- | --- | --- |
 | 0.1 | September 13, 2026 | Architecture specialist, dispatched under `CBD212-ARCH-001 v1` | Initial financial-profile persistence contract: schema, database constraint, corrected lifecycle, concurrency contract, migration/backfill contract, CBD-214 read/update seam, and the CBD-246 persistence-port requirement. | Proposed; independent review and Security review required. |
 | 0.2 | September 13, 2026 | Architecture specialist, dispatched under `CBD212-ARCH-002 v1` | Review F1 → unique constraint narrowed to at-most-one and paired deferred commit-time triggers plus subject-only/zero-active/deleted-profile negative tests added (lines 94–141, 414–416); F2 → subject-scoped CBD-246 port made a prerequisite, unscoped fallback removed, and CBD-214 seam bound to it (lines 322–335, 350–395, 471); F3 → standalone port locks and requires an active subject/active existing profile, terminal disposition precedes purge, and unavailable/exact-reuse cases cannot recreate authority (lines 145–169, 186–219, 417–418). Cross-reference pass aligned migration fixtures, `CT-212-*`, traceability, alternatives, dependencies, and `OI-212-01`. | Proposed; repeat independent review and Security review required. |
+| 0.2.2 | September 15, 2026 | Documentation specialist, dispatched under `PROTO-DOCS-OWNER-SENTENCES-001` | Added a `display_name` row to §3's `financial_profile` column table (`text` NULL, `CBD-91 DI-91-065`, 1–80 code points or `NULL`, subject-owned, set by the subject through `profile.set_display_name` once `p6` releases, advances `version`) as `docs/cbd-236-p6-subject-self-amendment-proposal.md` §11 recommends (`P6-F02`). No other text, cell, or decision identifier changed. | Routed sentence applied; independent and Security review of the column still required per the status line. |
 | 0.2.1 | September 15, 2026 | Documentation specialist, dispatched under `PROTO-DOC-SWEEP-003` | Consumed-contract pins corrected under `EXEC-FOLLOWUPS-003`: identity contract to `docs/cbd-190-identity-ceremony-and-mapping-contract.md` v0.4 §5, session contract to `docs/cbd-191-session-and-revocation-contract.md` v0.3 (`AMEND-F11`). Nothing those rows cite changed in substance; no other text, cell, or decision identifier changed. | Approved — Executive, September 15, 2026 (`EXEC-FOLLOWUPS-003`). |
