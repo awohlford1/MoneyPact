@@ -186,6 +186,73 @@ VOCABULARIES: tuple[Vocabulary, ...] = (
         canonical="docs/cbd-270-platform-safety-operating-model.md §13, PS-270-062",
         applies_to=("cbd-270-*.md",),
     ),
+    # Registered by PROTO-GUARD-CONSENT-VOCAB-001, closing SPEC-F04 / APPLY-F5.
+    # `budget_space_consent.state` (DR-73-04 physical mapping, CBD-73 §13.1):
+    # the write-once trigger admits only current -> superseded and
+    # current -> ended, so a restatement naming two of the three states is
+    # always a defect, never an intentional subset.
+    # cbd-234-*.md is deliberately excluded from applies_to: its §11.5 negative-
+    # fixture prose names the two terminal states as the trigger condition for
+    # `consent_not_current` ("consent `superseded`/`ended`"), a correct and
+    # intentional two-member subset in the same sense the module docstring
+    # describes for evidence classes -- not a restatement of the three-state
+    # set. Scoping it in would report that correct text as drift.
+    Vocabulary(
+        name="consent-state",
+        members=("current", "superseded", "ended"),
+        canonical="docs/cbd-73-invitation-consent-lifecycle-specification.md §13.1",
+        applies_to=("cbd-73-*.md", "cbd-232-*.md", "cbd-233-*.md", "cbd-234-*.md"),
+    ),
+    # Registered only so `claimed_by_a_complete_neighbour` can shadow
+    # consent-state's false positive on the idiom "ended/superseded" --
+    # shorthand for "no longer current" that CBD-73 and CBD-234 both use
+    # correctly and repeatedly (§§3, 10, 13.1 invariants and transitions;
+    # cbd-73-acceptance-criteria-traceability.md's finding-disposition table;
+    # CBD-234 §11.5's negative-fixture trigger condition). Without this entry
+    # every one of those correct two-member mentions reports as drift missing
+    # `current`, which the module docstring's scope-and-limits section already
+    # names as the failure mode that gets a guard switched off. Carries no
+    # drift coverage of its own, in the same sense as metric-class and
+    # connectivity-marker above.
+    Vocabulary(
+        name="consent-non-current-state",
+        members=("ended", "superseded"),
+        canonical="docs/cbd-73-invitation-consent-lifecycle-specification.md §13.1",
+        applies_to=("cbd-73-*.md", "cbd-232-*.md", "cbd-233-*.md", "cbd-234-*.md"),
+    ),
+    # `budget_space_consent.source` (DR-73-04 physical mapping and its SEC-F02
+    # forward rule; CBD-73 §13.1 and CBD-234 §7.2's widened CHECK constraint).
+    # `self_disclosure` is the only value the prototype's closed CHECK admits
+    # today; the other three are the forward rule's named future sources
+    # (invitation acceptance, membership change, Primary transfer) and become
+    # live only once CBD-234's widening migration lands, but the set itself is
+    # already closed and already restated across these packages.
+    Vocabulary(
+        name="consent-source",
+        members=("self_disclosure", "invitation_acceptance", "membership_change", "primary_transfer"),
+        canonical="docs/cbd-73-invitation-consent-lifecycle-specification.md §13.1",
+        applies_to=("cbd-73-*.md", "cbd-232-*.md", "cbd-233-*.md", "cbd-234-*.md"),
+    ),
+    # CBD-233 §3.3 stable failure outcomes, widened to eight members by the 0.2
+    # consent amendment's `stale_disclosure` addition. Naming some of these
+    # outcomes without the rest is always a defect: §11's traceability rows,
+    # CBD-232's request-reconciliation prose, and CBD-234's ceremony/commit
+    # sections all cite this exact closed set.
+    Vocabulary(
+        name="cbd-233-failure-outcome",
+        members=(
+            "unauthenticated",
+            "proposal_not_found",
+            "proposal_not_current",
+            "idempotency_key_reused",
+            "authorization_denied",
+            "confirmation_stale",
+            "stale_disclosure",
+            "retryable_conflict",
+        ),
+        canonical="docs/cbd-233-budget-creation-confirmation-contract.md §3.3",
+        applies_to=("cbd-73-*.md", "cbd-232-*.md", "cbd-233-*.md", "cbd-234-*.md"),
+    ),
 )
 
 # Glue that makes a sequence of members a list rather than prose. A comma or a
