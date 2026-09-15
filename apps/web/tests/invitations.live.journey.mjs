@@ -201,7 +201,7 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
     await owner.page.waitForSelector('[data-testid="notice-row"][data-read="unread"]'); await owner.accessibility();
     await owner.clickText("Mark as read"); await owner.page.waitForSelector('[data-testid="notice-row"][data-read="read"]');
     await owner.page.reload(); await owner.page.waitForSelector('[data-testid="notice-row"][data-read="read"]');
-    assert.ok(!(await owner.text()).includes("Your acceptance was recorded"), "the invitee's MSG-73-051 row is not the owner's");
+    assert.ok(!(await owner.text()).includes("You joined a budget space"), "the invitee's rows are not the owner's");
     await owner.page.goto(`${origin}/budgets/${budgetId}/invitations`); await owner.waitText("Sent, awaiting a response");
     await owner.clickText("Confirm acceptance from i***@example.com");
     await owner.waitText("Acceptance confirmed: the person joined as Collaborator.");
@@ -210,7 +210,8 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
     await owner.waitText("Collaborator"); await owner.accessibility();
     await invitee.page.goto(`${origin}/budgets`); await invitee.waitText(budgetName);
     await invitee.page.goto(`${origin}/budgets/${budgetId}/members`); await invitee.page.waitForFunction(() => document.querySelectorAll('[data-testid="member-row"]').length === 2);
-    await invitee.page.goto(`${origin}/notices`); await invitee.waitText("Your acceptance was recorded."); await invitee.waitText("You joined a budget space.");
+    // The real API writes MSG-73-015 at the confirm (MSG-73-051 is the disclosure view's confirmation notice code, not a row).
+    await invitee.page.goto(`${origin}/notices`); await invitee.waitText("You joined a budget space.");
     assert.ok(!(await invitee.text()).includes("Someone accepted an invitation"), "the owner's MSG-73-050 row is not the invitee's");
     await invitee.accessibility();
   });
