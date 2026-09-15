@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | **Applied** — `releaseCommit` `2245eea5347263943ae4ec1edc5a2b4d30460220`; `p3` is released |
-| Document version | 0.2 |
+| Document version | 0.2.1 |
 | Governing contract | [`docs/cbd-236-authorization-policy-contract.md`](./cbd-236-authorization-policy-contract.md) v0.8 §6 `PC-236-011`, `PC-236-013`, §8.6 |
 | Governing decisions | `CBD236-POLICY-APPROVAL-001` (Product Owner and Security sign-off cited in every released row); `PROTO-POLICY-V2-DECISION-001` precedent (add a version through an Architecture packet and a following Security review; release requires both approvals as separate records) |
 | Jira subtask | [CBD-236](https://cobudget.atlassian.net/browse/CBD-236) |
@@ -39,7 +39,7 @@ Reproduce the digest from the branch before applying; the value below was comput
 document was written at and the history guard fails if the registry no longer hashes to it:
 
 ```bash
-node -e "import('./packages/contracts/src/authorization/policy/registry.ts').then((m) => console.log(m.P3_DIGEST))"
+node --import=tsx -e "import('./packages/contracts/src/authorization/policy/registry.ts').then((m) => console.log(m.P3_DIGEST))"
 ```
 
 Expected output:
@@ -170,5 +170,6 @@ open until CBD-72 carries the manual-account row.
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 0.2.1 | September 15, 2026 | Documentation, applying `PROTO-CBD236-DIGEST-COMMAND-FIX-001` finding `P4P5-F01` | Section 3 digest-reproduction command corrected from plain `node -e` (which cannot load a `.ts` module without a loader) to `node --import=tsx -e`; executed from the worktree and confirmed to print the pinned `P3_DIGEST` `b4fbdb8e32a6155705877d7c91846ee855dc717dfce9d57a6f04e07301923e4d`. No digest, cell, decision identifier, or status changed. |
 | 0.2 | September 14, 2026 | Manager, applying this step | Applied: history row with `PO-P3-APPROVAL-001` and `PROTO-POLICY-V3-SEC-001-RESULT-001`, registry flip, the §4.3 literals in both applications, the §4.4 test changes. One §4.4 prediction corrected: `apps/api/src/authorization/subject-scoped.test.ts` required the optional edit (version-derived `subjectFixture(action, CURRENT_POLICY_VERSION)` and `subjectNegativeFixtures(CURRENT_POLICY_VERSION)`), because its negative families call `decide` directly with the pinned input and the `p2` pin denied `policy_version_unsupported` after the flip. Api 336/336, worker 52/52, contracts 52/52. |
 | 0.1 | September 14, 2026 | Architecture under `PROTO-POLICY-V3-001` | Initial ready-to-apply release step with the reproducible `p3` digest, the exact history row, the registry flip, every application literal that pins `p2`, the contracts suite proven version-derived under a simulated flip, and every application test change the flip requires with the historical `p1` and `p2` literals that stay. Not applied. |
