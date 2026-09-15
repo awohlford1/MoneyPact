@@ -74,7 +74,7 @@ export interface WireTransferAnswer {
   freshAssurance?: FreshAssuranceDisposition; next?: string;
 }
 
-/** `account_lifecycle_notice` rows (design section 13) as the in-app list would read them. See NOTICES_ROUTE below. */
+/** `GET /v1/notices`: the caller's own `account_lifecycle_notice` rows (design section 13), newest first; `POST /v1/notices/{id}/read` answers one. */
 export interface WireNotice { noticeId: string; budgetSpaceId: string | null; messageCode: string; createdAt: string; readAt: string | null }
 export interface WireNoticeList { notices: readonly WireNotice[] }
 
@@ -155,14 +155,10 @@ export const TRANSFER_STATE_LABELS: Readonly<Record<TransferState, string>> = Ob
   declined: "Declined by the recipient", withdrawn: "Withdrawn by the Primary Owner", expired: "Expired", invalidated: "Closed because something changed",
 });
 
-/**
- * The in-app notices route this client reads. The API on `main` publishes no
- * route over `account_lifecycle_notice` (design section 13 names the rows and
- * leaves the list to PK-8); this is the shape the page renders once one exists
- * and the mock serves it under the same path. A 404 from the real API is
- * rendered as "not available yet", never as an empty list.
- */
+/** The subject-self notices routes (PK8-F01): the caller's own rows and nothing else, on the `profile.read` cell. */
 export const NOTICES_ROUTE = "/notices";
+/** The `MSG-73-*` codes that name a Primary-ownership transfer: the notice's space link opens the transfer, not the dashboard. */
+export const TRANSFER_MESSAGE_CODES: ReadonlySet<string> = new Set(["MSG-73-027", "MSG-73-040", "MSG-73-041", "MSG-73-042", "MSG-73-043", "MSG-73-044", "MSG-73-045"]);
 
 // ---------------------------------------------------------------------------
 // The client.
@@ -200,8 +196,9 @@ export interface InvitationsClient {
   beginStepUp(spaceId: string): Promise<string>;
   /** Confirms exactly the transfer id given -- the caller reads it from the view immediately before. */
   confirmTransfer(spaceId: string, transferId: string): Promise<ConfirmTransferOutcome>;
-  // Notices.
-  listNotices(signal?: AbortSignal): Promise<readonly WireNotice[] | "unavailable">;
+  // Notices (PK8-F01): the caller's own rows, newest first, and the set-once read stamp.
+  listNotices(signal?: AbortSignal): Promise<readonly WireNotice[]>;
+  markNoticeRead(noticeId: string): Promise<WireNotice>;
   clear(): void;
 }
 
@@ -340,12 +337,8 @@ export function createInvitationsClient(base = "/v1", fetcher: typeof fetch = fe
       return { outcome: "refused", error: String(body.error ?? "request_failed"), status: answer.status };
     },
 
-    async listNotices(signal) {
-      const answer = await send(NOTICES_ROUTE, "GET", undefined, { csrf: false, signal });
-      if (answer.status === 404) return "unavailable";
-      if (answer.status !== 200) throw failure(answer);
-      return (answer.json as unknown as WireNoticeList).notices ?? [];
-    },
+    listNotices: async (signal) => (await request<WireNoticeList>(NOTICES_ROUTE, "GET", undefined, signal)).notices ?? [],
+    markNoticeRead: async (noticeId) => (await request<{ notice: WireNotice }>(`${NOTICES_ROUTE}/${encodeURIComponent(noticeId)}/read`, "POST", {})).notice,
     clear() { csrf = undefined; },
   };
 }

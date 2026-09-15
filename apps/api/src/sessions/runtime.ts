@@ -70,6 +70,7 @@ import { INVITATION_ACTION_SET, InvitationsAuthorizationStore, dataAccessInvitat
 import { invitationRuntime } from "../invitations/persistence.ts";
 import { invitationSurfaceGate } from "../invitations/surface-gate.ts";
 import { localDeliveriesHttp } from "../local/http.ts";
+import { dataAccessNoticesDependencies, noticesHttp } from "../notices/http.ts";
 import { PrimaryTransferAuthorizationStore, TRANSFER_ACTION_SET, dataAccessPrimaryTransferDependencies, primaryTransferHttp } from "../primary-transfer/http.ts";
 import { primaryTransferRuntime } from "../primary-transfer/persistence.ts";
 import { ChallengeStore } from "../identity/challenge.ts";
@@ -248,6 +249,9 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
   }));
   const invitationStore = new InvitationsAuthorizationStore(client);
   const localDeliveries = localDeliveriesHttp({ adapterKind: identityConfig.adapterKind, within: invitations.within, now });
+  // PK8-F01: the subject-self notices surface over the identity-scoped `account_lifecycle_notice` statements, on the
+  // general store's transaction (the released `profile.read` cell; see apps/api/src/notices/http.ts).
+  const notices = noticesHttp(dataAccessNoticesDependencies({ now }));
   // PK-7B: the Primary-transfer surface. The PK-5 system cancel path (design section 10.3 step 6) is composed over
   // the same transaction client through `invitations.within`; the composition asks the registry for both transfer
   // kinds and fails closed if either is missing.
@@ -365,7 +369,7 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
     return {};
   };
   const authorization: Wiring = {
-    modules: [identity.module, ...budget.modules, invitationRoutes.module, localDeliveries.module, transferRoutes.module],
+    modules: [identity.module, ...budget.modules, invitationRoutes.module, localDeliveries.module, transferRoutes.module, notices.module],
     boundary,
     // PK-6: the ceremony gate denies a verify-channel or decline that names no resolvable ceremony before any counter is touched.
     rateLimit: overrides.rateLimit ?? invitationSurfaceGate(new ApiRateLimits("cbd266-prototype-v1", undefined, undefined, undefined, ceremonyContext), invitations.locateCeremony),

@@ -201,6 +201,16 @@ describe("PK7B-01 live: the whole Primary transfer over HTTP on real PostgreSQL"
         assert.equal(view.statusCode, 200, view.body);
         assert.equal(view.json().transfer.state, "proposed");
         assert.ok(!view.body.includes("ssurance"), "no assurance material on the wire");
+        // PK8-F01: the MSG-73-040 row reached the recipient through the subject-self notices route; the stamp is set once.
+        const notices = await h.inject("GET", "/v1/notices");
+        assert.equal(notices.statusCode, 200, notices.body);
+        const proposalNotice = (notices.json().notices as { noticeId: string; budgetSpaceId: string | null; messageCode: string; readAt: string | null }[]).find((row) => row.budgetSpaceId === space.spaceId && row.messageCode === "MSG-73-040");
+        assert.ok(proposalNotice, notices.body);
+        assert.equal(proposalNotice.readAt, null);
+        const marked = await h.inject("POST", `/v1/notices/${proposalNotice.noticeId}/read`, mutation(recipient.csrfValue), {});
+        assert.equal(marked.statusCode, 200, marked.body);
+        assert.ok(marked.json().notice.readAt);
+        assert.deepEqual((await h.inject("POST", `/v1/notices/${proposalNotice.noticeId}/read`, mutation(recipient.csrfValue), {})).json(), marked.json(), "set-once: the repeat answers the stamped row");
         const accepted = await h.inject("POST", `${base}/${transferId}/accept`, mutation(recipient.csrfValue), {});
         assert.equal(accepted.statusCode, 200, accepted.body);
         assert.equal(accepted.json().outcome, "recipient_accepted");
@@ -212,6 +222,12 @@ describe("PK7B-01 live: the whole Primary transfer over HTTP on real PostgreSQL"
         const wrongParty = await h.inject("POST", `${base}/${transferId}/accept`, mutation(owner.csrfValue), {});
         assert.equal(wrongParty.statusCode, 403, wrongParty.body);
         assert.deepEqual(wrongParty.json(), { outcome: "deny", reason: "denied" });
+        // PK8-F01 tenant safety: the recipient's notice is not in the Primary's list and cannot be stamped by the Primary.
+        const ownersNotices = await h.inject("GET", "/v1/notices");
+        assert.equal(ownersNotices.statusCode, 200, ownersNotices.body);
+        assert.ok(!ownersNotices.body.includes(proposalNotice!.noticeId), "another person's row is not listed");
+        const foreign = await h.inject("POST", `/v1/notices/${proposalNotice!.noticeId}/read`, mutation(owner.csrfValue), {});
+        assert.equal(foreign.statusCode, 404, foreign.body); assert.deepEqual(foreign.json(), { error: "notice_not_found" });
       });
 
       await t.test("at session assurance the protected confirm is denied and nothing moves; no grant exists to consume", async () => {

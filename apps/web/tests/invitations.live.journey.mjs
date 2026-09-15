@@ -195,8 +195,14 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
     assert.ok(!(await invitee.text()).includes(budgetName), "not a member before the confirm");
   });
 
-  await t.test("the owner confirms the acceptance; both members see the members list; the invitee sees the budget", async () => {
-    await owner.page.reload(); await owner.waitText("Sent, awaiting a response");
+  await t.test("the owner confirms the acceptance; both members see the members list; the invitee sees the budget; the notices reach the right person (PK8-F01)", async () => {
+    // MSG-73-050 reached the owner as a live row; the read stamp is set once and stays.
+    await owner.page.goto(`${origin}/notices`); await owner.waitText("Someone accepted an invitation to one of your budget spaces.");
+    await owner.page.waitForSelector('[data-testid="notice-row"][data-read="unread"]'); await owner.accessibility();
+    await owner.clickText("Mark as read"); await owner.page.waitForSelector('[data-testid="notice-row"][data-read="read"]');
+    await owner.page.reload(); await owner.page.waitForSelector('[data-testid="notice-row"][data-read="read"]');
+    assert.ok(!(await owner.text()).includes("Your acceptance was recorded"), "the invitee's MSG-73-051 row is not the owner's");
+    await owner.page.goto(`${origin}/budgets/${budgetId}/invitations`); await owner.waitText("Sent, awaiting a response");
     await owner.clickText("Confirm acceptance from i***@example.com");
     await owner.waitText("Acceptance confirmed: the person joined as Collaborator.");
     await owner.waitText("Accepted and confirmed");
@@ -204,8 +210,8 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
     await owner.waitText("Collaborator"); await owner.accessibility();
     await invitee.page.goto(`${origin}/budgets`); await invitee.waitText(budgetName);
     await invitee.page.goto(`${origin}/budgets/${budgetId}/members`); await invitee.page.waitForFunction(() => document.querySelectorAll('[data-testid="member-row"]').length === 2);
-    await invitee.page.goto(`${origin}/notices`); await invitee.waitText("Notices");
-    await invitee.page.waitForFunction(() => /not available yet|No notices yet|notice-row/u.test(document.querySelector("main")?.innerHTML ?? ""));
+    await invitee.page.goto(`${origin}/notices`); await invitee.waitText("Your acceptance was recorded."); await invitee.waitText("You joined a budget space.");
+    assert.ok(!(await invitee.text()).includes("Someone accepted an invitation"), "the owner's MSG-73-050 row is not the invitee's");
     await invitee.accessibility();
   });
 

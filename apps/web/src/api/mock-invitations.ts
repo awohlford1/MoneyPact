@@ -230,10 +230,17 @@ export async function handleMockInvitationRequest(directory: MockDirectory, sess
   }
 
   // --- notices ------------------------------------------------------------------------------------
+  const noticeView = (row: MockNoticeRow): WireNotice => ({ noticeId: row.noticeId, budgetSpaceId: row.budgetSpaceId, messageCode: row.messageCode, createdAt: row.createdAt, readAt: row.readAt });
   if (path.join("/") === "notices" && request.method === "GET") {
-    const rows = directory.notices.filter(row => row.accountSubjectId === subject).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .map(row => ({ noticeId: row.noticeId, budgetSpaceId: row.budgetSpaceId, messageCode: row.messageCode, createdAt: row.createdAt, readAt: row.readAt }));
+    const rows = directory.notices.filter(row => row.accountSubjectId === subject).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.noticeId.localeCompare(a.noticeId)).map(noticeView);
     return json({ notices: rows });
+  }
+  // PK8-F01: the set-once read stamp on one of the caller's own rows; another person's or an unknown id is the same 404.
+  if (path[0] === "notices" && path.length === 3 && path[2] === "read" && request.method === "POST") {
+    const row = UUID.test(path[1]!) ? directory.notices.find(candidate => candidate.noticeId === path[1]!.toLowerCase() && candidate.accountSubjectId === subject) : undefined;
+    if (!row) return json({ error: "notice_not_found" }, 404);
+    row.readAt ??= at();
+    return json({ notice: noticeView(row) });
   }
 
   if (path[0] !== "budget-spaces" || path.length < 3) return undefined;

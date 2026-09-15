@@ -219,7 +219,15 @@ test("PK8-02 over the mock: invite, resolve with the cookie, exhaust a link term
   await assert.rejects(invitee.api.accept(second.ceremonyId, { kind: view.disclosure.kind, version: 2 }), (error: unknown) => error instanceof InvitationApiError && error.code === "stale_disclosure");
   const accepted = await invitee.api.accept(second.ceremonyId, { kind: view.disclosure.kind, version: view.disclosure.version });
   assert.equal("state" in accepted && accepted.state, "awaiting_confirmation");
-  assert.equal((await invitee.api.listNotices()) !== "unavailable" && (await invitee.api.listNotices() as unknown as { messageCode: string }[]).some(row => row.messageCode === "MSG-73-051"), true);
+  assert.equal((await invitee.api.listNotices()).some(row => row.messageCode === "MSG-73-051"), true);
+  // PK8-F01: the owner is told an acceptance waits (MSG-73-050); the stamp is set once, own rows only.
+  const waiting = (await owner.api.listNotices()).find(row => row.messageCode === "MSG-73-050");
+  assert.ok(waiting && waiting.readAt === null && waiting.budgetSpaceId === spaceId);
+  assert.equal((await invitee.api.listNotices()).some(row => row.noticeId === waiting!.noticeId), false, "another person's row is not listed");
+  await assert.rejects(invitee.api.markNoticeRead(waiting!.noticeId), (error: unknown) => error instanceof InvitationApiError && error.status === 404 && error.code === "notice_not_found");
+  const stamped = await owner.api.markNoticeRead(waiting!.noticeId);
+  assert.ok(stamped.readAt);
+  assert.deepEqual(await owner.api.markNoticeRead(waiting!.noticeId), stamped, "set-once: a repeat answers the stamped row");
   await assert.rejects(invitee.api.listMembers(spaceId), (error: unknown) => error instanceof InvitationApiError && error.denied, "not a member before the confirm");
 
   // The owner confirms; the receipt replays on the same key; both see the members list.
@@ -231,7 +239,7 @@ test("PK8-02 over the mock: invite, resolve with the cookie, exhaust a link term
   assert.deepEqual((await owner.api.listMembers(spaceId)).map(member => member.role).sort(), ["collaborator", "primary_owner"]);
   assert.equal((await invitee.api.listMembers(spaceId)).length, 2);
   for (const member of await invitee.api.listMembers(spaceId)) assert.deepEqual(Object.keys(member).sort(), ["displayName", "joinedAt", "membershipId", "role"]);
-  assert.equal((await invitee.api.listNotices() as unknown as { messageCode: string }[]).some(row => row.messageCode === "MSG-73-015"), true);
+  assert.equal((await invitee.api.listNotices()).some(row => row.messageCode === "MSG-73-015"), true);
   assert.deepEqual(await invitee.api.resolve(redelivered.code), { outcome: "unusable" }, "the consumed link");
   now += 1000;
 
@@ -257,7 +265,7 @@ test("PK8-02 over the mock: invite, resolve with the cookie, exhaust a link term
   // A repeated confirm under a new grant on a terminal workflow whose recipient matches the live one: here there is no live one, so the grant is returned.
   await invitee.api.beginStepUp(spaceId);
   assert.deepEqual(await invitee.api.confirmTransfer(spaceId, transferId), { outcome: "denied" });
-  assert.equal((await invitee.api.listNotices() as unknown as { messageCode: string }[]).filter(row => row.messageCode === "MSG-73-042").length, 1);
+  assert.equal((await invitee.api.listNotices()).filter(row => row.messageCode === "MSG-73-042").length, 1);
 });
 
 async function csrfOf(client: ReturnType<typeof browser>): Promise<string> {

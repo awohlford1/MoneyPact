@@ -62,6 +62,24 @@ export async function listAccountLifecycleNotices(
 }
 
 /**
+ * One of the subject's own notices by identifier, or null. Both predicates
+ * are the caller's: a notice id alone never locates a row, so another
+ * person's identifier reads exactly as an unknown one (PK8-F01).
+ */
+export async function readAccountLifecycleNotice(
+  client: PlatformStatementClient, accountSubjectId: string, noticeId: string,
+): Promise<AccountLifecycleNoticeRow | null> {
+  const result = await client.platformSelect({
+    table: ACCOUNT_LIFECYCLE_NOTICE_TABLE,
+    conditions: [
+      { column: "notice_id", value: noticeId },
+      { column: "account_subject_id", value: accountSubjectId },
+    ],
+  });
+  return result.rows.length === 1 ? toRow(result.rows[0]) : null;
+}
+
+/**
  * Marks one of the subject's own notices read. There is no `read_at IS NULL`
  * predicate here because the closed condition grammar has no null operator;
  * the PK-2 trigger is what makes `read_at` set-once, so a second call raises
@@ -85,6 +103,7 @@ export function accountLifecycleNoticeStatements(client: PlatformStatementClient
   return {
     insertNotice: (values: Readonly<Record<string, unknown>>) => insertAccountLifecycleNotice(client, values),
     listNotices: (accountSubjectId: string) => listAccountLifecycleNotices(client, accountSubjectId),
+    readNotice: (accountSubjectId: string, noticeId: string) => readAccountLifecycleNotice(client, accountSubjectId, noticeId),
     markNoticeRead: (accountSubjectId: string, noticeId: string, at: string) =>
       markAccountLifecycleNoticeRead(client, accountSubjectId, noticeId, at),
   };
