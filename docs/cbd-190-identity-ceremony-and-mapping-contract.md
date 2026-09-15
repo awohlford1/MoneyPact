@@ -2,12 +2,12 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved — Product Owner, September 13, 2026 (PO-CONTRACT-APPROVALS-001); open questions and residuals stay recorded and open** |
-| Document version | 0.3 |
+| Status | **Approved — Product Owner, September 15, 2026 (PO-CONTRACT-APPROVALS-004), applying the 0.4 step-up amendment to the 0.3 approval of September 13, 2026 (PO-CONTRACT-APPROVALS-001); open questions and residuals stay recorded and open** |
+| Document version | 0.4 |
 | Jira subtask | [CBD-190](https://cobudget.atlassian.net/browse/CBD-190) |
 | Parent | [CBD-21](https://cobudget.atlassian.net/browse/CBD-21) |
-| Repository baseline | `8ac588f` |
-| Last updated | September 12, 2026 |
+| Repository baseline | `4ea0078` |
+| Last updated | September 15, 2026 |
 
 ## 1. Purpose, authority, and status
 
@@ -51,6 +51,7 @@ any observation-bound provider gate passed.
 ### 2.1 In scope
 
 The contract covers registration, verification, sign-in, factor enrollment,
+step-up re-authentication of an already-signed-in subject (section 4.4),
 provider return processing, immutable identity mapping, deterministic failure
 outcomes, and a typed successful hand-off to CBD-191. It covers the production
 Cognito adapter and the local Cognito-shaped adapter through one port.
@@ -117,9 +118,26 @@ The configuration schema contains `environment_id`, `adapter_kind`, `issuer`,
 `authorization_endpoint`, `token_endpoint`, `revocation_endpoint`, `jwks_uri`,
 `client_id`, `oauth_grant`, exact OAuth scopes, token-revocation enablement,
 refresh-token lifetime, maximum exchange lifetime, `ceremony_origin`, exact
-`callback_uri`, allowed initiating application origins, allowed post-result destinations, expected
+`callback_uri`, exact `step_up_callback_uri`, allowed initiating application origins, allowed post-result destinations, expected
 signing algorithms, accepted clock-skew policy, and a secret reference when
 required. It never contains secret values.
+
+Exactly two redirect URIs are registered for an environment's one client, and
+no others. `callback_uri` terminates every ceremony a browser may begin under
+section 4.1. `step_up_callback_uri` is the second exact value, the same
+callback origin with the fixed path `/v1/identity/step-up/callback`, and it
+terminates the `step_up` ceremony of section 4.4 and nothing else. Because the
+two share an origin, `step_up_callback_uri` is derived from `callback_uri`
+rather than configured independently, so it can never name another origin,
+environment, or client; a configuration that supplies it as an independent
+value is not this contract. Validation rule 6 below applies to each URI
+separately.
+
+Registering two redirect URIs is a provider capability, not a safety mechanism.
+Which callback may complete which ceremony is decided by the ceremony-kind rule
+in section 4.2, not by the coincidence that the two paths differ, so that rule
+still holds for a provider that permits only one redirect URI per client
+(`OI-190-005`).
 
 Validation fails startup and readiness when:
 
@@ -132,9 +150,10 @@ Validation fails startup and readiness when:
 4. a wildcard origin, callback, post-result destination, signing algorithm,
    or issuer is configured;
 5. production selects the local adapter; or
-6. a callback URI differs from the exact provider-registered value after
-   normalization. Prefix, suffix, subdomain, query, and fragment matching are
-   forbidden; or
+6. either registered callback URI (`callback_uri` or `step_up_callback_uri`)
+   differs from its exact provider-registered value after normalization.
+   Prefix, suffix, subdomain, query, and fragment matching are forbidden for
+   both; or
 7. the real adapter is not authorization-code with PKCE S256 only, requests
    scopes beyond `openid`, has token revocation disabled, or uses a refresh
    lifetime longer than the shortest value supported by the provider for the
@@ -159,7 +178,7 @@ these commands and results.
 | Field | Rule |
 | --- | --- |
 | `environment_id` | Server-selected; never accepted from a query parameter. |
-| `ceremony` | Closed vocabulary: `register`, `verify`, `sign_in`, `enroll_factor`, `account_switch`. Account recovery remains provider-hosted under `ID-104-009`, but is not a CBD-190 deliverable or part of this prototype command. `RECOVERY-DEFER-001` defers the separate second-operator recovery principal and does not relax the customer recovery boundary. |
+| `ceremony` | Closed vocabulary: `register`, `verify`, `sign_in`, `enroll_factor`, `account_switch`, `step_up`. This command accepts the first five only. `step_up` is a member of the vocabulary but is never a browser-supplied intent here: it must first be bound server-side to one action code and one budget space, so it has its own session-authenticated entry point (section 4.4) and is refused on this command by name, with the same answer an unknown value receives. Account recovery remains provider-hosted under `ID-104-009`, but is not a CBD-190 deliverable or part of this prototype command. `RECOVERY-DEFER-001` defers the separate second-operator recovery principal and does not relax the customer recovery boundary. |
 | `initiating_origin` | Exact member of the environment allowlist. |
 | `post_result_destination_id` | Opaque server-side allowlist key, never an arbitrary URL. |
 | `current_account_subject_id` | Present only for an authenticated account switch; never sent to the provider. |
@@ -169,12 +188,17 @@ these commands and results.
 S256 verifier/challenge, an OIDC nonce, and an opaque state handle. The server
 stores only the minimum challenge record: one-way state verifier, protected
 PKCE verifier, protected nonce verifier, environment, exact origins, ceremony,
-destination key, creation/expiry, single-use status, and optional current
-subject for account switch. State and nonce are distinct values. No client
-value can override a stored field.
+destination key, creation/expiry, single-use status, the optional current
+subject and current session reference for an account switch or a step-up, and,
+for a step-up only, the bound action code and bound budget space identifier
+fixed at begin time from validated server-side state (section 4.4). State and
+nonce are distinct values. No client value can override a stored field, and no
+callback field can change a bound action or a bound space.
 
 The response is a `303` navigation to the configured authorization endpoint
-with exact `client_id`, exact `redirect_uri`, `response_type=code`,
+with exact `client_id`, the exact `redirect_uri` registered for this ceremony's
+kind (`step_up_callback_uri` for a `step_up`, `callback_uri` for every other
+kind), `response_type=code`,
 `code_challenge`, `code_challenge_method=S256`, `state`, `nonce`, and exactly
 the minimum `openid` scope. Custom-resource, user-administration, and other
 additional scopes are forbidden. Ceremony-specific provider parameters come
@@ -196,11 +220,25 @@ or used to select a customer-visible outcome.
 
 The edge supplies non-user-controlled context alongside the query:
 `request_environment_id`, observed callback origin, exact callback path,
-HTTP method, and receipt time. Only `GET` at the exact configured callback is
-accepted. The adapter consumes the challenge exactly once before any subject
-or session effect. A retry after a committed success may retrieve the stored
-safe terminal result for that challenge; it does not repeat token exchange or
-mapping.
+HTTP method, and receipt time. Only `GET` at the exact callback URI *this
+challenge was issued for* is accepted: the comparison is against the callback
+URI stored on the challenge record, not against one module-wide path, because
+section 3 registers two. The adapter consumes the challenge exactly once before
+any subject, session, or fresh-assurance effect. A retry after a committed
+success may retrieve the stored safe terminal result for that challenge; it
+does not repeat token exchange, mapping, or grant issuance.
+
+The ceremony kind is checked as well as the callback context, and the check is
+symmetric. Each registered callback completes exactly one class of ceremony:
+`callback_uri` completes every kind section 4.1 admits and never a `step_up`,
+and `step_up_callback_uri` completes a `step_up` and nothing else. A known
+challenge of the other class delivered to either callback terminates that
+challenge and raises the same restricted `callback_wrong_context` evidence any
+other out-of-context delivery raises. It is never answered as an unknown state
+and never left pending for its own callback afterwards, and it reaches no
+mapping, no session issuance, and no fresh-assurance grant. The rule is stated
+on the ceremony kind rather than on the path, so it holds even where the
+context comparison would have admitted the delivery.
 
 ### 4.3 Verified provider result
 
@@ -245,6 +283,70 @@ cache, queue, trace, crash report, or metric.
 * optional `previous_account_subject_id` for a validated account switch,
   taken from server state rather than the provider.
 
+A `step_up` result is validated by exactly these rules and released by exactly
+the section 10.1 bounded exchange. It is then consumed only by the section 4.4
+subject comparison: it never enters the section 5.2 mapping transaction, so it
+can create no subject, no financial profile, no binding, and no hand-off.
+
+### 4.4 Step-up re-authentication (`step_up`)
+
+A `step_up` is a re-authentication of the subject the acting session already
+names. It is the sixth ceremony kind and the only one that exists to authorize
+a single protected effect rather than to establish or move a session.
+
+**Entry.** A `step_up` begins only from a session-authenticated, CSRF-checked
+route of this adapter, never from the section 4.1 begin command and never from
+a browser-named intent. Before any challenge exists, the begin operation
+requires the exact allowlisted initiating origin and non-cross-site fetch
+metadata; an allowlisted post-result destination key; an action code the
+released CBD-236 policy marks protected; a syntactically bounded budget space
+identifier; a resolvable live session; and an active membership of that
+session's own subject in that budget space, read through the subject-scoped
+membership seam, so that naming another subject's space simply finds nothing.
+An absent membership seam fails closed. Each refusal is answered to the
+authenticated caller as a closed reason (`origin_rejected`,
+`destination_invalid`, `action_not_protected`, `space_not_permitted`,
+`session_required`, `capacity`) and creates no challenge and no provider
+navigation. None of these answers is reachable without a session, so none of
+them discloses anything to an unauthenticated party.
+
+**Binding.** The challenge issued for a `step_up` carries, from server-side
+state only, the acting subject, the acting session reference, one action code,
+and one budget space identifier. The provider is sent none of the four. No
+value returned by the callback can change them, and the grant the callback
+issues is built from the stored values, never from anything the browser
+returns.
+
+**Sameness with every other ceremony.** A `step_up` runs the section 4.1
+challenge unchanged (at least 256 bits of state, PKCE `S256`, an OIDC nonce,
+three distinct values, single use, bounded lifetime), the section 4.2 callback
+envelope and callback-context rules unchanged, the section 4.3 validated token
+form unchanged, the section 10.1 bounded exchange and immediate issuer
+revocation unchanged, and the section 7 deterministic safe outcomes unchanged.
+It differs only in what it registers and in what it may do.
+
+**What it may do.** After the bounded exchange releases a canonical result, a
+`step_up` resolves the existing `identity_binding` for the verified issuer and
+provider subject and requires that binding to be active and to name exactly the
+acting session's subject. A different person at the provider, an inactive
+binding, or an absent binding is a failure, never a mapping: the ceremony
+raises restricted `step_up_subject_mismatch` evidence and produces the section 7
+safe outcome. The acting session must additionally still be active and inside
+both of its expiries at that instant, so a session revoked, rotated, or expired
+mid-ceremony collects nothing.
+
+**What it may not do.** A `step_up` never creates or edits an account subject,
+a financial profile, or an `identity_binding`; never prepares, consumes, or
+writes an `identity_session_handoff`; never emits a `SessionIssueCommandV1`;
+and never issues, rotates, or ends an application session. No session cookie is
+ever emitted on its callback. Its sole durable effect is the CBD-191 section
+5.1.1 fresh-assurance record, which is written once per completed ceremony and
+is itself bound to the same session, action code, and budget space.
+
+**Replay.** Because the grant is keyed by the ceremony that produced it, a
+duplicate delivery of a completed `step_up` callback reports the same success
+destination and the same grant, and no second grant can exist.
+
 ## 5. Identity mapping and concurrency contract
 
 ### 5.1 Logical schema
@@ -260,6 +362,13 @@ cache, queue, trace, crash report, or metric.
 An issuer is part of identity. The same `sub` under a different issuer or
 environment is a different provider identity. Contact attributes never join,
 merge, switch, or recover a subject.
+
+The ceremony vocabulary of section 4.1 is fixed in the database by the
+`identity_session_handoff.ceremony` constraint, which admits all six kinds
+including `step_up`, so the column and this contract cannot disagree. No
+`step_up` value is ever written into that column: a step-up prepares no
+hand-off row, because it issues no session. The vocabulary is stated where the
+vocabulary lives, not because this ceremony uses the record.
 
 ### 5.2 PostgreSQL atomic resolution and conflict protocol
 
@@ -371,6 +480,11 @@ binding mapping plus one prepared hand-off, and exactly-once session effect per
 hand-off—not a false claim that mapping and an independently owned session
 commit together.
 
+A `step_up` takes no part in this section. It emits no `SessionIssueCommandV1`,
+prepares no `identity_session_handoff`, and is never a rotation cause; the
+acting session's identifier, version, and lineage are untouched by it. Its only
+durable effect is the CBD-191 section 5.1.1 fresh-assurance record.
+
 No budget role, profile, membership, or resource authority is present. Every
 protected request still needs current server-side authorization.
 
@@ -401,6 +515,29 @@ account or binding exists.
 | Bound account disabled/deletion-pending/deleted/security-blocked | `account_unavailable` | Terminal; binding remains unchanged | Generic support/recovery route only where authorized |
 | Mapping transaction failure before commit | `callback_failure` | Terminal callback after bounded whole-transaction retries; no new mapping, hand-off, or session | Start a new ceremony |
 | CBD-191 failure after mapping commit | `callback_failure` only after retry/expiry exhaustion; otherwise `still_processing` | Subject and binding remain; the same prepared hand-off is retryable until it becomes consumed or `terminal_failed`; no new session exists | Consume the same bounded hand-off where authorized, or start a new ceremony after terminal failure |
+| Known challenge of the other ceremony class delivered to either registered callback (section 4.2) | `invalid_or_expired` | Known challenge terminates and raises restricted `callback_wrong_context` evidence; symmetric at both callbacks | Start the ceremony the callback serves |
+| `step_up` begin names an unprotected action, or a budget space the acting subject holds no active membership in | Closed refusal reason to the authenticated caller; no browser-visible ceremony outcome, because no challenge and no provider navigation exist | None; nothing is created | Begin from a permitted action and space |
+| `step_up` callback resolves a provider subject whose active binding is absent or names another account subject | `invalid_or_expired` | Terminal; restricted `step_up_subject_mismatch` evidence; no subject, binding, hand-off, session, or grant | Start a new step-up |
+| `step_up` callback finds the acting session no longer active or past either expiry | `invalid_or_expired` | Terminal; no grant | Sign in again, then start a new step-up |
+| Fresh-assurance grant cannot be written | `temporarily_unavailable` | Terminal | Start a new step-up later |
+| Duplicate delivery of a completed `step_up` callback | The previously committed safe success destination, with no identity details | No new effect; the same grant is reported and no second grant exists | Continue using the existing application result |
+
+Restricted security evidence is emitted as content-free classes correlated by
+`challenge_id`. The closed class set is `callback_malformed`,
+`callback_unknown_state`, `callback_wrong_context`, `challenge_expired`,
+`challenge_replayed`, `provider_error`, `exchange_rejected`,
+`mapping_integrity`, `mapping_failure`, `handoff_consumed`,
+`handoff_terminal_failed`, `session_unavailable`, `account_unavailable`,
+`step_up_not_permitted`, `step_up_subject_mismatch`, `step_up_issued`, and
+`logout`. The three `step_up_*` classes are the step-up additions;
+`step_up_issued` is the only class in the set that reports a success, and it
+carries the issue disposition (a first grant, or an already-issued replay) and
+nothing else. No class carries a token, a raw state or nonce, provider error
+text, a contact attribute, or a customer-supplied value.
+`step_up_not_permitted` records only whether the action or the space was
+refused, and is correlated to no challenge, because a refused begin creates
+none. Ordinary telemetry remains coarse operation and outcome only, under
+`AN-92-003`.
 
 Each page meets WCAG 2.2 AA expectations applicable to the component: keyboard
 operation, visible focus, programmatic heading/status, focus placed on the
@@ -611,6 +748,15 @@ evidence. Discard without verified issuer revocation does not satisfy AC02.
 Every MoneyPact endpoint rejects a Cognito JWT as application authority even
 when its signature and expiry alone remain valid after revocation.
 
+A `step_up` exchange is this exchange, unchanged: the same ordered states, the
+same configured maximum lifetime, the same immediate issuer revocation and its
+verification, the same buffer destruction and execution termination, and the
+same fail-closed rules for a missing refresh token, a revocation error, a
+timeout, an ambiguous response, an abnormal termination, or a canonical result
+observed before confirmed termination. The only difference lies after step 7:
+the token-free canonical result is released to the section 4.4 subject
+comparison rather than to mapping.
+
 Normal runtime egress permits credential material only at its required exact TLS
 destination during its required phase. Ceremony parameters go through the browser
 redirect only to the configured ceremony endpoint. Code and PKCE proof go only
@@ -714,10 +860,10 @@ not executed evidence.
 
 | Acceptance criterion | Contract sections | Local adapter can evidence | Provider-only evidence that remains open |
 | --- | --- | --- | --- |
-| `CBD-190-AC01` | 2.3, 3, 4.1, 8 | Separate ceremony/application origins, redirects, and absence of credential inputs on MoneyPact pages using synthetic ceremonies. | Cognito actually serves registration, sign-in, verification, and factor enrollment on the approved production custom domain; actual RP-ID behavior. **Open.** |
-| `CBD-190-AC02` | 3, 4.1, 4.3, 9 `CT-190-011`, `013`, `016`, 10 | Local and fixture evidence can prove sink exclusion, state order, fault closure, MoneyPact-JWT rejection, maximum lifetime, and the destination/phase policy without real credentials. | Digest-identical live synthetic evidence for issuer revocation, post-revocation refresh/UserInfo/applicable-API failure, network custody, managed-login cookies, provider support/retention, and isolated-execution termination. **Open until authorized activation evidence.** |
+| `CBD-190-AC01` | 2.3, 3, 4.1, 4.4, 8 | Separate ceremony/application origins, redirects, and absence of credential inputs on MoneyPact pages using synthetic ceremonies. | Cognito actually serves registration, sign-in, verification, and factor enrollment on the approved production custom domain; actual RP-ID behavior. **Open.** |
+| `CBD-190-AC02` | 3, 4.1, 4.3, 4.4, 9 `CT-190-011`, `013`, `016`, 10 | Local and fixture evidence can prove sink exclusion, state order, fault closure, MoneyPact-JWT rejection, maximum lifetime, and the destination/phase policy without real credentials. | Digest-identical live synthetic evidence for issuer revocation, post-revocation refresh/UserInfo/applicable-API failure, network custody, managed-login cookies, provider support/retention, and isolated-execution termination. **Open until authorized activation evidence.** |
 | `CBD-190-AC03` | 5–6, 9 `CT-190-001`–`004`, `012` | Positive-controlled first use creates subject and exactly one active profile atomically; existing-subject, bounded whole-transaction retry, synchronized concurrency, exact hand-off/session winner counts, and commit-boundary recovery run against local PostgreSQL. | Same artifact-correlated black-box cases against the activated Cognito adapter and live synthetic tenant. **Open until activation.** |
-| `CBD-190-AC04` | 3, 4.2–4.3, 5–7, 9 `CT-190-006`–`009`, `011`–`012` | All synthetic negative shapes, isolated before/after effects, uniform outcomes, bounded retries, and commit-boundary fault injection. | Cognito's actual expired/error/JWKS/token/callback/outage shapes and bounded retry behavior. **Open until activation.** |
+| `CBD-190-AC04` | 3, 4.2–4.4, 5–7, 9 `CT-190-006`–`009`, `011`–`012` | All synthetic negative shapes, isolated before/after effects, uniform outcomes, bounded retries, and commit-boundary fault injection. | Cognito's actual expired/error/JWKS/token/callback/outage shapes and bounded retry behavior. **Open until activation.** |
 | `CBD-190-AC05` | 3, 9 `CT-190-014` | Positive-controlled configuration schema and exhaustive cross-wire rejection, including prohibition of local mode in production; reject-all behavior fails. | Three physically separate Cognito user pools/clients/keys/domains/origins and provider-console/configuration evidence. **Open.** |
 | `CBD-190-AC06` | 7, 9 `CT-190-010`, `015` | Accessible application-owned outcome pages and local synthetic ceremony scaffold; non-enumerating public copy. | Keyboard/screen-reader observation of Cognito-managed pages and actual provider failures. **Open.** |
 | `CBD-190-AC07` | 9–10 | Dated local runs for every named case with positive controls, isolated correlated deltas, exact concurrency winners, exchange and commit-boundary injection, custody scans, and release-artifact provenance. | Dated live Cognito run of the digest-identical release artifact, post-revocation probes, destination/phase captures, redacted fixture refresh, and provider observation record. **Open until activation.** |
@@ -734,12 +880,13 @@ conformance.
 | `OI-190-002` | Concrete expiry, clock skew, rate, counter, and retention values remain unset under `PR-94-001/002` and `RF-92-005/012`. | Blocks release of authentication surfaces; implementations must accept versioned configuration and fail closed when absent. |
 | `OI-190-003` | Cognito remains `ELIGIBLE-PENDING-EVIDENCE` with no account authorized. | Blocks every provider-only traceability row and live fixture capture. |
 | `OI-190-004` | CBD-191 is not implemented in this package. | The hand-off is a contract only; a complete sign-in cannot be claimed until the session consumer passes its own gates. |
+| `OI-190-005` | A hosted provider must register both exact redirect URIs of section 3 on the environment's one client, or the single-redirect fallback must land instead, keeping the section 4.2 wrong-kind refusal explicit (`SEC-PK4-R4`). The prototype registers both because it serves its own local issuer. | Blocks activation of a provider that permits only one redirect URI per client until one of the two shapes is chosen and reviewed. The ceremony-kind rule itself needs no change under either shape. |
 
 ## 15. Revision history
 
 | Version | Date | Author | Change | Disposition |
 | --- | --- | --- | --- | --- |
-| 0.4 (proposed) | September 15, 2026 | Implementation specialist, dispatched under `PROTO-INVITATIONS-PK4-STEPUP-001` | Proposed amendment, not yet approved and not applied to the contract text above: widen the section 5.1 ceremony vocabulary with a sixth kind, `step_up`. A `step_up` is a re-authentication of the subject an existing session already names, begun only from a session-authenticated route and bound at begin time to one action code and one budget space identifier taken from server-side state. It runs the same section 4.1 challenge (state, PKCE `S256`, nonce), the same section 4.2-4.3 callback-context and single-use rules, and the same section 10.1 bounded exchange and issuer revocation as `sign_in`; it registers a second exact redirect URI, `/v1/identity/step-up/callback`, alongside the section 3 callback URI. It differs from every existing kind in what it may do: it resolves an existing `identity_binding` and requires that binding's subject to equal the acting session's subject, it never creates a subject, profile or binding, it never prepares an `identity_session_handoff`, and it never issues, rotates or ends a session. Its only effect is the CBD-191 fresh-assurance record. The database half of the vocabulary widening is applied (`identity_session_handoff.ceremony`, migration `20260915T120000Z__create_account_session_fresh_assurance.sql`) so the column and the contract cannot disagree once this row is approved. Approval owner: the CBD-190 owner, with Security review of the re-authentication path. | Proposed amendment; no approved text changed. |
+| 0.4 | September 15, 2026 | Specification specialist, dispatched under `PROTO-CBD190-191-STEPUP-AMEND-001` | Applied amendment. The `step_up` ceremony kind proposed at this version by `PROTO-INVITATIONS-PK4-STEPUP-001` is now normative contract text, together with the `SEC-PK4-F1` and `SEC-PK4-F2` hardening as merged in PR #355. Section 2.1 admits step-up re-authentication; section 3 registers the second exact redirect URI `step_up_callback_uri` (`/v1/identity/step-up/callback`), derived from `callback_uri`, and extends validation rule 6 to both; section 4.1 widens the closed ceremony vocabulary to six kinds while refusing `step_up` on the begin command by name, and records the bound action and bound space on the challenge; section 4.2 compares a callback against the challenge's own callback URI and states the symmetric wrong-kind termination as a rule about the ceremony kind rather than about the path; section 4.3 releases a step-up result only to the section 4.4 comparison; new section 4.4 states the ceremony in full; section 5.1 records the `identity_session_handoff.ceremony` vocabulary and that no `step_up` value is ever written into it; section 6 excludes step-up from hand-off and rotation; section 7 gains the step-up outcome rows and the closed restricted-evidence class set; section 10.1 states that the bounded exchange and issuer revocation are unchanged for a step-up; sections 13 and 14 gain the section 4.4 traceability and `OI-190-005`. Finding-to-line map follows in section 15.3. | **Approved — Product Owner, September 15, 2026 (PO-CONTRACT-APPROVALS-004).** Status and document version bumped in the same change; `OI-190-002`, `OI-190-003`, `OI-190-004` and the new `OI-190-005` stay open. |
 | 0.3 (approval) | September 13, 2026 | Manager, in the merge lane | Product Owner approval recorded (PO-CONTRACT-APPROVALS-001). Status Proposed → Approved at the same version; no decision, identifier or contract text changed. | Approved. |
 | 0.1 | September 12, 2026 | Architecture specialist, dispatched under `CBD190-ARCH-001 v1` | Initial callback, mapping, CBD-191 hand-off, local-adapter fidelity, dual-adapter conformance, negative-test, environment, and AC traceability contract under `PROVIDERS-LOCAL-001`. | Proposed; independent Review and Security review required. |
 | 0.2 | September 12, 2026 | Architecture specialist, dispatched under `CBD190-ARCH-002 v1` | Review correction round: finding-to-line map follows below. | Proposed; independent Review required; the custody and zero-profile decisions then remained open. |
@@ -771,3 +918,24 @@ pass.
 | Security finding 3 | 503–513, 540, 614–622 | Replaces the impossible blanket egress assertion with destination- and phase-scoped normal-runtime and authorized synthetic-probe rules. |
 | Security finding 4; `SR-94-039`–`043` | 40, 624–649 | Adds the complete credential-material inventory with owner, purpose, store/memory boundary, readers, writers, rotation/revocation, backup/dump status, and prohibited destinations. |
 | Secret-scanner false positives and publication metadata | 6, 9; publication manifest 1617–1621 | Updates the version/baseline and publication-manifest rationale; rewords any generic-scanner match while preserving the contract. |
+
+### 15.3 v0.4 step-up amendment map
+
+Line references identify this v0.4 candidate after the final consistency pass.
+The controlling sources are the merged implementation (PR #355 at `4ea0078`),
+the Security assessment `PROTO-INVITATIONS-PK4-SEC-001`, and the correction
+round `PROTO-INVITATIONS-PK4-FIX-001`. Where the proposed 0.4 row and the
+merged code differed, the code controls and the difference is recorded below.
+
+| Source item | Applied text |
+| --- | --- |
+| The proposed 0.4 row: a sixth ceremony kind | Section 2.1 scope, the section 4.1 closed vocabulary at six kinds, and section 4.4 in full. |
+| The proposed 0.4 row: a second exact redirect URI | Section 3 registers `step_up_callback_uri` and extends validation rule 6 to both URIs; section 4.1 selects the redirect by ceremony kind. |
+| `SEC-PK4-F1` (explicit `step_up` refusal at the sign-in callback) | Section 4.2 states the wrong-kind termination on the ceremony kind, so the sign-in callback refuses a step-up as a rule and not as a consequence of the two paths differing. |
+| `SEC-PK4-F2` (symmetric wrong-context termination) | The same rule, stated symmetrically for both registered callbacks in section 4.2, with the section 7 row and the `callback_wrong_context` class it raises. |
+| The proposed 0.4 row: no session, no mapping | Section 4.4's "what it may not do", the section 5.1 note that no `step_up` value is ever written to `identity_session_handoff.ceremony`, and the section 6 exclusion. |
+| Difference from the proposed row: `step_up_callback_uri` is derived, not independently configured | The row said only that the ceremony "registers a second exact redirect URI". The merged configuration derives it from the callback URI's origin plus a fixed path, so section 3 states the derivation and forbids an independent value. |
+| Difference from the proposed row: begin-time validation is stronger than "taken from server-side state" | The merged code refuses an action the released policy does not mark protected, and a budget space the acting subject holds no active membership in, before any provider navigation exists. Section 4.4 states both refusals and their closed reasons. |
+| Difference from the proposed row: three restricted evidence classes | The row described no evidence. The merged code adds `step_up_not_permitted`, `step_up_subject_mismatch`, and `step_up_issued`; section 7 now carries the whole closed class set. |
+| Difference from the proposed row: callback-time session liveness | The row named no liveness check at the callback. The merged code requires the acting session to be active and inside both expiries before a grant is issued; section 4.4 states it. |
+| `SEC-PK4-R4` (a provider that registers only one redirect URI) | Section 3's closing paragraph and the new `OI-190-005`. |

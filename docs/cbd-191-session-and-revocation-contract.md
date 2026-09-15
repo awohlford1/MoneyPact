@@ -2,12 +2,12 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved — Product Owner, September 13, 2026 (PO-CONTRACT-APPROVALS-001); open questions and residuals stay recorded and open** |
-| Document version | 0.2.2 |
+| Status | **Approved — Product Owner, September 15, 2026 (PO-CONTRACT-APPROVALS-004), applying the 0.3 fresh-assurance-record amendment to the 0.2.2 approval of September 13, 2026 (PO-CONTRACT-APPROVALS-001); open questions and residuals stay recorded and open** |
+| Document version | 0.3 |
 | Jira subtask | [CBD-191](https://cobudget.atlassian.net/browse/CBD-191) |
 | Parent | [CBD-21](https://cobudget.atlassian.net/browse/CBD-21) |
-| Repository baseline | `a6c13d2` |
-| Last updated | September 12, 2026 |
+| Repository baseline | `4ea0078` |
+| Last updated | September 15, 2026 |
 
 ## 1. Purpose, authority, and status
 
@@ -96,7 +96,7 @@ sequenceDiagram
 
 | Record | Required fields and constraints |
 | --- | --- |
-| `account_session` | Opaque `session_selector` (indexed lookup key); keyed digest `verifier_digest` of the verifier half, compared in constant time; opaque `session_ref` (safe correlation identifier, distinct from the cookie value, the one CBD-236 reads as `subject.sessionRef`); `account_subject_id`; `environment_id`; `identity_binding_id` (from CBD-190, for revocation correlation); immutable `session_version` (a subject-monotonic integer allocated uniquely for this session and returned as CBD-236 `subject.sessionVersion` and CBD-232's session generation); `issued_revocation_epoch` (copied from the subject authority row); `state` (`active`, `rotated`, `revoked`, `expired`); `superseded_by_session_ref` (present only when `state = rotated`); `assurance_level` (`session` / `fresh`); `fresh_assurance` (`{ boundAction, boundSpaceId, expiresAt }`, present only when a fresh grant has not yet expired); `csrf_digest`; `issued_at`, `idle_expires_at`, `absolute_expires_at`; `rotation_cause` (closed vocabulary, §5.2); `revocation_cause` (closed vocabulary, §6.1, present only when revoked). Unique on `session_selector`, `session_ref`, and `(account_subject_id, session_version)`. |
+| `account_session` | Opaque `session_selector` (indexed lookup key); keyed digest `verifier_digest` of the verifier half, compared in constant time; opaque `session_ref` (safe correlation identifier, distinct from the cookie value, the one CBD-236 reads as `subject.sessionRef`); `account_subject_id`; `environment_id`; `identity_binding_id` (from CBD-190, for revocation correlation); immutable `session_version` (a subject-monotonic integer allocated uniquely for this session and returned as CBD-236 `subject.sessionVersion` and CBD-232's session generation); `issued_revocation_epoch` (copied from the subject authority row); `state` (`active`, `rotated`, `revoked`, `expired`); `superseded_by_session_ref` (present only when `state = rotated`); `assurance_level` (`session` / `fresh`); `fresh_assurance` (`{ boundAction, boundSpaceId, expiresAt }`, present only when a fresh grant has not yet expired); `csrf_digest`; `issued_at`, `idle_expires_at`, `absolute_expires_at`; `rotation_cause` (closed vocabulary, §5.2); `revocation_cause` (closed vocabulary, §6.1, present only when revoked). Unique on `session_selector`, `session_ref`, and `(account_subject_id, session_version)`. These four assurance-bearing fields are unchanged at v0.3: the grant a step-up produces is the separate `account_session_fresh_assurance` record of §5.1.1, not state on this row. |
 | `account_subject_authority` | `account_subject_id` (primary key); `next_session_version` (integer, monotonically allocated under row lock); `revocation_epoch` (integer, monotonic, starts at 1); `epoch_bumped_at`; `epoch_bump_cause` (closed vocabulary, §6.1). One row per subject. Session resolution compares `issued_revocation_epoch` with the current epoch; proposal/session-lineage comparison uses the distinct per-session `session_version`. Issuance separately re-reads the authoritative subject lifecycle/version in its transaction; a cached lifecycle copy here is forbidden. |
 | `session_delivery_result` | `session_handoff_id` (primary key); `session_ref`; authenticated-encryption envelope containing the exact selector/verifier and CSRF delivery values; key-version reference; `deliver_until`; `acknowledged_at` or absent. The envelope is audience-bound to this hand-off and session, excluded from backups/dumps/logs, and erased on acknowledgement or bounded expiry. This is the recoverable prior result CBD-190 v0.3 §6 requires after a commit/result-loss fault (§5.3). |
 | `provider_security_event` | Opaque `provider_event_id` (the provider's own event identifier, used as the dedupe key); `environment_id`; `issuer`; `provider_subject`; `event_class` (closed vocabulary, §6.2); `provider_event_time`; optional provider-authenticated `ordering_cursor`; `received_at`; `identity_binding_id` (resolved, or absent when the binding is unknown); `processing_state` (`applied`, `applied_pending_reconciliation`, `superseded`, `rejected`); `rejection_reason` (present only when `rejected`); no raw provider token, credential, or contact attribute. Unique on `(environment_id, issuer, provider_event_id)`. A duplicate delivery does not create a second row or a fictional `duplicate` state; it returns the existing canonical outcome. |
@@ -292,11 +292,13 @@ unbounded, or outside the approved configuration registry:
 * `idle_timeout` — maximum gap between resolved requests before
   `idle_expires_at` is reached;
 * `absolute_lifetime` — maximum session age regardless of activity;
-* `fresh_assurance_window` — maximum lifetime of a `fresh` assurance grant
-  (CBD-72 §6.1; distinct from the session's own lifetime — a session can
-  outlive a fresh-assurance window, which then simply reverts the effective
-  assurance to `session` on the next read, with no rotation required for that
-  reversion alone); and
+* `fresh_assurance_window` — maximum lifetime of a `fresh` assurance grant,
+  configured as `COBUDGET_SESSION_FRESH_ASSURANCE_WINDOW_SECONDS` and a
+  required positive whole number of seconds (CBD-72 §6.1; distinct from the
+  session's own lifetime — a session can outlive a fresh-assurance window,
+  which then simply reverts the effective assurance to `session` on the next
+  read, with no rotation required for that reversion alone). It is the window
+  every §5.1.1 grant is issued for; and
 * `revocation_propagation_target` — the value this document treats as
    `PR-94-001` once Security fixes it; every AC04/AC06 measured test in §8
    is written against this configured value, not a hardcoded number;
@@ -311,6 +313,88 @@ request (bounded by `absolute_expires_at`, which never moves). Both are
 re-checked at resolution (§3.3 case 5); neither is extended past
 `absolute_expires_at`.
 
+#### 5.1.1 Fresh assurance as a record (`account_session_fresh_assurance`)
+
+**`SC-191-003B` (Binding).** A fresh-assurance grant is its own record, not
+mutable state on the session row. `account_session` keeps `assurance_level` and
+its three `fresh_assurance_*` fields exactly as §3.1 states them; what those
+fields cannot express is which ceremony issued a grant and whether the grant
+has been spent, and both are required, because CBD-236 §5.3's `fresh_assurance`
+obligation is discharged by *consuming* a grant and one step-up must authorize
+one committed protected effect rather than every protected effect inside the
+window.
+
+One row is one grant. Its required fields are: an opaque grant identifier; the
+`session_ref` of the session it belongs to, which is a real reference to
+`account_session`, not a loose identifier; the acting `account_subject_id`; the
+`environment_id`; the CBD-190 §4.4 ceremony that produced it, held both as the
+unique ceremony reference and as the ceremony kind, which is `step_up` and can
+be nothing else; the bound action code; the bound budget space identifier; the
+issue instant; the expiry instant, which must be later than the issue instant
+and is the issue instant plus `fresh_assurance_window`; and a single
+consumption mark, carrying the state, the consumption instant, and the
+consuming action code. The consumption fields are present exactly when the
+state says they are. Nothing else is stored, and no provider value, token, or
+customer-supplied string enters the row.
+
+Four properties are what the record is for.
+
+**Write-once.** The ceremony reference is unique across the table, so one
+completed step-up ceremony produces at most one grant however many times its
+callback is delivered; a replayed callback finds the existing row and reports
+the same success. Every field except the consumption mark is immutable once the
+row exists, enforced by the database and not by application discipline, so a
+grant can never be re-pointed at another action, another space, another
+session, or a later expiry after the fact. Concurrency is settled by the unique
+constraint rather than by a read-then-write check that a concurrent caller
+could interleave with.
+
+**At most one live grant per binding.** A session holds at most one unconsumed
+grant for a given action code and budget space at a time. A second step-up for
+the same pair replaces nothing and is refused, so grants cannot be stacked up
+and spent later.
+
+**Consumed once.** The grant is spent by a conditional update that carries the
+unconsumed state in its own condition, so two callers racing for one grant
+produce exactly one winner and the loser sees no rows affected. A consumption
+mark, once set, is itself immutable: no path un-consumes a spent grant. The
+spend is performed by the CBD-236 §5.3 `fresh_assurance` obligation discharge
+inside the authorizing transaction, *after* the commit-time re-decision has
+re-read the grant and re-compared the request's own action code and acting
+space against the obligation's. A rolled-back effect rolls the consumption back
+with it, so a grant is never spent by a commit that did not happen, and one
+step-up therefore authorizes exactly one committed protected effect.
+
+**Revoked with its session.** A grant is reachable only through its session row.
+The read that reports a grant requires that row to be `active` and both of its
+expiries to be still ahead of the reading instant, and that requirement belongs
+to the reader itself rather than to whichever caller happens to hold a resolved
+session. Revocation, rotation, and expiry therefore take every grant with them
+in the same instant (§6.1), with no separate sweep that could fall behind and no
+grant surviving the session that authorized it.
+
+Effective assurance is unchanged by all of this. The fact source reports
+`assurance.level = fresh`, with the bound action, the bound space, and the
+expiry, only when an unconsumed, unexpired grant exists for *this request's own
+action code and acting budget space* under a live session; matching is
+equality, so a grant bound to another action or another space is not a weaker
+match but simply absent. In every other case the reported level is `session`,
+and the policy decision denies on its own comparison rather than on a judgement
+made in the read. A grant that has expired or been spent reverts the reported
+level to `session` on the next read, with no rotation required for that
+reversion alone.
+
+The read is a read. Assembling the fact mutates nothing, so the precheck and
+the commit-time recheck see the same value, which is what makes §8's
+`CT-191-013` commit-boundary rule meaningful for assurance as well as for
+session state.
+
+`OQ-191-005` is not decided by this amendment. The prototype assembles
+`assurance.*` from this record under the `idp_evidence` provenance CBD-236 §4.1
+names, because the record holds server-attested identity-provider evidence;
+that is an implementation reading of an undecided cross-contract question, not
+the resolution of it, and this document still does not choose.
+
 ### 5.2 Rotation triggers
 
 **`SC-191-003` (Binding).** Four semantic causes rotate a session. Each
@@ -324,7 +408,7 @@ policy inference:
 | --- | --- | --- |
 | `authentication` | CBD-190 `register` or `sign_in`. A server-owned current-browser session context, if present, must accompany consumption. Like `recovery`, the bound-context branch cannot be invoked from a CBD-190 v0.3 command (see the closing paragraph of this section); under v0.3 only the no-context branch ships. | Current row → `rotated` **only when its `account_subject_id` equals the subject this ceremony resolved**; a live current row for a different subject is never folded into the new subject's lineage — consumption is rejected and the caller must use the explicit `account_switch` cause, which ends the prior subject's row by name. Absent current row starts a lineage. Ordinary authentication never assumes “no prior row.” |
 | `recovery` | Future CBD-190 recovery completion input. CBD-190 v0.3 deliberately has no recovery ceremony, so this branch cannot be invoked from a v0.3 command. | In one transaction: bump the subject epoch, rotate any current row, then issue the replacement at the new epoch. No replacement is issued if the bump fails. |
-| `assurance_elevation` | CBD-190 `verify` with a validated `fresh` assurance result. | Current row → `rotated`; new row carries the fresh-assurance fields. `verify` without the required fresh result cannot select this cause. |
+| `assurance_elevation` | CBD-190 `verify` with a validated `fresh` assurance result. | Current row → `rotated`; new row carries the fresh-assurance fields. `verify` without the required fresh result cannot select this cause. A CBD-190 §4.4 `step_up` is **not** this cause and rotates nothing: it writes a §5.1.1 grant against the current row and leaves that row's identifier, version, epoch, and lineage exactly as they were. |
 | `account_switch` | CBD-190 §5.4 `account_switch` with `previous_session_id`. | Prior row under the former subject → `rotated`; new row is allocated under the resolved subject at that subject's current epoch. |
 
 Every represented rotation locks the hand-off, subject-authority row, and
@@ -405,6 +489,12 @@ measured from the application cause to confirmed global provider action, or to
 the configured hard provider-session lifetime bound. Every interval must be no
 greater than `revocation_propagation_target`; ordinary CoBudget session expiry
 is not a substitute.
+
+Every §5.1.1 fresh-assurance grant held by a row is invalidated by the same
+write that ends the row, and by the same epoch bump that ends a subject's rows,
+because a grant is only ever reported through a live session. No grant needs its
+own revocation cause, its own outbox action, or its own sweep, and none exists;
+a sweep would be a second mechanism that could fall behind the first.
 
 The application write and required `revocation_outbox` actions commit together.
 Revocation workers retry with durable exponential backoff capped so the next
@@ -621,6 +711,7 @@ Required dated cases, in the shape CBD-190 §9 uses:
 | `CT-191-014` | Prepared-handoff revocation barrier | Prepare a handoff, bump for recovery/security/deletion/global revocation, then attempt consumption: it rejects with no session. Lifecycle disablement raced after preparation also rejects. Recovery's future typed path proves bump and replacement are one transaction. |
 | `CT-191-015` | Lost issuance result | Commit issuance, drop the response before `Set-Cookie`, replay, and receive the byte-identical cookie/CSRF result with one session row. After acknowledgement/expiry the envelope is erased and cannot be replayed. |
 | `CT-191-016` | Access-loss and reconnect clearing | Seed cookie, CBD-232 draft, cached identifiers, and queued client mutation; simulate access loss and reconnect to denied/changed context; all state clears before render/subscription/mutation resume. |
+| `CT-191-016A` | Fresh-assurance grant record (§5.1.1) | A completed step-up issues exactly one grant; a replayed callback issues none and reports the same one. A second step-up for the same session, action, and space is refused while the first is unconsumed. The grant reports `fresh` only for its own action and space and `session` for any other. One protected commit consumes it and a second identical commit denies; a rolled-back effect leaves it unspent. Revoking, rotating, or expiring the session makes it unreportable at the next read with no separate sweep, and an attempt to rewrite any field other than the consumption mark, or to re-consume a spent grant, is refused by the database (CBD-191-AC04, AC07, AC08) |
 | `CT-191-017` | Delegated worker revocation barrier | Queue a user-delegated job, bump for deletion/security/selected permission loss, and pause retirement delivery. Worker start/commit fail closed while pending and after retirement; no customer mutation occurs. |
 
 Every negative case above is paired with a valid positive control, following
@@ -677,10 +768,10 @@ Implementation dependencies are:
 | `CBD-191-AC01` | §3.3, §5.3, §8 `CT-191-002`, `014` | Full rejection matrix plus the pre-revocation handoff barrier against local PostgreSQL. | Live Cognito ID/access tokens presented against an activated deployment. **Open until activation.** |
 | `CBD-191-AC02` | §5.1, §8 `CT-191-001` | Exact cookie profile, deletion paths, Origin/fetch-metadata/CSRF matrix. | None — application-owned. |
 | `CBD-191-AC03` | §5.2–§5.3, §8 `CT-191-003`, `015` | Representable v0.3 mappings, current-session rotation, exact lost-result replay, and fail-closed recovery gap. Full four-cause evidence requires the additive CBD-190 input. | Real recovery/elevation ceremonies and provider behavior. **Open until upstream revision and activation.** |
-| `CBD-191-AC04` | §4, §6.1, §8 `CT-191-004`, `005`, `011`, `014` | Single-row and O(1) epoch cases measured through replica visibility; prepared handoff cannot cross a bump. | Concrete `PR-94-001` approval remains open. |
+| `CBD-191-AC04` | §4, §5.1.1, §6.1, §8 `CT-191-004`, `005`, `011`, `014`, `016A` | Single-row and O(1) epoch cases measured through replica visibility; prepared handoff cannot cross a bump. | Concrete `PR-94-001` approval remains open. |
 | `CBD-191-AC05` | §6.2, §8 `CT-191-006`, `007` | Closed state vocabulary; authenticity/dedupe/cursor/equal-time/future-skew/reconciliation matrix with local events. | Real delivery authenticity/cursor semantics (`OQ-191-002`). **Open until chosen and activated.** |
 | `CBD-191-AC06` | §6.1–§6.3, §8 `CT-191-006`, `008`, `012` | Occurrence-to-visibility outage/reconciliation and separate current/global artifact tests, including no-browser causes and hard lifetime branch. | Live global operation or enforced hosted-session lifetime (`OQ-191-003`). **Open until activation; risk acceptance required only if neither branch is supportable.** |
-| `CBD-191-AC07` | §4, §7, §8 `CT-191-005`, `013`, `016`, `017` | Per-session proposal invalidation, commit denial, access-loss/reconnect clearing, and fail-closed delegation retirement. | None provider-only; delegation owner remains an integration dependency. |
+| `CBD-191-AC07` | §4, §5.1.1, §7, §8 `CT-191-005`, `013`, `016`, `016A`, `017` | Per-session proposal invalidation, commit denial, access-loss/reconnect clearing, and fail-closed delegation retirement. | None provider-only; delegation owner remains an integration dependency. |
 | `CBD-191-AC08` | §8 (all rows) | Concurrency, lost result, barrier, event/order/skew, outages, store failure, boundary, bulk, clearing, and delegation cases against local fixtures. | Provider fidelity for delivery/global invalidation once `OQ-191-002/003` resolve. |
 
 This document closes the design gaps but is not executed evidence. AC02 and
@@ -696,7 +787,7 @@ retain configuration or provider evidence named above.
 | `OQ-191-002` (Security/Executive) | Cognito's real security-event delivery mechanism and authenticity proof are undecided; no live tenant exists to observe one under `PROVIDERS-LOCAL-001`. | Blocks the provider-only half of AC05/AC06 traceability and the real adapter's §6.2 authenticity check. |
 | `OQ-191-003` (Executive risk decision — conditionally accepted, `CBD191-PROVIDER-BOUND-001`) | Can Cognito supply branch A server-side global invalidation, or branch B a proven hosted-session lifetime no greater than `PR-94-001`? | If neither is supportable, activation is blocked absent explicit Executive acceptance of the exact residual risk; current-browser logout cannot substitute. |
 | `OQ-191-004` (Manager routing) | Which package owns the fixed delegation-retirement port in §7? | Design behavior is fixed, but implementation integration cannot close until a single writer is assigned. |
-| `OQ-191-005` (cross-contract finding) | CBD-236 v0.4 §4.1/§4.2 assigns API `assurance.*` provenance to `idp_evidence`, while CBD-191 persists the validated evidence on the session row. | CBD-236 must either define persisted server-attested IdP evidence as `idp_evidence` or amend provenance to `session_store`; CBD-191 does not silently choose. |
+| `OQ-191-005` (cross-contract finding) | CBD-236 v0.4 §4.1/§4.2 assigns API `assurance.*` provenance to `idp_evidence`, while CBD-191 persists the validated evidence — at v0.3, in the §5.1.1 record as well as on the session row. | CBD-236 must either define persisted server-attested IdP evidence as `idp_evidence` or amend provenance to `session_store`; CBD-191 does not silently choose. The merged prototype reads the §5.1.1 record under `idp_evidence`, which is an implementation reading and not this resolution; the question stays open, and whichever branch is chosen must be applied to the record as well as to the session row. |
 | `OQ-191-006` (finding, coordination) | `SessionStorePort` (§3.4) assumes CBD-246 supports environment-scoped statements alongside its budget-space-tenant-scoped ones; CBD-246 is not yet a merged contract. | May require a CBD-246 seam extension or a separate session-store module once CBD246-IMPL-001's actual shape is known. |
 | `OQ-191-007` (cross-contract dependency) | CBD-190 v0.3 lacks server-bound current-session context, `prepared_revocation_epoch`, and a recovery ceremony/input. | An additive upstream revision is required before complete AC03/fenced issuance implementation; v0.3 inputs fail closed where information is absent. |
 
@@ -704,7 +795,7 @@ retain configuration or provider evidence named above.
 
 | Version | Date | Author | Change | Disposition |
 | --- | --- | --- | --- | --- |
-| 0.3 (proposed) | September 15, 2026 | Implementation specialist, dispatched under `PROTO-INVITATIONS-PK4-STEPUP-001` | Proposed amendment, not yet approved and not applied to the contract text above: make section 5.1 fresh assurance a record rather than session-row state. `account_session` keeps its `assurance_level` and three `fresh_assurance_*` columns unchanged; the amendment adds `account_session_fresh_assurance`, one row per grant, holding the session reference, the acting subject, the environment, the step-up ceremony that produced it, the bound action code, the bound budget space, an issue instant, a short bounded expiry (`COBUDGET_SESSION_FRESH_ASSURANCE_WINDOW_SECONDS`, 300 seconds in the prototype) and a single consumption mark. Three properties are what the amendment is for. Write-once: the ceremony reference is unique, so a replayed callback produces no second grant, and every column except the consumption mark is immutable. Consumed once: the first protected allow that uses a grant spends it by conditional update inside the authorizing transaction, so one step-up authorizes one committed protected effect; a rolled-back effect returns the grant unspent. Revoked with the session: a grant is reachable only through its session row and is only usable while that row is active and unexpired, so revocation, rotation and expiry take every grant with them with no separate sweep. Effective assurance stays as section 5.1 already describes it -- a grant that has expired or been spent simply reverts the reported level to `session` on the next read, with no rotation. Approval owner: the CBD-191 owner, with Security review of the consumption path. | Proposed amendment; no approved text changed. |
+| 0.3 | September 15, 2026 | Specification specialist, dispatched under `PROTO-CBD190-191-STEPUP-AMEND-001` | Applied amendment. Fresh assurance proposed at this version by `PROTO-INVITATIONS-PK4-STEPUP-001` is now normative contract text as a record rather than session-row state, together with the `SEC-PK4-F3` hardening as merged in PR #355. New §5.1.1 (`SC-191-003B`) states `account_session_fresh_assurance` in full: its fields, write-once by unique ceremony reference with every other field immutable, at most one live grant per session/action/space, consumed once by the CBD-236 §5.3 `fresh_assurance` obligation discharge inside the authorizing transaction after the commit-time re-decision, and reachable only through an active unexpired session, enforced by the reader itself. §3.1 records that the four assurance-bearing `account_session` fields are unchanged; §5.1 names `COBUDGET_SESSION_FRESH_ASSURANCE_WINDOW_SECONDS` as the configured window; §5.2 states that a CBD-190 §4.4 `step_up` is not `assurance_elevation` and rotates nothing; §6.1 states that a grant dies with its session and needs no sweep; §8 gains `CT-191-016A`; §11 adds §5.1.1 to AC04 and AC07. `OQ-191-005` is explicitly not decided here. Finding-to-line map follows in §13.1. | **Approved — Product Owner, September 15, 2026 (PO-CONTRACT-APPROVALS-004).** Status and document version bumped in the same change; `OQ-191-002` through `OQ-191-007` stay open. |
 | 0.2.2 (approval) | September 13, 2026 | Manager, in the merge lane | Product Owner approval recorded (PO-CONTRACT-APPROVALS-001). Status Proposed → Approved at the same version; no decision, identifier or contract text changed. | Approved. |
 | 0.2.2 | September 13, 2026 | Manager, in the merge lane | Executive decisions applied: `OQ-191-001` decided as branch B (`CBD191-ZERO-MEMBERSHIP-001`); `OQ-191-003` conditionally accepted (`CBD191-PROVIDER-BOUND-001`). Question text and both branches retained; no mechanism changed. | Proposed. |
 | 0.2.1 | September 13, 2026 | Manager, in the merge lane | Review closures on v0.2: the `authentication` rotation cause requires the current row's subject to equal the resolved subject, a mismatch forcing `account_switch` (Security `MQ-191-SEC-006`, answered: force the explicit switch, never silently end a foreign row); the same rule added to §5.3's fence; the bound-context branch marked v0.3-blocked exactly like `recovery` so §11 AC03 reads consistently (Reviewer clarity finding). No other text changed. | Proposed; Reviewer approve and Security remediate-closed at this revision. |
@@ -726,3 +817,24 @@ revision entry:
 | Security High 1 (pre-revocation handoff fence) | Lines 348–381, 611 |
 | Security High 6 (access-loss/reconnect and delegation invalidation) | Lines 548–589, 613–614 |
 | Security Medium 7 (provider clock skew/order) | Lines 432–505, 604 |
+
+### 13.1 v0.3 fresh-assurance amendment map
+
+The controlling sources are the merged implementation (PR #355 at `4ea0078`),
+the Security assessment `PROTO-INVITATIONS-PK4-SEC-001`, and the correction
+round `PROTO-INVITATIONS-PK4-FIX-001`. Where the proposed 0.3 row and the
+merged code differed, the code controls and the difference is recorded below.
+
+| Source item | Applied text |
+| --- | --- |
+| The proposed 0.3 row: fresh assurance is a record, `account_session` unchanged | §5.1.1 in full; the §3.1 note that the four assurance-bearing fields are unchanged. |
+| The proposed 0.3 row: write-once by unique ceremony reference | §5.1.1 "Write-once", including the database-enforced immutability of every field except the consumption mark. |
+| The proposed 0.3 row: consumed once inside the authorizing transaction | §5.1.1 "Consumed once", including the rollback rule. |
+| The proposed 0.3 row: revoked with the session | §5.1.1 "Revoked with its session" and the §6.1 paragraph. |
+| `SEC-PK4-F3` (session liveness is the reader's own rule) | §5.1.1 "Revoked with its session": the requirement belongs to the read, not to the caller that happens to hold a resolved session. |
+| Difference from the proposed row: the spend follows a commit-time re-decision | The row said only that the first protected allow spends the grant by conditional update. The merged code re-reads the grant and re-compares the request's own action and acting space against the obligation's before consuming, inside the authorizing transaction; §5.1.1 states that order. |
+| Difference from the proposed row: at most one live grant per session, action, and space | The row named write-once by ceremony reference only. The merged schema also refuses a second unconsumed grant for the same triple, which is a distinct property and is stated as its own paragraph. |
+| Difference from the proposed row: the consumption mark is a closed state, not a null instant | The row said "a single consumption mark". The merged schema conditions on a closed `issued`/`consumed` state and keeps the consumption instant and consuming action as evidence only, because the statement seam composes no null predicate; §5.1.1 states the mark as state plus evidence. |
+| Difference from the proposed row: the record carries the ceremony kind as well as its reference | The row named "the step-up ceremony that produced it" once. The merged schema holds both the unique ceremony reference and a ceremony kind constrained to `step_up`; §5.1.1 names both. |
+| Difference from the proposed row: the reported level is bound to the request's own action and space | The row said effective assurance is unchanged. The merged fact source emits `fresh` only for the request's own action code and acting space and `session` otherwise; §5.1.1 states that equality rule. |
+| Not decided here: `OQ-191-005` | §5.1.1's closing paragraph and the §12 row. The merged prototype reads the record under `idp_evidence`; the cross-contract question stays open. |
