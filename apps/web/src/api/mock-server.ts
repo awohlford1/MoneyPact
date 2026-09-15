@@ -54,7 +54,12 @@ interface MockCategory { categoryId: string; label: string; position: number; ar
 interface MockAccount { accountId: string; origin: string; accountType: string; label: string; currencyCode: string; minorUnitPrecision: number; openingBalanceMinorUnits: number; ownerSubjectId: string; archivedAt: string | null; version: number }
 interface MockAllocation { categoryId: string; amountMinorUnits: number }
 /** One retained version, exactly as `manual_transaction` stores it: an edit appends, a removal is a tombstone. */
-interface MockVersion { transactionId: string; revision: number; accountId: string; amountMinorUnits: number; budgetDate: string; description: string | null; allocations: MockAllocation[]; removedAt: string | null; supersededAt: string | null }
+interface MockVersion { transactionId: string; transactionVersionId: string; revision: number; accountId: string; amountMinorUnits: number; budgetDate: string; description: string | null; allocations: MockAllocation[]; removedAt: string | null; supersededAt: string | null }
+/** CBD-200-F03: `409 {error: "stale_version", current: {transactionVersionId, revision}}` -- the shape the real API answers (apps/api/src/transactions/http.ts), carrying more than a bare code. */
+export class StaleVersionError extends ApiError {
+  readonly current: { transactionVersionId: string; revision: number };
+  constructor(current: { transactionVersionId: string; revision: number }) { super(409, "stale_version"); this.current = current; }
+}
 interface MockSpace { detail: WireSpaceDetail; schedule: CadenceDefinition; categories: MockCategory[]; base: Map<string, number>; accounts: MockAccount[]; versions: MockVersion[] }
 
 /** The wire-level mock of one signed-in browser session. */
@@ -83,9 +88,20 @@ export interface MockWire {
   editAccount(id: string, accountId: string, body: unknown): WireAccountMutation;
   archiveAccount(id: string, accountId: string): WireAccountMutation;
   restoreAccount(id: string, accountId: string): WireAccountMutation;
-  createTransaction(id: string, body: unknown): WireTransactionMutation;
-  editTransaction(id: string, transactionId: string, body: unknown): WireTransactionMutation;
-  removeTransaction(id: string, transactionId: string): WireTransactionMutation;
+  /**
+   * CBD-200-F03/CBD-266-F04: `idempotency`, when non-empty, replays a stored first result for a
+   * repeated key (a differing request is `409 idempotency_mismatch`); a second in-flight write by
+   * this same session while one of these three is still being processed is `429 {outcome: "retry",
+   * reason: "in_flight"}` (`beginTransactionWrite`/`endTransactionWrite`, wrapped around the call by
+   * `handleMockRequest`, which alone can create the scheduling window a single-threaded mock needs to
+   * observe a genuine race).
+   */
+  createTransaction(id: string, body: unknown, idempotency: string): WireTransactionMutation;
+  editTransaction(id: string, transactionId: string, body: unknown, idempotency: string): WireTransactionMutation;
+  removeTransaction(id: string, transactionId: string, body: unknown, idempotency: string): WireTransactionMutation;
+  /** Throws `429 in_flight` if another of these three writes from this session has not yet finished. */
+  beginTransactionWrite(): void;
+  endTransactionWrite(): void;
   progress(id: string, periodId: string): WireProgress;
   categoryDetail(id: string, periodId: string, categoryId: string): WireCategoryDetail;
 }
@@ -96,6 +112,11 @@ export function createServerMock(now = Date.now, directory: MockDirectory<MockSp
   const proposals = new Map<string, { proposal: Proposal; status: "previewed" | "invalidated" | "confirmed" }>();
   const creations = new Map<string, { command: string; proposal: Proposal }>();
   const confirmations = new Map<string, { id: string; response: Confirmation }>();
+  // CBD-200-F03/CBD-266-F04: one idempotency table across the three manual-transaction writes,
+  // keyed on the caller's Idempotency-Key alone (one mock session is one actor); a repeated key with
+  // a differing action or request digest is refused, never silently replayed against a mismatch.
+  const transactionReplays = new Map<string, { action: "create" | "edit" | "remove"; digest: string; response: WireTransactionMutation }>();
+  let writingTransaction = false;
   const spaces = directory.spaces;
   function authorize() { if (!session) throw new ApiError(403, "authorization_denied"); }
   // PK-8: a space is readable by any of its active members, which the shared directory now records (the policy's membership fact live).
@@ -133,6 +154,26 @@ export function createServerMock(now = Date.now, directory: MockDirectory<MockSp
     if (!version) throw new ApiError(404, "transaction_not_found");
     return version;
   }
+  /** CBD-200-F03: the same one-shape precondition the real API takes in the body -- `expectedTransactionVersionId`, omitted meaning no basis stated. */
+  function checkPrecondition(current: MockVersion, fields: Record<string, unknown>): void {
+    const expected = fields.expectedTransactionVersionId;
+    if (expected === undefined) return;
+    if (expected !== current.transactionVersionId) throw new StaleVersionError({ transactionVersionId: current.transactionVersionId, revision: current.revision });
+  }
+  function digestOf(value: unknown): string { return createHash("sha256").update(JSON.stringify(value)).digest("base64url"); }
+  /** A non-empty Idempotency-Key replays a stored first result for the same action and request; a differing one is `409 idempotency_mismatch`, exactly as the real API refuses it. Empty (no key sent) tracks nothing. */
+  function transactionIdempotent(action: "create" | "edit" | "remove", idempotency: string, requestFor: unknown, compute: () => WireTransactionMutation): WireTransactionMutation {
+    if (!idempotency) return compute();
+    const digest = digestOf(requestFor);
+    const stored = transactionReplays.get(idempotency);
+    if (stored) {
+      if (stored.action !== action || stored.digest !== digest) throw new ApiError(409, "idempotency_mismatch");
+      return structuredClone(stored.response);
+    }
+    const response = compute();
+    transactionReplays.set(idempotency, { action, digest, response: structuredClone(response) });
+    return response;
+  }
   /** Current, non-removed versions assigned to one period: what the aggregate and the detail both count. */
   function settledVersions(value: MockSpace, periodId: string): MockVersion[] {
     const period = value.detail.activePeriod;
@@ -155,9 +196,10 @@ export function createServerMock(now = Date.now, directory: MockDirectory<MockSp
     };
   }
   /** The manual-expense write rules, in the same order and with the same canonical codes the API uses. */
-  function parseWrite(value: MockSpace, body: unknown): Omit<MockVersion, "transactionId" | "revision" | "removedAt" | "supersededAt"> {
+  function parseWrite(value: MockSpace, body: unknown): Omit<MockVersion, "transactionId" | "transactionVersionId" | "revision" | "removedAt" | "supersededAt"> {
     const fields = body as Record<string, unknown>;
-    if (Object.keys(fields).some(field => !["accountId", "amountMinorUnits", "budgetDate", "description", "allocations"].includes(field))) throw new ApiError(400, "invalid_request");
+    // `expectedTransactionVersionId` (CBD-200-F03) travels in the same body on an edit; it is not a write field.
+    if (Object.keys(fields).some(field => !["accountId", "amountMinorUnits", "budgetDate", "description", "allocations", "expectedTransactionVersionId"].includes(field))) throw new ApiError(400, "invalid_request");
     const account = value.accounts.find(entry => entry.accountId === fields.accountId);
     if (!account) throw new ApiError(404, "account_not_found");
     if (account.archivedAt !== null) throw new ApiError(409, "account_archived");
@@ -322,32 +364,47 @@ export function createServerMock(now = Date.now, directory: MockDirectory<MockSp
       account.archivedAt = null; account.version += 1;
       return { previousVersion, account: structuredClone(account) };
     },
-    createTransaction(id, body) {
-      authorize(); const value = space(id);
-      const write = parseWrite(value, body);
-      const version: MockVersion = { transactionId: randomUUID(), revision: 1, ...write, removedAt: null, supersededAt: null };
-      value.versions.push(version);
-      return { previous: null, current: snapshot(version) };
+    createTransaction(id, body, idempotency) {
+      return transactionIdempotent("create", idempotency, { id, body }, () => {
+        authorize(); const value = space(id);
+        const write = parseWrite(value, body);
+        const version: MockVersion = { transactionId: randomUUID(), transactionVersionId: randomUUID(), revision: 1, ...write, removedAt: null, supersededAt: null };
+        value.versions.push(version);
+        return { previous: null, current: snapshot(version) };
+      });
     },
-    editTransaction(id, transactionId, body) {
-      authorize(); const value = space(id);
-      const previous = currentVersion(value, transactionId);
-      if (previous.removedAt !== null) throw new ApiError(409, "transaction_removed");
-      const write = parseWrite(value, body);
-      previous.supersededAt = new Date(now()).toISOString();
-      const version: MockVersion = { transactionId, revision: previous.revision + 1, ...write, removedAt: null, supersededAt: null };
-      value.versions.push(version);
-      return { previous: snapshot(previous), current: snapshot(version) };
+    editTransaction(id, transactionId, body, idempotency) {
+      return transactionIdempotent("edit", idempotency, { id, transactionId, body }, () => {
+        authorize(); const value = space(id);
+        const previous = currentVersion(value, transactionId);
+        if (previous.removedAt !== null) throw new ApiError(409, "transaction_removed");
+        checkPrecondition(previous, body as Record<string, unknown>);
+        const write = parseWrite(value, body);
+        previous.supersededAt = new Date(now()).toISOString();
+        const version: MockVersion = { transactionId, transactionVersionId: randomUUID(), revision: previous.revision + 1, ...write, removedAt: null, supersededAt: null };
+        value.versions.push(version);
+        return { previous: snapshot(previous), current: snapshot(version) };
+      });
     },
-    removeTransaction(id, transactionId) {
-      authorize(); const value = space(id);
-      const previous = currentVersion(value, transactionId);
-      if (previous.removedAt !== null) throw new ApiError(409, "transaction_removed");
-      previous.supersededAt = new Date(now()).toISOString();
-      const version: MockVersion = { ...structuredClone(previous), revision: previous.revision + 1, allocations: [], removedAt: new Date(now()).toISOString(), supersededAt: null };
-      value.versions.push(version);
-      return { previous: snapshot(previous), current: snapshot(version) };
+    removeTransaction(id, transactionId, body, idempotency) {
+      return transactionIdempotent("remove", idempotency, { id, transactionId, body }, () => {
+        authorize(); const value = space(id);
+        const previous = currentVersion(value, transactionId);
+        if (previous.removedAt !== null) throw new ApiError(409, "transaction_removed");
+        const fields = (body ?? {}) as Record<string, unknown>;
+        if (Object.keys(fields).some(field => field !== "expectedTransactionVersionId")) throw new ApiError(400, "invalid_request");
+        checkPrecondition(previous, fields);
+        previous.supersededAt = new Date(now()).toISOString();
+        const version: MockVersion = { ...structuredClone(previous), transactionVersionId: randomUUID(), revision: previous.revision + 1, allocations: [], removedAt: new Date(now()).toISOString(), supersededAt: null };
+        value.versions.push(version);
+        return { previous: snapshot(previous), current: snapshot(version) };
+      });
     },
+    beginTransactionWrite() {
+      if (writingTransaction) throw new ApiError(429, "in_flight");
+      writingTransaction = true;
+    },
+    endTransactionWrite() { writingTransaction = false; },
     progress(id, periodId) {
       authorize(); const value = space(id);
       const plan = planFor(value, periodId);
@@ -417,6 +474,25 @@ const noStore = { "Cache-Control": "no-store" };
 function json(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { ...noStore, "content-type": "application/json" } });
 }
+/** `429 {outcome: "retry", reason: "in_flight"}` with `Retry-After: 1`, the CBD-266 shape (EXEC-POV-C200F01-001 item 3) the request helper's own single retry expects. */
+function inFlightResponse(): Response {
+  return new Response(JSON.stringify({ outcome: "retry", reason: "in_flight" }), { status: 429, headers: { ...noStore, "content-type": "application/json", "Retry-After": "1" } });
+}
+/**
+ * CBD-266-F04: wraps one of the three manual-transaction writes with the session's in-flight guard
+ * and a deliberate scheduling window (`beginTransactionWrite` throws first, synchronously, for
+ * anyone already holding it). A single-threaded mock never races two writes on its own; this is the
+ * only place that can hand a second, genuinely concurrent request from the same browser session the
+ * chance to observe the first one still in progress, so the browser suite can exercise the 429 path
+ * the live API has. An idempotent replay (no real work) is unaffected in every test this packet adds,
+ * but shares the same window if one is ever raced against a fresh write; that is a known prototype
+ * simplification, not a claim the mock enforces the real API's precise ordering.
+ */
+async function withTransactionLock<T>(mock: MockWire, work: () => T): Promise<T> {
+  mock.beginTransactionWrite();
+  try { await new Promise<void>(resolve => setTimeout(resolve, 20)); return work(); }
+  finally { mock.endTransactionWrite(); }
+}
 /** The HTTP mapping of one session's mock: the caller has already resolved the session cookie. Origin, fetch-metadata and CSRF checks mirror the API. */
 export async function handleMockRequest(mock: MockWire, request: Request, path: string[]): Promise<Response> {
   const url = new URL(request.url);
@@ -453,14 +529,16 @@ export async function handleMockRequest(mock: MockWire, request: Request, path: 
       if (path.length === 4 && path[2] === "accounts" && request.method === "PATCH") return json(mock.editAccount(path[1]!, path[3]!, body));
       if (path.length === 5 && path[2] === "accounts" && path[4] === "archive" && request.method === "POST") return json(mock.archiveAccount(path[1]!, path[3]!), 201);
       if (path.length === 5 && path[2] === "accounts" && path[4] === "restore" && request.method === "POST") return json(mock.restoreAccount(path[1]!, path[3]!), 201);
-      if (path.length === 3 && path[2] === "transactions" && request.method === "POST") return json(mock.createTransaction(path[1]!, body), 201);
-      if (path.length === 4 && path[2] === "transactions" && request.method === "PATCH") return json(mock.editTransaction(path[1]!, path[3]!, body));
-      if (path.length === 5 && path[2] === "transactions" && path[4] === "remove" && request.method === "POST") return json(mock.removeTransaction(path[1]!, path[3]!), 201);
+      if (path.length === 3 && path[2] === "transactions" && request.method === "POST") return json(await withTransactionLock(mock, () => mock.createTransaction(path[1]!, body, idempotency)), 201);
+      if (path.length === 4 && path[2] === "transactions" && request.method === "PATCH") return json(await withTransactionLock(mock, () => mock.editTransaction(path[1]!, path[3]!, body, idempotency)));
+      if (path.length === 5 && path[2] === "transactions" && path[4] === "remove" && request.method === "POST") return json(await withTransactionLock(mock, () => mock.removeTransaction(path[1]!, path[3]!, body, idempotency)), 201);
       if (path.length === 5 && path[2] === "periods" && path[4] === "progress" && request.method === "GET") return json(mock.progress(path[1]!, path[3]!));
       if (path.length === 6 && path[2] === "periods" && path[4] === "progress" && request.method === "GET") return json(mock.categoryDetail(path[1]!, path[3]!, path[5]!));
     }
     throw new ApiError(404, "not_found");
   } catch (error) {
+    if (error instanceof StaleVersionError) return json({ error: error.code, current: error.current }, error.status);
+    if (error instanceof ApiError && error.status === 429 && error.code === "in_flight") return inFlightResponse();
     if (error instanceof ApiError) return json({ error: error.code, ...(error.fieldErrors.length ? { fieldErrors: error.fieldErrors } : {}) }, error.status);
     return json({ error: "request_failed" }, 503);
   }

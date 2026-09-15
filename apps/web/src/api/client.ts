@@ -166,14 +166,16 @@ export interface ApiClient extends ProposalApi {
   editAccount(id: string, accountId: string, draft: Pick<AccountDraft, "label">): Promise<Account>;
   archiveAccount(id: string, accountId: string): Promise<Account>;
   restoreAccount(id: string, accountId: string): Promise<Account>;
-  recordExpense(id: string, draft: ExpenseDraft, precision: number): Promise<Expense>;
+  /** `idempotency` is the one key this draft's submission holds (CBD-200-F04, EXEC-POV-C200F01-001 item 3; see `SubmissionKey`). */
+  recordExpense(id: string, draft: ExpenseDraft, precision: number, idempotency?: string): Promise<Expense>;
   /**
    * `expectedTransactionVersionId` is the version the caller's view was built from (CBD-200-AC04). When
    * omitted, the client sends the last version it was shown for this expense -- from `categoryDetail`
    * or from the previous write's result -- and nothing when it has never seen one. A stale basis is
    * refused `409 stale_version` with the current version in the error, and nothing is written.
+   * `idempotency` is the one key this draft's submission holds, as for `recordExpense`.
    */
-  editExpense(id: string, transactionId: string, draft: ExpenseDraft, precision: number, expectedTransactionVersionId?: string | null): Promise<Expense>;
+  editExpense(id: string, transactionId: string, draft: ExpenseDraft, precision: number, expectedTransactionVersionId?: string | null, idempotency?: string): Promise<Expense>;
   removeExpense(id: string, transactionId: string, expectedTransactionVersionId?: string | null): Promise<void>;
   progress(id: string, periodId: string, signal?: AbortSignal): Promise<Progress>;
   categoryDetail(id: string, periodId: string, categoryId: string, signal?: AbortSignal): Promise<CategoryDetail>;
@@ -340,6 +342,23 @@ const MESSAGE_OF_CODE: Readonly<Record<string, string>> = Object.freeze({
   invalid_request: "Check the values entered and try again.",
   in_flight: IN_FLIGHT_MESSAGE,
 });
+/**
+ * One Idempotency-Key per submission attempt (CBD-200-F04, CBD-266-F04): generated when a draft is
+ * first submitted, reused on the client's single 429 retry -- built into `request`'s own retry, which
+ * resends the same headers -- and on a caller's retry after a lost response (no answer arrived yet for
+ * the held key), and discarded once an answer of any kind arrives, whether success or a canonical
+ * refusal, so the next submission gets a fresh one. A network failure before any response is not an
+ * answer: the key survives it for the next attempt.
+ */
+export class SubmissionKey {
+  private held: string | undefined;
+  private generate: () => string;
+  constructor(generate: () => string = () => crypto.randomUUID()) { this.generate = generate; }
+  /** The key for this attempt: the one still outstanding, or a fresh one if none is. */
+  next(): string { return this.held ??= this.generate(); }
+  /** Call once the attempt settles. `answered` is true for any server response (success or `ApiError`), false for a lost response (no `ApiError`, e.g. a network failure). */
+  settle(answered: boolean): void { if (answered) this.held = undefined; }
+}
 /** The wait before the single retry of a 429: the server's Retry-After in whole seconds, bounded to [1 s, 5 s]. */
 export function retryAfterMs(header: string | null): number {
   const seconds = header === null ? NaN : Number(header);
@@ -516,12 +535,12 @@ export function createHttpClient(base = "/v1", fetcher: typeof fetch = fetch, wa
     editAccount: async (id, accountId, draft) => toAccount((await withField(request<WireAccountMutation>(`/budget-spaces/${encodeURIComponent(id)}/accounts/${encodeURIComponent(accountId)}`, "PATCH", { label: draft.label.trim() }))).account),
     archiveAccount: async (id, accountId) => toAccount((await withField(request<WireAccountMutation>(`/budget-spaces/${encodeURIComponent(id)}/accounts/${encodeURIComponent(accountId)}/archive`, "POST", {}))).account),
     restoreAccount: async (id, accountId) => toAccount((await withField(request<WireAccountMutation>(`/budget-spaces/${encodeURIComponent(id)}/accounts/${encodeURIComponent(accountId)}/restore`, "POST", {}))).account),
-    async recordExpense(id, draft, precision) {
-      const result = remember(await withField(request<WireTransactionMutation>(`/budget-spaces/${encodeURIComponent(id)}/transactions`, "POST", toExpenseBody(draft, precision))));
+    async recordExpense(id, draft, precision, idempotency) {
+      const result = remember(await withField(request<WireTransactionMutation>(`/budget-spaces/${encodeURIComponent(id)}/transactions`, "POST", toExpenseBody(draft, precision), undefined, idempotency)));
       return { transactionId: result.current.version.transactionId, revision: result.current.version.revision };
     },
-    async editExpense(id, transactionId, draft, precision, expectedTransactionVersionId) {
-      const result = remember(await withField(request<WireTransactionMutation>(`/budget-spaces/${encodeURIComponent(id)}/transactions/${encodeURIComponent(transactionId)}`, "PATCH", { ...toExpenseBody(draft, precision), ...basisFor(transactionId, expectedTransactionVersionId) })));
+    async editExpense(id, transactionId, draft, precision, expectedTransactionVersionId, idempotency) {
+      const result = remember(await withField(request<WireTransactionMutation>(`/budget-spaces/${encodeURIComponent(id)}/transactions/${encodeURIComponent(transactionId)}`, "PATCH", { ...toExpenseBody(draft, precision), ...basisFor(transactionId, expectedTransactionVersionId) }, undefined, idempotency)));
       return { transactionId: result.current.version.transactionId, revision: result.current.version.revision };
     },
     async removeExpense(id, transactionId, expectedTransactionVersionId) {

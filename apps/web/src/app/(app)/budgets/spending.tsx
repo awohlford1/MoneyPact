@@ -31,7 +31,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import NextLink from "next/link";
-import { ApiError, fieldErrorFor, IN_FLIGHT_MESSAGE } from "../../../api/client";
+import { ApiError, fieldErrorFor, IN_FLIGHT_MESSAGE, SubmissionKey } from "../../../api/client";
 import type { Account, AmountDirection, BudgetDetail, CategoryDetail, Category, ExpenseDraft, Progress, ProgressCell } from "../../../api/client";
 import { useSession } from "../../../session/SessionProvider";
 import { Alert } from "../../../components/Alert";
@@ -187,6 +187,10 @@ function ExpenseSection({ id, loaded, reload, announce }: { id: string; loaded: 
   const [allocations, setAllocations] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  // CBD-200-F04, CBD-266-F04: one Idempotency-Key per submission of this draft, reused on the request
+  // helper's own 429 retry and on a person clicking "Record expense" again after a lost response, and
+  // discarded once an answer of any kind (success or a canonical refusal) arrives.
+  const submissionKey = useRef(new SubmissionKey()).current;
 
   const draft = (): ExpenseDraft => ({
     accountId: accountId || live[0]?.id || "",
@@ -198,12 +202,15 @@ function ExpenseSection({ id, loaded, reload, announce }: { id: string; loaded: 
 
   async function submit() {
     setBusy(true); setErrors({}); announce("");
+    const key = submissionKey.next();
     try {
-      await api.recordExpense(id, draft(), loaded.precision);
+      await api.recordExpense(id, draft(), loaded.precision, key);
+      submissionKey.settle(true);
       setAmount(""); setDescription(""); setAllocations({});
       announce("Expense recorded. Spent and remaining are updated below.");
       reload();
     } catch (error) {
+      submissionKey.settle(error instanceof ApiError);
       const reported = errorsOf(error);
       setErrors(reported.fields); announce(reported.summary);
     } finally { setBusy(false); }
@@ -338,6 +345,8 @@ export function CategoryDetailView({ id, categoryId }: { id: string; categoryId:
   const [editing, setEditing] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // CBD-200-F04, CBD-266-F04: the in-place edit form is its own submission surface, with its own key.
+  const editSubmissionKey = useRef(new SubmissionKey()).current;
 
   if (state?.error) {
     const status = state.error instanceof ApiError ? state.error.status : 503;
@@ -356,10 +365,12 @@ export function CategoryDetailView({ id, categoryId }: { id: string; categoryId:
   const { detail, accounts, precision } = state.value;
   const cell = detail.cell;
 
-  async function run(announce: string, work: () => Promise<unknown>) {
+  // `settled`, when given, is told whether an answer of any kind arrived (true for success or a
+  // canonical `ApiError`, false for a lost response) so a submission key can be released or held.
+  async function run(announce: string, work: () => Promise<unknown>, settled?: (answered: boolean) => void) {
     setBusy(true); setErrors({}); setStatus("");
-    try { await work(); setStatus(announce); reload(); }
-    catch (error) { const reported = errorsOf(error); setErrors(reported.fields); setStatus(reported.summary); }
+    try { await work(); settled?.(true); setStatus(announce); reload(); }
+    catch (error) { settled?.(error instanceof ApiError); const reported = errorsOf(error); setErrors(reported.fields); setStatus(reported.summary); }
     finally { setBusy(false); }
   }
 
@@ -394,13 +405,14 @@ export function CategoryDetailView({ id, categoryId }: { id: string; categoryId:
               : editing === item.transactionId
               ? <form className="flex flex-wrap items-end gap-3" onSubmit={event => {
                 event.preventDefault();
+                const key = editSubmissionKey.next();
                 void run("Expense updated.", async () => {
                   await api.editExpense(id, item.transactionId, {
                     accountId: item.accountId, amount, budgetDate: item.budgetDate, description: item.description ?? "",
                     allocations: [{ categoryId: detail.categoryId, amount }],
-                  }, precision);
+                  }, precision, undefined, key);
                   setEditing(null);
-                });
+                }, answered => editSubmissionKey.settle(answered));
               }}>
                 <Input id={`edit-amount-${item.transactionId}`} label={`New amount (${detail.currencyCode})`} inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value)} error={errors.amount ?? errors.allocations} />
                 <Button type="submit" disabled={busy}>Save expense</Button>

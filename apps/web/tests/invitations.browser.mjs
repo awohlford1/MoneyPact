@@ -172,7 +172,10 @@ export async function pk8Journey(t, { browser, origin, errors }) {
     assert.ok(attach && attach.csrf, "attach carried the CSRF header");
     assert.ok(accept && accept.csrf, "accept carried the CSRF header");
     assert.deepEqual(Object.keys(JSON.parse(accept.body)), ["acknowledgedDisclosure"]);
-    await invitee.page.goto(`${origin}/notices`); await invitee.waitText("Your acceptance was recorded.");
+    // GAPS-F05: the real API writes no durable notice row for the invitee at accept (MSG-73-051 is the
+    // ceremony page's own message, never a stored notice); the invitee's durable row (MSG-73-015) does not
+    // land until the owner confirms, in the next case.
+    await invitee.page.goto(`${origin}/notices`); await invitee.waitText("No notices yet.");
     await invitee.accessibility(); await invitee.narrow();
   });
 
