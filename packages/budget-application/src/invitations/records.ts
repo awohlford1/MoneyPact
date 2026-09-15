@@ -42,6 +42,12 @@ export const INVITATION_ERROR_CODES = [
   "code_unusable",
   "ceremony_unusable",
   "channel_proof_required",
+  // `SEC-PK5-F01`: these two are no longer *thrown*. A wrong or exhausted
+  // channel guess is a `VerifyChannelResult` outcome (`retry`, `exhausted`),
+  // because throwing rolled the attempt increment and the `AE-73-09` row back
+  // with the caller's transaction and left the challenge unbounded. They stay
+  // in the vocabulary as the audit `reason_class` values the denial rows
+  // carry and as the names PK-6 maps those two outcomes to on the wire.
   "channel_challenge_invalid",
   "channel_attempts_exhausted",
   "attachment_required",
