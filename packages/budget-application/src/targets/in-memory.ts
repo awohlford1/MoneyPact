@@ -58,7 +58,12 @@ export class InMemoryTargetsRepository implements TargetsRepository {
     const existing = this.categories.get(k);
     if (!existing) return false;
     this.#assertLabelFree(record);
-    this.categories.set(k, { ...existing, label: record.label, position: record.position, archivedAt: record.archivedAt, updatedAt: record.updatedAt });
+    // PROTO-HARDENING-001 (F-INCB-03): mirror the table's trigger, which
+    // refuses an update that does not advance version. The fake must not admit
+    // a write PostgreSQL would reject, or a missing bump passes here and fails
+    // only against a live database.
+    if (record.version <= existing.version) throw new TargetsError("conflict");
+    this.categories.set(k, { ...existing, label: record.label, position: record.position, archivedAt: record.archivedAt, updatedAt: record.updatedAt, version: record.version });
     return true;
   }
 

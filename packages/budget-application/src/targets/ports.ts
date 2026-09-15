@@ -60,6 +60,8 @@ export interface BudgetCategoryRow {
   readonly archived_at: string | null;
   readonly created_at: string;
   readonly updated_at: string;
+  /** PROTO-HARDENING-001 (F-INCB-03): the row's own monotonic version; the table's trigger refuses an update that does not advance it. */
+  readonly version: number;
 }
 
 export interface BudgetCategoryBaseTargetRow {
@@ -112,7 +114,7 @@ export interface PlanContextRow {
 export interface TargetsStatements {
   readonly listCategories: (budgetSpaceId: string) => Promise<readonly BudgetCategoryRow[]>;
   readonly insertCategory: (row: BudgetCategoryRow) => Promise<void>;
-  readonly updateCategory: (budgetSpaceId: string, categoryId: string, set: Pick<BudgetCategoryRow, "label" | "position" | "archived_at" | "updated_at">) => Promise<number>;
+  readonly updateCategory: (budgetSpaceId: string, categoryId: string, set: Pick<BudgetCategoryRow, "label" | "position" | "archived_at" | "updated_at" | "version">) => Promise<number>;
   readonly listBaseTargets: (budgetSpaceId: string, cadence: string) => Promise<readonly BudgetCategoryBaseTargetRow[]>;
   readonly insertBaseTarget: (row: Omit<BudgetCategoryBaseTargetRow, "superseded_at">) => Promise<void>;
   readonly supersedeBaseTarget: (budgetSpaceId: string, baseTargetId: string, supersededAt: string) => Promise<number>;

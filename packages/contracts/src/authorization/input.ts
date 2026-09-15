@@ -9,7 +9,10 @@ export type ServicePurpose = `SA-92-00${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8}`;
 export type ResourceType =
   | "space" | "plan" | "bill" | "goal" | "category" | "schedule" | "income" | "transaction"
   | "comment" | "alert_instance" | "account" | "report" | "export_package" | "membership"
-  | "connection" | "link" | "interaction" | "profile" | "preference" | "period_state" | "proposal";
+  | "connection" | "link" | "interaction" | "profile" | "preference" | "period_state" | "proposal"
+  /** p5 (docs/cbd-236-authorization-policy-contract.md sections 4.4 and 8.8): a space-owned invitation row and the
+   * invitee's subject-owned ceremony row; added additively, schemaVersion stays 1 as when p2 added `proposal`. */
+  | "invitation" | "invitation_ceremony";
 
 export type FactSource =
   | "session_store" | "delegation_store" | "datastore" | "idp_evidence" | "registry"
