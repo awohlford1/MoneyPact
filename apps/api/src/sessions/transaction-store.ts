@@ -74,7 +74,7 @@ export interface TransactionHooks {
 
 const SERIALIZATION_ATTEMPTS = 3;
 
-const RETRYABLE_SQL_STATES: ReadonlySet<string> = new Set(["40001", "40P01"]);
+export const RETRYABLE_SQL_STATES: ReadonlySet<string> = new Set(["40001", "40P01"]);
 
 /**
  * SEC-PK4-F4. A serialization failure can surface on any statement of an
@@ -89,7 +89,7 @@ const RETRYABLE_SQL_STATES: ReadonlySet<string> = new Set(["40001", "40P01"]);
  * the attempt retries the attempt. The observed object is the handle the route
  * receives, so identity-keyed audit buffering keeps working unchanged.
  */
-function observeSqlState(client: DataAccessClient, seen: (sqlState: string) => void): DataAccessClient {
+export function observeSqlState(client: DataAccessClient, seen: (sqlState: string) => void): DataAccessClient {
   const observed = Object.create(Object.getPrototypeOf(client) as object | null) as Record<string, unknown>;
   // Every own property, enumerable or not: the api client defines its profile
   // and membership statements as non-enumerable values.

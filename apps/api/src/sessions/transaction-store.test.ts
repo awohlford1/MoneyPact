@@ -146,6 +146,8 @@ describe("SEC-PK4-F4: a serialization failure anywhere in the attempt is retried
     const store = new ApiTransactionStore(client, new InProcessRestrictedAuditStore(100));
     const seen = await store.transaction(async (transaction) => (transaction as DataAccessClient).profileSelect!({} as never));
     assert.equal(seen.rowCount, 1);
+  });
+});
 
 describe("PK-7B (SEC-PK7A-F2): the fresh-assurance reference channel", () => {
   it("a handle that spent no grant has no reference, and nothing but an object handle is ever looked up", async () => {

@@ -65,6 +65,7 @@ import { Authorize, Authorization, RouteFailure } from "../authorization/http.js
 import { AuthorizationDenied } from "../authorization/boundary.js";
 import type { AuthorizationTransactionStore, EffectContext } from "../authorization/boundary.js";
 import { currentAction } from "../sessions/action-scope.ts";
+import { RETRYABLE_SQL_STATES, observeSqlState } from "../sessions/transaction-store.ts";
 import {
   PrimaryTransferError, TRANSFER_ACTION_CODES, TRANSFER_OBLIGATION_KINDS, UNIFORM_DENIAL_MESSAGE_CODE,
   acceptPrimaryTransfer, confirmPrimaryTransfer, declinePrimaryTransfer, parseProposeTransferRequest,
@@ -403,14 +404,20 @@ export class PrimaryTransferAuthorizationStore implements AuthorizationTransacti
   async transaction<T>(work: (transaction: unknown) => Promise<T>): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       let handle: object | undefined;
+      let observedState: string | undefined;
       try {
-        const result = await this.#client.transaction({ isolation: "serializable" }, (client) => { handle = client; return work(client); });
+        // SEC-PK4-F4 (PROTO-HARDENING-002): the grant spend runs inside this transaction, so a serialization failure a
+        // statement reported before a higher layer replaced the error retries the attempt exactly as the general store's does.
+        const result = await this.#client.transaction({ isolation: "serializable" }, (scoped) => {
+          const observed = observeSqlState(scoped, (state) => { if (RETRYABLE_SQL_STATES.has(state)) observedState = state; });
+          handle = observed; return work(observed);
+        });
         if (handle) this.#outcomes?.committed(handle);
         return result;
       } catch (error) {
         if (handle) this.#outcomes?.rolledBack(handle);
-        const state = (error as { sqlState?: string } | null)?.sqlState;
-        if (state === "40001" || state === "40P01") {
+        const state = (error as { sqlState?: string } | null)?.sqlState ?? observedState;
+        if (state !== undefined && RETRYABLE_SQL_STATES.has(state)) {
           if (attempt < SERIALIZATION_ATTEMPTS) continue;
           // `R-04`: a serialization failure the seam raised at COMMIT, retries exhausted, is the module's own
           // `retryable_conflict` on the wire. Rolled back: a confirm's grant was returned with the rollback.
