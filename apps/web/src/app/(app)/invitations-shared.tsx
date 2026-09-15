@@ -10,6 +10,7 @@ import type { InvitationsClient } from "../../api/invitations";
 import { Alert } from "../../components/Alert";
 import { Button } from "../../components/Button";
 import { apiBase } from "@/api/runtime-mode";
+import { sameOriginPath } from "../../api/return-path";
 
 /** One client per mounted view; the CSRF value it captures lives only in that closure. */
 export function useInvitationsClient(): InvitationsClient {
@@ -85,23 +86,26 @@ export interface ReturnMarker { path: string; resume?: "confirm" }
 export function leaveReturnMarker(marker: ReturnMarker): void {
   try { sessionStorage.setItem(RETURN_KEY, JSON.stringify(marker)); } catch { /* No storage: the person navigates back by hand. */ }
 }
-export function takeReturnMarker(): ReturnMarker | undefined {
+export function takeReturnMarker(origin: string = window.location.origin): ReturnMarker | undefined {
   try {
     const raw = sessionStorage.getItem(RETURN_KEY);
     if (!raw) return undefined;
     sessionStorage.removeItem(RETURN_KEY);
     const parsed = JSON.parse(raw) as Partial<ReturnMarker>;
-    // Only a same-origin path is ever followed.
-    if (typeof parsed.path !== "string" || !parsed.path.startsWith("/") || parsed.path.startsWith("//")) return undefined;
-    return { path: parsed.path, ...(parsed.resume === "confirm" ? { resume: "confirm" as const } : {}) };
+    const path = sameOriginPath(parsed.path, origin);
+    if (!path) return undefined;
+    return { path, ...(parsed.resume === "confirm" ? { resume: "confirm" as const } : {}) };
   } catch { return undefined; }
 }
 /** Mounted on the budgets page: follows a return marker left by the ceremony or transfer page. */
 export function ResumeAfterCeremony() {
   const router = useRouter();
   useEffect(() => {
-    const marker = takeReturnMarker();
-    if (marker) router.replace(marker.resume ? `${marker.path}?resume=${marker.resume}` : marker.path);
+    const marker = takeReturnMarker(window.location.origin);
+    if (!marker) return;
+    // The same check again on the string handed to the router, so no later change to the marker's shape can widen it.
+    const target = sameOriginPath(marker.resume ? `${marker.path}${marker.path.includes("?") ? "&" : "?"}resume=${marker.resume}` : marker.path, window.location.origin);
+    if (target) router.replace(target);
   }, [router]);
   return null;
 }

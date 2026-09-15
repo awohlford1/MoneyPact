@@ -10,6 +10,7 @@ import type { WireCeremonyEntry, WireDisclosureView } from "./invitations.ts";
 import { createMockDirectory, handleMockInvitationRequest, CEREMONY_COOKIE, MAX_CHANNEL_ATTEMPTS } from "./mock-invitations.ts";
 import { createServerMock, handleMockRequest } from "./mock-server.ts";
 import type { MockWire } from "./mock-server.ts";
+import { sameOriginPath } from "./return-path.ts";
 
 const bootstrap = { accountSubjectId: "s", profileId: "p", identityBindingId: "b", sessionRef: "r", sessionVersion: 1, environmentId: "development", assurance: "session", csrfValue: "bootstrap-fixture" };
 
@@ -93,6 +94,16 @@ test("the transfer confirm names only the transfer id, carries no reference, led
   assert.deepEqual(await api.confirmTransfer("sp", "t1"), { outcome: "refused", error: "transfer_not_found", status: 404 });
   answer = Response.json({ error: "transfer_not_found" }, { status: 404 });
   await assert.rejects(api.viewTransfer("sp", "t1"), (error: unknown) => error instanceof InvitationApiError && error.code === "transfer_not_found", "a non-party sees exactly what an unknown id answers");
+});
+
+test("SEC-PK8-F1: a return path is followed only when it stays on this origin; backslash and scheme-relative forms are refused", () => {
+  const origin = "http://localhost:3000";
+  for (const hostile of ["/" + "\\" + "evil.example", "/" + "\\" + "/evil.example", "//evil.example", "https://evil.example", "/" + "\\" + "evil.example/budgets", "evil.example", "", 42, null]) {
+    assert.equal(sameOriginPath(hostile, origin), undefined, JSON.stringify(hostile));
+  }
+  assert.equal(sameOriginPath("/budgets/abc/transfer/def?resume=confirm", origin), "/budgets/abc/transfer/def?resume=confirm");
+  assert.equal(sameOriginPath("/invitation/ceremony/x#fragment", origin), "/invitation/ceremony/x", "the fragment is dropped");
+  assert.equal(sameOriginPath("/a/../b", origin), "/b", "the resolved pathname is what is followed");
 });
 
 test("every message code the routes and notices carry has a sentence", () => {
@@ -190,7 +201,8 @@ test("PK8-02 over the mock: invite, resolve with the cookie, exhaust a link term
   assert.equal(receipt.role, "collaborator");
   assert.deepEqual(await owner.api.confirmAcceptance(spaceId, resent.invitationId, "confirm-1"), receipt);
   await assert.rejects(owner.api.confirmAcceptance(spaceId, resent.invitationId, "confirm-2"), (error: unknown) => error instanceof InvitationApiError && error.code === "invitation_not_current");
-  assert.deepEqual((await owner.api.listMembers(spaceId)).map(member => member.role), ["primary_owner", "collaborator"]);
+  // The test clock is frozen, so both rows share a joinedAt and the tie is broken by membership id: compare the set of roles.
+  assert.deepEqual((await owner.api.listMembers(spaceId)).map(member => member.role).sort(), ["collaborator", "primary_owner"]);
   assert.equal((await invitee.api.listMembers(spaceId)).length, 2);
   for (const member of await invitee.api.listMembers(spaceId)) assert.deepEqual(Object.keys(member).sort(), ["displayName", "joinedAt", "membershipId", "role"]);
   assert.equal((await invitee.api.listNotices() as unknown as { messageCode: string }[]).some(row => row.messageCode === "MSG-73-015"), true);
