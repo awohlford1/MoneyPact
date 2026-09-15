@@ -7,7 +7,7 @@ import { commitPrimaryTransfer } from "./commit.ts";
 import { LOST_PERMISSION, TRANSFER_OBLIGATION_KINDS, primaryTransferObligations } from "./obligations.ts";
 import type { TransferObligationKind } from "./obligations.ts";
 import {
-  ASSURANCE_REFERENCE, PRIMARY_MEMBERSHIP, RECIPIENT_MEMBERSHIP, SPACE, testDisclosures, testWorld,
+  ASSURANCE_REFERENCE, PRIMARY_MEMBERSHIP, RECIPIENT_DISCLOSURE_CLAIM, RECIPIENT_MEMBERSHIP, SPACE, testDisclosures, testWorld,
 } from "./support.ts";
 import type { TestWorld } from "./support.ts";
 
@@ -18,7 +18,7 @@ async function readyWorkflow(world: TestWorld): Promise<string> {
   });
   if (proposed.outcome !== "proposed") throw new Error("propose failed");
   const transferId = proposed.transfer.transferId;
-  await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId });
+  await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: RECIPIENT_DISCLOSURE_CLAIM });
   const record = await world.repository.readTransfer(SPACE, transferId);
   await world.repository.updateTransfer(SPACE, transferId, record!.stateVersion, {
     state: "ready",
