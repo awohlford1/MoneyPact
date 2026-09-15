@@ -1,10 +1,12 @@
 import type { DataAccessClient } from "@cobudget/data-access";
 import { DurableProposalStore, proposalUuid, proposalConfirmationPort } from "./proposal-store.ts";
 import { ConfirmationError, equalDigest, requestDigest } from "../creation-confirmation/index.ts";
-import type { ClaimedProposal, ConfirmationTransaction, ConfirmationUnitOfWork, ConfirmBudgetCreationRequest, ConfirmBudgetCreationResponse, CreationPlan } from "../creation-confirmation/index.ts";
+import type { ClaimedProposal, ConfirmationTransaction, ConfirmationUnitOfWork, ConfirmBudgetCreationRequest, ConfirmBudgetCreationResponse, ConsentWriter, CreationPlan } from "../creation-confirmation/index.ts";
 import type { AuthenticatedSubjectContext, Ports, ProposalRecord } from "../creation-proposals/ports.ts";
 import { digestOf } from "../creation-proposals/canonical-json.ts";
 
+/** The two-phase consent dependency: compare the claim (before the first insert), then write the row it admitted. */
+export type ConsentDependency = (request: ConfirmBudgetCreationRequest) => (client: DataAccessClient, plan: CreationPlan) => Promise<void>;
 export interface ConfirmationDependencies {
   readonly attempts: number;
   readonly reload: (client: DataAccessClient, context: AuthenticatedSubjectContext, record: ProposalRecord) => Promise<{ context: AuthenticatedSubjectContext; ports: Ports }>;
@@ -15,15 +17,19 @@ export interface ConfirmationDependencies {
   /** The HTTP authorization store has already discharged this exact membership. */
   readonly membershipDischarged?: boolean;
   /**
-   * CBD-236 consent landing (CBD236-CONSENT-SEMANTICS-001 item 4): writes the
-   * creator's `budget_space_consent` row on this same client, immediately
-   * after the creator membership, and denies `stale_disclosure` when the
-   * request's acknowledged disclosure is not the approved registry's current
-   * one. A required dependency and not an optional hook: a confirmation that
-   * cannot record consent must not commit a membership, which the migration's
-   * deferred activation-atomicity trigger independently enforces at COMMIT.
+   * CBD-236 consent landing (CBD236-CONSENT-SEMANTICS-001 item 4) in two
+   * phases (`CBD233-STALE-CHECK-ORDER-001`). Calling it with the request is
+   * phase 1: it reads the approved registry once and denies `stale_disclosure`
+   * when the request's acknowledged disclosure is not that registry's current
+   * one -- before this transaction has inserted anything. The function it
+   * returns is phase 2, which writes the creator's `budget_space_consent` row
+   * on this same client, immediately after the creator membership, carrying
+   * the disclosure phase 1 compared. A required dependency and not an optional
+   * hook: a confirmation that cannot record consent must not commit a
+   * membership, which the migration's deferred activation-atomicity trigger
+   * independently enforces at COMMIT.
    */
-  readonly consent: (client: DataAccessClient, plan: CreationPlan) => Promise<void>;
+  readonly consent: ConsentDependency;
 }
 const scope = (c: AuthenticatedSubjectContext) => [{ column: "environment", value: c.environment }, { column: "account_subject_id", value: c.subjectId }];
 export async function lookupConfirmation(client: DataAccessClient, context: AuthenticatedSubjectContext, request: ConfirmBudgetCreationRequest): Promise<ConfirmBudgetCreationResponse | null> {
@@ -53,6 +59,16 @@ export class DurableConfirmationTransaction implements ConfirmationTransaction {
     await this.point("before:" + name); const result = await operation(); await this.point("after:" + name); return result;
   }
   replay(context: AuthenticatedSubjectContext, request: ConfirmBudgetCreationRequest): Promise<ConfirmBudgetCreationResponse | null> { return lookupConfirmation(this.client, context, request); }
+  /**
+   * Phase 1 of the consent dependency, on this transaction's own client and
+   * before its first insert: the registry read and the claim comparison, which
+   * throws `stale_disclosure` having inserted nothing. The returned writer is
+   * the observed `budget_space_consent` step of `persist`.
+   */
+  async prepareConsent(request: ConfirmBudgetCreationRequest): Promise<ConsentWriter> {
+    const write = await this.step("disclosure_check", async () => this.dependencies.consent(request));
+    return plan => this.step("budget_space_consent", () => write(this.client, plan));
+  }
   async claimCurrentProposal(context: AuthenticatedSubjectContext, request: ConfirmBudgetCreationRequest): Promise<ClaimedProposal> {
     return this.step("proposal_claim", async () => {
       const key = { ...context, proposalId: request.proposalId };
@@ -87,7 +103,8 @@ export class DurableConfirmationTransaction implements ConfirmationTransaction {
       profile_id: c.profileId, account_subject_id: c.subjectId, role: "primary_owner", status: "active", authorization_version: 1,
       created_by_subject_id: c.subjectId, created_at: r.committedAt });
     // CBD-236 SS7 step 6: the consent row follows the creator membership inside this same transaction.
-    await this.step("budget_space_consent", () => this.dependencies.consent(this.client, plan));
+    // The claim it rests on was compared before the `budget_space` insert above (`prepareConsent`).
+    await plan.consent(plan);
     await insert("budget_space_schedule_version", { schedule_version_id: r.initialScheduleVersionId, sequence: 1, status: "authoritative",
       cadence_definition: record.normalizedInputs.schedule, proposal_preview_digest: record.previewDigest, created_at: r.committedAt });
     for (const [i, period] of record.preview.periods.entries()) await insert("budget_space_period", { period_id: plan.periodIds[i],

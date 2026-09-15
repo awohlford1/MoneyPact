@@ -128,9 +128,10 @@ export function composeBudgetApi(options: BudgetCompositionOptions) {
   });
 
   // CBD-236 SS7 steps 5 and 6, on the confirmation transaction's own client: the request's claim is
-  // compared with the registry verified at startup and inequality denies `stale_disclosure` before
-  // anything is written; the row that is written carries the registry's version and digest, never the
-  // claim. The same function backs every test and live proof of the write.
+  // compared with the registry verified at startup and inequality denies `stale_disclosure` before the
+  // transaction's first insert (`CBD233-STALE-CHECK-ORDER-001`), so a stale, foreign or absent claim
+  // costs no write at all; the row that is written carries the same registry version and digest that
+  // comparison used, never the claim. The same function backs every test and live proof of the write.
   const consent = consentDependency(disclosures, randomUUID);
 
   const creationStore = new CreationAuthorizationStore(client, attempts);

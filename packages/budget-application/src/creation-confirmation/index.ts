@@ -14,8 +14,8 @@ export interface ConfirmBudgetCreationRequest {
    * disclosure the creation surface showed above the confirm control, as a
    * claim. The server compares it with the approved registry and denies
    * `stale_disclosure`; the claim is never the recorded value. Optional in the
-   * type because an absent claim is denied at commit exactly like a stale one
-   * rather than rejected as a malformed request -- a confirmation taken
+   * type because an absent claim is denied exactly like a stale one rather
+   * than rejected as a malformed request -- a confirmation taken
    * without the current disclosure is simply not consent (CBD-73 SS6 rule 1).
    * The matching CBD-233 SS3.1/SS3.3 amendment is routed to the CBD-233 owner
    * under PO-CONTRACT-APPROVALS-001 (proposal finding CF-F03).
@@ -48,7 +48,7 @@ export function equalDigest(a: string, b: string): boolean {
 }
 /** The confirmation body is still closed: exactly `confirmationBinding`, optionally `acknowledgedDisclosure`, and nothing else. */
 const CONFIRMATION_BODY_FIELDS: readonly string[] = ["confirmationBinding", "acknowledgedDisclosure"];
-/** A present-but-malformed claim is a malformed request; an absent claim is not (it is denied at commit as `stale_disclosure`). */
+/** A present-but-malformed claim is a malformed request; an absent claim is not (it is denied in the effect as `stale_disclosure`). */
 function acknowledgedDisclosureField(value: unknown): { readonly kind: string; readonly version: number } | undefined {
   if (value === undefined) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new ConfirmationError("invalid_request");
@@ -75,6 +75,14 @@ export interface ClaimedProposal {
   readonly candidateBudgetSpaceId: string;
   readonly candidatePrimaryMembershipId: string;
 }
+/**
+ * Phase 2 of the consent dependency (`CBD233-STALE-CHECK-ORDER-001`): the
+ * write, already bound to the transaction's client and to the *same* approved
+ * disclosure that phase 1 compared the claim against, so the recorded row
+ * cannot disagree with what was verified. Phase 1 is
+ * `ConfirmationTransaction.prepareConsent`.
+ */
+export type ConsentWriter = (plan: CreationPlan) => Promise<void>;
 export interface CreationPlan {
   readonly proposal: ClaimedProposal;
   readonly request: ConfirmBudgetCreationRequest;
@@ -82,10 +90,20 @@ export interface CreationPlan {
   readonly operationId: string;
   readonly periodIds: readonly string[];
   readonly response: ConfirmBudgetCreationResponse;
+  /** The prepared consent write. Its presence in the plan *is* the proof that the claim was compared before the first insert. */
+  readonly consent: ConsentWriter;
 }
 /** The closed operation port exposes no optional setup or arbitrary entity write. */
 export interface ConfirmationTransaction {
   replay(context: AuthenticatedSubjectContext, request: ConfirmBudgetCreationRequest): Promise<ConfirmBudgetCreationResponse | null>;
+  /**
+   * Phase 1 of the consent dependency: read the approved registry once and
+   * compare the request's `acknowledgedDisclosure` claim with it, denying
+   * `stale_disclosure` ahead of the persistence path's first insert
+   * (`CBD233-STALE-CHECK-ORDER-001`; CBD-233 SS3.3). Returns the write that
+   * carries that same compared disclosure to the consent row.
+   */
+  prepareConsent(request: ConfirmBudgetCreationRequest): Promise<ConsentWriter>;
   claimCurrentProposal(context: AuthenticatedSubjectContext, request: ConfirmBudgetCreationRequest): Promise<ClaimedProposal>;
   reload(context: AuthenticatedSubjectContext, proposal: ProposalRecord): Promise<{ context: AuthenticatedSubjectContext; ports: Ports }>;
   authorize(proposal: ClaimedProposal): Promise<ConfirmBudgetCreationResponse["authorization"]>;
@@ -124,7 +142,13 @@ export async function confirmWithin(transaction: ConfirmationTransaction, contex
     primaryOwnerMembershipId: proposal.candidatePrimaryMembershipId, initialScheduleVersionId: schedule, currentScheduleVersionId: schedule,
     currentPeriodId: periodIds[periods.indexOf(current[0]!)]!, nameVersion: 1, lifecycle: "live", lifecycleVersion: 1, scheduleVersion: 1,
     authorization, committedAt: fresh.ports.clock.now().toISOString(), onboardingContinuationId: id() };
-  await transaction.persist({ proposal, request, context: fresh.context, operationId: id(), periodIds, response });
+  // CBD233-STALE-CHECK-ORDER-001: the acknowledged-disclosure comparison is the last decision before
+  // the persistence path and therefore precedes its first insert, so a stale, foreign or absent claim
+  // is denied `stale_disclosure` with no row written and none to roll back. It stays *after* the
+  // locator, binding and authorization decisions so that a request which is also forged, expired or
+  // unauthorized still receives the outcome those steps own, exactly as before.
+  const consent = await transaction.prepareConsent(request);
+  await transaction.persist({ proposal, request, context: fresh.context, operationId: id(), periodIds, response, consent });
   return response;
 }
 /** Neither response serialization nor navigation occurs in the transaction. */

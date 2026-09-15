@@ -142,7 +142,7 @@ with the same key and returns the stored payload.
 | `idempotency_key_reused` | 409 | Same scoped key with different request digest; no write. |
 | `authorization_denied` | 403 or the CBD-236 uniform external mapping | Transaction rolled back; restricted denial audit occurs after rollback. |
 | `confirmation_stale` | 409 | Commit recheck found changed proposal, subject/session/profile, policy, catalog, rule, or candidate absence; rollback. |
-| `stale_disclosure` (proposed) | 409 | `acknowledgedDisclosure` is absent, or names a kind or version other than the registry's current approved row for `primary_owner_self`; the transaction rolls back leaving no row in `budget_space`, `budget_space_membership`, `budget_space_consent` or `budget_creation_idempotency`, and the reserved initial `space.create` unit is refunded. |
+| `stale_disclosure` (proposed) | 409 | `acknowledgedDisclosure` is absent, or names a kind or version other than the registry's current approved row for `primary_owner_self`; the comparison precedes the first insert of the creation step, so no row is written in `budget_space`, `budget_space_membership`, `budget_space_consent` or `budget_creation_idempotency` and none has to be undone, and the reserved initial `space.create` unit is refunded. |
 | `retryable_conflict` | 409/503 with retry guidance | Serialization/deadlock loser rolled back; retry same key. |
 
 Internal reason classes follow CBD-236 and do not reveal which hidden fact
@@ -159,12 +159,23 @@ with three fixed properties.
    surface: the request has already passed authentication and the session gate,
    the replay lookup of §4 step 1, the proposal locator and binding
    verification of §4 steps 2 and 3, and the CBD-236 `space.create` allow of
-   steps 4 and 5. The comparison runs at the consent write of §4 step 6, so the
-   denial is raised inside the serializable transaction and the whole
-   transaction rolls back. The budget and creator-membership inserts of that
-   step are therefore performed and rolled back, exactly as the pre-existing
-   `confirmation_stale` path behaves, and **zero rows** survive in any of the
-   four tables named above.
+   steps 4 and 5, so a request that is also unknown, forged, expired or
+   unauthorized still receives the outcome those steps own. The comparison is
+   then the **last decision before §4 step 6 and therefore precedes that
+   step's first insert**: a stale, foreign or absent claim is denied without
+   the budget or the creator-membership row ever being written, so **zero
+   rows** survive in any of the four tables named above because none was ever
+   written and none had to be rolled back. This is the position
+   `docs/cbd-236-consent-facts-proposal.md` §7 states, and it is what
+   distinguishes `stale_disclosure` from the pre-existing `confirmation_stale`
+   path, which is raised at the commit recheck after those inserts and does
+   roll them back. The one statement a denied confirmation has still issued by
+   that point is the conditional no-op update that takes the §4 step 2 proposal
+   row lock, which every denial of this contract performs and which writes no
+   creation row. The registry is read once per confirmation, at this
+   comparison, and the disclosure it accepted is the one the consent row of §4
+   step 6 records, so the recorded evidence cannot disagree with what admitted
+   the confirmation.
 3. **Refundability.** It is a member of the closed set of refundable effect
    denials, with `proposal_not_current` and `confirmation_stale` (CBD-266 §4.7
    `proto-bootstrap-v1`). The effect committed nothing, and the denial asks the
@@ -174,7 +185,8 @@ with three fixed properties.
    effects are never refunded.
 
 `stale_disclosure` mirrors CBD-73 `TR-73-13`: an acceptance taken against a
-stale disclosure version is denied at commit.
+stale disclosure version is denied, and here it is denied before the
+confirmation writes anything.
 
 ## 4. Transaction protocol
 
@@ -393,7 +405,7 @@ rule are not compatible. Neither finding changes an approved source.
 
 | Version | Date | Change |
 | --- | --- | --- |
-| 0.2 (proposed) | September 15, 2026 | Specification specialist, dispatched by Manager (`PROTO-CONSENT-AMENDMENTS-001`). The amendment `CBD236-CONSENT-SEMANTICS-001` item 6 deferred to this package, describing what PR #337 merged: §3.1 admits the optional `acknowledgedDisclosure` claim and fixes malformed-versus-absent handling; §3.3 adds the `stale_disclosure` outcome with its 409 status, its position inside the effect, its zero-row residue and its membership of the refundable effect denials; §4 step 6 adds the consent write and its `verify` postcondition; `BCC-233-003`, §6 and §10 gain the matching cardinality, residue and scenario rows; §11 gains three traceability rows. **Proposed, not approved:** the approved 0.1.1 status line and document version are unchanged and no approval is claimed. Pending Product Owner approval under `PO-CONTRACT-APPROVALS-001`. |
+| 0.2 (proposed) | September 15, 2026 | Specification specialist, dispatched by Manager (`PROTO-CONSENT-AMENDMENTS-001`). The amendment `CBD236-CONSENT-SEMANTICS-001` item 6 deferred to this package, describing what PR #337 merged: §3.1 admits the optional `acknowledgedDisclosure` claim and fixes malformed-versus-absent handling; §3.3 adds the `stale_disclosure` outcome with its 409 status, its position inside the effect but ahead of the creation step's first insert (Executive decision `CBD233-STALE-CHECK-ORDER-001`, applied in the same change that amends this paragraph), its zero-row residue and its membership of the refundable effect denials; §4 step 6 adds the consent write and its `verify` postcondition; `BCC-233-003`, §6 and §10 gain the matching cardinality, residue and scenario rows; §11 gains three traceability rows. **Proposed, not approved:** the approved 0.1.1 status line and document version are unchanged and no approval is claimed. Pending Product Owner approval under `PO-CONTRACT-APPROVALS-001`. |
 | 0.1.1 (approval) | September 13, 2026 | Product Owner approval recorded (PO-CONTRACT-APPROVALS-001). Status Proposed → Approved at the same version; no decision, identifier or contract text changed. |
 | 0.1.1 | September 13, 2026 | Manager, in the merge lane. Review closures (CBD231-REVIEW-001): §4 step 7 now writes the CBD-231 §3.4 `budget_creation_operation` row that the uniqueness guards reference (finding 1); the CBD-236 input named as `PolicyInput` in its API bootstrap-user variant instead of a type CBD-236 does not define (finding 2). No other text changed. |
 | 0.1 | September 12, 2026 | Initial architecture proposal: request/response, transaction and replay protocol, failure and race matrices, audit/data boundary, CBD-232 identifier-level disposition, compatibility implications, test catalog, and AC traceability. |
