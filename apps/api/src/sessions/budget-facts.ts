@@ -87,7 +87,14 @@ import type { DataAccessClient } from "@cobudget/data-access";
 import type { FactSource } from "@cobudget/contracts/authorization";
 import type { FactLookup } from "../authorization/facts.js";
 import { proposalUuid } from "../../../../packages/budget-application/src/persistence/proposal-store.ts";
+import type { MembershipLeavesReader } from "../primary-transfer/persistence.ts";
 import type { FactReader } from "./fact-source.ts";
+
+/** PK-7B: composition inputs of the datastore reader beyond the environment key. */
+export interface BudgetFactReaderOptions {
+  /** The `membership` target reader (`primary-transfer/persistence.ts#membershipLeaves`); absent means no `membership` target is ever answered. */
+  readonly membershipLeaves?: MembershipLeavesReader | undefined;
+}
 
 /**
  * Resource types whose target is the budget's whole set rather than one row
@@ -160,8 +167,15 @@ function integer(value: unknown): number | undefined {
  * runs and before any query of the route's own. The denial is inert and
  * indistinguishable from a row that does not exist anywhere.
  */
-async function rowResourceFacts(client: DataAccessClient, spaceId: string, resourceType: string, resourceId: string): Promise<Record<string, unknown> | null> {
+async function rowResourceFacts(client: DataAccessClient, spaceId: string, resourceType: string, resourceId: string, options: BudgetFactReaderOptions): Promise<Record<string, unknown> | null> {
   if (!UUID.test(resourceId)) return null;
+  if (resourceType === "membership") {
+    // PK-7B: the membership row named by the six transfer cells, through PK-7A's own tenant-scoped read.
+    if (!options.membershipLeaves) return null;
+    const leaves = await options.membershipLeaves(client, spaceId, resourceId);
+    if (!leaves || leaves.owningSpaceId !== spaceId) return null;
+    return { "resource.owningSpaceId": leaves.owningSpaceId, "resource.version": integer(leaves.version), "resource.lifecycle": leaves.lifecycle };
+  }
   if (resourceType === "account") {
     const found = await client.tenantSelect({ table: "financial_account", budgetSpaceId: spaceId, columns: ["budget_space_id", "version", "archived_at"],
       conditions: [{ column: "account_id", value: resourceId }] });
@@ -197,7 +211,7 @@ async function rowResourceFacts(client: DataAccessClient, spaceId: string, resou
   return null;
 }
 
-async function spaceFacts(client: DataAccessClient, lookup: FactLookup, subjectId: string): Promise<Record<string, unknown> | null> {
+async function spaceFacts(client: DataAccessClient, lookup: FactLookup, subjectId: string, options: BudgetFactReaderOptions): Promise<Record<string, unknown> | null> {
   const { operation } = lookup;
   const spaceId = operation.actingSpaceId;
   if (typeof spaceId !== "string" || !UUID.test(spaceId)) return null;
@@ -215,8 +229,11 @@ async function spaceFacts(client: DataAccessClient, lookup: FactLookup, subjectI
         facts["resource.version"] = integer(space.lifecycle_version);
         facts["resource.lifecycle"] = space.lifecycle;
       } else if (typeof operation.resourceId === "string") {
-        Object.assign(facts, await rowResourceFacts(client, spaceId, operation.resourceType, operation.resourceId) ?? {});
+        Object.assign(facts, await rowResourceFacts(client, spaceId, operation.resourceType, operation.resourceId, options) ?? {});
       }
+    } else if (operation.resourceType === "membership" && typeof operation.resourceId === "string") {
+      // PK-7B: a membership target is always a row, never the space's own set; the space identifier answers nothing here.
+      Object.assign(facts, await rowResourceFacts(client, spaceId, operation.resourceType, operation.resourceId, options) ?? {});
     }
   }
   const membershipId = operation.actingMembershipId;
@@ -309,14 +326,14 @@ async function bootstrapFacts(client: DataAccessClient, candidates: { readonly s
  * more -- consent is evidence in the datastore, so there is nothing left that a local runtime could
  * be permitted to assume (CBD236-CONSENT-SEMANTICS-001 item 5).
  */
-export function budgetFactReader(environmentId: string): FactReader {
+export function budgetFactReader(environmentId: string, options: BudgetFactReaderOptions = {}): FactReader {
   return async (source: FactSource, lookup: FactLookup, client: DataAccessClient) => {
     if (source !== "datastore") return null;
     const subjectId = lookup.identity?.["subject.accountSubjectId"];
     if (typeof subjectId !== "string" || !subjectId) return null;
     if (lookup.operation.scope === "subject") return lookup.operation.resourceType === "proposal" ? proposalFacts(client, lookup, subjectId, environmentId) : null;
     if (lookup.operation.action === "space.create") return lookup.candidates ? bootstrapFacts(client, lookup.candidates) : null;
-    return spaceFacts(client, lookup, subjectId);
+    return spaceFacts(client, lookup, subjectId, options);
   };
 }
 

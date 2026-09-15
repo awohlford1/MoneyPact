@@ -1305,5 +1305,106 @@
     "created_at": "2026-09-15T02:31:00Z",
     "supersedes_record_id": null,
     "record_digest": "2011549d78674fdb82796856d062509142179e27d3b3497d51e2d6717194ee24"
+  },
+  {
+    "schema_version": 1,
+    "record_id": "rlp-266-protected-action-v1",
+    "surface_id": "surf-266-protected-action",
+    "window": {
+      "duration_ms": 60000,
+      "kind": "sliding",
+      "anchor": "request_time"
+    },
+    "threshold": 12,
+    "burst": {
+      "additional_units": 3,
+      "refill_units": 1,
+      "refill_interval_ms": 20000
+    },
+    "safe_counting_key": {
+      "phase": "post_authentication",
+      "components": [
+        "verified_actor_id_v1",
+        "exact_surface_id"
+      ],
+      "derivation_version": "hmac-sha256-v1",
+      "normalization": "verified-id-v1",
+      "rotation_behavior": "dual-read/single-write for at least 120000 ms; carry forward the greater count",
+      "privacy_basis": "Actor from verified server context only; correlation limited to actor plus exact surface; no shared space dimension.",
+      "subject_bound_after_authentication": true
+    },
+    "counter_store": {
+      "binding": "LOCAL_PROTOTYPE_COUNTER_STORE",
+      "namespace": "cbd266:prototype:protected-action:v1",
+      "atomic_operation": "one process-linearizable atomic consume",
+      "consistency": "single-process-linearizable",
+      "region": "local-process",
+      "ttl_ms": 120000,
+      "clock_source": "monotonic process clock",
+      "failure_mode": "deny"
+    },
+    "quota": {
+      "unit": "request",
+      "ceiling": 15,
+      "scope": "verified actor plus exact surface",
+      "reset": "sliding expiry plus burst refill",
+      "resource_dimensions": [
+        "concurrency=1"
+      ]
+    },
+    "anti_lockout_rule": {
+      "attackable_dimensions": [],
+      "victim_bound_dimensions": [
+        "verified_actor_id_v1"
+      ],
+      "independent_recovery_surface_id": "surf-266-recovery",
+      "pool_isolation": "`proto-mutation-v1` values projected onto the exact protected-action surface (docs/cbd-234-invitations-consent-design-proposal.md section 12; CBD266-INVITATION-RECORDS-001): the five Primary-transfer mutations of section 10.2 (propose, accept, decline, withdraw, and the protected confirm leg on `29.transfer_primary_ownership`); `attackable_dimensions: []`; `victim_bound_dimensions: [verified_actor_id_v1]`; `independent_recovery_surface_id: surf-266-recovery`; each party's transfer traffic counts by verified actor plus exact surface, so the other party, another member and no unauthenticated caller can consume the actor's pool, and the fresh-assurance step-up's own ceremony routes count on `surf-266-authentication` (PK-4) and never here; recovery remains separately keyed and budgeted (`FX-266-LOCKOUT-RECOVERY`); `exhaustion_state_effect: none`; reset authority is `local prototype operator / restore counter service only`; notification is uniform and reveals neither existence nor remaining quota; verify `FX-266-MUTATION-ACTOR-ISOLATION`, `FX-266-LOCKOUT-RECOVERY`, and `VT-94-068`.",
+      "exhaustion_state_effect": "none",
+      "reset_authority": "local prototype operator / restore counter service only",
+      "notification_behavior": "uniform, content-safe; neither existence nor remaining quota",
+      "rationale": "`proto-mutation-v1` values projected onto the exact protected-action surface (docs/cbd-234-invitations-consent-design-proposal.md section 12; CBD266-INVITATION-RECORDS-001): the five Primary-transfer mutations of section 10.2 (propose, accept, decline, withdraw, and the protected confirm leg on `29.transfer_primary_ownership`); `attackable_dimensions: []`; `victim_bound_dimensions: [verified_actor_id_v1]`; `independent_recovery_surface_id: surf-266-recovery`; each party's transfer traffic counts by verified actor plus exact surface, so the other party, another member and no unauthenticated caller can consume the actor's pool, and the fresh-assurance step-up's own ceremony routes count on `surf-266-authentication` (PK-4) and never here; recovery remains separately keyed and budgeted (`FX-266-LOCKOUT-RECOVERY`); `exhaustion_state_effect: none`; reset authority is `local prototype operator / restore counter service only`; notification is uniform and reveals neither existence nor remaining quota; verify `FX-266-MUTATION-ACTOR-ISOLATION`, `FX-266-LOCKOUT-RECOVERY`, and `VT-94-068`.",
+      "verification_cases": [
+        "FX-266-MUTATION-ACTOR-ISOLATION",
+        "FX-266-LOCKOUT-RECOVERY",
+        "VT-94-068"
+      ]
+    },
+    "capacity_basis": {
+      "evidence_locator": "CBD266-INVITATION-RECORDS-001 / docs/cbd-234-invitations-consent-design-proposal.md section 12 / single-local-process planning basis",
+      "measured_at": "2026-09-15T00:00:00-04:00",
+      "sustained_capacity": "2 requests/second in one local process; not measured - Product estimate dated 2026-09-15",
+      "peak_assumption": "At most 15 requests in 60 seconds; at least 87% request-rate headroom against the estimate",
+      "headroom": "At most 15 requests in 60 seconds; at least 87% request-rate headroom against the estimate",
+      "failure_budget": "zero uncounted protected effects when the store is unavailable or uncertain",
+      "workload_assumptions": [
+        "One developer, one process, local data, serialized prototype writes, no provider calls; the confirm leg spends one fresh-assurance grant and runs the section 10.3 commit transaction, the accept leg runs the same commit when it completes the pair, and every other leg writes one workflow transition, all on the acting party's own pool"
+      ],
+      "reviewer_role": "Product; ME-94-010 specialist review pending"
+    },
+    "source_requirements": [
+      "RL-92-001",
+      "RL-92-002",
+      "RL-92-007",
+      "EP-92-004",
+      "SR-94-037",
+      "ME-94-010",
+      "CBD266-PROTOTYPE-DEFAULTS-001",
+      "CBD266-INVITATION-RECORDS-001"
+    ],
+    "created_at": "2026-09-15T02:31:00Z",
+    "supersedes_record_id": null,
+    "product_owner_approval": {
+      "status": "approved",
+      "approval_id": "CBD266-INVITATION-RECORDS-001",
+      "approved_by_actor_id": "atlassian:5cffa74b92e6c70c53499977",
+      "decided_at": "2026-09-15T02:31:00Z",
+      "candidate_digest": "728b6dd9dc1138747bc74a0e3cf00233e0e15911a6c3b1055ce714eb4d55af2e",
+      "conditions": [
+        "prototype-only",
+        "revisit before any hosted environment"
+      ],
+      "expires_at": null
+    },
+    "record_digest": "ca9f78a4c85ed6028cd73f7747f54a053c1b9fadd6e9a4c49d20987684e64630"
   }
 ]

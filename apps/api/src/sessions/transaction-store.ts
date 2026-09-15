@@ -47,6 +47,19 @@
  * other undischargeable obligation, and a rollback anywhere later returns
  * the grant unspent, so a single step-up authorizes a single committed
  * protected effect -- never zero, never two.
+ *
+ * PK-7B (`SEC-PK7A-F2`): the reference channel. The Primary-transfer commit
+ * records the evidence *reference* of the grant it was authorized by on the
+ * transfer row and the outgoing consent row, and the module compares that
+ * reference for equality only -- so the reference has to come from the one
+ * place that knows which grant this transaction spent. This store records the
+ * consumed `account_session_fresh_assurance.fresh_assurance_id` against the
+ * transaction handle when the spend succeeds and exposes it through
+ * `spentFreshAssuranceRef(handle)`; the transfer store and the confirm route
+ * read it from here and from nowhere else -- never from a request field, never
+ * from the session reference, never from a token or provider evidence. A
+ * handle that spent nothing has no reference, and a rollback discards the
+ * entry with the handle.
  */
 import type { DataAccessClient } from "@cobudget/data-access";
 import { consumeFreshAssurance, findUsableFreshAssurance } from "@cobudget/sessions";
@@ -108,6 +121,8 @@ export class ApiTransactionStore implements AuthorizationTransactionStore {
   readonly #client: DataAccessClient;
   readonly #audit: InProcessRestrictedAuditStore;
   readonly #hooks: TransactionHooks;
+  /** PK-7B: the grant identifier each transaction handle consumed, set only by a successful spend. */
+  readonly #spent = new WeakMap<object, string>();
 
   constructor(client: DataAccessClient, audit: InProcessRestrictedAuditStore, hooks: TransactionHooks = {}) {
     this.#client = client;
@@ -173,7 +188,19 @@ export class ApiTransactionStore implements AuthorizationTransactionStore {
     const now = new Date(input.evaluation.evaluatedAt);
     const grant = await findUsableFreshAssurance(client, { sessionRef, boundAction: obligation.actionClass, boundSpaceId: obligation.spaceId, now });
     if (!grant) return false;
-    return consumeFreshAssurance(client, { freshAssuranceId: grant.freshAssuranceId, action: obligation.actionClass, now: new Date() });
+    const consumed = await consumeFreshAssurance(client, { freshAssuranceId: grant.freshAssuranceId, action: obligation.actionClass, now: new Date() });
+    if (consumed) this.#spent.set(client, grant.freshAssuranceId);
+    return consumed;
+  }
+
+  /**
+   * PK-7B (`SEC-PK7A-F2`): the evidence reference of the grant this
+   * transaction spent -- the consumed row's own `fresh_assurance_id` -- or
+   * `undefined` when this handle has spent none. It is the only source the
+   * confirm route may take `ActorContext.freshAssuranceRef` from.
+   */
+  spentFreshAssuranceRef(transaction: unknown): string | undefined {
+    return transaction !== null && typeof transaction === "object" ? this.#spent.get(transaction) : undefined;
   }
 
   async verify(_transaction: unknown, _input: PolicyInput, obligations: readonly Obligation[]): Promise<boolean> {

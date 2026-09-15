@@ -146,5 +146,21 @@ describe("SEC-PK4-F4: a serialization failure anywhere in the attempt is retried
     const store = new ApiTransactionStore(client, new InProcessRestrictedAuditStore(100));
     const seen = await store.transaction(async (transaction) => (transaction as DataAccessClient).profileSelect!({} as never));
     assert.equal(seen.rowCount, 1);
+
+describe("PK-7B (SEC-PK7A-F2): the fresh-assurance reference channel", () => {
+  it("a handle that spent no grant has no reference, and nothing but an object handle is ever looked up", async () => {
+    const db = new FakeIdentityDatabase();
+    const audit = new InProcessRestrictedAuditStore(100);
+    const store = new ApiTransactionStore(createFakeIdentityClient(db), audit);
+    const reference = await store.transaction(async (transaction) => {
+      // A discharge that cannot spend (no assurance leaves, no session) leaves the channel empty for this handle.
+      const spent = await store.discharge(transaction, { subject: {}, assurance: { level: "session" }, evaluation: { evaluatedAt: "2026-09-15T12:00:00.000Z" } } as unknown as PolicyInput, { kind: "fresh_assurance", actionClass: "29.transfer_primary_ownership", spaceId: "11111111-1111-4111-8111-111111111111" });
+      assert.equal(spent, false);
+      return store.spentFreshAssuranceRef(transaction);
+    });
+    assert.equal(reference, undefined);
+    assert.equal(store.spentFreshAssuranceRef(undefined), undefined);
+    assert.equal(store.spentFreshAssuranceRef("session-ref-1"), undefined, "a session reference is never a grant reference");
+    assert.equal(store.spentFreshAssuranceRef({}), undefined, "a foreign handle has no reference");
   });
 });
