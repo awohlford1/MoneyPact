@@ -121,7 +121,7 @@ describe("API configuration", () => {
       (error: unknown) => {
         assert.ok(error instanceof ConfigError);
         assert.match(error.message, /COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY/);
-        assert.doesNotMatch(error.message, new RegExp(TEST_LOCAL_KEY));
+        assert.equal(error.message.includes(TEST_LOCAL_KEY), false, "the error message must not echo the local key");
         return true;
       },
     );
