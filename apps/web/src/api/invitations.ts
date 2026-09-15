@@ -318,9 +318,10 @@ export function createInvitationsClient(base = "/v1", fetcher: typeof fetch = fe
     },
     async beginSignIn() {
       // A pre-authentication surface: no CSRF value exists yet, so it is sent same-origin without one, as the sign-in page does.
-      // The API's closed destination map has no entry for the ceremony page (finding PK8-F02), so the return is `budgets`
-      // and the ceremony page leaves a return marker the budgets page honours.
-      const answer = await trio("/identity/begin", { ceremony: "sign_in", postResultDestinationId: "budgets" });
+      // CBD-190 identity amendments proposal §3.2/§3.5: `invitation_ceremony` is a closed, server-validated
+      // destination the API's post-result navigation resolves to `/invitation` directly -- no client-held
+      // return marker is needed or kept.
+      const answer = await trio("/identity/begin", { ceremony: "sign_in", postResultDestinationId: "invitation_ceremony" });
       if (answer.status === 200 && typeof answer.json.navigateTo === "string") return answer.json.navigateTo;
       throw failure(answer);
     },
@@ -340,7 +341,10 @@ export function createInvitationsClient(base = "/v1", fetcher: typeof fetch = fe
     acceptTransfer: (spaceId, transferId, acknowledgedDisclosure) => transferMutation(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/accept`, { acknowledgedDisclosure }),
     declineTransfer: (spaceId, transferId) => transferMutation(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/decline`),
     withdrawTransfer: (spaceId, transferId) => transferMutation(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/withdraw`),
-    beginStepUp: async (spaceId) => (await request<{ navigateTo: string }>("/identity/step-up/begin", "POST", { action: TRANSFER_ACTION, budgetSpaceId: spaceId, postResultDestinationId: "budgets" })).navigateTo,
+    // CBD-190 identity amendments proposal §3.2/§3.3/§3.5: `budget_transfer` is a reserved destination key whose
+    // path the API derives from the step-up challenge's own bound budget space, never from a client value; the
+    // post-result navigation returns to this space's transfer page with no client-held return marker.
+    beginStepUp: async (spaceId) => (await request<{ navigateTo: string }>("/identity/step-up/begin", "POST", { action: TRANSFER_ACTION, budgetSpaceId: spaceId, postResultDestinationId: "budget_transfer" })).navigateTo,
     async confirmTransfer(spaceId, transferId, acknowledgedDisclosure) {
       // The body carries the disclosure claim and nothing else: the assurance reference and the ledger are the store's, never the client's (SEC-PK7A-F2).
       const answer = await send(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/confirm`, "POST", { acknowledgedDisclosure }, { csrf: true });

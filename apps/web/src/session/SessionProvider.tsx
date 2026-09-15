@@ -34,8 +34,10 @@ export function SessionProvider({ children, client }: { children: ReactNode; cli
       handleSessionEnding("access_loss", fromWebStorage(storage), {
         stopSubscriptions() {}, clearQueuedMutations() {},
       });
-      // SEC-PK8-F4: the invitation return marker and the per-tab ceremony memory live outside the session-keyed
-      // prefixes so the sign-in hop keeps them (PK-8); a session that ends here must not hand them to the next person.
+      // SEC-PK8-F4: the per-tab ceremony memory (proof/attach state, keyed by ceremony id) lives outside the
+      // session-keyed prefixes so the sign-in hop keeps it (PK-8); a session that ends here must not hand it to
+      // the next person. CBD-190 identity amendments proposal §3.5 retired the invitation return marker that
+      // used to share this prefix -- nothing under it is a navigation target any more.
       for (const key of Object.keys(storage)) if (key.startsWith("cobudget.invitation.")) storage.removeItem(key);
     }
     setSession(null);

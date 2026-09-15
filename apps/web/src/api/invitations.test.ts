@@ -10,7 +10,6 @@ import type { WireCeremonyEntry, WireDisclosureView } from "./invitations.ts";
 import { createMockDirectory, handleMockInvitationRequest, CEREMONY_COOKIE, MAX_CHANNEL_ATTEMPTS } from "./mock-invitations.ts";
 import { createServerMock, handleMockRequest } from "./mock-server.ts";
 import type { MockWire } from "./mock-server.ts";
-import { sameOriginPath } from "./return-path.ts";
 
 const bootstrap = { accountSubjectId: "s", profileId: "p", identityBindingId: "b", sessionRef: "r", sessionVersion: 1, environmentId: "development", assurance: "session", csrfValue: "bootstrap-fixture" };
 
@@ -78,7 +77,7 @@ test("the transfer confirm names only the transfer id and the disclosure claim, 
   await api.session();
   answer = Response.json({ navigateTo: "/v1/identity/local/authorize?step-up" , challengeId: "ch" });
   assert.equal(await api.beginStepUp("sp"), "/v1/identity/local/authorize?step-up");
-  assert.deepEqual(body(), { action: TRANSFER_ACTION, budgetSpaceId: "sp", postResultDestinationId: "budgets" }, "bound to the protected action and the space");
+  assert.deepEqual(body(), { action: TRANSFER_ACTION, budgetSpaceId: "sp", postResultDestinationId: "budget_transfer" }, "bound to the protected action and the space");
   assert.equal(headers()["X-CoBudget-CSRF"], "bootstrap-fixture", "the step-up begin is CSRF-checked like logout");
   answer = Response.json({ outcome: "committed", messageCode: "MSG-73-042", transfer, receipt: {}, freshAssurance: "consumed" });
   assert.deepEqual(await api.confirmTransfer("sp", "t1", claim), { outcome: "committed", transfer });
@@ -97,16 +96,6 @@ test("the transfer confirm names only the transfer id and the disclosure claim, 
   assert.deepEqual(await api.confirmTransfer("sp", "t1", claim), { outcome: "refused", error: "transfer_not_found", status: 404 });
   answer = Response.json({ error: "transfer_not_found" }, { status: 404 });
   await assert.rejects(api.viewTransfer("sp", "t1"), (error: unknown) => error instanceof InvitationApiError && error.code === "transfer_not_found", "a non-party sees exactly what an unknown id answers");
-});
-
-test("SEC-PK8-F1: a return path is followed only when it stays on this origin; backslash and scheme-relative forms are refused", () => {
-  const origin = "http://localhost:3000";
-  for (const hostile of ["/" + "\\" + "evil.example", "/" + "\\" + "/evil.example", "//evil.example", "https://evil.example", "/" + "\\" + "evil.example/budgets", "evil.example", "", 42, null]) {
-    assert.equal(sameOriginPath(hostile, origin), undefined, JSON.stringify(hostile));
-  }
-  assert.equal(sameOriginPath("/budgets/abc/transfer/def?resume=confirm", origin), "/budgets/abc/transfer/def?resume=confirm");
-  assert.equal(sameOriginPath("/invitation/ceremony/x#fragment", origin), "/invitation/ceremony/x", "the fragment is dropped");
-  assert.equal(sameOriginPath("/a/../b", origin), "/b", "the resolved pathname is what is followed");
 });
 
 test("R-01 over the mock: a withdrawn transfer after beginStepUp leaves the session assurance unspent when the page's liveness guard is applied", async () => {
@@ -276,7 +265,9 @@ test("PK8-02 over the mock: invite, resolve with the cookie, exhaust a link term
   await assert.rejects(invitee.api.acceptTransfer(spaceId, transferId, outgoingClaim), (error: unknown) => error instanceof InvitationApiError && error.code === "stale_disclosure", "the other leg's claim is stale");
   assert.equal((await invitee.api.viewTransfer(spaceId, transferId)).transfer.state, "proposed", "a stale claim wrote nothing");
   assert.equal((await invitee.api.acceptTransfer(spaceId, transferId, recipientClaim)).outcome, "recipient_accepted");
-  assert.equal(await owner.api.beginStepUp(spaceId), "/budgets");
+  // CBD-190 identity amendments proposal §3.2/§3.3: `budget_transfer`'s navigateTo is derived from the bound
+  // budget space, not a fixed map entry.
+  assert.equal(await owner.api.beginStepUp(spaceId), `/budgets/${spaceId}/transfer`);
   assert.equal((await owner.api.session())!.assurance, "fresh");
   const live = await owner.api.viewTransfer(spaceId, transferId);
   assert.deepEqual(await owner.api.confirmTransfer(spaceId, live.transfer.transferId, recipientClaim), { outcome: "refused", error: "stale_disclosure", status: 409 }, "a stale claim on the confirm is a rolled-back refusal: the grant is returned");

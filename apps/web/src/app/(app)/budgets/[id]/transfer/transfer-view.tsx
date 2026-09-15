@@ -26,7 +26,7 @@ import { Alert } from "../../../../../components/Alert";
 import { Button } from "../../../../../components/Button";
 import { Checkbox } from "../../../../../components/Choice";
 import { Select } from "../../../../../components/Select";
-import { ReadFailure, SpaceNavigation, describeFailure, formatInstant, leaveReturnMarker, useInvitationsClient, useRead } from "../../../invitations-shared";
+import { ReadFailure, SpaceNavigation, describeFailure, formatInstant, useInvitationsClient, useRead } from "../../../invitations-shared";
 
 const LIVE: readonly string[] = ["proposed", "recipient_accepted", "primary_confirmed", "ready"];
 
@@ -46,6 +46,18 @@ export function ProposeTransferView({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const ownRole = read.value?.members.find(member => member.membershipId === read.value?.own)?.role;
   const candidates = read.value?.members.filter(member => member.membershipId !== read.value?.own) ?? [];
+  // CBD-190 identity amendments proposal §3.5: the step-up's destination is this space's general transfer page
+  // (the map cannot name a specific transfer id, only the bound budget space), so the proposer's own return from
+  // the identity check lands here rather than on the specific transfer. Forwarding to it with `resume=confirm`
+  // whenever the caller is the live transfer's proposer and it is awaiting their confirmation reopens the confirm
+  // control the same one-shot way the retired sessionStorage marker did -- read from the API's own state on this
+  // page, never from storage.
+  useEffect(() => {
+    const live = read.value?.live;
+    if (!live || read.value?.own !== live.transfer.proposerMembershipId) return;
+    if (live.transfer.state !== "proposed" && live.transfer.state !== "recipient_accepted") return;
+    router.replace(`/budgets/${encodeURIComponent(id)}/transfer/${encodeURIComponent(live.transfer.transferId)}?resume=confirm`);
+  }, [read.value, router, id]);
   async function propose() {
     setError("");
     if (!recipient) { setError("Choose the member who would become Primary Owner."); return; }
@@ -121,10 +133,13 @@ export function TransferView({ id, transferId, resume }: { id: string; transferI
   };
   async function stepUp() {
     setBusy("step-up"); setNotice(undefined);
-    try {
-      leaveReturnMarker({ path: `/budgets/${encodeURIComponent(id)}/transfer/${encodeURIComponent(transferId)}`, resume: "confirm" });
-      window.location.assign(await api.beginStepUp(id));
-    } catch (failure) { setBusy(undefined); setNotice({ tone: "danger", text: describeFailure(failure, "We could not start the identity check. You can try again.") }); }
+    // CBD-190 identity amendments proposal §3.5: `beginStepUp` names `budget_transfer` as the destination; the
+    // challenge binds this budget space (already required for the step-up itself), and the API's own
+    // post-result navigation returns the browser to this space's general transfer page -- no client-held
+    // marker is left. `ProposeTransferView` reads the live transfer back from the API and forwards here with
+    // `resume=confirm` when the caller is its proposer, which is how the confirm control reopens without storage.
+    try { window.location.assign(await api.beginStepUp(id)); }
+    catch (failure) { setBusy(undefined); setNotice({ tone: "danger", text: describeFailure(failure, "We could not start the identity check. You can try again.") }); }
   }
   async function confirm() {
     setBusy("confirm"); setNotice(undefined);

@@ -135,11 +135,24 @@ export async function pk8Journey(t, { browser, origin, errors }) {
     await second.page.close();
   });
 
-  await t.test("after sign-in the person returns to the ceremony, is attached, reads the approved disclosure with no default choice, and accepts", async () => {
+  await t.test("after sign-in the person returns to the invitation entry page (CBD-190 §3.5: the API's own destination, not a stored marker) and reopens the ceremony to be attached, read the approved disclosure with no default choice, and accept", async () => {
     // The trio (resolve, verify-channel) went out without a CSRF header; attach and accept carry one.
     const posted = [];
-    invitee.page.on("request", request => { if (request.method() === "POST" && request.url().includes("/api/mock/v1/invitations/")) posted.push({ url: new URL(request.url()).pathname, csrf: request.headers()["x-cobudget-csrf"] ?? null, body: request.postData() ?? "" }); });
+    const identityBegin = [];
+    invitee.page.on("request", request => {
+      if (request.method() !== "POST") return;
+      if (request.url().includes("/api/mock/v1/invitations/")) posted.push({ url: new URL(request.url()).pathname, csrf: request.headers()["x-cobudget-csrf"] ?? null, body: request.postData() ?? "" });
+      if (request.url().endsWith("/api/mock/v1/identity/begin")) identityBegin.push(request.postData() ?? "");
+    });
     await invitee.clickText("Sign in or create your MoneyPact account");
+    // WRD-01/WRD-02: the ceremony page names `invitation_ceremony`, the mock answers it exactly as the API does
+    // (its own closed destination map), and the browser lands there directly -- no return marker is read or left.
+    await invitee.page.waitForFunction(() => location.pathname === "/invitation");
+    assert.deepEqual(JSON.parse(identityBegin.at(-1)), { ceremony: "sign_in", postResultDestinationId: "invitation_ceremony" });
+    assert.equal(await invitee.page.evaluate(() => sessionStorage.getItem("cobudget.invitation.return")), null, "the retired return marker is never written");
+    // No per-invitation identifier travels through the identity challenge (proposal §3.2): the person reopens
+    // their invitation link -- here, the same ceremony URL the fragment link resolved to earlier -- to continue.
+    await invitee.page.goto(ceremonyUrl);
     await invitee.page.waitForFunction(() => location.pathname.startsWith("/invitation/ceremony/"));
     await invitee.waitText("Before you accept");
     await invitee.waitText("Existing members will see your display name");
@@ -222,15 +235,19 @@ export async function pk8Journey(t, { browser, origin, errors }) {
     await owner.waitText("required before confirming");
     await owner.page.click("#outgoing-acknowledged"); await owner.waitEnabled("Continue to the identity check");
     await owner.clickText("Continue to the identity check");
-    // The provider hop lands on /budgets; the return marker brings the person back with the confirm control.
+    // CBD-190 identity amendments proposal §3.5: the provider hop's own destination (`budget_transfer`, derived
+    // from the bound budget space) lands on this space's general transfer page; ProposeTransferView reads the
+    // live transfer back from the API and forwards to the specific one with `resume=confirm` -- no return
+    // marker is read or left anywhere in this round trip.
     await owner.waitText("Back from the identity check");
     // R-02: the resume signal is one-shot -- the query is gone from the address bar once the page has taken it.
     await owner.page.waitForFunction(() => location.search === "" && /\/transfer\/[0-9a-f-]{36}$/u.test(location.pathname));
     await owner.waitText("returned from the check");
     await owner.accessibility();
     const begin = posted.find(entry => entry.url.endsWith("/identity/step-up/begin"));
-    assert.deepEqual(JSON.parse(begin.body), { action: "29.transfer_primary_ownership", budgetSpaceId: budgetId, postResultDestinationId: "budgets" });
+    assert.deepEqual(JSON.parse(begin.body), { action: "29.transfer_primary_ownership", budgetSpaceId: budgetId, postResultDestinationId: "budget_transfer" });
     assert.ok(begin.csrf);
+    assert.equal(await owner.page.evaluate(() => sessionStorage.getItem("cobudget.invitation.return")), null, "the retired return marker is never written");
     await owner.page.click("#outgoing-acknowledged"); await owner.waitEnabled("Confirm the transfer");
     await owner.clickText("Confirm the transfer");
     await owner.waitText("Transfer committed");
