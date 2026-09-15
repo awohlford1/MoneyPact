@@ -47,7 +47,8 @@ void test("registered confirmation route authenticates before lookup, rejects ec
     // carries the routes of the sibling modules this test does not compose -- CBD-153 targets, and
     // PROTO-INCREMENT-B-001's accounts, transactions and progress -- so they are excluded by path.
     // PK-6 (PROTO-INVITATIONS-PK6-API-001) adds the owner invitation routes (apps/api/src/invitations, not composed here); the members list is part of budgetSpacesHttp and is installed.
-    const otherModules = ["/categories", "/targets", "/plan", "/accounts", "/transactions", "/progress", "/invitations"];
+    // PK-7B (PROTO-INVITATIONS-PK7B-TRANSFER-API-001) adds the Primary-transfer routes (apps/api/src/primary-transfer, not composed here).
+    const otherModules = ["/categories", "/targets", "/plan", "/accounts", "/transactions", "/progress", "/invitations", "/primary-transfers"];
     assert.deepEqual(installedRoutes(app.getHttpAdapter().getInstance()).map(route => route.id).filter(id => id.includes("/v1/budget-")).sort(),
       loadRegistrations().map(row => row.registration_id).filter(id => id.includes("/v1/budget-") && !otherModules.some(path => id.includes(path))).sort());
     const url = "/v1/budget-creation-proposals/" + request.proposalId + "/confirm";

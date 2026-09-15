@@ -333,3 +333,47 @@ describe("PK-6: the ceremony fact reader and the invitation row facts", () => {
     for (const path of Object.keys(foreign ?? {})) assert.equal(path.startsWith("resource."), false, `a row the space does not own leaked ${path}`);
   });
 });
+
+/**
+ * PK-7B (CBD-234 design section 10.2; `IMPL-PK4-F2`; `SEC-P5-F1`): the six
+ * Primary-transfer cells name a `membership` target, answered through the
+ * composed `membershipLeaves` reader (PK-7A's `readMembershipResourceLeaves`
+ * over the assembler's client) and through nothing else.
+ */
+describe("PK-7B: the membership target of the transfer cells", () => {
+  const RECIPIENT = "45454545-4545-4545-8545-454545454545";
+  const asked: { budgetSpaceId: string; membershipId: string }[] = [];
+  const client = {
+    tenantSelect: async (query: { table: string; budgetSpaceId: string }) => {
+      assert.equal(query.budgetSpaceId, SPACE);
+      if (query.table === "budget_space") return { rows: [{ budget_space_id: SPACE, lifecycle: "live", lifecycle_version: 1, primary_owner_membership_id: MEMBERSHIP }] };
+      if (query.table === "budget_space_membership") return { rows: [owner()] };
+      if (query.table === "budget_space_consent") return { rows: [consentRow()] };
+      return { rows: [] };
+    },
+  } as unknown as DataAccessClient;
+  const membershipLeaves = async (_client: DataAccessClient, budgetSpaceId: string, membershipId: string) => {
+    asked.push({ budgetSpaceId, membershipId });
+    return membershipId === RECIPIENT ? { type: "membership" as const, id: membershipId, owningSpaceId: budgetSpaceId, version: 4, lifecycle: "active" } : null;
+  };
+  const read = (resourceId: string, options?: { membershipLeaves: typeof membershipLeaves }) => budgetFactReader("development", options)("datastore", {
+    credential: "opaque", identity: { "subject.accountSubjectId": SUBJECT },
+    operation: { action: "29.propose_primary_transfer", purpose: "user_delegated", mode: "user_delegated", fieldSet: "default", resourceType: "membership", resourceId, actingSpaceId: SPACE, actingMembershipId: MEMBERSHIP },
+  }, client);
+
+  it("answers the recipient row's own space, authorization_version and status through the composed reader, keyed on the acting space", async () => {
+    asked.length = 0;
+    const facts = await read(RECIPIENT, { membershipLeaves });
+    assert.deepEqual({ owningSpaceId: facts?.["resource.owningSpaceId"], version: facts?.["resource.version"], lifecycle: facts?.["resource.lifecycle"] }, { owningSpaceId: SPACE, version: 4, lifecycle: "active" });
+    assert.deepEqual(asked, [{ budgetSpaceId: SPACE, membershipId: RECIPIENT }]);
+  });
+  it("produces no resource leaf for a membership the acting space does not own, for the space identifier itself, or without a composed reader", async () => {
+    for (const [name, facts] of [
+      ["foreign row", await read("00000000-0000-4000-8000-00000000ffff", { membershipLeaves })],
+      ["the space id", await read(SPACE, { membershipLeaves })],
+      ["no reader", await read(RECIPIENT)],
+    ] as const) {
+      for (const path of Object.keys(facts ?? {})) assert.equal(path.startsWith("resource."), false, `${name} leaked ${path}`);
+    }
+  });
+});

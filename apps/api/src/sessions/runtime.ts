@@ -37,6 +37,16 @@
  * (`invitations/surface-gate.ts`). The one role pool `invitationRuntime` holds
  * for the closed pre-authentication locator statements is created lazily
  * for the same reason the client is.
+ *
+ * PK-7B (CBD-234 design sections 10, 12 and 15 PK-7 row) joins the
+ * Primary-transfer surface on the local path: the six routes
+ * (`primary-transfer/http.ts`), the transfer transaction store dispatched for
+ * the six row-29 actions and composed over the general `ApiTransactionStore`
+ * (which spends the `fresh_assurance` grant and records the consumed
+ * identifier per handle, `SEC-PK7A-F2`), the PK-7A discharges on the same
+ * transaction, and the `membership` target reader layered into
+ * `budgetFactReader` so the six cells assemble their `resource.*` leaves
+ * through PK-7A's tenant-scoped read (`IMPL-PK4-F2`).
  */
 import { HttpException } from "@nestjs/common";
 import { createApiClient } from "@cobudget/data-access";
@@ -60,6 +70,8 @@ import { INVITATION_ACTION_SET, InvitationsAuthorizationStore, dataAccessInvitat
 import { invitationRuntime } from "../invitations/persistence.ts";
 import { invitationSurfaceGate } from "../invitations/surface-gate.ts";
 import { localDeliveriesHttp } from "../local/http.ts";
+import { PrimaryTransferAuthorizationStore, TRANSFER_ACTION_SET, dataAccessPrimaryTransferDependencies, primaryTransferHttp } from "../primary-transfer/http.ts";
+import { primaryTransferRuntime } from "../primary-transfer/persistence.ts";
 import { ChallengeStore } from "../identity/challenge.ts";
 import { IdentityCeremony } from "../identity/ceremony.ts";
 import type { IdentityEvidence, IdentityEvidenceSink } from "../identity/ceremony.ts";
@@ -225,17 +237,25 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
   const budget = composeBudgetApi({ client, environmentId: identityConfig.environmentId, sessions, pepper: session.pepper, now });
   // PK-6: the invitation surface. The registry is verified at startup by `composeBudgetApi` above; the invitation
   // composition asks it for both invitation kinds and fails closed if either is missing.
+  const disclosures = loadConsentDisclosureRegistry();
   const invitations = invitationRuntime({
     locator: overrides.locator ?? lazyLocatorQueryable(() => createApiConnection()),
     keys: overrides.keys ?? resolveApiFieldEncryptionProvider(config),
-    disclosures: loadConsentDisclosureRegistry(), now,
+    disclosures, now,
   });
   const invitationRoutes = invitationsHttp(dataAccessInvitationsDependencies({
     client, within: invitations.within, environmentId: identityConfig.environmentId, applicationOrigin: identityConfig.applicationOrigin, now,
   }));
   const invitationStore = new InvitationsAuthorizationStore(client);
   const localDeliveries = localDeliveriesHttp({ adapterKind: identityConfig.adapterKind, within: invitations.within, now });
-  const budgetFacts = budgetFactReader(identityConfig.environmentId);
+  // PK-7B: the Primary-transfer surface. The PK-5 system cancel path (design section 10.3 step 6) is composed over
+  // the same transaction client through `invitations.within`; the composition asks the registry for both transfer
+  // kinds and fails closed if either is missing.
+  const transfers = primaryTransferRuntime({ disclosures, now, invitations: invitations.within });
+  const generalStore = new ApiTransactionStore(client, audit, { beforeCommit: overrides.beforeCommit });
+  const transferStore = new PrimaryTransferAuthorizationStore(client, generalStore, transfers.within);
+  const transferRoutes = primaryTransferHttp(dataAccessPrimaryTransferDependencies({ client, within: transfers.within, context: (transaction) => transferStore.context(transaction) }));
+  const budgetFacts = budgetFactReader(identityConfig.environmentId, { membershipLeaves: transfers.membershipLeaves });
   const ceremonyFacts = ceremonyFactReader(identityConfig.environmentId, invitations.locateCeremony);
   const extend: FactReader = async (source, lookup, scoped) => {
     const facts = { ...(await budgetFacts(source, lookup, scoped) ?? {}), ...(await ceremonyFacts(source, lookup, scoped) ?? {}), ...(await overrides.extendFacts?.(source, lookup, scoped) ?? {}) };
@@ -243,9 +263,10 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
   };
   const boundary = new AuthorizationBoundary(
     new FactAssembler("api", budget.facts(createApiFactSource({ sessions, client, extend })), now, 5_000, budget.candidates, { environmentId: identityConfig.environmentId }),
-    new DispatchingTransactionStore(new ApiTransactionStore(client, audit, { beforeCommit: overrides.beforeCommit }), audit, [
+    new DispatchingTransactionStore(generalStore, audit, [
       ...budget.stores,
       { actions: INVITATION_ACTION_SET, store: invitationStore, observe: (outcomes) => invitationStore.observe(outcomes) },
+      { actions: TRANSFER_ACTION_SET, store: transferStore, observe: (outcomes) => transferStore.observe(outcomes) },
     ]),
     new RestrictedAudit(audit, PROTOTYPE_AUDIT_GOVERNANCE),
     failure,
@@ -344,7 +365,7 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
     return {};
   };
   const authorization: Wiring = {
-    modules: [identity.module, ...budget.modules, invitationRoutes.module, localDeliveries.module],
+    modules: [identity.module, ...budget.modules, invitationRoutes.module, localDeliveries.module, transferRoutes.module],
     boundary,
     // PK-6: the ceremony gate denies a verify-channel or decline that names no resolvable ceremony before any counter is touched.
     rateLimit: overrides.rateLimit ?? invitationSurfaceGate(new ApiRateLimits("cbd266-prototype-v1", undefined, undefined, undefined, ceremonyContext), invitations.locateCeremony),
