@@ -16,6 +16,10 @@ import { fullPeriodTargets } from "@cobudget/budget-domain/targets";
 import { ApiError, createHttpClient } from "./client.ts";
 import type { ApiClient, FieldError, WireAccountList, WireAccountMutation, WireCategoryDetail, WireCategoryList, WirePlan, WireProgress, WireSession, WireSpaceDetail, WireSpaceList, WireTargetSet, WireTransactionMutation } from "./client.ts";
 import type { Confirmation, Disclosure, Draft, Proposal, ProposalRead } from "./proposals.ts";
+// PK-8: the invitation, members, ceremony, Primary-transfer, step-up and notices routes live in their own module; the
+// directory they share across sessions is also where every session's budget spaces and memberships now live.
+import { activeMembership, createMockDirectory, handleMockInvitationRequest, mockAssurance, registerMockSpace, sharedMockDirectory } from "./mock-invitations.ts";
+import type { MockDirectory } from "./mock-invitations.ts";
 
 /** The mock's stand-in for config/consent-disclosure-registry.json; the live API serves the approved entry. */
 const MOCK_DISCLOSURE: Disclosure = {
@@ -55,6 +59,12 @@ interface MockSpace { detail: WireSpaceDetail; schedule: CadenceDefinition; cate
 
 /** The wire-level mock of one signed-in browser session. */
 export interface MockWire {
+  /** PK-8: the state shared with every other mock session (spaces, memberships, invitations, transfers, notices). */
+  readonly directory: MockDirectory;
+  /** The signed-in subject, or null. */
+  subject(): string | null;
+  /** The clock this session's mock keeps time by. */
+  now(): number;
   /** The bootstrap body; `csrfValue` is delivered on every bootstrap read of the live session, as the API does (RC-06 bounded retention). */
   me(): WireSession | null;
   /** The session's raw CSRF value for the route's header check. */
@@ -80,15 +90,16 @@ export interface MockWire {
   categoryDetail(id: string, periodId: string, categoryId: string): WireCategoryDetail;
 }
 
-export function createServerMock(now = Date.now): MockWire {
+export function createServerMock(now = Date.now, directory: MockDirectory<MockSpace> = sharedMockDirectory<MockSpace>()): MockWire {
   const csrfValue = randomUUID();
   let session: WireSession | null = { accountSubjectId: randomUUID(), profileId: randomUUID(), identityBindingId: randomUUID(), sessionRef: randomUUID(), sessionVersion: 1, environmentId: "development", assurance: "session" };
   const proposals = new Map<string, { proposal: Proposal; status: "previewed" | "invalidated" | "confirmed" }>();
   const creations = new Map<string, { command: string; proposal: Proposal }>();
   const confirmations = new Map<string, { id: string; response: Confirmation }>();
-  const spaces = new Map<string, MockSpace>();
+  const spaces = directory.spaces;
   function authorize() { if (!session) throw new ApiError(403, "authorization_denied"); }
-  function space(id: string) { const value = spaces.get(id); if (!value) throw new ApiError(403, "authorization_denied"); return value; }
+  // PK-8: a space is readable by any of its active members, which the shared directory now records (the policy's membership fact live).
+  function space(id: string) { const value = spaces.get(id); if (!value || !session || !activeMembership(directory, id, session.accountSubjectId)) throw new ApiError(403, "authorization_denied"); return value; }
   function readProposal(id: string): ProposalRead {
     const stored = proposals.get(id);
     if (!stored) throw new ApiError(403, "authorization_denied");
@@ -178,7 +189,10 @@ export function createServerMock(now = Date.now): MockWire {
     return { version: { ...rest, currencyCode: "USD", minorUnitPrecision: 2, origin: "manual", settlementState: "settled" }, allocations };
   }
   const mock: MockWire = {
-    me() { return session ? { ...session, csrfValue } : null; },
+    directory,
+    subject() { return session?.accountSubjectId ?? null; },
+    now,
+    me() { return session ? { ...session, assurance: mockAssurance(directory, session.accountSubjectId, now()), csrfValue } : null; },
     csrf() { return session ? csrfValue : null; },
     logout() { session = null; proposals.clear(); },
     createProposal(body, idempotency) {
@@ -250,6 +264,7 @@ export function createServerMock(now = Date.now): MockWire {
         schedule: proposal.normalizedInputs.schedule, categories: [], base: new Map(), accounts: [], versions: [],
       });
       proposals.get(id)!.status = "confirmed";
+      registerMockSpace(directory, budgetSpaceId, proposal.normalizedInputs.name, session!.accountSubjectId, response.primaryOwnerMembershipId, response.committedAt);
       confirmations.set(idempotency, { id, response });
       return structuredClone(response);
     },
@@ -361,7 +376,8 @@ export function createServerMock(now = Date.now): MockWire {
     },
     listSpaces() {
       authorize();
-      return { spaces: [...spaces.values()].map(value => ({ budgetSpaceId: value.detail.space.budgetSpaceId, membershipId: randomUUID(), name: value.detail.space.name, nameVersion: 1, lifecycle: "live", lifecycleVersion: 1, currencyCode: value.detail.space.currencyCode, timeZone: value.detail.space.timeZone })) };
+      // PK-8 (membership.list_own): the spaces this subject holds an active membership in, with its own membership id.
+      return { spaces: [...spaces.values()].flatMap(value => { const membership = activeMembership(directory, value.detail.space.budgetSpaceId, session!.accountSubjectId); return membership ? [{ budgetSpaceId: value.detail.space.budgetSpaceId, membershipId: membership.membershipId, name: value.detail.space.name, nameVersion: 1, lifecycle: "live", lifecycleVersion: 1, currencyCode: value.detail.space.currencyCode, timeZone: value.detail.space.timeZone }] : []; }) };
     },
     spaceDetail(id) { authorize(); return structuredClone(space(id).detail); },
     plan(id, periodId) { authorize(); return planFor(space(id), periodId); },
@@ -412,6 +428,9 @@ export async function handleMockRequest(mock: MockWire, request: Request, path: 
     const body = request.method === "GET" ? {} : await request.json().catch(() => ({}));
     const idempotency = request.headers.get("Idempotency-Key") ?? "";
     const route = path.join("/");
+    // PK-8: the invitation, members, transfer, step-up, local-delivery and notices routes of a signed-in session.
+    const subject = mock.subject(); const csrf = mock.csrf();
+    if (subject && csrf) { const owned = await handleMockInvitationRequest(mock.directory, { accountSubjectId: subject, csrf }, request, path, body, mock.now); if (owned) return owned; }
     if (route === "identity/me" && request.method === "GET") { const session = mock.me(); if (!session) throw new ApiError(403, "authorization_denied"); return json(session); }
     if (route === "identity/logout" && request.method === "POST") { mock.logout(); return json({ signedOut: true }); }
     if (path[0] === "budget-creation-proposals") {
@@ -449,7 +468,8 @@ export async function handleMockRequest(mock: MockWire, request: Request, path: 
 
 /** The production HTTP client over an in-memory fetch to one mock session, as a browser on the same origin would issue it (unit tests). */
 export function createMockClient(now = Date.now, origin = "http://localhost"): ApiClient & { readonly mock: MockWire } {
-  const mock = createServerMock(now);
+  // One directory per client: unit tests never share state through the process-wide one.
+  const mock = createServerMock(now, createMockDirectory<MockSpace>());
   const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
     const target = new URL(String(input), origin);
     const headers = new Headers(init?.headers);
