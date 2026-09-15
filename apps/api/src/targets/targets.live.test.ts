@@ -31,6 +31,10 @@ import type { TargetsDependencies } from "../../../../packages/budget-applicatio
 
 const database = loadLocalDatabaseConfig();
 const configured = database.database !== "cobudget_dev";
+// Fixture-only constants: the consent row's digests are opaque to every
+// assertion in this suite; the trigger requires a non-empty value.
+const DISCLOSURE_DIGEST = "093f199283c75721e1d197bbe7c64452e3689715a0a1470a1fe557c805421e34";
+const POLICY_DIGEST = "b4fbdb8e32a6155705877d7c91846ee855dc717dfce9d57a6f04e07301923e4d";
 const sqlState = (expected: string) => (error: unknown) => error instanceof StatementFailedError && error.sqlState === expected;
 const code = (expected: string) => (error: unknown) => error instanceof TargetsError && error.code === expected;
 
@@ -46,6 +50,14 @@ void test("CBD-153 live: round trip, completed-period immutability, identity-dri
       await seed.query("INSERT INTO budget_space (budget_space_id, name, time_zone, time_zone_data_version, currency_code, currency_catalog_version, primary_owner_membership_id, initial_schedule_version_id, current_schedule_version_id, current_period_id, created_by_subject_id) VALUES ($1,$2,$8,'2026a',$3,'cbd-231/0.1',$4,$5,$5,$6,$7)",
         [space, "Live " + space.slice(0, 8), currency, membership, schedule, periods[0]!.id, subject, timeZone]);
       await seed.query("INSERT INTO budget_space_membership (membership_id, budget_space_id, profile_id, account_subject_id, role, status, created_by_subject_id) VALUES ($1,$2,$3,$4,'primary_owner','active',$4)", [membership, space, profile, subject]);
+      // PROTO-HARDENING-001 (PK2-F02, CL-F02): the CBD-236 consent landing refuses
+      // at commit any budget_space_membership with no current budget_space_consent
+      // row, so the fixture records the creator's self-disclosure exactly as the
+      // confirmation ceremony does. Fixture repair only; no assertion changed.
+      await seed.query("INSERT INTO budget_space_consent (consent_id, budget_space_id, membership_id, account_subject_id, role, resource_scope, source,"
+        + " source_record_id, source_record_version, disclosure_kind, disclosure_version, disclosure_digest, policy_version, policy_digest,"
+        + " state, recorded_by_subject_id) VALUES ($1,$2,$3,$4,'primary_owner','full','self_disclosure',$3,1,'primary_owner_self',1,$5,'p3',$6,'current',$4)",
+        [randomUUID(), space, membership, subject, DISCLOSURE_DIGEST, POLICY_DIGEST]);
       await seed.query("INSERT INTO budget_space_schedule_version (schedule_version_id, budget_space_id, sequence, status, cadence_definition, proposal_preview_digest) VALUES ($1,$2,1,'authoritative',$3,'digest')", [schedule, space, JSON.stringify(cadence)]);
       for (const p of periods) await seed.query("INSERT INTO budget_space_period (period_id, budget_space_id, schedule_version_id, status, period_start_date, period_end_date) VALUES ($1,$2,$3,$4,$5,$6)", [p.id, space, schedule, p.status, p.start, p.end]);
       return { space, membership, schedule };
