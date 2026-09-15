@@ -135,11 +135,13 @@ local synthetic value.
 
 ### The self-driving proof
 
-The quickest way to see the whole journey is the browser walkthrough. It
-migrates a scratch database, starts the API and the web application with a
-generated environment, drives headless Chrome through the journey, and prints
-an eleven-step transcript. It needs Docker Desktop running and Chrome
-installed.
+The quickest way to see the whole journey is the browser walkthrough. It starts
+the API and the web application with a generated environment, drives headless
+Chrome through the journey, and prints a twenty-one-step transcript. Among
+those steps: a 12.50 expense split 8.00 Groceries and 4.50 Rent, whose share in
+the category detail offers no in-place edit and states why, and a
+single-category expense that is edited in place and removed while the split
+share stays at 8.00. It needs Docker Desktop running and Chrome installed.
 
 ```sh
 node scripts/prototype-browser-walkthrough.mjs --db cobudget_demo
@@ -153,8 +155,9 @@ denial cases:
 node scripts/prototype-e2e.mjs --db cobudget_demo
 ```
 
-Both scripts drop and recreate the named scratch database. Never point them at
-`cobudget_dev`.
+Both scripts expect the named scratch database to exist and to be migrated
+already; create and migrate it as **Database** below describes. Never point
+them at `cobudget_dev`.
 
 ### Running it yourself
 

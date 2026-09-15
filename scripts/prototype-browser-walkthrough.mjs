@@ -204,18 +204,63 @@ async function main() {
     log("Open the Groceries detail", "GET .../progress/{categoryId} 200: one itemized transaction of 8.00 USD agreeing with the aggregate");
     await page.screenshot({ path: join(shots, "walkthrough-9-detail.png") });
 
+    // F-REVB-01 (PR #340): this row is the Groceries SHARE of a 12.50 expense split 8.00/4.50.
+    // The in-place edit rewrites the whole transaction with one allocation, so offering it here
+    // would take 4.50 away from Rent with nothing said. The page withholds it and states why,
+    // and its removal control is labelled for what it actually removes.
+    const controls = async () => page.$$eval("button", (nodes) => nodes.map((node) => node.textContent?.trim()));
+    const splitShareIntact = async (when) => {
+      const body = await text();
+      expect(body.includes("Corner shop") && body.includes("8.00 USD · Everyday"), `the split share moved ${when}`);
+    };
+    await waitText("This expense is split across 2 categories, so it cannot be changed from this page");
+    expect(!(await controls()).includes("Edit this expense"), "a share of a split expense still offers the in-place edit");
+    expect((await controls()).includes("Remove this whole expense"), `the whole-expense removal is missing: ${JSON.stringify(await controls())}`);
+    await splitShareIntact("when the detail refused the edit");
+    log("The split share refuses the in-place edit", "allocationCount 2: no 'Edit this expense' control, the page states 'This expense is split across 2 categories, so it cannot be changed from this page', and removal is offered as 'Remove this whole expense'");
+    await page.screenshot({ path: join(shots, "walkthrough-10-split-refusal.png") });
+
+    // A single-category expense is the whole expense, so it does still edit in place.
+    await clickText("Back to the budget"); await waitText("Accounts and spending");
+    // The section's heading renders before its read resolves, so wait for the form itself.
+    await waitText("Record an expense"); await page.waitForSelector('input[id^="allocation-"]');
+    const singleIds = await page.$$eval('input[id^="allocation-"]', (nodes) => nodes.map((node) => `#${node.id}`));
+    await fill("#expense-date", periodStart);
+    await fill("#expense-amount", "3.00");
+    await fill("#expense-description", "Milk");
+    await fill(singleIds[0], "3.00");
+    await clickText("Record expense"); await waitText("Expense recorded.");
+    await waitText("Spent 11.00 USD of 400.00 USD");
+    await waitText("Spent 4.50 USD of 1500.00 USD");
+    log("Record a single-category expense Milk 3.00 Groceries", "POST .../transactions 201 with one allocation; Groceries spent 8.00 + 3.00 = 11.00, Rent untouched at 4.50");
+
+    await clickText("Groceries"); await waitText("Transactions in this category");
+    await waitText("Milk");
+    await splitShareIntact("when the single-category expense was recorded");
     await clickText("Edit this expense");
     const amountId = await page.$eval('input[id^="edit-amount-"]', (node) => `#${node.id}`);
     await fill(amountId, "20.00");
     await clickText("Save expense"); await waitText("Expense updated.");
     await waitText("20.00 USD · Everyday");
+    await splitShareIntact("when the single-category expense was edited");
+    log("Edit Milk in place to 20.00", "PATCH .../transactions 200 revision 2; the split share is still Corner shop 8.00 USD, so editing one expense moved no other category");
+    await page.screenshot({ path: join(shots, "walkthrough-11-single-edit.png") });
+
     await clickText("Remove this expense"); await waitText("Expense removed.");
+    // The detail states its own spent figure; "Spent N of M" is the dashboard's wording, not this page's.
+    await page.waitForFunction(() => document.querySelector('[data-testid="detail-spent"]')?.textContent?.trim() === "8.00 USD");
+    await splitShareIntact("when the single-category expense was removed");
+    log("Remove Milk", "POST .../remove 201 tombstone; the detail falls back to the split share alone and Groceries returns to 8.00");
+
+    await clickText("Remove this whole expense"); await waitText("Expense removed.");
     await waitText("Nothing has been recorded against this category for the active period.");
     await clickText("Back to the budget"); await waitText("Accounts and spending");
     await waitText("Spent 0.00 USD of 400.00 USD");
     await waitText("Remaining 400.00 USD");
-    log("Edit then remove the expense", "PATCH .../transactions 200 revision 2, POST .../remove 201 tombstone; spent returns to 0.00 and remaining to the target in both the aggregate and the detail");
-    await page.screenshot({ path: join(shots, "walkthrough-10-removed.png") });
+    await waitText("Spent 0.00 USD of 1500.00 USD");
+    await waitText("Remaining 1500.00 USD");
+    log("Remove the whole split expense", "POST .../remove 201 tombstone on the split transaction; both shares go with it, so spent returns to 0.00 and remaining to the target for Groceries and Rent alike, in the aggregate and the detail");
+    await page.screenshot({ path: join(shots, "walkthrough-12-removed.png") });
 
     await clickText("Sign out"); await page.waitForFunction(() => location.pathname === "/");
     expect(!(await browser.cookies()).some((cookie) => cookie.name === "__Host-cobudget_session"), "the session cookie is deleted at logout");
