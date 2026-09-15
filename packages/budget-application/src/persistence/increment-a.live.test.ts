@@ -286,7 +286,7 @@ void test("PROTO-INCREMENT-A-001 live PostgreSQL: accounts, transactions, alloca
           transaction_version_id: randomUUID(), transaction_id: randomUUID(), account_id: accountId, revision: 1,
           origin: "manual", settlement_state: "settled", currency_code: "USD", minor_unit_precision: 2, amount_minor_units: -1,
           budget_date: "2026-08-31", period_id: periodSeptember, period_start_date: "2026-09-01", period_end_date: "2026-09-30",
-          recorded_by_subject_id: subjectId, source: "user",
+          recorded_by_subject_id: subjectId, source: "user", created_at: NOW,
         },
       }),
       (error: unknown) => (error as { sqlState?: string }).sqlState === "23514",
@@ -355,7 +355,7 @@ void test("PROTO-INCREMENT-A-001 live PostgreSQL: accounts, transactions, alloca
             transaction_version_id: versionId, transaction_id: randomUUID(), account_id: accountId, revision: 1,
             origin: "manual", settlement_state: "settled", currency_code: "USD", minor_unit_precision: 2, amount_minor_units: -1_000,
             budget_date: "2026-09-10", period_id: periodSeptember, period_start_date: "2026-09-01", period_end_date: "2026-09-30",
-            recorded_by_subject_id: subjectId, source: "user",
+            recorded_by_subject_id: subjectId, source: "user", created_at: NOW,
           },
         });
         // One unit short: legal statement by statement, illegal at commit.
@@ -373,7 +373,12 @@ void test("PROTO-INCREMENT-A-001 live PostgreSQL: accounts, transactions, alloca
     );
 
     // The multi-statement split that does add up commits, which is what makes
-    // the deferral meaningful rather than merely permissive.
+    // the deferral meaningful rather than merely permissive. The row is
+    // stamped with the fixture clock: the application supersedes it below,
+    // and manual_transaction_check1 (superseded_at >= created_at) compares
+    // the command's clock with the row's created_at. Left to the column
+    // default, created_at is the database's wall clock, which passed NOW on
+    // 2026-09-15 at noon UTC and turned the removal into a 23514.
     const splitVersionId = randomUUID();
     const splitTransactionId = randomUUID();
     await client.transaction({ isolation: "serializable" }, async (tx) => {
@@ -384,7 +389,7 @@ void test("PROTO-INCREMENT-A-001 live PostgreSQL: accounts, transactions, alloca
           transaction_version_id: splitVersionId, transaction_id: splitTransactionId, account_id: accountId, revision: 1,
           origin: "manual", settlement_state: "settled", currency_code: "USD", minor_unit_precision: 2, amount_minor_units: -1_000,
           budget_date: "2026-09-10", period_id: periodSeptember, period_start_date: "2026-09-01", period_end_date: "2026-09-30",
-          recorded_by_subject_id: subjectId, source: "user",
+          recorded_by_subject_id: subjectId, source: "user", created_at: NOW,
         },
       });
       for (const [categoryId, amount] of [[categoryGroceries, -600], [categoryTransport, -400]] as const) {
@@ -409,7 +414,7 @@ void test("PROTO-INCREMENT-A-001 live PostgreSQL: accounts, transactions, alloca
             transaction_version_id: randomUUID(), transaction_id: randomUUID(), account_id: accountId, revision: 1,
             origin: "manual", settlement_state: "settled", currency_code: "USD", minor_unit_precision: 2, amount_minor_units: -1_000,
             budget_date: "2026-09-10", period_id: periodSeptember, period_start_date: "2026-09-01", period_end_date: "2026-09-30",
-            recorded_by_subject_id: subjectId, source: "user",
+            recorded_by_subject_id: subjectId, source: "user", created_at: NOW,
           },
         });
       }),
@@ -439,10 +444,58 @@ void test("PROTO-INCREMENT-A-001 live PostgreSQL: accounts, transactions, alloca
       "AC02: the aggregate is the signed sum of the detail",
     );
 
+    // The deliberate violation of the class that broke this line on
+    // 2026-09-15: a version whose created_at is later than the command's clock
+    // cannot be superseded by it. manual_transaction_check1 refuses the stamp
+    // with 23514, the adapter reports constraint_violation, and the identity
+    // is left with its current version intact. The row is written with
+    // allocations so the only failure in the transaction is the stamp itself.
+    const laterVersionId = randomUUID();
+    const laterTransactionId = randomUUID();
+    await client.transaction({ isolation: "serializable" }, async (tx) => {
+      await tx.tenantInsert({
+        table: "manual_transaction",
+        budgetSpaceId,
+        values: {
+          transaction_version_id: laterVersionId, transaction_id: laterTransactionId, account_id: accountId, revision: 1,
+          origin: "manual", settlement_state: "settled", currency_code: "USD", minor_unit_precision: 2, amount_minor_units: -500,
+          budget_date: "2026-09-11", period_id: periodSeptember, period_start_date: "2026-09-01", period_end_date: "2026-09-30",
+          recorded_by_subject_id: subjectId, source: "user", created_at: "2026-09-15T12:00:01.000Z",
+        },
+      });
+      await tx.tenantInsert({
+        table: "transaction_allocation",
+        budgetSpaceId,
+        values: {
+          allocation_id: randomUUID(), transaction_version_id: laterVersionId, category_id: categoryGroceries,
+          currency_code: "USD", minor_unit_precision: 2, amount_minor_units: -500,
+        },
+      });
+    });
+    await assert.rejects(
+      client.tenantUpdate({
+        table: "manual_transaction",
+        budgetSpaceId,
+        set: { superseded_at: NOW },
+        conditions: [{ column: "transaction_version_id", value: laterVersionId }],
+      }),
+      (error: unknown) => (error as { sqlState?: string }).sqlState === "23514",
+      "manual_transaction_check1: a supersession stamp earlier than created_at is refused",
+    );
+    await assert.rejects(
+      () => inTransaction((deps) => removeManualTransaction(deps.transactionsDeps, budgetSpaceId, laterTransactionId, subjectId)),
+      (error: unknown) => error instanceof TransactionError && error.code === "constraint_violation",
+      "the removal of a version created after the command's clock is the same refusal through the adapter",
+    );
+    const laterHistory = await readTransactionHistory(transactionsDeps, budgetSpaceId, laterTransactionId);
+    assert.deepEqual(laterHistory.map((snapshot) => [snapshot.version.revision, snapshot.version.supersededAt]), [[1, null]], "the refused stamp rolled back; the version is still current");
+    const beforeRemoval = await readBudgetProgress(transactionsDeps, budgetSpaceId, { periodId: periodSeptember, targets });
+    assert.equal(beforeRemoval.cells.find((cell) => cell.categoryId === categoryGroceries)?.settledActualMinorUnits, -2_000, "the later version counts until it is removed");
+
     const removal = await inTransaction((deps) => removeManualTransaction(deps.transactionsDeps, budgetSpaceId, splitTransactionId, subjectId));
     assert.equal(removal.current.allocations.length, 0, "a tombstone carries no allocations");
     const afterRemoval = await readBudgetProgress(transactionsDeps, budgetSpaceId, { periodId: periodSeptember, targets });
-    assert.equal(afterRemoval.cells.find((cell) => cell.categoryId === categoryGroceries)?.settledActualMinorUnits, -900);
+    assert.equal(afterRemoval.cells.find((cell) => cell.categoryId === categoryGroceries)?.settledActualMinorUnits, -1_400, "-2000 less the removed split's -600");
     assert.equal(afterRemoval.cells.find((cell) => cell.categoryId === categoryTransport)?.settledActualMinorUnits, -450);
     assert.equal(afterRemoval.calculationVersion, progress.calculationVersion);
 

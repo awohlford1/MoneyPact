@@ -24,6 +24,7 @@ import {
   TX_ACCOUNT_B,
   TX_CATEGORY_GROCERIES,
   TX_CATEGORY_TRANSPORT,
+  TX_FIXED_NOW,
   TX_PERIOD_AUG,
   TX_PERIOD_SEP,
   TX_SPACE_A,
@@ -245,6 +246,25 @@ describe("CBD-200 at the application layer: edit and remove", () => {
     assert.equal(world.repository.allocations.size, 1, "the removed version's prior allocation is retained history");
     await refuses("transaction_removed", () => removeManualTransaction(world.deps, TX_SPACE_A, created.current.version.transactionId, TX_SUBJECT_1));
     await refuses("transaction_removed", () => editManualTransaction(world.deps, TX_SPACE_A, created.current.version.transactionId, TX_SUBJECT_1, request()));
+  });
+
+  it("a supersession or removal stamped earlier than the version's created_at is a constraint violation (manual_transaction_check1, check2)", async () => {
+    // The live regression of 2026-09-15: a row whose created_at came from the
+    // database clock, superseded by a command whose clock stood earlier. The
+    // stamp is refused, and so is a tombstone dated before its own creation;
+    // the same command with a clock at or after created_at succeeds.
+    const world = transactionWorld();
+    const created = await createManualTransaction(world.deps, TX_SPACE_A, TX_SUBJECT_1, request());
+    const id = created.current.version.transactionId;
+    world.now = "2026-09-15T11:59:59.000Z";
+    await refuses("constraint_violation", () => removeManualTransaction(world.deps, TX_SPACE_A, id, TX_SUBJECT_1));
+    await refuses("constraint_violation", () => editManualTransaction(world.deps, TX_SPACE_A, id, TX_SUBJECT_1, request()));
+    const current = await readTransactionHistory(world.deps, TX_SPACE_A, id);
+    assert.deepEqual(current.map((snapshot) => snapshot.version.revision), [1], "a refused stamp leaves the identity untouched");
+    assert.equal(current[0]?.version.supersededAt, null);
+    world.now = TX_FIXED_NOW;
+    const removed = await removeManualTransaction(world.deps, TX_SPACE_A, id, TX_SUBJECT_1);
+    assert.equal(removed.current.version.removedAt, TX_FIXED_NOW);
   });
 
   it("the history is the ordered before/after trail", async () => {
