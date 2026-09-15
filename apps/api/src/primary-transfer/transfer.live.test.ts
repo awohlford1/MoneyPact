@@ -44,6 +44,7 @@ import type { DataAccessClient } from "@cobudget/data-access";
 import { createComposedApiApplication } from "../application.js";
 import { readReleaseHistory } from "../authorization/compatibility.js";
 import { APPLICATION_ORIGIN, localConfig } from "../identity/test-support/harness.ts";
+import { loadConsentDisclosureRegistry } from "../budget-creation/consent-registry.ts";
 import { STEP_UP_REQUIRED, TRANSFER_ACTIONS } from "./http.ts";
 
 const database = loadLocalDatabaseConfig();
@@ -52,6 +53,11 @@ const ENVIRONMENT = "development";
 /** Fixture-only digests: opaque to every assertion here, and the consent trigger requires non-empty values. */
 const DISCLOSURE_DIGEST = "093f199283c75721e1d197bbe7c64452e3689715a0a1470a1fe557c805421e34";
 const POLICY_DIGEST = "b4fbdb8e32a6155705877d7c91846ee855dc717dfce9d57a6f04e07301923e4d";
+/** PK8-F03: the claims of the two transfer disclosures as the approved registry serves them (what the view answers and the legs bind). */
+const REGISTRY = loadConsentDisclosureRegistry();
+const claimOf = (kind: string) => { const entry = REGISTRY.current(kind); return { kind: entry.kind, version: entry.version, digest: entry.digest }; };
+const ACCEPT_BODY = { acknowledgedDisclosure: claimOf("primary_transfer_recipient") };
+const CONFIRM_BODY = { acknowledgedDisclosure: claimOf("primary_transfer_outgoing") };
 
 type Response = { statusCode: number; body: string; headers: Record<string, unknown>; json: () => any };
 interface Harness {
@@ -201,7 +207,30 @@ describe("PK7B-01 live: the whole Primary transfer over HTTP on real PostgreSQL"
         assert.equal(view.statusCode, 200, view.body);
         assert.equal(view.json().transfer.state, "proposed");
         assert.ok(!view.body.includes("ssurance"), "no assurance material on the wire");
-        const accepted = await h.inject("POST", `${base}/${transferId}/accept`, mutation(recipient.csrfValue), {});
+        // PK8-F04: the recipient, handed no id, reads the space's live workflow by the space alone and gets the same view.
+        const live = await h.inject("GET", `${base}/live`);
+        assert.equal(live.statusCode, 200, live.body);
+        assert.deepEqual(live.json(), view.json(), "the live read is the status view");
+        // PK8-F03: the view carries the approved texts at the captured values; a differing claim is 409 stale_disclosure, rolled back.
+        assert.deepEqual({ kind: view.json().disclosures.recipient.kind, version: view.json().disclosures.recipient.version, digest: view.json().disclosures.recipient.digest }, ACCEPT_BODY.acknowledgedDisclosure);
+        assert.ok(typeof view.json().disclosures.recipient.text.heading === "string" && view.json().disclosures.outgoing.text.items.length > 0);
+        const staleClaim = await h.inject("POST", `${base}/${transferId}/accept`, mutation(recipient.csrfValue), { acknowledgedDisclosure: { ...ACCEPT_BODY.acknowledgedDisclosure, digest: "0".repeat(64) } });
+        assert.equal(staleClaim.statusCode, 409, staleClaim.body); assert.deepEqual(staleClaim.json(), { error: "stale_disclosure" });
+        const unclaimed = await h.inject("POST", `${base}/${transferId}/accept`, mutation(recipient.csrfValue), {});
+        assert.equal(unclaimed.statusCode, 409, unclaimed.body); assert.deepEqual(unclaimed.json(), { error: "stale_disclosure" });
+        const untouched = await h.client.tenantSelect({ table: "budget_space_primary_transfer", budgetSpaceId: space.spaceId, columns: ["state", "state_version"], conditions: [{ column: "transfer_id", value: transferId }] });
+        assert.deepEqual(untouched.rows[0], { state: "proposed", state_version: 1 }, "a stale claim wrote nothing");
+        // PK8-F01: the MSG-73-040 row reached the recipient through the subject-self notices route; the stamp is set once.
+        const notices = await h.inject("GET", "/v1/notices");
+        assert.equal(notices.statusCode, 200, notices.body);
+        const proposalNotice = (notices.json().notices as { noticeId: string; budgetSpaceId: string | null; messageCode: string; readAt: string | null }[]).find((row) => row.budgetSpaceId === space.spaceId && row.messageCode === "MSG-73-040");
+        assert.ok(proposalNotice, notices.body);
+        assert.equal(proposalNotice.readAt, null);
+        const marked = await h.inject("POST", `/v1/notices/${proposalNotice.noticeId}/read`, mutation(recipient.csrfValue), {});
+        assert.equal(marked.statusCode, 200, marked.body);
+        assert.ok(marked.json().notice.readAt);
+        assert.deepEqual((await h.inject("POST", `/v1/notices/${proposalNotice.noticeId}/read`, mutation(recipient.csrfValue), {})).json(), marked.json(), "set-once: the repeat answers the stamped row");
+        const accepted = await h.inject("POST", `${base}/${transferId}/accept`, mutation(recipient.csrfValue), ACCEPT_BODY);
         assert.equal(accepted.statusCode, 200, accepted.body);
         assert.equal(accepted.json().outcome, "recipient_accepted");
         assert.equal(accepted.json().messageCode, "MSG-73-025");
@@ -212,10 +241,16 @@ describe("PK7B-01 live: the whole Primary transfer over HTTP on real PostgreSQL"
         const wrongParty = await h.inject("POST", `${base}/${transferId}/accept`, mutation(owner.csrfValue), {});
         assert.equal(wrongParty.statusCode, 403, wrongParty.body);
         assert.deepEqual(wrongParty.json(), { outcome: "deny", reason: "denied" });
+        // PK8-F01 tenant safety: the recipient's notice is not in the Primary's list and cannot be stamped by the Primary.
+        const ownersNotices = await h.inject("GET", "/v1/notices");
+        assert.equal(ownersNotices.statusCode, 200, ownersNotices.body);
+        assert.ok(!ownersNotices.body.includes(proposalNotice!.noticeId), "another person's row is not listed");
+        const foreign = await h.inject("POST", `/v1/notices/${proposalNotice!.noticeId}/read`, mutation(owner.csrfValue), {});
+        assert.equal(foreign.statusCode, 404, foreign.body); assert.deepEqual(foreign.json(), { error: "notice_not_found" });
       });
 
       await t.test("at session assurance the protected confirm is denied and nothing moves; no grant exists to consume", async () => {
-        const denied = await h.inject("POST", `${base}/${transferId}/confirm`, mutation(owner.csrfValue), {});
+        const denied = await h.inject("POST", `${base}/${transferId}/confirm`, mutation(owner.csrfValue), CONFIRM_BODY);
         assert.equal(denied.statusCode, 403, denied.body);
         assert.deepEqual(denied.json(), { outcome: "deny", reason: "denied" });
         const row = await h.client.tenantSelect({ table: "budget_space_primary_transfer", budgetSpaceId: space.spaceId, columns: ["state", "primary_assurance_ref"], conditions: [{ column: "transfer_id", value: transferId }] });
@@ -232,7 +267,7 @@ describe("PK7B-01 live: the whole Primary transfer over HTTP on real PostgreSQL"
         assert.deepEqual({ bound_action: grant.bound_action, bound_space_id: grant.bound_space_id, state: grant.state }, { bound_action: TRANSFER_ACTIONS.confirm, bound_space_id: space.spaceId, state: "issued" });
         grantId = String(grant.fresh_assurance_id);
 
-        const confirmed = await h.inject("POST", `${base}/${transferId}/confirm`, mutation(owner.csrfValue), {});
+        const confirmed = await h.inject("POST", `${base}/${transferId}/confirm`, mutation(owner.csrfValue), CONFIRM_BODY);
         assert.equal(confirmed.statusCode, 200, confirmed.body);
         assert.equal(confirmed.json().outcome, "committed");
         assert.equal(confirmed.json().messageCode, "MSG-73-042");
@@ -290,9 +325,12 @@ describe("PK7B-01 live: the whole Primary transfer over HTTP on real PostgreSQL"
         assert.equal(await findUsableFreshAssurance(h.client, { sessionRef: owner.sessionRef, boundAction: TRANSFER_ACTIONS.confirm, boundSpaceId: space.spaceId, now: new Date() }), undefined, "the spent grant is gone");
         // SEC-P5-F1: a former Primary confirming after the role change. The released policy has no Co-owner column on
         // 29.transfer_primary_ownership, and there is no grant either way: the uniform denial, nothing written.
-        const repeat = await h.inject("POST", `${base}/${transferId}/confirm`, mutation(owner.csrfValue), {});
+        const repeat = await h.inject("POST", `${base}/${transferId}/confirm`, mutation(owner.csrfValue), CONFIRM_BODY);
         assert.equal(repeat.statusCode, 403, repeat.body);
         assert.deepEqual(repeat.json(), { outcome: "deny", reason: "denied" });
+        // PK8-F04: a committed workflow is not live; the space has none to read.
+        const noneLive = await h.inject("GET", `${base}/live`);
+        assert.equal(noneLive.statusCode, 404, noneLive.body); assert.deepEqual(noneLive.json(), { error: "transfer_not_found" });
         const view = await h.inject("GET", `${base}/${transferId}`);
         assert.equal(view.statusCode, 200, view.body);
         assert.equal(view.json().transfer.state, "committed");
@@ -327,7 +365,7 @@ describe("PK7B-01/02 live: the Primary-first order and the grant's fate on the r
         assert.equal(withdrawn.statusCode, 200, withdrawn.body);
         assert.equal(withdrawn.json().outcome, "withdrawn");
         // No live workflow: the transfer store cannot begin its ledger, the boundary denies before the handler, and the spend rolls back.
-        const denied = await h.inject("POST", `${base}/${first.json().transfer.transferId}/confirm`, mutation(owner.csrfValue), {});
+        const denied = await h.inject("POST", `${base}/${first.json().transfer.transferId}/confirm`, mutation(owner.csrfValue), CONFIRM_BODY);
         assert.equal(denied.statusCode, 403, denied.body);
         assert.deepEqual(denied.json(), { outcome: "deny", reason: "denied" });
         assert.ok(await usable(), "the grant is still usable: a rolled-back spend is no spend");
@@ -337,7 +375,13 @@ describe("PK7B-01/02 live: the Primary-first order and the grant's fate on the r
         const proposed = await h.inject("POST", base, mutation(owner.csrfValue), { recipientMembershipId: recipient.membershipId });
         assert.equal(proposed.statusCode, 201, proposed.body);
         transferId = proposed.json().transfer.transferId;
-        const confirmed = await h.inject("POST", `${base}/${transferId}/confirm`, mutation(owner.csrfValue), {});
+        // PK8-F03: a confirm whose claim is not the captured outgoing disclosure rolls back after the spend: 409 stale_disclosure,
+        // nothing written, and the grant returned (`freshAssurance: "unspent"`) -- still usable for the corrected request.
+        const staleClaim = await h.inject("POST", `${base}/${transferId}/confirm`, mutation(owner.csrfValue), ACCEPT_BODY);
+        assert.equal(staleClaim.statusCode, 409, staleClaim.body);
+        assert.deepEqual(staleClaim.json(), { error: "stale_disclosure", freshAssurance: "unspent" });
+        assert.ok(await usable(), "the rollback returned the grant");
+        const confirmed = await h.inject("POST", `${base}/${transferId}/confirm`, mutation(owner.csrfValue), CONFIRM_BODY);
         assert.equal(confirmed.statusCode, 200, confirmed.body);
         assert.equal(confirmed.json().outcome, "primary_confirmed");
         assert.deepEqual({ freshAssurance: confirmed.json().freshAssurance, next: confirmed.json().next }, { freshAssurance: "consumed", next: STEP_UP_REQUIRED });
@@ -350,9 +394,9 @@ describe("PK7B-01/02 live: the Primary-first order and the grant's fate on the r
         // reference other than the one the row stored, so the boundary's `confirm` discharge refuses before the handler
         // (obligations.ts: the stored reference is authoritative), the transaction rolls back and the new grant is
         // returned unspent -- the row is untouched and the first reference stays authoritative (PK7AFIX-F02 at the route).
-        assert.equal((await h.inject("POST", `${base}/${transferId}/confirm`, mutation(owner.csrfValue), {})).statusCode, 403);
+        assert.equal((await h.inject("POST", `${base}/${transferId}/confirm`, mutation(owner.csrfValue), CONFIRM_BODY)).statusCode, 403);
         assert.equal(await stepUp(h, owner.csrfValue, "subject-a", TRANSFER_ACTIONS.confirm, space.spaceId), 303);
-        const repeat = await h.inject("POST", `${base}/${transferId}/confirm`, mutation(owner.csrfValue), {});
+        const repeat = await h.inject("POST", `${base}/${transferId}/confirm`, mutation(owner.csrfValue), CONFIRM_BODY);
         assert.equal(repeat.statusCode, 403, repeat.body);
         assert.deepEqual(repeat.json(), { outcome: "deny", reason: "denied" });
         assert.ok(await usable(), "the second grant was returned by the rollback");
@@ -362,7 +406,7 @@ describe("PK7B-01/02 live: the Primary-first order and the grant's fate on the r
 
       await t.test("the recipient's accept completes the pair on the stored reference: TR-73-43 runs in the accept's transaction without any grant of its own", async () => {
         const accepting = await signIn(h, "subject-b");
-        const accepted = await h.inject("POST", `${base}/${transferId}/accept`, mutation(accepting.csrfValue), {});
+        const accepted = await h.inject("POST", `${base}/${transferId}/accept`, mutation(accepting.csrfValue), ACCEPT_BODY);
         assert.equal(accepted.statusCode, 200, accepted.body);
         assert.equal(accepted.json().outcome, "committed");
         assert.equal(accepted.json().receipt.newPrimaryMembershipId, recipient.membershipId);

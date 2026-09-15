@@ -15,7 +15,10 @@
 import { randomUUID } from "node:crypto";
 import invitationCollaborator from "../../../../docs/consent-disclosures/invitation-collaborator.v1.json" with { type: "json" };
 import invitationCoOwner from "../../../../docs/consent-disclosures/invitation-co-owner.v1.json" with { type: "json" };
-import type { ConsentDisclosure, InvitableRole, InvitationState, WireInvitation, WireMember, WireNotice, WireTransfer } from "./invitations.ts";
+import transferRecipient from "../../../../docs/consent-disclosures/primary-transfer-recipient.v1.json" with { type: "json" };
+import transferOutgoing from "../../../../docs/consent-disclosures/primary-transfer-outgoing.v1.json" with { type: "json" };
+import registry from "../../../../config/consent-disclosure-registry.json" with { type: "json" };
+import type { ConsentDisclosure, InvitableRole, InvitationState, WireInvitation, WireMember, WireNotice, WireTransfer, WireTransferDisclosures } from "./invitations.ts";
 import { TRANSFER_ACTION } from "./invitations.ts";
 
 export const CEREMONY_COOKIE = "__Host-mp_invitation_ceremony";
@@ -77,6 +80,13 @@ export function mockAssurance(directory: MockDirectory, accountSubjectId: string
 const DISCLOSURES: Readonly<Record<InvitableRole, ConsentDisclosure>> = Object.freeze({
   collaborator: { kind: invitationCollaborator.kind, version: invitationCollaborator.version, digest: "mock-invitation-collaborator-digest", text: { heading: invitationCollaborator.heading, items: invitationCollaborator.items, acknowledgement: invitationCollaborator.acknowledgement } },
   co_owner: { kind: invitationCoOwner.kind, version: invitationCoOwner.version, digest: "mock-invitation-co-owner-digest", text: { heading: invitationCoOwner.heading, items: invitationCoOwner.items, acknowledgement: invitationCoOwner.acknowledgement } },
+});
+
+/** PK8-F03: the two transfer disclosures as the registry serves them, digests included (the claim the legs bind). */
+const registryDigest = (kind: string, version: number) => registry.find(entry => entry.kind === kind && entry.version === version)?.digest ?? `mock-${kind}-digest`;
+const TRANSFER_DISCLOSURES: WireTransferDisclosures = Object.freeze({
+  recipient: { kind: transferRecipient.kind, version: transferRecipient.version, digest: registryDigest(transferRecipient.kind, transferRecipient.version), text: { heading: transferRecipient.heading, items: transferRecipient.items, acknowledgement: transferRecipient.acknowledgement } },
+  outgoing: { kind: transferOutgoing.kind, version: transferOutgoing.version, digest: registryDigest(transferOutgoing.kind, transferOutgoing.version), text: { heading: transferOutgoing.heading, items: transferOutgoing.items, acknowledgement: transferOutgoing.acknowledgement } },
 });
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
@@ -230,10 +240,17 @@ export async function handleMockInvitationRequest(directory: MockDirectory, sess
   }
 
   // --- notices ------------------------------------------------------------------------------------
+  const noticeView = (row: MockNoticeRow): WireNotice => ({ noticeId: row.noticeId, budgetSpaceId: row.budgetSpaceId, messageCode: row.messageCode, createdAt: row.createdAt, readAt: row.readAt });
   if (path.join("/") === "notices" && request.method === "GET") {
-    const rows = directory.notices.filter(row => row.accountSubjectId === subject).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .map(row => ({ noticeId: row.noticeId, budgetSpaceId: row.budgetSpaceId, messageCode: row.messageCode, createdAt: row.createdAt, readAt: row.readAt }));
+    const rows = directory.notices.filter(row => row.accountSubjectId === subject).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.noticeId.localeCompare(a.noticeId)).map(noticeView);
     return json({ notices: rows });
+  }
+  // PK8-F01: the set-once read stamp on one of the caller's own rows; another person's or an unknown id is the same 404.
+  if (path[0] === "notices" && path.length === 3 && path[2] === "read" && request.method === "POST") {
+    const row = UUID.test(path[1]!) ? directory.notices.find(candidate => candidate.noticeId === path[1]!.toLowerCase() && candidate.accountSubjectId === subject) : undefined;
+    if (!row) return json({ error: "notice_not_found" }, 404);
+    row.readAt ??= at();
+    return json({ notice: noticeView(row) });
   }
 
   if (path[0] !== "budget-spaces" || path.length < 3) return undefined;
@@ -347,6 +364,13 @@ export async function handleMockInvitationRequest(directory: MockDirectory, sess
       notice(directory, target.accountSubjectId, budgetSpaceId, "MSG-73-040", at());
       return json({ outcome: "proposed", messageCode: "MSG-73-040", transfer: structuredClone(transfer) }, 201);
     }
+    // PK8-F04: the space's one live workflow for its two parties; none, or a non-party, is the unknown-identifier 404.
+    if (path.length === 4 && path[3] === "live" && request.method === "GET") {
+      const current = live(); if (current) expire(current);
+      const row = live();
+      if (!row || (acting.membershipId !== row.proposerMembershipId && acting.membershipId !== row.recipientMembershipId)) return json({ error: "transfer_not_found" }, 404);
+      return json({ transfer: structuredClone(row), disclosures: structuredClone(TRANSFER_DISCLOSURES) });
+    }
     if (path.length < 4 || !UUID.test(path[3]!)) return json({ error: "transfer_not_found" }, 404);
     const transfer = directory.transfers.get(path[3]!.toLowerCase());
     // SEC-PK7B-F1: a same-space member who is neither party is answered as an unknown identifier.
@@ -364,7 +388,12 @@ export async function handleMockInvitationRequest(directory: MockDirectory, sess
       notice(directory, proposer.accountSubjectId, budgetSpaceId, "MSG-73-042", transfer.committedAt); notice(directory, recipient.accountSubjectId, budgetSpaceId, "MSG-73-042", transfer.committedAt);
       return { transferId: transfer.transferId, committedAt: transfer.committedAt, recipientConsentId: randomUUID(), outgoingConsentId: randomUUID() };
     };
-    if (path.length === 4 && request.method === "GET") return json({ transfer: structuredClone(transfer) });
+    if (path.length === 4 && request.method === "GET") return json({ transfer: structuredClone(transfer), disclosures: structuredClone(TRANSFER_DISCLOSURES) });
+    // PK8-F03: the claim must be the captured kind, version and digest of the leg's own disclosure; otherwise 409 stale_disclosure with nothing written.
+    const claimMatches = (expected: ConsentDisclosure | null) => {
+      const claim = fields.acknowledgedDisclosure as { kind?: unknown; version?: unknown; digest?: unknown } | undefined;
+      return Boolean(expected && claim && claim.kind === expected.kind && claim.version === expected.version && claim.digest === expected.digest);
+    };
     if (path.length !== 5 || request.method !== "POST") return json({ error: "transfer_not_found" }, 404);
     const step = path[4]!;
     if (step === "confirm") {
@@ -379,6 +408,8 @@ export async function handleMockInvitationRequest(directory: MockDirectory, sess
       const consumed = { freshAssurance: "consumed", next: "step_up_required" };
       // A confirm that reaches the module consumes the grant whatever it answers (SEC-PK7A-F6, finding 2 of PR 368).
       if (!isLive) return json({ error: "transfer_not_current", messageCode: "MSG-73-046", ...consumed }, 409);
+      // A stale claim rolls back after the spend: the grant is returned unspent.
+      if (!claimMatches(TRANSFER_DISCLOSURES.outgoing)) { grant.consumed = false; return json({ error: "stale_disclosure", freshAssurance: "unspent" }, 409); }
       if (transfer.state === "recipient_accepted") { transfer.primaryConfirmedAt = at(); const receipt = commit(); return json({ outcome: "committed", messageCode: "MSG-73-042", transfer: structuredClone(transfer), receipt, freshAssurance: "consumed" }); }
       if (transfer.state === "proposed") { transfer.state = "primary_confirmed"; transfer.stateVersion += 1; transfer.primaryConfirmedAt = at(); return json({ outcome: "primary_confirmed", messageCode: "MSG-73-041", transfer: structuredClone(transfer), ...consumed }); }
       return json({ error: "transfer_not_current", messageCode: "MSG-73-046", ...consumed }, 409);
@@ -386,6 +417,7 @@ export async function handleMockInvitationRequest(directory: MockDirectory, sess
     if (step === "accept" || step === "decline") {
       if (isProposer) return json(DENY, 403);
       if (!isLive) return denied("transfer_not_current", 409);
+      if (step === "accept" && !claimMatches(TRANSFER_DISCLOSURES.recipient)) return json({ error: "stale_disclosure" }, 409);
       if (step === "decline") { transfer.state = "declined"; transfer.stateVersion += 1; notice(directory, partyOf(transfer.proposerMembershipId).accountSubjectId, budgetSpaceId, "MSG-73-043", at()); return json({ outcome: "declined", messageCode: "MSG-73-043", transfer: structuredClone(transfer) }); }
       if (transfer.state === "primary_confirmed") { transfer.recipientAcceptedAt = at(); const receipt = commit(); return json({ outcome: "committed", messageCode: "MSG-73-042", transfer: structuredClone(transfer), receipt }); }
       if (transfer.state === "proposed") { transfer.state = "recipient_accepted"; transfer.stateVersion += 1; transfer.recipientAcceptedAt = at(); notice(directory, partyOf(transfer.proposerMembershipId).accountSubjectId, budgetSpaceId, "MSG-73-041", at()); return json({ outcome: "recipient_accepted", messageCode: "MSG-73-041", transfer: structuredClone(transfer) }); }

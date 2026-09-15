@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createInvitationsClient, InvitationApiError, MESSAGE_SENTENCES, sentenceFor, TRANSFER_ACTION } from "./invitations.ts";
+import { claimOf, createInvitationsClient, InvitationApiError, MESSAGE_SENTENCES, sentenceFor, TRANSFER_ACTION } from "./invitations.ts";
 import type { WireCeremonyEntry, WireDisclosureView } from "./invitations.ts";
 import { createMockDirectory, handleMockInvitationRequest, CEREMONY_COOKIE, MAX_CHANNEL_ATTEMPTS } from "./mock-invitations.ts";
 import { createServerMock, handleMockRequest } from "./mock-server.ts";
@@ -70,7 +70,8 @@ test("attach, read and accept carry the bootstrap CSRF value, accept sends only 
   assert.ok(!calls.some(call => JSON.stringify(call.init?.headers ?? {}).includes("Cookie")), "script never reads or sets the ceremony cookie");
 });
 
-test("the transfer confirm names only the transfer id, carries no reference, ledger or digest field, and every answer class is one outcome", async () => {
+test("the transfer confirm names only the transfer id and the disclosure claim, carries no reference or ledger field, and every answer class is one outcome", async () => {
+  const claim = { kind: "primary_transfer_outgoing", version: 1, digest: "b".repeat(64) };
   let answer: Response = Response.json(bootstrap);
   const transfer = { transferId: "t1", budgetSpaceId: "sp", state: "committed", stateVersion: 3, proposerMembershipId: "m1", recipientMembershipId: "m2", expiresAt: "x", recipientAcceptedAt: "x", primaryConfirmedAt: "x", committedAt: "x", recipientDisclosureKind: "primary_transfer_recipient", recipientDisclosureVersion: 1, outgoingDisclosureKind: "primary_transfer_outgoing", outgoingDisclosureVersion: 1 };
   const { api, body, last, headers } = recording(() => answer);
@@ -80,18 +81,20 @@ test("the transfer confirm names only the transfer id, carries no reference, led
   assert.deepEqual(body(), { action: TRANSFER_ACTION, budgetSpaceId: "sp", postResultDestinationId: "budgets" }, "bound to the protected action and the space");
   assert.equal(headers()["X-CoBudget-CSRF"], "bootstrap-fixture", "the step-up begin is CSRF-checked like logout");
   answer = Response.json({ outcome: "committed", messageCode: "MSG-73-042", transfer, receipt: {}, freshAssurance: "consumed" });
-  assert.deepEqual(await api.confirmTransfer("sp", "t1"), { outcome: "committed", transfer });
+  assert.deepEqual(await api.confirmTransfer("sp", "t1", claim), { outcome: "committed", transfer });
   assert.equal(last().url, "/v1/budget-spaces/sp/primary-transfers/t1/confirm");
-  assert.deepEqual(body(), {}, "SEC-PK7A-F2: the body is empty; the reference and the ledger are the store's");
-  for (const key of Object.keys(body())) assert.ok(!/reference|ledger|digest|assurance/iu.test(key));
+  assert.deepEqual(body(), { acknowledgedDisclosure: claim }, "SEC-PK7A-F2, PK8-F03: the body is the claim of the text read; the reference and the ledger are the store's");
+  for (const key of Object.keys(body())) assert.ok(!/reference|ledger|assurance/iu.test(key));
+  answer = Response.json({ error: "stale_disclosure", freshAssurance: "unspent" }, { status: 409 });
+  assert.deepEqual(await api.confirmTransfer("sp", "t1", claim), { outcome: "refused", error: "stale_disclosure", status: 409 }, "a stale claim is a rolled-back refusal: the grant was returned");
   answer = Response.json({ error: "transfer_not_current", messageCode: "MSG-73-046", freshAssurance: "consumed", next: "step_up_required" }, { status: 409 });
-  assert.deepEqual(await api.confirmTransfer("sp", "t1"), { outcome: "step_up_again", error: "transfer_not_current", messageCode: "MSG-73-046" }, "consumed plus step_up_required is 'step up again'");
+  assert.deepEqual(await api.confirmTransfer("sp", "t1", claim), { outcome: "step_up_again", error: "transfer_not_current", messageCode: "MSG-73-046" }, "consumed plus step_up_required is 'step up again'");
   answer = Response.json({ outcome: "primary_confirmed", messageCode: "MSG-73-041", transfer: { ...transfer, state: "primary_confirmed" }, freshAssurance: "consumed", next: "step_up_required" });
-  assert.equal((await api.confirmTransfer("sp", "t1")).outcome, "primary_confirmed");
+  assert.equal((await api.confirmTransfer("sp", "t1", claim)).outcome, "primary_confirmed");
   answer = Response.json({ outcome: "deny", reason: "denied" }, { status: 403 });
-  assert.deepEqual(await api.confirmTransfer("sp", "t1"), { outcome: "denied" }, "the uniform 403 returned the grant");
+  assert.deepEqual(await api.confirmTransfer("sp", "t1", claim), { outcome: "denied" }, "the uniform 403 returned the grant");
   answer = Response.json({ error: "transfer_not_found", freshAssurance: "unspent" }, { status: 404 });
-  assert.deepEqual(await api.confirmTransfer("sp", "t1"), { outcome: "refused", error: "transfer_not_found", status: 404 });
+  assert.deepEqual(await api.confirmTransfer("sp", "t1", claim), { outcome: "refused", error: "transfer_not_found", status: 404 });
   answer = Response.json({ error: "transfer_not_found" }, { status: 404 });
   await assert.rejects(api.viewTransfer("sp", "t1"), (error: unknown) => error instanceof InvitationApiError && error.code === "transfer_not_found", "a non-party sees exactly what an unknown id answers");
 });
@@ -123,12 +126,12 @@ test("R-01 over the mock: a withdrawn transfer after beginStepUp leaves the sess
   assert.equal((await owner.api.session())!.assurance, "fresh");
   // The page's rule (transfer-view.tsx confirm): read the view first and confirm only a live workflow.
   const current = await owner.api.viewTransfer(spaceId, transferId);
-  const live = ["proposed", "recipient_accepted", "primary_confirmed", "ready"].includes(current.state);
+  const live = ["proposed", "recipient_accepted", "primary_confirmed", "ready"].includes(current.transfer.state);
   assert.equal(live, false);
-  if (live) await owner.api.confirmTransfer(spaceId, current.transferId);
+  if (live && current.disclosures.outgoing) await owner.api.confirmTransfer(spaceId, current.transfer.transferId, claimOf(current.disclosures.outgoing));
   assert.equal((await owner.api.session())!.assurance, "fresh", "no confirm was sent, so the grant is unspent");
   // For contrast, the unguarded path: the mock's boundary answers the uniform denial with the grant returned (no live workflow).
-  assert.deepEqual(await owner.api.confirmTransfer(spaceId, transferId), { outcome: "denied" });
+  assert.deepEqual(await owner.api.confirmTransfer(spaceId, transferId, current.disclosures.outgoing ? claimOf(current.disclosures.outgoing) : { kind: proposed.transfer.outgoingDisclosureKind, version: proposed.transfer.outgoingDisclosureVersion, digest: "" }), { outcome: "denied" });
   assert.equal((await owner.api.session())!.assurance, "fresh");
 });
 
@@ -219,7 +222,15 @@ test("PK8-02 over the mock: invite, resolve with the cookie, exhaust a link term
   await assert.rejects(invitee.api.accept(second.ceremonyId, { kind: view.disclosure.kind, version: 2 }), (error: unknown) => error instanceof InvitationApiError && error.code === "stale_disclosure");
   const accepted = await invitee.api.accept(second.ceremonyId, { kind: view.disclosure.kind, version: view.disclosure.version });
   assert.equal("state" in accepted && accepted.state, "awaiting_confirmation");
-  assert.equal((await invitee.api.listNotices()) !== "unavailable" && (await invitee.api.listNotices() as unknown as { messageCode: string }[]).some(row => row.messageCode === "MSG-73-051"), true);
+  assert.equal((await invitee.api.listNotices()).some(row => row.messageCode === "MSG-73-051"), true);
+  // PK8-F01: the owner is told an acceptance waits (MSG-73-050); the stamp is set once, own rows only.
+  const waiting = (await owner.api.listNotices()).find(row => row.messageCode === "MSG-73-050");
+  assert.ok(waiting && waiting.readAt === null && waiting.budgetSpaceId === spaceId);
+  assert.equal((await invitee.api.listNotices()).some(row => row.noticeId === waiting!.noticeId), false, "another person's row is not listed");
+  await assert.rejects(invitee.api.markNoticeRead(waiting!.noticeId), (error: unknown) => error instanceof InvitationApiError && error.status === 404 && error.code === "notice_not_found");
+  const stamped = await owner.api.markNoticeRead(waiting!.noticeId);
+  assert.ok(stamped.readAt);
+  assert.deepEqual(await owner.api.markNoticeRead(waiting!.noticeId), stamped, "set-once: a repeat answers the stamped row");
   await assert.rejects(invitee.api.listMembers(spaceId), (error: unknown) => error instanceof InvitationApiError && error.denied, "not a member before the confirm");
 
   // The owner confirms; the receipt replays on the same key; both see the members list.
@@ -231,7 +242,7 @@ test("PK8-02 over the mock: invite, resolve with the cookie, exhaust a link term
   assert.deepEqual((await owner.api.listMembers(spaceId)).map(member => member.role).sort(), ["collaborator", "primary_owner"]);
   assert.equal((await invitee.api.listMembers(spaceId)).length, 2);
   for (const member of await invitee.api.listMembers(spaceId)) assert.deepEqual(Object.keys(member).sort(), ["displayName", "joinedAt", "membershipId", "role"]);
-  assert.equal((await invitee.api.listNotices() as unknown as { messageCode: string }[]).some(row => row.messageCode === "MSG-73-015"), true);
+  assert.equal((await invitee.api.listNotices()).some(row => row.messageCode === "MSG-73-015"), true);
   assert.deepEqual(await invitee.api.resolve(redelivered.code), { outcome: "unusable" }, "the consumed link");
   now += 1000;
 
@@ -242,22 +253,37 @@ test("PK8-02 over the mock: invite, resolve with the cookie, exhaust a link term
   const proposed = await owner.api.proposeTransfer(spaceId, inviteeMembership!);
   assert.equal(proposed.outcome, "proposed");
   const transferId = proposed.transfer.transferId;
-  assert.deepEqual(await owner.api.confirmTransfer(spaceId, transferId), { outcome: "denied" }, "a confirm without a fresh grant is the uniform denial and consumes nothing");
+  // PK8-F03: the view serves both approved texts with their registry digests; the legs bind the claim of the text read.
+  const served = await invitee.api.viewTransfer(spaceId, transferId);
+  assert.equal(served.transfer.transferId, transferId);
+  assert.equal(served.disclosures.recipient?.kind, "primary_transfer_recipient"); assert.equal(served.disclosures.outgoing?.kind, "primary_transfer_outgoing");
+  assert.ok(served.disclosures.recipient!.text.items.length > 0 && /^[0-9a-f]{64}$/u.test(served.disclosures.recipient!.digest));
+  const recipientClaim = claimOf(served.disclosures.recipient!); const outgoingClaim = claimOf(served.disclosures.outgoing!);
+  assert.deepEqual(await owner.api.confirmTransfer(spaceId, transferId, outgoingClaim), { outcome: "denied" }, "a confirm without a fresh grant is the uniform denial and consumes nothing");
   const stranger = browser(directory, clock); await stranger.api.beginSignIn();
   await assert.rejects(stranger.api.viewTransfer(spaceId, transferId), (error: unknown) => error instanceof InvitationApiError && error.denied, "a non-member is denied");
-  assert.equal((await invitee.api.acceptTransfer(spaceId, transferId)).outcome, "recipient_accepted");
+  // PK8-F04: both parties read the live transfer by the space alone; it is the status view.
+  assert.deepEqual(await invitee.api.liveTransfer(spaceId), served);
+  assert.equal((await owner.api.liveTransfer(spaceId))?.transfer.transferId, transferId);
+  await assert.rejects(invitee.api.acceptTransfer(spaceId, transferId, { ...recipientClaim, digest: "0".repeat(64) }), (error: unknown) => error instanceof InvitationApiError && error.status === 409 && error.code === "stale_disclosure");
+  await assert.rejects(invitee.api.acceptTransfer(spaceId, transferId, outgoingClaim), (error: unknown) => error instanceof InvitationApiError && error.code === "stale_disclosure", "the other leg's claim is stale");
+  assert.equal((await invitee.api.viewTransfer(spaceId, transferId)).transfer.state, "proposed", "a stale claim wrote nothing");
+  assert.equal((await invitee.api.acceptTransfer(spaceId, transferId, recipientClaim)).outcome, "recipient_accepted");
   assert.equal(await owner.api.beginStepUp(spaceId), "/budgets");
   assert.equal((await owner.api.session())!.assurance, "fresh");
   const live = await owner.api.viewTransfer(spaceId, transferId);
-  const outcome = await owner.api.confirmTransfer(spaceId, live.transferId);
+  assert.deepEqual(await owner.api.confirmTransfer(spaceId, live.transfer.transferId, recipientClaim), { outcome: "refused", error: "stale_disclosure", status: 409 }, "a stale claim on the confirm is a rolled-back refusal: the grant is returned");
+  assert.equal((await owner.api.session())!.assurance, "fresh", "still usable for the corrected request");
+  const outcome = await owner.api.confirmTransfer(spaceId, live.transfer.transferId, claimOf(live.disclosures.outgoing!));
   assert.equal(outcome.outcome, "committed");
   assert.equal((await owner.api.session())!.assurance, "session", "one step-up, one committed effect");
   assert.deepEqual((await owner.api.listMembers(spaceId)).map(member => member.role).sort(), ["co_owner", "primary_owner"]);
-  assert.deepEqual(await owner.api.confirmTransfer(spaceId, transferId), { outcome: "denied" }, "a former Primary confirming after the role change is denied");
+  assert.deepEqual(await owner.api.confirmTransfer(spaceId, transferId, outgoingClaim), { outcome: "denied" }, "a former Primary confirming after the role change is denied");
   // A repeated confirm under a new grant on a terminal workflow whose recipient matches the live one: here there is no live one, so the grant is returned.
   await invitee.api.beginStepUp(spaceId);
-  assert.deepEqual(await invitee.api.confirmTransfer(spaceId, transferId), { outcome: "denied" });
-  assert.equal((await invitee.api.listNotices() as unknown as { messageCode: string }[]).filter(row => row.messageCode === "MSG-73-042").length, 1);
+  assert.deepEqual(await invitee.api.confirmTransfer(spaceId, transferId, outgoingClaim), { outcome: "denied" });
+  assert.equal((await invitee.api.listNotices()).filter(row => row.messageCode === "MSG-73-042").length, 1);
+  assert.equal(await invitee.api.liveTransfer(spaceId), null, "a committed workflow is not live: the one 404 reads as none");
 });
 
 async function csrfOf(client: ReturnType<typeof browser>): Promise<string> {

@@ -195,8 +195,14 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
     assert.ok(!(await invitee.text()).includes(budgetName), "not a member before the confirm");
   });
 
-  await t.test("the owner confirms the acceptance; both members see the members list; the invitee sees the budget", async () => {
-    await owner.page.reload(); await owner.waitText("Sent, awaiting a response");
+  await t.test("the owner confirms the acceptance; both members see the members list; the invitee sees the budget; the notices reach the right person (PK8-F01)", async () => {
+    // MSG-73-050 reached the owner as a live row; the read stamp is set once and stays.
+    await owner.page.goto(`${origin}/notices`); await owner.waitText("Someone accepted an invitation to one of your budget spaces.");
+    await owner.page.waitForSelector('[data-testid="notice-row"][data-read="unread"]'); await owner.accessibility();
+    await owner.clickText("Mark as read"); await owner.page.waitForSelector('[data-testid="notice-row"][data-read="read"]');
+    await owner.page.reload(); await owner.page.waitForSelector('[data-testid="notice-row"][data-read="read"]');
+    assert.ok(!(await owner.text()).includes("You joined a budget space"), "the invitee's rows are not the owner's");
+    await owner.page.goto(`${origin}/budgets/${budgetId}/invitations`); await owner.waitText("Sent, awaiting a response");
     await owner.clickText("Confirm acceptance from i***@example.com");
     await owner.waitText("Acceptance confirmed: the person joined as Collaborator.");
     await owner.waitText("Accepted and confirmed");
@@ -204,8 +210,9 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
     await owner.waitText("Collaborator"); await owner.accessibility();
     await invitee.page.goto(`${origin}/budgets`); await invitee.waitText(budgetName);
     await invitee.page.goto(`${origin}/budgets/${budgetId}/members`); await invitee.page.waitForFunction(() => document.querySelectorAll('[data-testid="member-row"]').length === 2);
-    await invitee.page.goto(`${origin}/notices`); await invitee.waitText("Notices");
-    await invitee.page.waitForFunction(() => /not available yet|No notices yet|notice-row/u.test(document.querySelector("main")?.innerHTML ?? ""));
+    // The real API writes MSG-73-015 at the confirm (MSG-73-051 is the disclosure view's confirmation notice code, not a row).
+    await invitee.page.goto(`${origin}/notices`); await invitee.waitText("You joined a budget space.");
+    assert.ok(!(await invitee.text()).includes("Someone accepted an invitation"), "the owner's MSG-73-050 row is not the invitee's");
     await invitee.accessibility();
   });
 
@@ -217,7 +224,13 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
     transferUrl = owner.page.url();
     await owner.waitText("Proposed, awaiting the recipient"); await owner.waitText("Before you confirm this transfer of primary ownership");
     await owner.accessibility();
-    await invitee.page.goto(transferUrl); await invitee.waitText("Before you accept primary ownership");
+    // PK8-F01 and F04: the recipient is never handed the id. The MSG-73-040 notice opens the space's transfer page, whose live
+    // read (party-scoped) offers the status view.
+    await invitee.page.goto(`${origin}/notices`); await invitee.waitText("You have been proposed as the next Primary Owner of a budget space.");
+    await invitee.clickText("Open the transfer"); await invitee.waitText("You are proposed as the next Primary Owner"); await invitee.accessibility();
+    await invitee.clickText("Open the transfer");
+    await invitee.page.waitForFunction(url => location.href === url, {}, transferUrl);
+    await invitee.waitText("Before you accept primary ownership");
     await invitee.waitText("(you)"); await invitee.accessibility();
     await invitee.page.click("#recipient-acknowledged"); await invitee.waitEnabled("Accept primary ownership");
     await invitee.clickText("Accept primary ownership"); await invitee.waitText("Acceptance recorded");
@@ -239,7 +252,10 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
     const begin = posted.find(entry => entry.url === "/v1/identity/step-up/begin"); const confirm = posted.find(entry => entry.url.endsWith("/confirm"));
     assert.deepEqual(JSON.parse(begin.body), { action: "29.transfer_primary_ownership", budgetSpaceId: budgetId, postResultDestinationId: "budgets" });
     assert.ok(confirm.url.endsWith(`/${transferUrl.split("/").at(-1)}/confirm`));
-    assert.deepEqual(JSON.parse(confirm.body), {});
+    // PK8-F03: the claim of the outgoing disclosure the page showed, and nothing else: no reference, no ledger.
+    assert.deepEqual(Object.keys(JSON.parse(confirm.body)), ["acknowledgedDisclosure"]);
+    assert.equal(JSON.parse(confirm.body).acknowledgedDisclosure.kind, "primary_transfer_outgoing");
+    assert.match(JSON.parse(confirm.body).acknowledgedDisclosure.digest, /^[0-9a-f]{64}$/u);
     assert.ok(posted.indexOf(begin) < posted.indexOf(confirm));
     assert.equal(posted.filter(entry => entry.url.endsWith("/confirm")).length, 1);
     await owner.clickText("Refresh transfer"); await owner.waitText("Committed");
