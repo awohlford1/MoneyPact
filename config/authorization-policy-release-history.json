@@ -38,5 +38,13 @@
     "releaseCommit": "c4add46cb6103e9a2c2b7ee8d14a9afb8afa0acc",
     "productApprovalRef": "PO-P4P5-APPROVAL-001",
     "securityApprovalRef": "PROTO-POLICY-V5-SEC-001-RESULT-001"
+  },
+  {
+    "version": "p6",
+    "digest": "7ed466ae58ab3ac7903aeebaea4603aba6bdec81cb336d07d9a230f9456998ea",
+    "schemaVersion": 1,
+    "releaseCommit": "PENDING-P6-RELEASE-COMMIT",
+    "productApprovalRef": "PO-P6-APPROVAL-001",
+    "securityApprovalRef": "PROTO-CONTRACTS-P6-SEC-001-RESULT"
   }
 ]

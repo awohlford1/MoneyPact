@@ -34,12 +34,13 @@
  * application-owned result page with a closed public outcome. Status, body
  * and headers are identical across every failure class (§7).
  */
-import { Controller, Get, HttpCode, Module, Post, Req, Res } from "@nestjs/common";
+import { Controller, Get, HttpCode, Module, Post, Put, Req, Res } from "@nestjs/common";
 import type { EffectContext } from "../authorization/boundary.js";
 import type { DynamicModule } from "@nestjs/common";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { DataAccessClient } from "@cobudget/data-access";
 import { checkCsrf, readSessionCookieValue } from "@cobudget/sessions";
+import { MAX_DISPLAY_NAME_LENGTH, writeDisplayName } from "../../../../packages/data-access/src/financial-profile.ts";
 import { Authorization, Authorize, PreAuthenticationSurface, RouteFailure, SessionAuthenticatedSurface } from "../authorization/http.js";
 import type { IdentityCeremony } from "./ceremony.ts";
 import { LOCAL_ISSUER_PATH } from "./config.ts";
@@ -180,7 +181,8 @@ export function identityHttp(runtime: IdentityRuntime | undefined): IdentityHttp
       if (!view) throw new RouteFailure(401, "not_authenticated");
       // C9 (Manager ruling): the raw CSRF bootstrap value travels only in this same-origin JSON
       // response body, held in browser memory -- never a cookie, URL or log field (CBD-191 §5.1).
-      return { accountSubjectId: view.accountSubjectId, profileId: view.profileId, identityBindingId: view.identityBindingId, sessionRef: view.sessionRef, sessionVersion: view.sessionVersion, environmentId: view.environmentId, assurance: view.assurance, csrfValue: view.csrfValue };
+      // CBD-236 p6 P6-D03/P6-E06: displayName is additive to this projection (null when unset).
+      return { accountSubjectId: view.accountSubjectId, profileId: view.profileId, identityBindingId: view.identityBindingId, sessionRef: view.sessionRef, sessionVersion: view.sessionVersion, environmentId: view.environmentId, assurance: view.assurance, displayName: view.displayName, csrfValue: view.csrfValue };
     }
 
     /**
@@ -194,6 +196,42 @@ export function identityHttp(runtime: IdentityRuntime | undefined): IdentityHttp
     @Authorize({ action: "profile.read", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default", scope: "subject" }) })
     async recovery(@Authorization() effect: EffectContext): Promise<unknown> {
       return this.me(effect);
+    }
+
+    /**
+     * CBD-236 p6 (`profile.set_display_name`, `P6-D02`; docs/cbd-236-p6-subject-self-amendment-proposal.md
+     * `P6-E04`). The subject-self mutate cell that sets the caller's own `financial_profile.display_name`
+     * (`DI-91-065`; design section 9 `IV-010`; `PK8-F06`; `EXEC-PK8-RULINGS-001` item b). The bound is
+     * `writeDisplayName`'s own 1..80-code-point check (`packages/data-access/src/financial-profile.ts`),
+     * not a `PolicyInput` field (`P6-E04`'s note); a `RangeError` from that check maps to `400
+     * display_name_invalid`. The compare-and-set reads `expectedVersion` from the decided input's own
+     * `profile.profileVersion` -- the same value `SubjectScopedCapturedVersions` already captured and
+     * `recheck_at_commit` re-equality-checks at commit -- never a second, independently read value; a
+     * concurrent write moving the version answers `409 version_conflict`.
+     */
+    @Put("me/display-name")
+    @Authorize({ action: "profile.set_display_name", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default", scope: "subject" }) })
+    async setDisplayName(@Req() request: FastifyRequest, @Authorization() effect: EffectContext): Promise<unknown> {
+      const subject = effect.input.subject;
+      const profile = effect.input.profile;
+      // These two are guaranteed by a successful decide() on this cell (profile.set_display_name captures
+      // both), so this is defense in depth, not a reachable branch under a valid decision.
+      if (!subject || typeof subject.accountSubjectId !== "string" || !subject.accountSubjectId || !profile || typeof profile.profileVersion !== "number") return new RouteFailure(401, "not_authenticated");
+      const body = (request.body ?? {}) as Record<string, unknown>;
+      const raw = body.displayName;
+      // RouteFailure is *returned*, never thrown, from inside the boundary's transaction: a throw is caught by
+      // AuthorizationBoundary#execute's catch-all and converted into a generic deny (the notices route's own
+      // convention -- see its header comment -- and the reason the uniform denial vocabulary never leaks HTTP status).
+      if (typeof raw !== "string") return new RouteFailure(400, "invalid_request");
+      const trimmed = raw.trim();
+      if (trimmed.length === 0 || [...trimmed].length > MAX_DISPLAY_NAME_LENGTH) return new RouteFailure(400, "display_name_invalid");
+      const client = effect.transaction as DataAccessClient;
+      if (!client.profileSelect || !client.profileUpdate) return new RouteFailure(503, "identity_unavailable");
+      let version: number | null;
+      try { version = await writeDisplayName(client as DataAccessClient & Required<Pick<DataAccessClient, "profileSelect" | "profileUpdate">>, subject.accountSubjectId, trimmed, profile.profileVersion); }
+      catch (error) { if (error instanceof RangeError) return new RouteFailure(400, "display_name_invalid"); throw error; }
+      if (version === null) return new RouteFailure(409, "version_conflict");
+      return { displayName: trimmed, version };
     }
 
     /**

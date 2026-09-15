@@ -8,9 +8,10 @@ import { ACTION_DEFINITIONS as P2_ACTION_DEFINITIONS, SERVICE_CELLS as P2_SERVIC
 import { ACCOUNT_PERMISSION, ACTION_DEFINITIONS as P3_ACTION_DEFINITIONS, P3_ACTION_DEFINITIONS as P3_ONLY_ACTION_DEFINITIONS, P3_USER_CELLS as P3_ONLY_USER_CELLS, PROGRESS_DETAIL_ACTION, SERVICE_CELLS as P3_SERVICE_CELLS, USER_CELLS as P3_USER_CELLS } from "./policy/v3.ts";
 import { ACTION_DEFINITIONS as P4_ACTION_DEFINITIONS, P4_ROLES, P4_USER_CELLS as P4_ONLY_USER_CELLS, SERVICE_CELLS as P4_SERVICE_CELLS, USER_CELLS as P4_USER_CELLS } from "./policy/v4.ts";
 import { ACTION_DEFINITIONS as P5_ACTION_DEFINITIONS, BASELINE_NON_OWNER_ACTIONS, COOWNER_INVITATION_ACTIONS, P5_ACTION_DEFINITIONS as P5_ONLY_ACTION_DEFINITIONS, P5_BASELINE_NON_OWNER_CELLS, P5_COOWNER_INVITATION_CELLS, P5_ROLES, P5_SPACE_CELLS, P5_SUBJECT_CELLS, P5_USER_CELLS as P5_ONLY_USER_CELLS, SERVICE_CELLS as P5_SERVICE_CELLS, SUPERSEDED_ACTIONS, USER_CELLS as P5_USER_CELLS } from "./policy/v5.ts";
-import { CURRENT_POLICY_VERSION, P1_DIGEST, P2_DIGEST, P3_DIGEST, P4_DIGEST, P5_DIGEST, POLICY_VERSIONS, policyCompatibility } from "./policy/registry.ts";
+import { P6_ACTION_DEFINITIONS as P6_ONLY_ACTION_DEFINITIONS, P6_SUBJECT_CELLS, USER_CELLS as P6_USER_CELLS } from "./policy/v6.ts";
+import { CURRENT_POLICY_VERSION, P1_DIGEST, P2_DIGEST, P3_DIGEST, P4_DIGEST, P5_DIGEST, P6_DIGEST, POLICY_VERSIONS, policyCompatibility } from "./policy/registry.ts";
 import type { RegisteredPolicyVersion } from "./policy/registry.ts";
-import { FORBIDDEN_SUBJECT_SECTIONS, NEGATIVE_FAMILIES, NEGATIVE_FIXTURES, P1_FIXTURES, P2_FIXTURES, P2_NEGATIVE_FIXTURES, P3_FIXTURES, P3_NEGATIVE_FIXTURES, P4_FIXTURES, P4_NEGATIVE_FIXTURES, P5_FIXTURES, P5_NEGATIVE_FIXTURES, ROLES, SUBJECT_ENVIRONMENT, TRANSFER_CONFIRM_ACTION, UNMAPPED_ROLE, accountNegativeFixtures, bootstrapFixture, independentCaptureFixture, invitationCells, invitationNegativeFixtures, ordinaryFixture, rolesWithoutCell, serviceFixture, spaceBoundNegativeFixtures, subjectCells, subjectFixture, subjectNegativeFixtures } from "./fixtures/index.ts";
+import { FORBIDDEN_SUBJECT_SECTIONS, NEGATIVE_FAMILIES, NEGATIVE_FIXTURES, P1_FIXTURES, P2_FIXTURES, P2_NEGATIVE_FIXTURES, P3_FIXTURES, P3_NEGATIVE_FIXTURES, P4_FIXTURES, P4_NEGATIVE_FIXTURES, P5_FIXTURES, P5_NEGATIVE_FIXTURES, P6_FIXTURES, P6_NEGATIVE_FIXTURES, ROLES, SUBJECT_ENVIRONMENT, TRANSFER_CONFIRM_ACTION, UNMAPPED_ROLE, accountNegativeFixtures, bootstrapFixture, independentCaptureFixture, invitationCells, invitationNegativeFixtures, ordinaryFixture, rolesWithoutCell, serviceFixture, spaceBoundNegativeFixtures, subjectCells, subjectFixture, subjectNegativeFixtures } from "./fixtures/index.ts";
 import { generateLocalSigningKeyPair, signLocalDecision, verifyLocalDecision } from "./transport.ts";
 import type { PolicyInput } from "./input.ts";
 
@@ -32,7 +33,7 @@ function denyIsInert(input: unknown, reason?: string, version?: RegisteredPolicy
 // The registry constant is a literal type; widen it once so version-derived branches typecheck under any registered version.
 const currentVersion = CURRENT_POLICY_VERSION as RegisteredPolicyVersion;
 // Every registered version's positive catalog, so a release flip changes no test literal here (SEC-P2-F6).
-const CATALOGS: Record<RegisteredPolicyVersion, readonly { id: string; input: PolicyInput; expected: string }[]> = { p1: P1_FIXTURES, p2: P2_FIXTURES, p3: P3_FIXTURES, p4: P4_FIXTURES, p5: P5_FIXTURES };
+const CATALOGS: Record<RegisteredPolicyVersion, readonly { id: string; input: PolicyInput; expected: string }[]> = { p1: P1_FIXTURES, p2: P2_FIXTURES, p3: P3_FIXTURES, p4: P4_FIXTURES, p5: P5_FIXTURES, p6: P6_FIXTURES };
 /** Whether the current version carries a given cell, so a test's "before the release" and "after the release" branches follow
  * the registry rather than a version literal (SEC-P2-F6; the p3 release step's subject-scoped lesson). */
 function currentCarries(action: string, role: string): boolean { return POLICY_VERSIONS[currentVersion].userCells.some((cell) => cell.action === action && cell.role === role); }
@@ -275,7 +276,7 @@ describe("policy version p2: subject-scoped cells, registered and not current", 
   });
 
   it("POLICY-V2-03 the registered non-current version denies through decide, and the current version carries its production behaviour", () => {
-    assert.deepEqual(Object.keys(POLICY_VERSIONS), ["p1", "p2", "p3", "p4", "p5"]);
+    assert.deepEqual(Object.keys(POLICY_VERSIONS), ["p1", "p2", "p3", "p4", "p5", "p6"]);
     for (const version of NOT_CURRENT) {
       denyIsInert(ordinaryFixture("1.view_space", "primary_owner", version), "policy_version_unsupported");
       assert.equal(policyCompatibility(version, POLICY_VERSIONS[version].digest, 1), false);
@@ -930,6 +931,132 @@ describe("policy version p5: invitations, members and Primary-transfer cells, re
     for (const action of P5_ACTION_DEFINITIONS.filter((item) => item.permission !== "reserved")) assert.ok(fixtureActions.has(action.action), action.action);
     for (const cell of P5_ONLY_USER_CELLS) assert.ok(P5_FIXTURES.some((fixture) => fixture.id === (cell.permission === "subject" ? `p5.subject.${cell.action}.acting_subject.api` : `p5.user.${cell.action}.${cell.role}.api`)), `${cell.action} ${cell.role}`);
     for (const fixture of P5_FIXTURES) assert.equal(decideUnderRegisteredVersion("p5", fixture.input).outcome, fixture.expected, fixture.id);
+  });
+});
+
+/**
+ * CBD-236 section 8.9 (docs/cbd-236-p6-subject-self-amendment-proposal.md; `EXEC-P6-RULINGS-001`): three new
+ * subject-self cells, `notice.read`, `notice.mark_read` and `profile.set_display_name`. Every p5 table entry is
+ * carried byte-identical (`P1_DIGEST`..`P4_DIGEST` stay pinned to their p5-era literals above and `P5_DIGEST` is
+ * still computed the same way, so p1-p5 digests are unchanged by construction); no `ResourceType` is added and
+ * `schemaVersion` stays 1.
+ */
+describe("CBD-236 p6 (subject-self notice and display-name cells)", () => {
+  const P6_CELLS = [
+    { action: "notice.read", effectClass: "read" as const },
+    { action: "notice.mark_read", effectClass: "mutate" as const },
+    { action: "profile.set_display_name", effectClass: "mutate" as const },
+  ];
+
+  it("POLICY-V6-00 registers exactly the three new subject-self cells, byte-identical p1-p5 tables, and a distinct digest", () => {
+    assert.equal(P6_ONLY_ACTION_DEFINITIONS.length, 3);
+    assert.deepEqual(P6_ONLY_ACTION_DEFINITIONS.map((item) => item.action), P6_CELLS.map((item) => item.action));
+    for (const definition of P6_ONLY_ACTION_DEFINITIONS) {
+      assert.equal(definition.permission, "subject"); assert.equal(definition.resourceType, undefined);
+      assert.deepEqual(definition.authorityModes, ["user_delegated"]);
+    }
+    assert.equal(P6_SUBJECT_CELLS.length, 3);
+    for (const cell of P6_SUBJECT_CELLS) { assert.equal(cell.permission, "subject"); assert.equal(cell.role, "acting_subject"); }
+    assert.deepEqual(P6_SUBJECT_CELLS.find((item) => item.action === "notice.read")!.notation, "Read");
+    assert.deepEqual(P6_SUBJECT_CELLS.find((item) => item.action === "notice.mark_read")!.notation, "Allow");
+    assert.deepEqual(P6_SUBJECT_CELLS.find((item) => item.action === "profile.set_display_name")!.notation, "Allow");
+    // Every p5 cell is carried in position, plus the three new ones appended.
+    assert.deepEqual(P6_USER_CELLS, [...P5_USER_CELLS, ...P6_SUBJECT_CELLS]);
+    // p1-p5 digests are unchanged (the pinned literals above); p6's digest is new and distinct from every earlier one.
+    assert.equal(P1_DIGEST, "488d46739bee379870f6649a6b51aaccc97b4bfdec9519fae5ed93b581ce1f22");
+    assert.equal(P2_DIGEST, "374e0b4d2ae86d53afe3fdf02a9d91e52d7b95b2e67df75b975bb54b4163d322");
+    assert.equal(P3_DIGEST, "b4fbdb8e32a6155705877d7c91846ee855dc717dfce9d57a6f04e07301923e4d");
+    assert.equal(P4_DIGEST, "25b2f9e917c19bdb9c26699bb4840a6e9d9544e16ac2f212de9120e6eacd15a9");
+    assert.match(P5_DIGEST, /^[a-f0-9]{64}$/);
+    assert.match(P6_DIGEST, /^[a-f0-9]{64}$/);
+    for (const digest of [P1_DIGEST, P2_DIGEST, P3_DIGEST, P4_DIGEST, P5_DIGEST]) assert.notEqual(P6_DIGEST, digest);
+    assert.equal(POLICY_VERSIONS.p6.digest, P6_DIGEST); assert.equal(POLICY_VERSIONS.p6.schemaVersion, 1);
+  });
+
+  it("POLICY-V6-01 evaluates every p5 catalog entry identically under p6, and every earlier negative family holds under p6", () => {
+    for (const fixture of P5_FIXTURES) {
+      const under = P6_FIXTURES.find((item) => item.id === fixture.id.replace(/^p5\./, "p6."));
+      assert.ok(under, fixture.id);
+      const p5 = decideUnderRegisteredVersion("p5", fixture.input); const p6 = decideUnderRegisteredVersion("p6", under.input);
+      assert.equal(p6.outcome, p5.outcome, fixture.id); assert.deepEqual(p6.cellRef, p5.cellRef, fixture.id);
+      assert.deepEqual(p6.obligations.filter((item) => item.kind !== "recheck_at_commit"), p5.obligations.filter((item) => item.kind !== "recheck_at_commit"), fixture.id);
+    }
+    for (const fixture of subjectNegativeFixtures("p6")) denyIsInert(fixture.input, fixture.reason, "p6");
+    for (const fixture of accountNegativeFixtures("p6")) denyIsInert(fixture.input, fixture.reason, "p6");
+  });
+
+  it("POLICY-V6-02 allows the owning subject for the three new cells with the subject cellRef, notice.read carrying bind_cache_key and the two mutate cells carrying recheck_at_commit, and denies every P6-N01..P6-N07 family inertly", () => {
+    for (const expected of P6_CELLS) {
+      const input = subjectFixture(expected.action, "p6");
+      const decision = decideUnderRegisteredVersion("p6", input);
+      assert.equal(decision.outcome, "allow", expected.action); assert.equal(decision.reasonClass, "allowed_by_cell");
+      assert.equal(decision.policyVersion, "p6"); assert.equal(decision.policyDigest, P6_DIGEST);
+      assert.deepEqual(decision.cellRef, { kind: "subject", action: expected.action });
+      assert.equal(decision.effectClass, expected.effectClass);
+      assert.equal(input.resource, undefined, `${expected.action} carries no target row (subject-self, P6-D01)`);
+      assert.deepEqual(decision.capturedVersions, {
+        sessionVersion: 1, subjectVersion: 1, profileVersion: 1, environmentId: SUBJECT_ENVIRONMENT, policyVersion: "p6", policyDigest: P6_DIGEST, inputSchemaVersion: 1,
+      }, expected.action);
+      const kinds = decision.obligations.map((item) => item.kind);
+      assert.equal(kinds[0], "audit");
+      if (expected.effectClass === "read") {
+        assert.ok(kinds.includes("bind_cache_key") && !kinds.includes("recheck_at_commit"), expected.action);
+        assert.deepEqual(decision.obligations.find((item) => item.kind === "bind_cache_key"), { kind: "bind_cache_key", dimensions: ["environmentId", "accountSubjectId", "subjectVersion", "profileVersion", "policyVersion"] });
+      } else assert.ok(kinds.includes("recheck_at_commit") && !kinds.includes("bind_cache_key"), expected.action);
+      assert.ok(!kinds.includes("fresh_assurance") && !kinds.includes("create_primary_owner_membership"), expected.action);
+      assert.deepEqual(decideUnderRegisteredVersion("p6", structuredClone(input)), decision, "deterministic");
+    }
+    // P6-N01..P6-N07 (proposal section 4): the required negative family per cell, every one denying inertly.
+    const required = ["another_subject", "wrong_environment", "stale_session_version", "service_authority", "inactive_subject", "inactive_profile", "wrong_target_shape", "space_bound_shape", "worker_adapter", "forbidden_section_empty", "forbidden_section_populated"];
+    const negatives = subjectNegativeFixtures("p6");
+    for (const expected of P6_CELLS) {
+      const families = negatives.filter((item) => item.action === expected.action).map((item) => String(item.family));
+      for (const family of required) assert.ok(families.includes(family), `${expected.action} lacks the ${family} negative (P6-N01..N07)`);
+      assert.ok(!families.includes("wrong_target_type"), `${expected.action} carries no target row, so no wrong_target_type family`);
+      const positive = subjectFixture(expected.action, "p6");
+      // P6-N06: a resource section present on a subject-self cell, both empty and populated, denies input_invalid.
+      for (const section of Object.keys(FORBIDDEN_SUBJECT_SECTIONS)) { denyIsInert(restamp({ ...positive, [section]: {} }), "input_invalid", "p6"); denyIsInert({ ...positive, [section]: {} }, "input_invalid", "p6"); }
+      denyIsInert(restamp({ ...positive, resource: { type: "invitation_ceremony", id: "ceremony-1", owningSpaceId: "none", version: 1, lifecycle: "open", owningSubjectId: "subject-1", environmentId: SUBJECT_ENVIRONMENT } }), "input_invalid", "p6");
+      // P6-N07: the space-bound shape naming a p6 subject action is malformed.
+      denyIsInert(restamp({ ...ordinaryFixture("1.view_space", "primary_owner", "p6"), request: { action: expected.action, purpose: "user_delegated", fieldSet: "default" } }), "input_invalid", "p6");
+      for (const path of Object.keys(positive.provenance)) {
+        const wrongSource = positive.provenance[path] === "request_locator" ? "datastore" : "request_locator";
+        denyIsInert({ ...positive, provenance: { ...positive.provenance, [path]: wrongSource } }, "input_invalid", "p6");
+      }
+    }
+    for (const fixture of negatives) denyIsInert(fixture.input, fixture.reason, "p6");
+    for (const fixture of P6_NEGATIVE_FIXTURES) denyIsInert(fixture.input, fixture.reason, "p6");
+  });
+
+  it("POLICY-V6-03 the registered non-current-or-current version behaves per the release state, and a p6-only code in an earlier-versioned input is unsupported", () => {
+    assert.equal(policyCompatibility("p6", P6_DIGEST, 1), currentVersion === "p6");
+    if (!currentCarries("notice.read", "acting_subject")) {
+      // Before the release step applies: every p6 input denies through decide (policy_version_unsupported), and a
+      // p6-only action named in a current-versioned input denies input_unsupported.
+      for (const fixture of P6_FIXTURES) denyIsInert(fixture.input, "policy_version_unsupported");
+      for (const cell of P6_CELLS) denyIsInert(restamp({ ...subjectFixture("membership.list_own", currentVersion), request: { action: cell.action, purpose: "user_delegated", fieldSet: "default" } }), "input_unsupported");
+    } else {
+      // After the release: the three p6 cells allow through decide with the subject cellRef, and every p6 negative
+      // pinned to the current version denies through decide.
+      for (const cell of P6_SUBJECT_CELLS) assert.deepEqual(decide(subjectFixture(cell.action, currentVersion)).cellRef, { kind: "subject", action: cell.action });
+      for (const fixture of subjectNegativeFixtures(currentVersion).filter((item) => P6_CELLS.some((cell) => cell.action === item.action))) denyIsInert(fixture.input, fixture.reason);
+      denyIsInert(bootstrapFixture("p5"), "policy_version_unsupported");
+      for (const fixture of P5_FIXTURES) denyIsInert(fixture.input, "policy_version_unsupported");
+    }
+    // Historical p1-p5 coverage that never depends on the current version: none of the three p6 actions exists earlier.
+    for (const cell of P6_CELLS) {
+      for (const version of ["p1", "p2", "p3", "p4", "p5"] as const) {
+        assert.ok(!POLICY_VERSIONS[version].actionDefinitions.some((item) => item.action === cell.action), `${cell.action} must be absent from ${version}`);
+        denyIsInert(restamp({ ...subjectFixture("membership.list_own", version), request: { action: cell.action, purpose: "user_delegated", fieldSet: "default" } }), "input_unsupported", version);
+      }
+    }
+  });
+
+  it("AC07 for p6: every p6 action and cell is reached by a p6 fixture in its own role and the catalog evaluates as expected", () => {
+    const fixtureActions = new Set(P6_FIXTURES.map((fixture) => fixture.input.request.action));
+    for (const action of P6_ONLY_ACTION_DEFINITIONS) assert.ok(fixtureActions.has(action.action), action.action);
+    for (const cell of P6_SUBJECT_CELLS) assert.ok(P6_FIXTURES.some((fixture) => fixture.id === `p6.subject.${cell.action}.acting_subject.api`), `${cell.action} ${cell.role}`);
+    for (const fixture of P6_FIXTURES) assert.equal(decideUnderRegisteredVersion("p6", fixture.input).outcome, fixture.expected, fixture.id);
   });
 });
 
