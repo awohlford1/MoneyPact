@@ -162,13 +162,15 @@ export interface OutboxRecord {
 
 export type OutboxTombstoneReason = "code_consumed" | "code_invalidated" | "custody_deadline";
 
-/** One live code row's binding material, the input to the constant-time presented-code match. */
+/** One code row's binding material, the input to the constant-time presented-code match. Never a raw value. */
 export interface LiveCodeBinding {
   readonly budgetSpaceId: string;
   readonly invitationId: string;
   readonly invitationVersion: number;
   readonly destinationToken: string;
   readonly verifierDigest: string;
+  /** `PK5-F02`: the opaque lookup handle, or null for a row issued before the selector existed. */
+  readonly codeSelector: string | null;
 }
 
 /** The simulated delivery adapter's read of the six-digit channel challenge (SS5.3). */
@@ -189,13 +191,17 @@ export interface InvitationLocator {
    *
    * The stored verifier is an HMAC bound to `(invitationId, invitationVersion,
    * destinationToken)`, so it cannot be recomputed from the raw value alone
-   * and the presented value cannot be a database predicate. `IC-73-002` says
-   * the code encodes nothing -- not the space, not the record, not the
-   * recipient -- so there is deliberately no selector to look it up by
-   * either. The adapter therefore recomputes the bound verifier for each
-   * live code row and compares in constant time. This answers location only:
-   * no state, no expiry, no role, and every check still happens afterwards
-   * against a re-read row.
+   * and the secret cannot be a database predicate. `PK5-F02`: the bearer is
+   * therefore `<selector>.<secret>`, where the selector is an opaque random
+   * handle that encodes nothing (`IC-73-002` still holds: not the space, not
+   * the record, not the recipient) and is the one indexed lookup. The adapter
+   * looks the row up by selector, then recomputes the bound verifier over the
+   * secret half and compares in constant time, doing the same fixed-shape
+   * work whether or not a row was found. A presented value without a
+   * separator is the pre-selector shape and is answered by the scan over the
+   * rows that have no selector, run to completion. This answers location
+   * only: no state, no expiry, no role, and every check still happens
+   * afterwards against a re-read row.
    */
   readonly locateByPresentedCode: (presentedCode: string) => Promise<InvitationLocation | null>;
   /** The record one ceremony id belongs to, or null. Answers location only. */
@@ -310,6 +316,7 @@ export interface BudgetSpaceInvitationRow {
 export interface BudgetSpaceInvitationCodeRow {
   readonly invitation_id: string;
   readonly budget_space_id: string;
+  readonly code_selector: string | null;
   readonly verifier_digest: string;
   readonly issued_at: string;
   readonly expires_at: string;
@@ -428,8 +435,10 @@ export interface InvitationStatements {
   readonly insertOutbox: (row: OutboxInsert) => Promise<void>;
   readonly readOutbox: (invitationId: string) => Promise<BudgetSpaceInvitationOutboxRow | null>;
   readonly tombstoneOutbox: (invitationId: string, reasonClass: string, at: string) => Promise<number>;
-  /** The live code rows the presented-code match runs over, with their binding material. Never a raw bearer. */
-  readonly listLiveCodes: () => Promise<readonly LiveCodeBinding[]>;
+  /** `PK5-F02`: the one code row carrying this selector, with its binding material, or null. Never a raw bearer. */
+  readonly locateCodeBySelector: (codeSelector: string) => Promise<LiveCodeBinding | null>;
+  /** The code rows issued before the selector existed, the only set the presented-code scan still runs over. Never a raw bearer. */
+  readonly listLegacyCodes: () => Promise<readonly LiveCodeBinding[]>;
   readonly locateCeremony: (ceremonyId: string) => Promise<{ readonly budget_space_id: string; readonly invitation_id: string } | null>;
 
   readonly listMemberships: (budgetSpaceId: string, accountSubjectId?: string) => Promise<readonly BudgetSpaceMembershipRow[]>;

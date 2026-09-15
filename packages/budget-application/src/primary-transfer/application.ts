@@ -51,7 +51,7 @@ import {
   UNIFORM_DENIAL_MESSAGE_CODE, transferView,
 } from "./records.ts";
 import type {
-  PrimaryTransferErrorCode, PrimaryTransferRecord, TransferMembershipRecord, TransferState, TransferView,
+  PrimaryTransferErrorCode, PrimaryTransferRecord, TransferMembershipRecord, TransferNoticeMessageCode, TransferState, TransferView,
 } from "./records.ts";
 import { assertTransferEdge } from "./transitions.ts";
 
@@ -178,10 +178,57 @@ async function deny(
 }
 
 /**
+ * One mandatory lifecycle notice (`DR-73-11`, `IC-73-019`): the durable
+ * `account_lifecycle_notice` row for the party's subject and its `AE-73-30`
+ * enqueue child, in the causing transaction. `PK7A-F01`: until migration
+ * `20260915T130001Z` widened the table's CHECK the transfer commands could
+ * only audit these; now each writes the row it audits. The row is the
+ * notice -- the prototype has no delivery -- and it carries a code only,
+ * never copy and never the other party's state.
+ */
+async function enqueueNotice(
+  deps: PrimaryTransferDependencies, actor: ActorContext, record: PrimaryTransferRecord,
+  party: TransferMembershipRecord, messageCode: TransferNoticeMessageCode,
+): Promise<void> {
+  await deps.repository.insertNotice({
+    noticeId: deps.ids.uuid(),
+    accountSubjectId: party.accountSubjectId,
+    budgetSpaceId: record.budgetSpaceId,
+    messageCode,
+    eventCorrelationId: actor.correlationId,
+  });
+  await deps.repository.insertAudit(transferAuditEvent(deps, {
+    budgetSpaceId: record.budgetSpaceId,
+    eventCode: NOTICE_EVENT_CODE,
+    targetType: "notice",
+    targetId: record.transferId,
+    result: "system",
+    correlationId: actor.correlationId,
+    audience: "customer",
+    payload: { transferId: record.transferId, membershipId: party.membershipId, messageCode, noticeCount: 1 },
+  }));
+}
+
+/**
+ * The two parties of a workflow, read for their subjects. Both rows exist
+ * while the transfer row does (the M3 foreign keys), so a missing one is an
+ * invariant failure, not an outcome.
+ */
+async function parties(
+  deps: PrimaryTransferDependencies, record: PrimaryTransferRecord,
+): Promise<{ readonly proposer: TransferMembershipRecord; readonly recipient: TransferMembershipRecord }> {
+  const proposer = await deps.repository.readMembership(record.budgetSpaceId, record.proposerMembershipId);
+  const recipient = await deps.repository.readMembership(record.budgetSpaceId, record.recipientMembershipId);
+  if (!proposer || !recipient) throw new PrimaryTransferError("constraint_violation", "transfer.membership");
+  return { proposer, recipient };
+}
+
+/**
  * `TR-73-46`. Mutates the workflow to `expired` or `invalidated`, writes one
- * `AE-73-25` with the matching subtype and one `AE-73-30` enqueue per party,
- * and returns the closure. It never uses the denial message: this closure is
- * a mutation and `MSG-73-046` is reserved for the no-op.
+ * `AE-73-25` with the matching subtype and, per party, one durable notice
+ * row with its `AE-73-30` enqueue child, and returns the closure. It never
+ * uses the denial message: this closure is a mutation and `MSG-73-046` is
+ * reserved for the no-op.
  */
 async function close(
   deps: PrimaryTransferDependencies, actor: ActorContext,
@@ -206,25 +253,11 @@ async function close(
     audience: "customer",
     payload: { transferId: record.transferId, transferState: to, outcomeClass: reasonClass },
   }));
-  // Exactly two AE-73-30 enqueue children (CBD-73 SS14, AE-73-25 row). The
-  // durable notice row is not written here: `M3` closes
-  // account_lifecycle_notice.message_code to five values and neither
-  // MSG-73-045 nor MSG-73-027 is among them, so the enqueue is audited and
-  // the message code is returned. See this packet's result.
-  for (const membershipId of [record.recipientMembershipId, record.proposerMembershipId]) {
-    await deps.repository.insertAudit(transferAuditEvent(deps, {
-      budgetSpaceId: record.budgetSpaceId,
-      eventCode: NOTICE_EVENT_CODE,
-      targetType: "notice",
-      targetId: record.transferId,
-      result: "system",
-      correlationId: actor.correlationId,
-      audience: "customer",
-      payload: {
-        transferId: record.transferId, membershipId, noticeCount: 1,
-        messageCode: to === "expired" ? EXPIRY_MESSAGE_CODE : INVALIDATION_MESSAGE_CODE,
-      },
-    }));
+  // Exactly two notices and two AE-73-30 enqueue children (CBD-73 SS14,
+  // AE-73-25 row), recipient first as the audit order was.
+  const closureParties = await parties(deps, record);
+  for (const party of [closureParties.recipient, closureParties.proposer]) {
+    await enqueueNotice(deps, actor, record, party, to === "expired" ? EXPIRY_MESSAGE_CODE : INVALIDATION_MESSAGE_CODE);
   }
   const closed: PrimaryTransferRecord = { ...record, state: to, stateVersion: record.stateVersion + 1, terminalEventId };
   return {
@@ -403,20 +436,8 @@ export async function proposePrimaryTransfer(
       disclosureKind: RECIPIENT_DISCLOSURE_KIND, disclosureVersion: recipientDisclosure.version,
     },
   }));
-  // One AE-73-30 recipient-notice enqueue child.
-  await deps.repository.insertAudit(transferAuditEvent(deps, {
-    budgetSpaceId: record.budgetSpaceId,
-    eventCode: NOTICE_EVENT_CODE,
-    targetType: "notice",
-    targetId: record.transferId,
-    result: "system",
-    correlationId: actor.correlationId,
-    audience: "customer",
-    payload: {
-      transferId: record.transferId, membershipId: recipient.membershipId,
-      messageCode: TRANSFER_MESSAGE_CODES.proposed, noticeCount: 1,
-    },
-  }));
+  // One recipient notice and its AE-73-30 enqueue child (TR-73-40).
+  await enqueueNotice(deps, actor, record, recipient, "MSG-73-040");
   return { outcome: "proposed", messageCode: TRANSFER_MESSAGE_CODES.proposed, transfer: transferView(record) };
 }
 
@@ -693,9 +714,10 @@ async function runCommit(
 // ---------------------------------------------------------------------------
 
 async function terminate(
-  deps: PrimaryTransferDependencies, actor: ActorContext, record: PrimaryTransferRecord,
+  deps: PrimaryTransferDependencies, actor: ActorContext, loaded: LoadedWorkflow,
   to: "declined" | "withdrawn",
 ): Promise<TransferTerminated> {
+  const { record } = loaded;
   assertTransferEdge(record.state, to);
   const terminalEventId = deps.ids.uuid();
   const applied = await deps.repository.updateTransfer(record.budgetSpaceId, record.transferId, record.stateVersion, {
@@ -718,22 +740,13 @@ async function terminate(
     audience: "customer",
     payload: { transferId: record.transferId, transferState: to },
   }));
-  // Exactly one AE-73-30 enqueue child, to the other party.
-  await deps.repository.insertAudit(transferAuditEvent(deps, {
-    budgetSpaceId: record.budgetSpaceId,
-    eventCode: NOTICE_EVENT_CODE,
-    targetType: "notice",
-    targetId: record.transferId,
-    result: "system",
-    correlationId: actor.correlationId,
-    audience: "customer",
-    payload: {
-      transferId: record.transferId,
-      membershipId: to === "declined" ? record.proposerMembershipId : record.recipientMembershipId,
-      messageCode: to === "declined" ? TRANSFER_MESSAGE_CODES.declined : TRANSFER_MESSAGE_CODES.withdrawn,
-      noticeCount: 1,
-    },
-  }));
+  // Exactly one notice and one AE-73-30 enqueue child, to the other party
+  // (TR-73-44 tells the proposer, TR-73-45 tells the recipient).
+  await enqueueNotice(
+    deps, actor, record,
+    to === "declined" ? loaded.proposer : loaded.recipient,
+    to === "declined" ? "MSG-73-043" : "MSG-73-044",
+  );
   const closed: PrimaryTransferRecord = { ...record, state: to, stateVersion: record.stateVersion + 1, terminalEventId };
   return {
     outcome: to,
@@ -752,7 +765,7 @@ export async function declinePrimaryTransfer(
   if (loaded.recipient.membershipId !== actor.membershipId || loaded.recipient.accountSubjectId !== actor.subjectId) {
     return deny(deps, actor, "authorization_denied", request.transferId);
   }
-  return terminate(deps, actor, loaded.record, "declined");
+  return terminate(deps, actor, loaded, "declined");
 }
 
 /** `TR-73-45`. The Primary withdraws. Repeat is idempotent: a withdrawn workflow denies the uniform no-op. */
@@ -765,7 +778,7 @@ export async function withdrawPrimaryTransfer(
   if (loaded.proposer.membershipId !== actor.membershipId || loaded.proposer.accountSubjectId !== actor.subjectId) {
     return deny(deps, actor, "authorization_denied", request.transferId);
   }
-  return terminate(deps, actor, loaded.record, "withdrawn");
+  return terminate(deps, actor, loaded, "withdrawn");
 }
 
 // ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@ import {
 } from "./application.ts";
 import { PrimaryTransferError, isPrimaryTransferError } from "./records.ts";
 import {
-  OTHER_SUBJECT, PRIMARY_MEMBERSHIP, RECIPIENT_MEMBERSHIP, RECIPIENT_SUBJECT, SPACE, actorWithoutCell, testWorld,
+  OTHER_SUBJECT, PRIMARY_MEMBERSHIP, PRIMARY_SUBJECT, RECIPIENT_MEMBERSHIP, RECIPIENT_SUBJECT, SPACE, actorWithoutCell, testWorld,
 } from "./support.ts";
 
 /** Propose, and return the transfer id. Fails loudly rather than returning a denial the caller has to unwrap. */
@@ -44,6 +44,11 @@ void test("PK7A-02 TR-73-40: propose captures all three versions, both disclosur
   const audit = world.repository.auditFor(world.primary("29.propose_primary_transfer").correlationId);
   assert.deepEqual(audit.map((row) => `${row.eventCode}/${row.eventSubtype ?? ""}`), [
     "AE-73-25/transfer_proposed", "AE-73-30/",
+  ]);
+  // PK7A-F01: the enqueue's durable row, to the recipient's subject, with the
+  // code only and the request's correlation id.
+  assert.deepEqual(world.repository.notices.map((row) => [row.messageCode, row.accountSubjectId, row.budgetSpaceId, row.eventCorrelationId]), [
+    ["MSG-73-040", RECIPIENT_SUBJECT, SPACE, world.primary("29.propose_primary_transfer").correlationId],
   ]);
 });
 
@@ -256,6 +261,11 @@ void test("PK7A-02 TR-73-44 and TR-73-45: decline and withdraw close the workflo
     assert.deepEqual(closing.map((row) => `${row.eventCode}/${row.eventSubtype ?? ""}`), [
       `AE-73-25/transfer_${outcome === "declined" ? "declined" : "withdrawn"}`, "AE-73-30/",
     ], label);
+    // PK7A-F01: the durable row goes to the other party -- the proposer on a
+    // decline, the recipient on a withdrawal -- and never to the actor.
+    assert.deepEqual(world.repository.notices.slice(1).map((row) => [row.messageCode, row.accountSubjectId]), [
+      [messageCode, outcome === "declined" ? PRIMARY_SUBJECT : RECIPIENT_SUBJECT],
+    ], label);
     // Repeat is the uniform no-op, never a second mutation.
     const repeat = await run(world, transferId);
     assert.equal(repeat.outcome, "denied", label);
@@ -294,6 +304,10 @@ void test("PK7A-01 TR-73-46: expiry closes the workflow at the next command, wit
   assert.deepEqual(closing.map((row) => `${row.eventCode}/${row.eventSubtype ?? ""}`), [
     "AE-73-25/transfer_expired", "AE-73-30/", "AE-73-30/",
   ]);
+  // PK7A-F01: one MSG-73-045 row per party, recipient first as the enqueue order is.
+  assert.deepEqual(world.repository.notices.slice(1).map((row) => [row.messageCode, row.accountSubjectId]), [
+    ["MSG-73-045", RECIPIENT_SUBJECT], ["MSG-73-045", PRIMARY_SUBJECT],
+  ]);
 });
 
 void test("PK7A-02 TR-73-46: a version that moved after the proposal invalidates rather than committing", async () => {
@@ -322,6 +336,10 @@ void test("PK7A-02 TR-73-46: a version that moved after the proposal invalidates
     assert.equal(result.messageCode, "MSG-73-027", label);
     assert.equal((await world.repository.readTransfer(SPACE, transferId))?.state, "invalidated", label);
     assert.equal((await world.repository.readMembership(SPACE, PRIMARY_MEMBERSHIP))?.role, "primary_owner", label);
+    // PK7A-F01: one MSG-73-027 row per party.
+    assert.deepEqual(world.repository.notices.slice(1).map((row) => [row.messageCode, row.accountSubjectId]).sort(), [
+      ["MSG-73-027", PRIMARY_SUBJECT], ["MSG-73-027", RECIPIENT_SUBJECT],
+    ].sort(), label);
   }
 });
 

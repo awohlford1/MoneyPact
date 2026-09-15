@@ -32,8 +32,9 @@ export {
 export type { DigestKeySource, DigestPurpose, KeyedDigest } from "./secrets.ts";
 export {
   DIGEST_PURPOSES, abuseFingerprint, canonicalizeEmailDestination, ceremonySecretDigest,
-  channelChallengeDigest, codeVerifierDigest, createKeyedDigest, destinationToken, digestsEqual,
-  generateBearer, generateCeremonySecret, generateChannelChallenge, maskEmailDestination,
+  channelChallengeDigest, codeVerifierDigest, composeBearer, createKeyedDigest, destinationToken, digestsEqual,
+  generateBearer, generateCeremonySecret, generateChannelChallenge, generateCodeSelector, hasSelectorShape,
+  maskEmailDestination, splitPresentedCode,
 } from "./secrets.ts";
 
 export type {

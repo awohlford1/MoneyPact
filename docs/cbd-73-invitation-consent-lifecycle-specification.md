@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved v1.0.4 — Product Owner approved this exact specification on August 18, 2026 at v1.0.3 and approved the §13.1 v1.0.4 amendment on September 15, 2026 (`PO-CONTRACT-APPROVALS-003`). The §15 open issues remain binding; approval is of the specification, not of any implementation or evidence** |
-| Document version | 1.0.4 |
+| Status | **Approved v1.0.5 — Product Owner approved this exact specification on August 18, 2026 at v1.0.3 and approved the §13.1 v1.0.4 amendment on September 15, 2026 (`PO-CONTRACT-APPROVALS-003`); v1.0.5 is the consequential §13.2 record of the `DR-73-09` membership-end reason-class vocabulary under `EXEC-FOLLOWUPS-003` item 5(a), and the v1.0.4 approval otherwise stands. The §15 open issues remain binding; approval is of the specification, not of any implementation or evidence** |
+| Document version | 1.0.5 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-73](https://cobudget.atlassian.net/browse/CBD-73) |
 | Parent | [CBD-12](https://cobudget.atlassian.net/browse/CBD-12) |
@@ -572,6 +572,45 @@ evidence suffices) are unresolved and remain with their named owners in
 `docs/cbd-236-consent-facts-proposal.md` §13, as does `OQ-CF-005`. No `AE-73-*`
 code is added or changed here. `OI-73-003` and `OI-73-004` remain binding gates.
 
+### 13.2 `DR-73-09` membership-end reason classes
+
+**Amendment v1.0.5, recorded under `EXEC-FOLLOWUPS-003` item 5(a) on
+September 15, 2026.** This subsection records the closed vocabulary of the
+`DR-73-09` "terminal membership state" reason class as the physical
+`budget_space_membership.ended_reason_class` column carries it. `DR-73-09`
+names the record's contents in prose and stopped short of enumerating the
+classes; the widening migration
+`packages/migrations/migrations/20260915T100000Z__widen_membership_and_consent_for_invitations.sql`
+closed the column by CHECK to the set derived from the membership-end paths
+this specification draws (`PK2FIX-F01`), and that derived set is now the
+vocabulary. It adds no requirement, changes no transition, closes no open
+issue, and is not CBD-91 class approval: `OI-73-003` and `OI-73-009` remain
+binding.
+
+`budget_space_membership.ended_reason_class` is exactly one of
+`self_revocation`, `removed_by_owner`, `account_closed`, `space_archived`:
+
+| Class | Membership-end path |
+| --- | --- |
+| `self_revocation` | `TR-73-30`: the member ends their own membership |
+| `removed_by_owner` | `TR-73-31` and `TR-73-32`: an entitled owner removes the member |
+| `account_closed` | The whole account ends, and with it every membership, without anybody removing the member |
+| `space_archived` | The whole budget space ends, and with it every membership, without anybody removing the member |
+
+The class is never free text and never another member's personal state. It is
+NULL exactly while `status = 'active'` and set exactly when the membership
+ends (`ended_at`, `ended_reason_class`, `ended_by_event_id` together, write-once
+under the M1 trigger). No route writes any of the four classes in the current
+increment, because revocation and removal are deferred to their own packet
+(`CBD-277`); the packet that needs a fifth class widens the CHECK in one
+migration and this subsection in the same change.
+
+`budget_space_consent.ended_reason_class` (`DR-73-04`, §13.1) is a different
+column with a different vocabulary: it additionally admits `primary_transfer`,
+written by `TR-73-43` when the transfer supersedes both parties' consent rows
+(`PK7A-F04`). A transfer ends no membership, so `primary_transfer` is not a
+membership-end class and does not appear above.
+
 ## 14. Audit-event inventory
 
 Every event uses the CBD-72 §9 envelope where the event has a resolved budget-space target: event ID, time, actor/principal, acting membership/role, budget space, action, target type/safe identifier, decision/result, policy/rule version, safe reason class, correlation/idempotency IDs, and safe semantic delta. A malformed/unknown code has no resolved space or target; AE-73-14 then uses an explicitly nullable global security envelope and a non-reversible fingerprint. No event contains a raw code/proof, unmasked destination, block/limit state in customer scope, or data its audience cannot inspect.
@@ -646,6 +685,7 @@ Audit-placement rules:
 
 | Version | Date | Author | Change | Approval |
 | --- | --- | --- | --- | --- |
+| 1.0.5 | September 15, 2026 | Claude implementation specialist, dispatched by Manager (`PROTO-SCHEMA-FOLLOWUPS-001`) | Added §13.2, the closed `DR-73-09` membership-end reason-class vocabulary of `budget_space_membership.ended_reason_class` (`self_revocation`, `removed_by_owner`, `account_closed`, `space_archived`) as the M1 migration derived it (`PK2FIX-F01`), with the note that `budget_space_consent.ended_reason_class` additionally admits `primary_transfer` (`PK7A-F04`). Registered as the `membership-end-reason-class` closed vocabulary in `scripts/check-doc-vocabulary.py`. No lifecycle transition, invariant, message row, scenario, data requirement, audit code or open-issue gate changed; no open issue closed. | Consequential amendment under change control, recorded under the Executive decision `EXEC-FOLLOWUPS-003` item 5(a), September 15, 2026; the v1.0.4 Product Owner approval otherwise stands. Status line and document version bumped in the same change; the §15 gates stay open |
 | 1.0.4 | September 15, 2026 | Claude specification specialist, dispatched by Manager (`PROTO-CONSENT-AMENDMENTS-001`) | Added §13.1, the physical `DR-73-04` mapping to `budget_space_consent` deferred to this package by `CBD236-CONSENT-SEMANTICS-001` item 6: the column-by-column mapping as merged in PR #337, the `self_disclosure` source value for the Primary Owner's creation-time row, the append-only digest-pinned registry as the disclosure version source, and the `SEC-F02` forward rule binding every later membership insert. No lifecycle transition, invariant, message row, scenario, data requirement, audit code or open-issue gate changed; no open issue closed. | **Approved — Product Owner, September 15, 2026 (`PO-CONTRACT-APPROVALS-003`).** Status line and document version bumped in the same change; the §15 gates stay open |
 | 1.0.3 | September 3, 2026 | Claude with Alexander Wohlford as Product Owner | Brand amendment. The ceremony-entry disclosure in the specification's §7 said the surface discloses "that this is a CoBudget invitation requiring verification"; it now says MoneyPact, matching `EM-92-002` as amended at CBD-92 v1.0.1 and the `MSG-73-002`/`MSG-73-010` rows already corrected at v1.0.2. The naming standard is `RT-75-01`. No lifecycle transition, invariant, message row, scenario, or gate changed. | Consequential amendment to an approved document under change control; the v1.0 approval otherwise stands |
 | 1.0.2 | September 2, 2026 | Claude with Alexander Wohlford as Product Owner | Brand amendment. The two customer-facing strings that named the product, in `MSG-73-002` and `MSG-73-010`, said "a CoBudget invitation". The September 2, 2026 brand decision recorded in `docs/brand-foundation.md` makes MoneyPact the customer-facing name and keeps CoBudget as the internal codename, so a customer-readable invitation must say MoneyPact. Both now do. No semantic rule changes; the naming standard is `RT-75-*` in the CBD-75 package. | Product Owner authorized September 2, 2026 |

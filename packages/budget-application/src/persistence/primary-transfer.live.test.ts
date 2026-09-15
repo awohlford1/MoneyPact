@@ -299,6 +299,19 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
       return result.transfer.transferId;
     }
 
+    /** PK7A-F01: the durable DR-73-11 rows one command wrote, as [code, subject] pairs sorted by subject. */
+    async function noticesFor(correlationId: string): Promise<readonly (readonly [string, string])[]> {
+      const found = await rows(
+        "SELECT message_code, account_subject_id FROM account_lifecycle_notice WHERE event_correlation_id = $1 ORDER BY account_subject_id",
+        [correlationId],
+      );
+      return found.map((row) => [row.message_code as string, row.account_subject_id as string] as const);
+    }
+    /** The expected pairs in `noticesFor`'s order. */
+    function bySubject(pairs: readonly (readonly [string, string])[]): readonly (readonly [string, string])[] {
+      return [...pairs].sort((a, b) => a[1].localeCompare(b[1]));
+    }
+
     async function scalar<T>(text: string, values: readonly unknown[]): Promise<T> {
       const result = await api.query(text, values as unknown[]);
       return (result.rows[0] as Record<string, T> | undefined) === undefined
@@ -519,19 +532,33 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
       const space = await newSpace();
       const recipient = await newMember(space, "co_owner");
 
-      const declined = await propose(space, recipient);
+      // PK7A-F01: the proposal's MSG-73-040 is a durable row to the recipient.
+      const proposeCorrelation = randomUUID();
+      const proposedDeclined = await transaction((deps) => proposePrimaryTransfer(
+        deps, actor(space, space.primaryMembership, space.primarySubject, "29.propose_primary_transfer", { correlationId: proposeCorrelation }),
+        { recipientMembershipId: recipient.membershipId },
+      ));
+      assert.equal(proposedDeclined.outcome, "proposed");
+      if (proposedDeclined.outcome !== "proposed") throw new Error("unreachable");
+      const declined = proposedDeclined.transfer.transferId;
+      assert.deepEqual(await noticesFor(proposeCorrelation), [["MSG-73-040", recipient.subject]], "TR-73-40 persists the recipient notice");
+
+      const declineCorrelation = randomUUID();
       const declineResult = await transaction((deps) => declinePrimaryTransfer(
-        deps, actor(space, recipient.membershipId, recipient.subject, "29.decline_primary_transfer"), { transferId: declined },
+        deps, actor(space, recipient.membershipId, recipient.subject, "29.decline_primary_transfer", { correlationId: declineCorrelation }), { transferId: declined },
       ));
       assert.equal(declineResult.outcome, "declined");
       assert.equal(await scalar<string>("SELECT state FROM budget_space_primary_transfer WHERE transfer_id = $1", [declined]), "declined");
       assert.equal((await spaceCoherence(space)).primaryOwnerMembershipId, space.primaryMembership);
+      assert.deepEqual(await noticesFor(declineCorrelation), [["MSG-73-043", space.primarySubject]], "TR-73-44 persists the proposer notice");
 
       const withdrawn = await propose(space, recipient);
+      const withdrawCorrelation = randomUUID();
       const withdrawResult = await transaction((deps) => withdrawPrimaryTransfer(
-        deps, actor(space, space.primaryMembership, space.primarySubject, "29.withdraw_primary_transfer"), { transferId: withdrawn },
+        deps, actor(space, space.primaryMembership, space.primarySubject, "29.withdraw_primary_transfer", { correlationId: withdrawCorrelation }), { transferId: withdrawn },
       ));
       assert.equal(withdrawResult.outcome, "withdrawn");
+      assert.deepEqual(await noticesFor(withdrawCorrelation), [["MSG-73-044", recipient.subject]], "TR-73-45 persists the recipient notice");
       // Repeat is the uniform no-op, never a second mutation.
       const repeat = await transaction((deps) => withdrawPrimaryTransfer(
         deps, actor(space, space.primaryMembership, space.primarySubject, "29.withdraw_primary_transfer"), { transferId: withdrawn },
@@ -557,12 +584,30 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
         /write-once/u,
       );
       const later = { now: () => new Date(Date.now() + 2000).toISOString() };
+      const expiryCorrelation = randomUUID();
       const expired = await transaction((deps) => acceptPrimaryTransfer(
-        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer"), { transferId: expiring },
+        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer", { correlationId: expiryCorrelation }), { transferId: expiring },
       ), { clock: later });
       assert.equal(expired.outcome, "expired");
       assert.equal(await scalar<string>("SELECT state FROM budget_space_primary_transfer WHERE transfer_id = $1", [expiring]), "expired");
       assert.equal((await spaceCoherence(space)).primaryOwnerMembershipId, space.primaryMembership);
+      assert.deepEqual(
+        await noticesFor(expiryCorrelation),
+        bySubject([["MSG-73-045", recipient.subject], ["MSG-73-045", space.primarySubject]]),
+        "TR-73-46 expiry persists one notice per party",
+      );
+
+      // The CHECK is widened, not opened: a code outside the closed set is
+      // still refused by the database, and the application's own list
+      // refuses it first.
+      await assert.rejects(
+        () => withAdmin(async (connection) => connection.query(
+          "INSERT INTO account_lifecycle_notice (notice_id, account_subject_id, budget_space_id, message_code, event_correlation_id) VALUES ($1, $2, $3, 'MSG-73-041', $4)",
+          [randomUUID(), recipient.subject, space.spaceId, randomUUID()],
+        )),
+        (error: unknown) => (error as { code?: string }).code === "23514",
+        "MSG-73-041 is not a notice code",
+      );
     }
 
     // =================================================================
@@ -587,11 +632,17 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
           );
         }
       });
+      const invalidationCorrelation = randomUUID();
       const result = await transaction((deps) => acceptPrimaryTransfer(
-        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer"), { transferId },
+        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer", { correlationId: invalidationCorrelation }), { transferId },
       ));
       assert.equal(result.outcome, "invalidated", drift);
       assert.equal(await scalar<string>("SELECT state FROM budget_space_primary_transfer WHERE transfer_id = $1", [transferId]), "invalidated", drift);
+      assert.deepEqual(
+        await noticesFor(invalidationCorrelation),
+        bySubject([["MSG-73-027", recipient.subject], ["MSG-73-027", space.primarySubject]]),
+        `TR-73-46 invalidation (${drift}) persists one notice per party`,
+      );
       const after = await spaceCoherence(space);
       assert.equal(after.activePrimaries.length, 1, drift);
       assert.equal(after.consentByMembership.get(space.primaryMembership), "primary_owner", drift);
@@ -654,8 +705,9 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
         await scalar<number>("SELECT count(*)::int FROM budget_space_lifecycle_audit WHERE budget_space_id = $1 AND event_subtype = 'transfer_committed'", [space.spaceId]),
         0, point,
       );
+      // PK7A-F01: the only notice row in the space is the proposal's MSG-73-040.
       assert.equal(
-        await scalar<number>("SELECT count(*)::int FROM account_lifecycle_notice WHERE budget_space_id = $1", [space.spaceId]),
+        await scalar<number>("SELECT count(*)::int FROM account_lifecycle_notice WHERE budget_space_id = $1 AND message_code <> 'MSG-73-040'", [space.spaceId]),
         0, point,
       );
     }

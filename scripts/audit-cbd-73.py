@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Repeatable structural and traceability audit for the CBD-73 package.
 
-The audit fixes the exact Approved v1.0.4 identifier sets, source baseline, declared
+The audit fixes the exact Approved v1.0.5 identifier sets, source baseline, declared
 totals, cross-document references, open-gate namespace, and repository wiring.
 It proves documentation integrity only.  Product approval, implementation,
 specialist review, and runtime evidence remain governed by OI-73-001..012.
@@ -387,12 +387,12 @@ def check_markdown_structure(audit: Audit, path: Path, text: str) -> None:
         f"{path}: trailing whitespace on lines {', '.join(map(str, trailing))}",
     )
     audit.check(
-        "| Status | **Approved v1.0.4 " in text,
-        f"{path}: package status is not Approved v1.0.4",
+        "| Status | **Approved v1.0.5 " in text,
+        f"{path}: package status is not Approved v1.0.5",
     )
     audit.check(
-        "| Document version | 1.0.4 |" in text,
-        f"{path}: document version is not 1.0.4",
+        "| Document version | 1.0.5 |" in text,
+        f"{path}: document version is not 1.0.5",
     )
 
     headings = re.findall(r"^#{2,6}\s+(.+)$", text, flags=re.MULTILINE)
@@ -543,8 +543,8 @@ def main() -> int:
             EXPECTED_REVIEW_FINDINGS,
         )
         audit.check(
-            "| Document version | 1.0.4 |" in review_text,
-            f"{REVIEW}: remediation review is not version 1.0.4",
+            "| Document version | 1.0.5 |" in review_text,
+            f"{REVIEW}: remediation review is not version 1.0.5",
         )
 
     trace_review_rows = table_ids(texts[TRACE], r"RV-73-\d{3}")

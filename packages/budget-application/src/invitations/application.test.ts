@@ -18,7 +18,7 @@ import {
 import { confirmAcceptance, rejectAcceptance } from "./acceptance.ts";
 import type { OwnerActorContext, OwnerContext, OwnerSystemContext } from "./ports.ts";
 import { MAX_CHANNEL_ATTEMPTS, NEUTRAL_DISPLAY_LABEL, UNIFORM_LINK_MESSAGE_CODE, isInvitationError } from "./records.ts";
-import { canonicalizeEmailDestination, maskEmailDestination } from "./secrets.ts";
+import { canonicalizeEmailDestination, generateBearer, generateCodeSelector, maskEmailDestination, splitPresentedCode } from "./secrets.ts";
 import { ENVIRONMENT, INVITEE_SUBJECT, OWNER_SUBJECT, SPACE, ownerWithoutPermission, testWorld } from "./support.ts";
 import type { TestWorld } from "./support.ts";
 
@@ -122,6 +122,12 @@ void test("PK5-04 custody: no record carries the raw address, the bearer or the 
   assert.ok(code);
   assert.ok(!JSON.stringify(code).includes(delivery.bearer), "the code row holds the verifier, never the bearer");
   assert.match(code.verifierDigest, /^[0-9a-f]{64}$/u);
+  // PK5-F02: the bearer is `<selector>.<secret>`; the row carries the
+  // selector, which encodes and proves nothing, and never the secret half.
+  const parts = splitPresentedCode(delivery.bearer);
+  assert.ok(parts, "the delivered bearer is selector-shaped");
+  assert.equal(code.codeSelector, parts.selector);
+  assert.ok(!JSON.stringify(code).includes(parts.secret), "the code row never holds the secret half");
 
   // The ceremony's two secret-derived columns are keyed digests, not the values.
   const { ceremonyRequest } = await ceremony(testWorld(), "resolve");
@@ -185,11 +191,26 @@ void test("resolve opens one ceremony and invalidates the previous one, so a lea
 void test("PK5-03 uniform outcome: unknown, malformed, consumed, cancelled, superseded, declined and expired codes answer identically", async () => {
   const answers: string[] = [];
 
-  // Unknown and malformed.
-  for (const presented of ["", "not-a-real-bearer"]) {
+  // Unknown and malformed, in both the pre-selector shape and the selector
+  // shape; then PK5-F02's two new classes -- a known selector with a wrong
+  // secret, and an unknown selector with the real secret.
+  for (const presented of ["", "not-a-real-bearer", `${generateCodeSelector()}.not-a-real-secret`, "short.not-a-real-secret"]) {
     const world = testWorld();
     await dispatched(world);
     answers.push(JSON.stringify(await resolveCode(world.deps, { presentedCode: presented, environment: ENVIRONMENT, correlationId: "c" })));
+  }
+  {
+    const world = testWorld();
+    const { delivery } = await dispatched(world);
+    const parts = splitPresentedCode(delivery.bearer);
+    assert.ok(parts);
+    for (const presented of [`${parts.selector}.${generateBearer()}`, `${generateCodeSelector()}.${parts.secret}`]) {
+      answers.push(JSON.stringify(await resolveCode(world.deps, { presentedCode: presented, environment: ENVIRONMENT, correlationId: "c" })));
+    }
+    // The real bearer still resolves afterwards: a wrong guess against the
+    // selector does not touch the code.
+    const real = await resolveCode(world.deps, { presentedCode: delivery.bearer, environment: ENVIRONMENT, correlationId: "c" });
+    assert.equal(real.outcome, "resolved");
   }
 
   // Cancelled.
@@ -233,7 +254,7 @@ void test("PK5-03 uniform outcome: unknown, malformed, consumed, cancelled, supe
   }
 
   const expected = JSON.stringify({ outcome: "unusable", messageCode: UNIFORM_LINK_MESSAGE_CODE });
-  assert.equal(answers.length, 7);
+  assert.equal(answers.length, 11);
   for (const answer of answers) assert.equal(answer, expected);
 });
 

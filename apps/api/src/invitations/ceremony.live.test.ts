@@ -168,6 +168,8 @@ describe("PK6-01 live: the whole invitation ceremony over HTTP on real PostgreSQ
         assert.equal(item.destinationMasked, "i***@example.com");
         assert.ok(!deliveries.body.includes("invitee@example.com"), "the raw destination is not in the body");
         assert.match(item.channelChallenge, /^\d{6}$/u);
+        // PK5-F02: the surface projects the whole `<selector>.<secret>` bearer; the link holder presents it unchanged.
+        assert.match(item.code, /^[A-Za-z0-9_-]{43}\.[0-9a-f]{64}$/u, "the delivered code is selector-shaped");
         code = item.code; challenge = item.channelChallenge;
       });
 
@@ -258,6 +260,12 @@ describe("PK6-01 live: the whole invitation ceremony over HTTP on real PostgreSQ
       await t.test("every unusable class answers byte-identically over the real stack", async () => {
         record("unknown code", await h.inject("POST", "/v1/invitations/resolve", ceremony, { code: "not-a-code" }));
         record("empty code", await h.inject("POST", "/v1/invitations/resolve", ceremony, {}));
+        // PK5-F02: the consumed link's real selector with a wrong secret, and
+        // an unknown selector with its real secret, over the real stack.
+        const [consumedSelector, consumedSecret] = code.split(".");
+        record("known selector, wrong secret", await h.inject("POST", "/v1/invitations/resolve", ceremony, { code: `${consumedSelector}.${"0".repeat(64)}` }));
+        record("unknown selector, real secret", await h.inject("POST", "/v1/invitations/resolve", ceremony, { code: `${"A".repeat(43)}.${consumedSecret}` }));
+        record("malformed selector half", await h.inject("POST", "/v1/invitations/resolve", ceremony, { code: `short.${consumedSecret}` }));
         record("verify on the consumed ceremony", await h.inject("POST", `/v1/invitations/${ceremonyId}/verify-channel`, ceremony, { channelCode: challenge }));
         record("decline on the consumed ceremony", await h.inject("POST", `/v1/invitations/${ceremonyId}/decline`, ceremony, {}));
         const again = await signIn(h, "subject-a");
@@ -275,7 +283,7 @@ describe("PK6-01 live: the whole invitation ceremony over HTTP on real PostgreSQ
         assert.equal(cancelled.statusCode, 200, cancelled.body);
         record("cancelled link", await h.inject("POST", "/v1/invitations/resolve", ceremony, { code: item.code }));
         for (const [name, answer] of Object.entries(answers)) assert.deepEqual(answer, uniform, name);
-        assert.ok(Object.keys(answers).length >= 8);
+        assert.ok(Object.keys(answers).length >= 11);
       });
     } finally {
       await h.close();

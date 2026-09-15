@@ -10,6 +10,7 @@
  * claims are the live suite's alone.
  */
 import { InvitationError } from "./records.ts";
+import { hasSelectorShape, splitPresentedCode } from "./secrets.ts";
 import type {
   AcceptanceConsentRecord, CeremonyRecord, CodeDisposition, ConfirmationRecord, DisplayIdentity,
   InvitationCodeRecord, InvitationRecord, LifecycleAuditEvent, LifecycleNotice, MembershipRecord, SecurityEvent,
@@ -64,18 +65,30 @@ export class InMemoryInvitationRepository implements InvitationRepository {
     this.memberships.push(record);
   }
 
-  /** The locator over the same store, with the same "location only" contract as the real one. */
-  locator(verifierFor: (binding: { invitationId: string; invitationVersion: number; destinationToken: string }, presented: string) => Promise<string>): InvitationLocator {
+  /** The locator over the same store, with the same "location only" contract and the same selector-then-verifier shape as the real one. */
+  locator(verifierFor: (binding: { invitationId: string; invitationVersion: number; destinationToken: string }, secret: string) => Promise<string>): InvitationLocator {
+    const bindingOf = (code: InvitationCodeRecord) => {
+      const invitation = this.invitations.get(code.invitationId);
+      return invitation === undefined ? null : {
+        invitationId: invitation.invitationId, invitationVersion: invitation.invitationVersion, destinationToken: invitation.destinationToken,
+      };
+    };
     return {
       locateByPresentedCode: async (presented: string): Promise<InvitationLocation | null> => {
+        if (hasSelectorShape(presented)) {
+          const parts = splitPresentedCode(presented);
+          if (parts === undefined) return null;
+          const code = [...this.codes.values()].find((row) => row.codeSelector === parts.selector);
+          const binding = code === undefined ? null : bindingOf(code);
+          if (code === undefined || binding === null) return null;
+          const candidate = await verifierFor(binding, parts.secret);
+          return candidate === code.verifierDigest ? { budgetSpaceId: code.budgetSpaceId, invitationId: code.invitationId } : null;
+        }
         for (const code of this.codes.values()) {
-          const invitation = this.invitations.get(code.invitationId);
-          if (!invitation) continue;
-          const candidate = await verifierFor({
-            invitationId: invitation.invitationId,
-            invitationVersion: invitation.invitationVersion,
-            destinationToken: invitation.destinationToken,
-          }, presented);
+          if (code.codeSelector !== null) continue;
+          const binding = bindingOf(code);
+          if (binding === null) continue;
+          const candidate = await verifierFor(binding, presented);
           if (candidate === code.verifierDigest) return { budgetSpaceId: code.budgetSpaceId, invitationId: code.invitationId };
         }
         return null;
