@@ -205,6 +205,59 @@ them at `cobudget_dev`.
    and the next three, confirm, open the plan, set base targets for two
    categories, reload the page, and sign out.
 
+### The demo database
+
+`cobudget_demo` is the one persistent scratch database on the local
+container: the walkthrough, the end-to-end script and a hand-driven journey
+all run against it, so it keeps a signed-in subject, a budget and its expenses
+between sessions. `cobudget_dev` stays what `db:up` creates for the migration
+tooling itself and is never the demo target.
+
+- **Create it once**, with the container up, as step 2 above shows: the
+  database is owned by `cobudget_migration`, the role the migrations run as.
+  PostgreSQL 17 grants no `CREATE` on `public` to ordinary roles, and
+  `db:verify` proves that `cobudget_api` and `cobudget_worker` cannot create
+  or alter tables in it.
+- **Migrate and verify it** with `COBUDGET_DB_NAME=cobudget_demo` in
+  `.env.local` (step 1) or on the command line for a single run. Every
+  `db:*` command reads the name from that variable, so the same three lines
+  bring it forward after a pull that adds a migration:
+
+  ```sh
+  COBUDGET_DB_NAME=cobudget_demo npm run db:migrate --workspace=@cobudget/migrations
+  COBUDGET_DB_NAME=cobudget_demo npm run db:verify --workspace=@cobudget/migrations
+  COBUDGET_DB_NAME=cobudget_demo npm run db:status --workspace=@cobudget/migrations
+  ```
+
+- **Seed it** with `COBUDGET_DB_NAME=cobudget_demo npm run db:seed
+  --workspace=@cobudget/migrations`. The hook verifies the running server and
+  loads zero rows (`CBD117-SEED-001`); the demo's data is whatever the journey
+  and the scripts create through the API.
+- **Reset it by dropping and recreating it.** `db:reset` refuses any database
+  whose name does not match `^cobudget_(dev|local|test)(_[a-z0-9_]+)?$`
+  (`config/migrations.json`, `reset.localDatabaseNamePattern`), and
+  `cobudget_demo` deliberately does not, so a reset of the demo is explicit:
+
+  ```sh
+  docker exec cobudget-db-1 psql -U postgres -c "DROP DATABASE cobudget_demo;"
+  docker exec cobudget-db-1 psql -U postgres -c "CREATE DATABASE cobudget_demo OWNER cobudget_migration;"
+  COBUDGET_DB_NAME=cobudget_demo npm run db:migrate --workspace=@cobudget/migrations
+  COBUDGET_DB_NAME=cobudget_demo npm run db:verify --workspace=@cobudget/migrations
+  ```
+
+  Stop the API first (`DROP DATABASE` fails while a session holds a
+  connection), then sign in and create the budget again; nothing outside the
+  container is affected under `PROVIDERS-LOCAL-001`. Do this after a migration
+  that changes the meaning of existing rows, such as the consent record
+  described below.
+- **Agents never point a scratch run at it.** A test, a probe or a gate that
+  needs a database creates its own (`CREATE DATABASE cobudget_<name> OWNER
+  cobudget_migration`, then `COBUDGET_DB_NAME=cobudget_<name> npm run
+  db:migrate --workspace=@cobudget/migrations`), uses it and drops it. The
+  live suites already refuse `cobudget_dev` by name; `cobudget_demo` is
+  protected by this rule, because a suite that ran against it would leave its
+  fixtures in the demo or drop the journey's data.
+
 ### What is and is not real
 
 - Sign-in is the CBD-190 ceremony against the local adapter: state, nonce and
@@ -225,16 +278,10 @@ them at `cobudget_dev`.
   writes no rows and never synthesizes consent evidence, so a budget space
   created earlier keeps its membership and has no consent row, and every
   ordinary cell in it denies from that commit on. Recreate the database and
-  the space:
-
-  ```sh
-  npm run db:reset --workspace=@cobudget/migrations -- --confirm-destroys-all-data
-  npm run db:migrate --workspace=@cobudget/migrations
-  ```
-
-  Then sign in and create the budget again through the confirmation, which now
-  records consent. No hosted database exists under `PROVIDERS-LOCAL-001`, so
-  nothing else is affected.
+  the space as **The demo database** above describes (drop, create, migrate,
+  verify; `db:reset` refuses the demo by name), then sign in and create the
+  budget again through the confirmation, which now records consent. No hosted
+  database exists under `PROVIDERS-LOCAL-001`, so nothing else is affected.
 - The approved disclosure texts live in `config/consent-disclosure-registry.json`,
   append-only and digest-pinned, with their content under
   `docs/consent-disclosures/`. `scripts/check-consent-disclosure-registry.mjs`

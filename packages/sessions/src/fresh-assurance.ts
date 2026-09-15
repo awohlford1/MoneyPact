@@ -114,6 +114,14 @@ function toGrant(row: Record<string, unknown>): FreshAssuranceGrant {
   };
 }
 
+/**
+ * Every driver failure leaves this module as `SessionStoreUnavailableError`.
+ * SEC-PK4-F4: the wrapped error carries the cause's `sqlState`, so a
+ * serialization failure on the grant row -- the losing side of two
+ * serializable transactions spending one grant -- is still recognisable as
+ * 40001 by `ApiTransactionStore`'s retry loop, which then re-runs the whole
+ * effect and finds the grant consumed instead of recording a generic failure.
+ */
 async function withStoreFailure<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();

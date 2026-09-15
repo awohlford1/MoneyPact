@@ -232,9 +232,22 @@ export interface RevocationAction {
 }
 
 export class SessionStoreUnavailableError extends Error {
+  /**
+   * SEC-PK4-F4: the driver's SQLSTATE, when the cause carried one. The
+   * CBD-246 seam already reduces a driver failure to `StatementFailedError`
+   * with nothing but the table, the operation and `sqlState`, so copying the
+   * state forward discloses nothing further -- and it is what lets a
+   * serializable transaction store recognise a wrapped serialization failure
+   * (40001, 40P01) and retry instead of recording the attempt as a generic
+   * failure. Undefined when the cause has no string `sqlState`.
+   */
+  readonly sqlState: string | undefined;
+
   constructor(cause?: unknown) {
     super("session store unavailable; resolution and revocation both fail closed (CT-191-009)");
     this.name = "SessionStoreUnavailableError";
     if (cause !== undefined) this.cause = cause;
+    const state = cause !== null && typeof cause === "object" && "sqlState" in cause ? (cause as { sqlState?: unknown }).sqlState : undefined;
+    this.sqlState = typeof state === "string" ? state : undefined;
   }
 }

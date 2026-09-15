@@ -18,7 +18,7 @@
  * read by a trusted pre-policy statement -- never from a body field -- so an
  * owner holding only permission 24 cannot confirm, replace or cancel a
  * Co-owner invitation (CBD-73 section 5.1 item 2; `SEC-PK5-F02`, `R-03`).
- * `OwnerContext.permission` is always the selected cell's permission key.
+ * `OwnerActorContext.permission` is always the selected cell's permission key (`PK5FIX-F02`: required in the type).
  *
  * The pre-authentication ceremony trio, on `@PreAuthenticationSurface()` with
  * no policy decision (section 5.1: a link holder has no session; decline must
@@ -85,7 +85,7 @@ import {
   parseVerifyChannelRequest, readDisclosure, rejectAcceptance, replaceInvitation, resolveCode, verifyChannel,
 } from "../../../../packages/budget-application/src/invitations/index.ts";
 import type {
-  InvitationDependencies, InvitationErrorCode, InvitationProjection, InviteeContext, OwnerContext,
+  InvitationDependencies, InvitationErrorCode, InvitationProjection, InviteeContext, OwnerActorContext, OwnerContext,
 } from "../../../../packages/budget-application/src/invitations/index.ts";
 import { readInvitationCeremonyCookie, invitationCeremonyCookie } from "./cookie.ts";
 import type { InvitationScope } from "./persistence.ts";
@@ -252,7 +252,7 @@ export function invitationsHttp(dependencies: InvitationsHttpDependencies): { mo
     select: (request) => options.select(request),
     resourceLocator: (request) => locator(request, options.row ? "invitation" : "space"),
   });
-  const ownerWithin = (request: FastifyRequest, effect: EffectContext): { scope: InvitationScope; owner: OwnerContext; invitationId: string | null } => {
+  const ownerWithin = (request: FastifyRequest, effect: EffectContext): { scope: InvitationScope; owner: OwnerActorContext; invitationId: string | null } => {
     // Not cleared here: the store re-runs the whole effect on a conflict (`R-07`) and the second run needs the same
     // pre-policy resolution; the WeakMap entry is released with the request object.
     const resolved = acting.get(request);
@@ -262,7 +262,7 @@ export function invitationsHttp(dependencies: InvitationsHttpDependencies): { mo
     // Bound to short locals first: the secret scanner's generic-api-key rule reads `authorizationVersion: <long identifier>` as a credential (PK2FIX-F04).
     const membership = input.membership;
     const version = membership.authorizationVersion;
-    const owner: OwnerContext = {
+    const owner: OwnerActorContext = {
       budgetSpaceId: resolved.budgetSpaceId, subjectId: subject, membershipId: membership.membershipId,
       decision: { policyVersion: effect.decision.policyVersion, policyDigest: effect.decision.policyDigest, authorizationVersion: version },
       // `SEC-PK5-F02` / `R-03`: always the permission of the cell the allow decision was taken against.

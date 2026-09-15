@@ -13,10 +13,11 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { consumeAndIssue } from "./issuance.ts";
-import { findUsableFreshAssurance, issueFreshAssurance } from "./fresh-assurance.ts";
+import { consumeFreshAssurance, findUsableFreshAssurance, issueFreshAssurance } from "./fresh-assurance.ts";
 import { createSessionStore } from "./store.ts";
 import { createFakeClient, createTestDatabase } from "./test-support/fake-client.ts";
 import { testConfig, testEnvelopeKeyProvider } from "./test-support/harness.ts";
+import { SessionStoreUnavailableError } from "./types.ts";
 import type { SessionIssueCommandV1 } from "./types.ts";
 
 const ACTION = "29.transfer_primary_ownership";
@@ -100,4 +101,26 @@ void test("SEC-PK4-F3: an expired session finds nothing, on the idle expiry and 
   const row = sessions.find((candidate) => candidate.session_ref === context.sessionRef);
   assert.ok(row);
   assert.equal(await context.find(row!.idle_expires_at as Date), undefined);
+});
+
+void test("SEC-PK4-F4: a driver failure on the grant row is wrapped with its SQLSTATE, so a serialization failure stays recognisable", async () => {
+  const now = new Date();
+  const context = await granted(now);
+  // The CBD-246 seam's own error shape: a name, the table, the operation and
+  // the SQLSTATE, nothing else. 40001 is what the losing side of two
+  // serializable transactions spending one grant receives.
+  const serializationFailure = Object.assign(new Error('statement on "account_session_fresh_assurance" failed (update)'), { name: "StatementFailedError", sqlState: "40001" });
+  const failing = { ...context.client, platformUpdate: async () => { throw serializationFailure; } };
+  await assert.rejects(
+    consumeFreshAssurance(failing, { freshAssuranceId: context.grant!.freshAssuranceId, action: ACTION, now }),
+    (error: unknown) => error instanceof SessionStoreUnavailableError && error.sqlState === "40001" && error.cause === serializationFailure,
+  );
+  // A cause without a state wraps to no state: nothing is invented.
+  const plain = { ...context.client, platformUpdate: async () => { throw new Error("connection reset"); } };
+  await assert.rejects(
+    consumeFreshAssurance(plain, { freshAssuranceId: context.grant!.freshAssuranceId, action: ACTION, now }),
+    (error: unknown) => error instanceof SessionStoreUnavailableError && error.sqlState === undefined,
+  );
+  assert.equal(new SessionStoreUnavailableError(undefined).sqlState, undefined);
+  assert.equal(new SessionStoreUnavailableError({ sqlState: 40001 }).sqlState, undefined, "only a string SQLSTATE is carried");
 });

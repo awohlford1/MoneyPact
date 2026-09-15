@@ -38,7 +38,7 @@ import type {
   AcceptanceConsentRecord, ConfirmationRecord, InvitableRole, InvitationProjection, InvitationRecord, MembershipRecord,
 } from "./records.ts";
 import { assertCeremonyEdge, assertConfirmationEdge, assertInvitationEdge } from "./transitions.ts";
-import type { OwnerContext } from "./ports.ts";
+import type { OwnerActorContext } from "./ports.ts";
 
 /** The ordered points the live suite may inject a failure at. Every one is a real boundary in the sequence below. */
 export const ACCEPTANCE_BOUNDARIES = [
@@ -96,7 +96,7 @@ export function commitRequestDigest(input: {
  * SS8 step 1 to step 12 writes it.
  */
 export async function confirmAcceptance(
-  deps: InvitationDependencies, owner: OwnerContext,
+  deps: InvitationDependencies, owner: OwnerActorContext,
   request: { readonly invitationId: string; readonly confirmationIdempotencyKey: string },
   options: AcceptanceOptions = {},
 ): Promise<AcceptanceReceipt> {
@@ -159,10 +159,10 @@ export async function confirmAcceptance(
   });
 
   // --- 4: inviter authority. -----------------------------------------------
-  // `SEC-PK5-F02` / `R-03`: required, not optional. A context that carries no
-  // permission is a route that did not decide against a cell, and SS8 step 4
-  // is the one check tying the confirmer's cell to the invitation's
-  // `required_permission`; skipping it on omission is a fail-open default.
+  // `SEC-PK5-F02` / `R-03`: SS8 step 4 is the one check tying the confirmer's
+  // cell to the invitation's `required_permission`. The actor context type
+  // requires the permission (`PK5FIX-F02`); the comparison stays as defence
+  // in depth, so a context built past the type still cannot fail open.
   if (owner.permission !== invitation.requiredPermission) {
     throw new InvitationError("permission_mismatch", "requiredPermission");
   }
@@ -358,7 +358,7 @@ export async function confirmAcceptance(
  * says who decided or why (CBD-73 SS5.1 item 6).
  */
 export async function rejectAcceptance(
-  deps: InvitationDependencies, owner: OwnerContext, request: { readonly invitationId: string },
+  deps: InvitationDependencies, owner: OwnerActorContext, request: { readonly invitationId: string },
 ): Promise<InvitationProjection> {
   const repository = deps.repository;
   const found = await repository.readInvitation(owner.budgetSpaceId, request.invitationId);

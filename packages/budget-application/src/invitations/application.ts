@@ -45,7 +45,7 @@ import {
 import type { KeyedDigest } from "./secrets.ts";
 import { assertCeremonyEdge, assertConfirmationEdge, assertInvitationEdge, isTerminalInvitationState } from "./transitions.ts";
 import type {
-  ChannelChallengeReader, Clock, IdGenerator, InviteeContext, InvitationLocator, InvitationRepository, OwnerContext,
+  ChannelChallengeReader, Clock, IdGenerator, InviteeContext, InvitationLocator, InvitationRepository, OwnerActorContext, OwnerContext, OwnerSystemContext,
 } from "./ports.ts";
 
 /** Lifetimes, in seconds. Defaults are the prototype's; PK-6 may supply its own from configuration. */
@@ -383,7 +383,7 @@ export interface CreateInvitationResult {
  * and the suppressed one simply has no code, no ceremony and no outbox row.
  */
 export async function createInvitation(
-  deps: InvitationDependencies, owner: OwnerContext, request: CreateInvitationRequest,
+  deps: InvitationDependencies, owner: OwnerActorContext, request: CreateInvitationRequest,
   options: { readonly inviteeSubjectIdForDestination?: string | null } = {},
 ): Promise<CreateInvitationResult> {
   const space = await deps.repository.readBudgetSpace(owner.budgetSpaceId);
@@ -581,7 +581,7 @@ async function dispatchInvitation(
  * "Resend" and "replace" are the same transition (`OQ-IV-002`).
  */
 export async function replaceInvitation(
-  deps: InvitationDependencies, owner: OwnerContext, invitationId: string,
+  deps: InvitationDependencies, owner: OwnerActorContext, invitationId: string,
 ): Promise<CreateInvitationResult> {
   const record = await requireOwnedInvitation(deps, owner, invitationId);
   if (record.kind !== "real") throw new InvitationError("invitation_not_current", "kind");
@@ -1045,8 +1045,8 @@ async function cancelForMembershipState(
   return null;
 }
 
-/** A system-path owner context for a transition nobody is acting on. Carries the record's own creator, no decision tuple. */
-function ownerFromRecord(record: InvitationRecord, correlationId: string): OwnerContext {
+/** A system-path owner context for a transition nobody is acting on. Carries the record's own creator and creation tuple, never a decided permission. */
+function ownerFromRecord(record: InvitationRecord, correlationId: string): OwnerSystemContext {
   // Bound to a short local first: the scanner's generic-api-key rule reads
   // `authorizationVersion: <long identifier>` as a credential (PK2FIX-F04).
   const version = record.creatingAuthorizationVersion;

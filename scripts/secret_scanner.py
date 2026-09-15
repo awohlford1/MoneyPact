@@ -27,6 +27,20 @@ PATH_RULES = {
     "nuget-config-password": r"(?i)nuget\.config$",
 }
 PREAMBLE = b"CoBudget secret scan input\n\n"
+# PK5-F05: the vendored generic-api-key rule (upstream ships it with a stopword
+# allowlist this configuration deliberately omits) reads a name containing
+# key/token/auth/... followed by a separator and any ten-or-more-character
+# identifier as a credential. In TypeScript that is an import list, a column
+# array, a member path (`token: record.destinationToken`) or a mapping
+# (`decidedAuthorizationVersion: "decided_authorization_version"`). A value made
+# only of ASCII letters, underscores and dots is an identifier or a member
+# path, never a generic API key, which is random and carries digits; such a
+# value is dropped for that one rule only. Every other rule, including the
+# repository's own cobudget-secret-assignment rule for long secret/password/
+# token assignments, is unaffected, and any value with a digit, `=`, `-`, `+`
+# or `/` in it is still reported.
+IDENTIFIER_SHAPED_RULES = {"generic-api-key"}
+IDENTIFIER_SHAPED = re.compile(r"[A-Za-z_][A-Za-z_.]*")
 
 
 class ScanError(Exception):
@@ -444,6 +458,8 @@ def scan_contents(binary, contents, entries, root=ROOT):
                 contexts[id(body)] = keyword_context(body)
             if not any(word in contexts[id(body)] for word in keywords[rule]):
                 continue
+        if rule in IDENTIFIER_SHAPED_RULES and IDENTIFIER_SHAPED.fullmatch(finding["Secret"]):
+            continue
         # The entire source line is hashed, never printed or saved in the allowlist.
         fingerprint = digest(rule.encode() + b"\0" + b"\n".join(lines[row - 1:end_row]))
         for path in paths:
