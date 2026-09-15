@@ -89,6 +89,12 @@ export const PRODUCTION_TABLE_CATALOG: TableCatalog = {
   budget_space_primary_transfer: "budget-space",
   account_lifecycle_notice: "identity",
   // --- END PROTO-INVITATIONS-PK2 ---
+  // --- BEGIN PROTO-INVITATIONS-PK4-STEPUP-001 (CBD-234 section 10.4 fresh
+  // assurance; CBD-190 step_up ceremony, CBD-191 section 5.1), 20260915T120000Z ---
+  // Identity scope: the grant belongs to a session row, not to a budget space,
+  // even though it names one -- the same reasoning account_session follows.
+  account_session_fresh_assurance: "identity",
+  // --- END PROTO-INVITATIONS-PK4-STEPUP-001 ---
 };
 
 export function isTenantTable(catalog: TableCatalog, table: string): boolean {

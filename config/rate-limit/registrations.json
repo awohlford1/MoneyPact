@@ -448,5 +448,35 @@
     "registration_lifecycle": "active",
     "introduced_by": "CBD-211",
     "authorization_metadata_id": "14.view_progress_detail"
+  },
+  {
+    "registration_id": "api:POST:/v1/identity/step-up/begin",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/identity/http.ts#IdentityController.stepUpBegin",
+    "surface_id": "surf-266-authentication",
+    "parameter_record_id": "rlp-266-bootstrap-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-280",
+    "authorization_metadata_id": null
+  },
+  {
+    "registration_id": "api:GET:/v1/identity/step-up/callback",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/identity/http.ts#IdentityController.stepUpCallback",
+    "surface_id": "surf-266-authentication",
+    "parameter_record_id": "rlp-266-identity-ceremony-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-280",
+    "authorization_metadata_id": null
+  },
+  {
+    "registration_id": "api:HEAD:/v1/identity/step-up/callback",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/identity/http.ts#IdentityController.stepUpCallback",
+    "surface_id": "surf-266-authentication",
+    "parameter_record_id": "rlp-266-identity-ceremony-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-280",
+    "authorization_metadata_id": null
   }
 ]

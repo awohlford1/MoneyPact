@@ -153,6 +153,13 @@ export interface LocalIssuerOptions {
   readonly issuer: string;
   readonly clientId: string;
   readonly callbackUri: string;
+  /**
+   * PK-4: the second registered redirect URI (the step-up ceremony's own
+   * callback). A real client registers a closed set of redirect URIs; this
+   * issuer accepts exactly the ones it was constructed with and refuses
+   * everything else with `invalid_request`, unchanged.
+   */
+  readonly stepUpCallbackUri?: string | undefined;
   readonly now?: () => Date;
   readonly codeLifetimeMs?: number;
   readonly tokenLifetimeSeconds?: number;
@@ -163,6 +170,9 @@ export class LocalIssuer implements ProviderTransport {
   readonly issuer: string;
   readonly clientId: string;
   readonly callbackUri: string;
+  readonly stepUpCallbackUri: string | undefined;
+  /** The closed set of registered redirect URIs; `authorize` accepts an exact member and nothing else. */
+  readonly #registeredRedirectUris: readonly string[];
   readonly #now: () => Date;
   readonly #codeLifetimeMs: number;
   readonly #lifetimeSeconds: number;
@@ -181,6 +191,8 @@ export class LocalIssuer implements ProviderTransport {
     this.issuer = options.issuer;
     this.clientId = options.clientId;
     this.callbackUri = options.callbackUri;
+    this.stepUpCallbackUri = options.stepUpCallbackUri;
+    this.#registeredRedirectUris = options.stepUpCallbackUri ? Object.freeze([options.callbackUri, options.stepUpCallbackUri]) : Object.freeze([options.callbackUri]);
     this.#now = options.now ?? (() => new Date());
     this.#codeLifetimeMs = options.codeLifetimeMs ?? 300_000;
     this.#lifetimeSeconds = options.tokenLifetimeSeconds ?? 3_600;
@@ -226,9 +238,10 @@ export class LocalIssuer implements ProviderTransport {
     };
     const redirectUri = single("redirect_uri");
     const state = single("state");
-    const failure = (error: Exclude<AuthorizeResult, { ok: true }>["error"]): AuthorizeResult => ({ ok: false, error, redirectUri: redirectUri === this.callbackUri ? redirectUri : undefined, state });
+    const registered = redirectUri !== undefined && this.#registeredRedirectUris.includes(redirectUri);
+    const failure = (error: Exclude<AuthorizeResult, { ok: true }>["error"]): AuthorizeResult => ({ ok: false, error, redirectUri: registered ? redirectUri : undefined, state });
     if (single("client_id") !== this.clientId) return failure("unauthorized_client");
-    if (redirectUri !== this.callbackUri) return failure("invalid_request");
+    if (!registered) return failure("invalid_request");
     if (single("response_type") !== "code") return failure("unsupported_response_type");
     if (single("scope") !== "openid") return failure("invalid_scope");
     const codeChallenge = single("code_challenge");

@@ -33,8 +33,23 @@
  * this, the blanket `discharge` refusal denied every subject-scoped read
  * cell -- including `identity.me`'s future `profile.read` binding -- for a
  * reason unrelated to the actual (still separately gated) activation state.
+ *
+ * PK-4 (CBD-234 design section 10.4; CBD-236 section 5.3) adds the one
+ * obligation in the released policy that *is* a write: `fresh_assurance`.
+ * CBD-236 section 8.2 makes a cell protected exactly by naming it, and
+ * `decide` has already refused unless the assembled `assurance` leaves are
+ * `fresh` and bound to this request's own action and space. Discharging it
+ * means spending the grant those leaves came from -- once. That happens here
+ * and not in the fact source for two reasons: the fact source is read twice
+ * (precheck and commit-time recheck) and must return the same bytes both
+ * times, and only this point is inside the transaction *after* the
+ * commit-time re-decision allowed. A `false` here denies exactly like any
+ * other undischargeable obligation, and a rollback anywhere later returns
+ * the grant unspent, so a single step-up authorizes a single committed
+ * protected effect -- never zero, never two.
  */
 import type { DataAccessClient } from "@cobudget/data-access";
+import { consumeFreshAssurance, findUsableFreshAssurance } from "@cobudget/sessions";
 import type { Obligation, PolicyInput } from "@cobudget/contracts/authorization";
 import type { AuthorizationTransactionStore } from "../authorization/boundary.js";
 import type { InProcessRestrictedAuditStore } from "./audit.ts";
@@ -86,13 +101,37 @@ export class ApiTransactionStore implements AuthorizationTransactionStore {
     }
   }
 
-  async discharge(_transaction: unknown, _input: PolicyInput, obligation: Obligation): Promise<boolean> {
+  async discharge(transaction: unknown, input: PolicyInput, obligation: Obligation): Promise<boolean> {
     // RC-05: bind_cache_key names caching dimensions for an already-authorized read; nothing to write.
     if (obligation.kind === "bind_cache_key") return true;
+    if (obligation.kind === "fresh_assurance") return this.#spendFreshAssurance(transaction, input, obligation);
     return false;
   }
 
+  /**
+   * PK-4. Spends the grant `decide` just re-proved, on the boundary's own
+   * transaction client. Every value in the lookup comes from the assembled
+   * policy input and the obligation the policy itself produced -- never from
+   * a request field -- and the obligation's action and space are compared
+   * against the assurance leaves before anything is written, so a grant can
+   * only ever be spent by the request it was bound to.
+   */
+  async #spendFreshAssurance(transaction: unknown, input: PolicyInput, obligation: Extract<Obligation, { kind: "fresh_assurance" }>): Promise<boolean> {
+    const client = transaction as DataAccessClient | undefined;
+    if (!client || typeof client.platformUpdate !== "function") return false;
+    const assurance = input.assurance;
+    const sessionRef = input.subject && "sessionRef" in input.subject ? input.subject.sessionRef : undefined;
+    if (typeof sessionRef !== "string" || !sessionRef) return false;
+    if (!assurance || assurance.level !== "fresh" || assurance.boundAction !== obligation.actionClass || assurance.boundSpaceId !== obligation.spaceId) return false;
+    const now = new Date(input.evaluation.evaluatedAt);
+    const grant = await findUsableFreshAssurance(client, { sessionRef, boundAction: obligation.actionClass, boundSpaceId: obligation.spaceId, now });
+    if (!grant) return false;
+    return consumeFreshAssurance(client, { freshAssuranceId: grant.freshAssuranceId, action: obligation.actionClass, now: new Date() });
+  }
+
   async verify(_transaction: unknown, _input: PolicyInput, obligations: readonly Obligation[]): Promise<boolean> {
-    return obligations.every((obligation) => obligation.kind === "audit" || obligation.kind === "recheck_at_commit" || obligation.kind === "bind_cache_key");
+    // `fresh_assurance` was discharged above by consuming the grant; a failure
+    // there already denied, so reaching verification means it was spent.
+    return obligations.every((obligation) => obligation.kind === "audit" || obligation.kind === "recheck_at_commit" || obligation.kind === "bind_cache_key" || obligation.kind === "fresh_assurance");
   }
 }

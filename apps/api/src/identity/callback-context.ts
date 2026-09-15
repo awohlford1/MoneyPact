@@ -82,6 +82,24 @@ export interface IssuedCallbackContext {
 }
 
 /**
+ * The path half of the callback URI the challenge itself was issued for.
+ * PK-4 added a second provider-registered redirect
+ * (`IDENTITY_STEP_UP_CALLBACK_PATH`) for the step-up ceremony, so "the exact
+ * callback path" is the path of *this challenge's* URI rather than one
+ * module constant. A sign-in challenge's URI still has
+ * `IDENTITY_CALLBACK_PATH`, so nothing about the sign-in comparison changes,
+ * and the rate-limit gate's prediction in `sessions/runtime.ts` keeps calling
+ * the same function with the same arguments.
+ */
+function issuedPath(issued: IssuedCallbackContext): string {
+  try {
+    return new URL(issued.callbackUri).pathname;
+  } catch {
+    return IDENTITY_CALLBACK_PATH;
+  }
+}
+
+/**
  * CBD-190 section 7: the callback is in context only when it is the exact GET
  * on the exact callback path, the origin it was addressed on reconstructs the
  * challenge's own callback URI, and the challenge belongs to this environment.
@@ -94,9 +112,10 @@ export function callbackContextMatches(
   issued: IssuedCallbackContext,
   environmentId: string,
 ): boolean {
+  const path = issuedPath(issued);
   return observed.method === "GET"
-    && observed.path === IDENTITY_CALLBACK_PATH
-    && `${observed.observedOrigin}${IDENTITY_CALLBACK_PATH}` === issued.callbackUri
+    && observed.path === path
+    && `${observed.observedOrigin}${path}` === issued.callbackUri
     && issued.environmentId === environmentId;
 }
 

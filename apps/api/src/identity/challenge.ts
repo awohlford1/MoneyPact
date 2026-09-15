@@ -18,8 +18,18 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 
-export type Ceremony = "register" | "verify" | "sign_in" | "enroll_factor" | "account_switch";
-export const CEREMONIES: readonly Ceremony[] = Object.freeze(["register", "verify", "sign_in", "enroll_factor", "account_switch"]);
+/**
+ * PK-4 (CBD-234 design section 10.4): `step_up` is the re-authentication of
+ * an already-signed-in subject that produces a fresh-assurance grant. It
+ * issues no session and maps no subject, so it is not reachable through
+ * `POST /v1/identity/begin` -- `IdentityCeremony#begin` refuses it by name
+ * and `beginStepUp` is its only entry point. Widening the vocabulary here
+ * is the application half of the CBD-190 amendment; the database half is
+ * the `identity_session_handoff.ceremony` CHECK
+ * (20260915T120000Z__create_account_session_fresh_assurance.sql).
+ */
+export type Ceremony = "register" | "verify" | "sign_in" | "enroll_factor" | "account_switch" | "step_up";
+export const CEREMONIES: readonly Ceremony[] = Object.freeze(["register", "verify", "sign_in", "enroll_factor", "account_switch", "step_up"]);
 
 export interface ChallengeRecord {
   readonly challengeId: string;
@@ -32,9 +42,17 @@ export interface ChallengeRecord {
   readonly expiresAt: Date;
   readonly stateDigest: string;
   readonly nonceDigest: string;
-  /** Present only for an authenticated account switch; taken from server state, never sent to the provider (§4.1, §5.4). */
+  /** Present for an authenticated account switch and for a step-up; taken from server state, never sent to the provider (§4.1, §5.4). */
   readonly currentAccountSubjectId: string | undefined;
   readonly currentSessionRef: string | undefined;
+  /**
+   * PK-4: the action code and budget space a `step_up` challenge is bound to,
+   * fixed at begin time from validated server-side state. The provider never
+   * sees either value, and no callback field can change them -- the grant the
+   * callback issues is built from these, not from anything the browser returns.
+   */
+  readonly boundAction: string | undefined;
+  readonly boundSpaceId: string | undefined;
   status: "pending" | "consumed" | "terminated";
 }
 
@@ -184,6 +202,8 @@ export class ChallengeStore {
     readonly lifetimeSeconds: number;
     readonly currentAccountSubjectId?: string | undefined;
     readonly currentSessionRef?: string | undefined;
+    readonly boundAction?: string | undefined;
+    readonly boundSpaceId?: string | undefined;
   }): IssuedChallenge {
     const now = this.#now();
     this.#sweep(now);
@@ -204,6 +224,8 @@ export class ChallengeStore {
       nonceDigest: oneWayDigest(nonce),
       currentAccountSubjectId: input.currentAccountSubjectId,
       currentSessionRef: input.currentSessionRef,
+      boundAction: input.boundAction,
+      boundSpaceId: input.boundSpaceId,
       status: "pending",
     };
     const slot: Slot = { record, verifier };

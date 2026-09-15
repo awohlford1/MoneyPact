@@ -11,9 +11,19 @@
  *                     Budget-space, membership, consent, resource and
  *                     bootstrap leaves are not produced here; the package
  *                     that owns them layers its reader through `extend`.
- *   idp_evidence   -> `assurance.level: "session"` for a resolved subject.
- *                     Fresh assurance is not issued by this packet, so the
- *                     minimum level is asserted and never a stronger one.
+ *   idp_evidence   -> the acting session's assurance. `"session"` unless a
+ *                     completed step-up (PK-4, CBD-234 design section 10.4)
+ *                     left an unconsumed, unexpired
+ *                     `account_session_fresh_assurance` grant bound to
+ *                     exactly this request's action and acting space, in
+ *                     which case `{ level: "fresh", boundAction,
+ *                     boundSpaceId, expiresAt }` -- the four leaves
+ *                     `decide` re-proves for a protected cell
+ *                     (packages/contracts evaluate.ts section 8.2). The
+ *                     match is equality on both dimensions, so a grant for
+ *                     another action or another space is not a weaker fact
+ *                     here, it is simply absent and the level stays
+ *                     `session`.
  *
  * A subject whose lifecycle is disabled or security-blocked has no
  * `subject.subjectState` leaf at all: the p1 vocabulary cannot name those
@@ -21,6 +31,7 @@
  * rather than this adapter inventing a value.
  */
 import type { DataAccessClient } from "@cobudget/data-access";
+import { findUsableFreshAssurance } from "@cobudget/sessions";
 import type { MinimalFactSourceAdapter } from "@cobudget/sessions";
 import type { FactLookup, FactSourceAdapter } from "../authorization/facts.js";
 import type { FactSource } from "@cobudget/contracts/authorization";
@@ -38,8 +49,45 @@ function subjectStateLeaf(lifecycle: string): "active" | "deletion_requested" | 
 export interface ApiFactSourceOptions {
   readonly sessions: MinimalFactSourceAdapter;
   readonly client: DataAccessClient;
+  /** Clock for the grant's expiry comparison; the assembler's own clock in composition. */
+  readonly now?: (() => Date) | undefined;
   /** Additional datastore leaves supplied by another package (budget space, membership, bootstrap state). Merged after the subject/profile leaves. */
   readonly extend?: FactReader | undefined;
+}
+
+/**
+ * PK-4. The `idp_evidence` leaves for the acting session.
+ *
+ * This is a pure read. Consuming the grant is not done here and must not be:
+ * `AuthorizationBoundary.execute` assembles the facts a second time inside
+ * the mutation transaction and requires the second decision's `inputDigest`
+ * to equal the precheck's, so a fact source that changed state as it read
+ * would make the two reads disagree. The grant is spent where the allow
+ * actually happens -- the boundary discharges the cell's own
+ * `fresh_assurance` obligation, inside the same transaction, after the
+ * commit-time re-decision allowed (`transaction-store.ts`). A rolled-back
+ * effect rolls the consumption back with it.
+ *
+ * A request that names no acting space (a subject-scoped cell, or the
+ * bootstrap action) can hold no space-bound grant, so it reports `session`
+ * without reading anything.
+ */
+async function readAssurance(options: ApiFactSourceOptions, lookup: FactLookup, transaction?: unknown): Promise<Readonly<Record<string, unknown>>> {
+  const sessionAssurance = { "assurance.level": "session" } as const;
+  const sessionRef = lookup.identity?.["subject.sessionRef"];
+  const action = lookup.operation.action;
+  const spaceId = lookup.operation.actingSpaceId;
+  if (typeof sessionRef !== "string" || !sessionRef || !action || typeof spaceId !== "string" || !spaceId) return sessionAssurance;
+  const client = (transaction as DataAccessClient | undefined) ?? options.client;
+  const now = (options.now ?? (() => new Date()))();
+  const grant = await findUsableFreshAssurance(client, { sessionRef, boundAction: action, boundSpaceId: spaceId, now }).catch(() => undefined);
+  if (!grant) return sessionAssurance;
+  return {
+    "assurance.level": "fresh",
+    "assurance.boundAction": grant.boundAction,
+    "assurance.boundSpaceId": grant.boundSpaceId,
+    "assurance.expiresAt": grant.expiresAt.toISOString(),
+  };
 }
 
 export function createApiFactSource(options: ApiFactSourceOptions): FactSourceAdapter {
@@ -52,7 +100,7 @@ export function createApiFactSource(options: ApiFactSourceOptions): FactSourceAd
       }
       const subjectId = lookup.identity?.["subject.accountSubjectId"];
       if (typeof subjectId !== "string" || subjectId.length === 0) return null;
-      if (source === "idp_evidence") return { "assurance.level": "session" };
+      if (source === "idp_evidence") return readAssurance(options, lookup, transaction);
       if (source !== "datastore") return null;
       const client = (transaction as DataAccessClient | undefined) ?? options.client;
       const subject = await findSubject(client, subjectId);
