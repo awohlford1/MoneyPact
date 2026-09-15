@@ -25,7 +25,7 @@
     },
     {
       "id": "invitations",
-      "text": "Every invitation you created under the Primary-only power to invite a Co-owner is cancelled when the transfer commits, and nobody holding one of them can accept it afterwards."
+      "text": "Every open invitation you created under the Primary-only power to invite a Co-owner is cancelled when the transfer commits, and nobody holding one of them can accept it afterwards."
     },
     {
       "id": "choice",

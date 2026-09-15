@@ -17,7 +17,7 @@
     },
     {
       "id": "two_way",
-      "text": "What others will see about you: existing members will see your display name, your role, and the activity attributed to you in this budget space. Your personal settings, your personal alert state, and your memberships in other budget spaces stay private to you. Before anything is shared with you, the member who invited you sees your display name and confirms your acceptance."
+      "text": "What others will see about you: existing members will see your display name, your role, and the activity attributed to you in this budget space. Your personal settings, your personal alert state, and your memberships in other budget spaces stay private to you. Before anything is shared with you, the Primary Owner or a Co-owner of this budget space sees your display name and must confirm your acceptance."
     },
     {
       "id": "exits",
@@ -25,7 +25,7 @@
     },
     {
       "id": "consequences",
-      "text": "Accepting activates your Collaborator role immediately once the member who invited you confirms your acceptance. Accepting creates no payment, financial, legal, or bank-account authority, and it moves no money."
+      "text": "Accepting activates your Collaborator role immediately once the Primary Owner or a Co-owner of this budget space confirms your acceptance. Accepting creates no payment, financial, legal, or bank-account authority, and it moves no money."
     },
     {
       "id": "choice",
