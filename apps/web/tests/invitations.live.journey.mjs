@@ -124,6 +124,12 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
   });
   await waitFor(async () => api.exitCode === null && (await fetch(`${CEREMONY_ORIGIN}/health`)).status === 200, `API ready (${apiOutput})`);
   await waitFor(async () => web.exitCode === null && (await fetch(`${origin}/sign-in`)).ok, `web ready (${webOutput})`, 150_000);
+  // PK8-FIX-F01: the fetch above only proves the dev server answers; the first *rendered* navigation still pays for
+  // a cold Turbopack compile of the sign-in route, which on a rebased head can outrun the first browser wait below
+  // (observed: the first run after a rebase timed out at 30s on the hosted-chooser wait; the immediate rerun with
+  // no code change passed 8/8). A warm-up fetch of the exact route the first browser step navigates to forces that
+  // compile to finish before any Puppeteer wait starts.
+  await fetch(`${origin}/sign-in`).catch(() => {});
   mkdirSync(join(webRoot, ".next"), { recursive: true });
   const executablePath = ["C:/Program Files/Google/Chrome/Application/chrome.exe", "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"].find(existsSync);
   browser = await puppeteer.launch({ ...(executablePath ? { executablePath } : {}), headless: true, args: ["--no-sandbox"] });
@@ -132,10 +138,10 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
   const owner = driver(await ownerContext.newPage(), origin, errors, begins);
   const invitee = driver(await inviteeContext.newPage(), origin, errors, begins);
   const requests = [];
-  for (const person of [owner, invitee]) person.page.on("request", request => { const url = new URL(request.url()); if (url.pathname.startsWith("/v1/")) requests.push(`${request.method()} ${url.pathname.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gu, "{id}")}`); });
+  for (const person of [owner, invitee]) person.page.on("request", request => { const url = new URL(request.url()); if (url.pathname.startsWith("/v1/")) requests.push(`${request.method()} ${url.pathname.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gu, "{id}").replace(/bcp_[0-9a-f]+/gu, "{id}")}`); });
   // The two synthetic subjects persist on a reused scratch database, so the budget name is unique per run.
   const budgetName = `PK-8 live ${randomBytes(3).toString("hex")}`;
-  let budgetId; let code; let challenge; let transferUrl;
+  let budgetId; let code; let challenge; let transferUrl; let ownerMembershipId; let recipientMembershipId;
 
   await t.test("the owner (subject-a) signs in on the hosted chooser and creates a budget", async () => {
     await owner.page.goto(`${origin}/budgets`); await owner.page.waitForFunction(() => location.pathname === "/sign-in");
@@ -151,6 +157,9 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
   await t.test("the members page lists the Primary Owner; the owner invites a Collaborator and the simulated delivery renders the link and the challenge", async () => {
     await owner.clickText("Members"); await owner.page.waitForFunction(() => document.querySelectorAll('[data-testid="member-row"]').length === 1);
     await owner.waitText("Primary Owner"); await owner.accessibility();
+    // R-04: capture the Primary Owner's own membership id now, before any role change, so the post-commit check
+    // binds by identity rather than by role-label position.
+    ownerMembershipId = await owner.page.$eval('[data-testid="member-row"] dl > div:nth-child(3) dd', node => node.textContent);
     await owner.clickText("Invitations"); await owner.waitText("No invitations yet");
     await owner.fill("#invite-destination", "Invitee@Example.com"); await owner.clickText("Send invitation");
     await owner.waitText("Invitation sent to i***@example.com as Collaborator.");
@@ -218,7 +227,10 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
 
   await t.test("the Primary Owner proposes the transfer to the Collaborator, who reads the approved disclosure and accepts", async () => {
     await owner.page.goto(`${origin}/budgets/${budgetId}/transfer`); await owner.waitText("Propose a transfer");
-    await owner.page.select("#transfer-recipient", await owner.page.$eval("#transfer-recipient option:nth-child(2)", node => node.value));
+    // R-04: the option value is the recipient's membership id -- the same identity the members page will later show
+    // as Primary Owner after commit, so capture it here rather than re-deriving it from role position.
+    recipientMembershipId = await owner.page.$eval("#transfer-recipient option:nth-child(2)", node => node.value);
+    await owner.page.select("#transfer-recipient", recipientMembershipId);
     await owner.clickText("Propose transfer");
     await owner.page.waitForFunction(() => /\/transfer\/[0-9a-f-]{36}$/u.test(location.pathname));
     transferUrl = owner.page.url();
@@ -259,14 +271,43 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
     assert.ok(posted.indexOf(begin) < posted.indexOf(confirm));
     assert.equal(posted.filter(entry => entry.url.endsWith("/confirm")).length, 1);
     await owner.clickText("Refresh transfer"); await owner.waitText("Committed");
+    // R-04: bind the roles to the specific people rather than asserting the role set exists. Each member row names
+    // its own membership identity (members-view.tsx 26), so the former Primary's own membership row (captured before
+    // the invite) and the recipient's row (captured as the transfer-recipient option value at propose) are read back
+    // by that id, not by position or by the union of role labels.
     await owner.page.goto(`${origin}/budgets/${budgetId}/members`); await owner.page.waitForFunction(() => document.querySelectorAll('[data-testid="member-row"]').length === 2);
-    const roles = await owner.page.$$eval('[data-testid="member-row"] dd', nodes => nodes.map(node => node.textContent));
-    assert.ok(roles.includes("Co-owner") && roles.includes("Primary Owner"), roles.join(","));
+    const rows = await owner.page.$$eval('[data-testid="member-row"]', nodes => nodes.map(node => {
+      const dds = [...node.querySelectorAll("dl > div")];
+      const byLabel = label => dds.find(div => div.querySelector("dt")?.textContent === label)?.querySelector("dd")?.textContent ?? "";
+      return { membershipId: byLabel("Membership identity"), role: byLabel("Role") };
+    }));
+    const former = rows.find(row => row.membershipId === ownerMembershipId);
+    const recipient = rows.find(row => row.membershipId === recipientMembershipId);
+    assert.ok(former, `former Primary's membership row ${ownerMembershipId} present: ${JSON.stringify(rows)}`);
+    assert.ok(recipient, `recipient's membership row ${recipientMembershipId} present: ${JSON.stringify(rows)}`);
+    assert.equal(former.role, "Co-owner", `former Primary is now Co-owner: ${JSON.stringify(rows)}`);
+    assert.equal(recipient.role, "Primary Owner", `recipient is now Primary Owner: ${JSON.stringify(rows)}`);
     // The former Primary Owner may no longer propose; the transfer page says so.
     await owner.page.goto(`${origin}/budgets/${budgetId}/transfer`); await owner.waitText("Only the Primary Owner can propose a transfer");
   });
 
   assert.ok(begins.length <= BEGIN_BUDGET, `identity-ceremony budget: ${begins.length} begins in one composed process (${begins.join(", ")})`);
   assert.deepEqual(errors, []);
-  console.log(`PK8-01 live journey: ${begins.length} identity begins (${begins.join(", ")}); API requests: ${[...new Set(requests)].join(", ")}`);
+  // R-04: the requests array was recorded (line 141) but never asserted -- a console line is a log, not a proof.
+  // Assert the sorted unique set actually names every leg the journey claims to exercise, not merely that some
+  // request happened somewhere.
+  const uniqueRequests = [...new Set(requests)].sort();
+  const requiredPaths = [
+    "POST /v1/invitations/resolve",
+    "POST /v1/invitations/{id}/verify-channel",
+    "POST /v1/invitations/{id}/attach",
+    "POST /v1/invitations/{id}/accept",
+    "POST /v1/budget-spaces/{id}/invitations/{id}/confirm",
+    "POST /v1/budget-spaces/{id}/primary-transfers",
+    "POST /v1/budget-spaces/{id}/primary-transfers/{id}/accept",
+    "POST /v1/budget-spaces/{id}/primary-transfers/{id}/confirm",
+    "POST /v1/identity/step-up/begin",
+  ].sort();
+  for (const path of requiredPaths) assert.ok(uniqueRequests.includes(path), `expected ${path} among observed requests: ${uniqueRequests.join(", ")}`);
+  console.log(`PK8-01 live journey: ${begins.length} identity begins (${begins.join(", ")}); API requests: ${uniqueRequests.join(", ")}`);
 });

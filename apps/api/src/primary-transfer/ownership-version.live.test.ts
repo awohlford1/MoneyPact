@@ -48,6 +48,13 @@ import { readReleaseHistory } from "../authorization/compatibility.js";
 import type { FactLookup } from "../authorization/facts.js";
 import { APPLICATION_ORIGIN, localConfig } from "../identity/test-support/harness.ts";
 import { TRANSFER_ACTIONS } from "./http.ts";
+import { loadConsentDisclosureRegistry } from "../budget-creation/consent-registry.ts";
+
+/** PK8-F03 (PR #376): accept and confirm bind the acknowledged-disclosure claim; PK9-F01 supplies it here. */
+const REGISTRY = loadConsentDisclosureRegistry();
+const claimOf = (kind: string) => { const entry = REGISTRY.current(kind); return { kind: entry.kind, version: entry.version, digest: entry.digest }; };
+const ACCEPT_BODY = { acknowledgedDisclosure: claimOf("primary_transfer_recipient") };
+const CONFIRM_BODY = { acknowledgedDisclosure: claimOf("primary_transfer_outgoing") };
 
 const database = loadLocalDatabaseConfig();
 const configured = database.database !== "cobudget_dev" && database.database !== "cobudget_demo";
@@ -226,11 +233,11 @@ describe("POV-N09 live: a bystander Collaborator's captured set observes a commi
         assert.equal(proposed.statusCode, 201, proposed.body);
         const transferId = proposed.json().transfer.transferId as string;
         const recipientSession = await signIn(parties, "subject-b");
-        const accepted = await parties.inject("POST", `${base}/${transferId}/accept`, mutation(recipientSession.csrfValue), {});
+        const accepted = await parties.inject("POST", `${base}/${transferId}/accept`, mutation(recipientSession.csrfValue), ACCEPT_BODY);
         assert.equal(accepted.statusCode, 200, accepted.body);
         const owner = await signIn(parties, "subject-a");
         assert.equal(await stepUp(parties, owner.csrfValue, "subject-a", TRANSFER_ACTIONS.confirm, space.spaceId), 303);
-        const confirmed = await parties.inject("POST", `${base}/${transferId}/confirm`, mutation(owner.csrfValue), {});
+        const confirmed = await parties.inject("POST", `${base}/${transferId}/confirm`, mutation(owner.csrfValue), CONFIRM_BODY);
         assert.equal(confirmed.statusCode, 200, confirmed.body);
         assert.equal(confirmed.json().outcome, "committed");
         assert.equal(await ownershipVersion(parties.client, space.spaceId), before + 1, "TR-73-43 advanced the column");
