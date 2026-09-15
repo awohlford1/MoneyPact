@@ -86,16 +86,16 @@ FROZEN_BLOBS = {
     #   traceability      v0.1.12 -> v0.1.13.  Approval; gate results moved
     #                     from pending to Pass.  No rule changed.
     #
-    # CBD-72 is a context freeze here, not a source family: SOURCE_FAMILIES
-    # counts no CBD-72 identifier, so none of this moves a CBD-95 total.
+    # CBD-72 is a context freeze here, not a source family: SOURCE_FAMILIES counts
+    # no CBD-72 identifier, so the September 15, 2026 row 36 re-pin moves no total.
     Path("docs/cbd-72-collaboration-permission-model.md"): (
-        "ffd3deb4d4fe0999cffc9c3d1389b75d90eafffc"
+        "6678f529c1c7f8cc1274ffc39a9855bf7e67bc41"
     ),
     Path("docs/cbd-72-authorization-scenario-catalog.md"): (
-        "8875695c0d3732dd752db9f99ad133eef39d952f"
+        "5e3765400c77add1586b37b850788afc6e971f15"
     ),
     Path("docs/cbd-72-acceptance-criteria-traceability.md"): (
-        "59570a4b866a17ca8f0d5c1d5e9e889dbdb947d7"
+        "091bb49f6c080c43e45c277b4ef9efa2c9de5f6f"
     ),
 }
 

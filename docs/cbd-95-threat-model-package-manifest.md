@@ -68,9 +68,9 @@ approved CBD-14 source package component. It is the reconciliation target:
 | Target | Current repository/Jira state | Git blob where applicable |
 | --- | --- | --- |
 | CBD-12 Jira | In Progress; 36 numbered acceptance criteria; updated August 15, 2026 | Live Jira record, not mirrored locally |
-| `docs/cbd-72-collaboration-permission-model.md` | v0.1.54; package approved August 18, 2026, plus the September 2 section 5.4 amendment and the September 15, 2026 row 36 proposal (PO-CBD72-ROW36-001) | `ffd3deb4d4fe0999cffc9c3d1389b75d90eafffc` |
-| `docs/cbd-72-authorization-scenario-catalog.md` | v0.1.14; package approved August 18, 2026, deterministic fixtures routed to test design | `8875695c0d3732dd752db9f99ad133eef39d952f` |
-| `docs/cbd-72-acceptance-criteria-traceability.md` | v0.1.13; package approved August 18, 2026, gate results recorded | `59570a4b866a17ca8f0d5c1d5e9e889dbdb947d7` |
+| `docs/cbd-72-collaboration-permission-model.md` | v0.1.55; package approved August 18, 2026, plus the September 2 section 5.4 amendment and the September 15, 2026 row 36 approval (PO-CBD72-ROW36-001) | `6678f529c1c7f8cc1274ffc39a9855bf7e67bc41` |
+| `docs/cbd-72-authorization-scenario-catalog.md` | v0.1.15; package approved August 18, 2026, deterministic fixtures routed to test design, `MAN-03` approved September 15, 2026 (PO-CBD72-ROW36-001) | `5e3765400c77add1586b37b850788afc6e971f15` |
+| `docs/cbd-72-acceptance-criteria-traceability.md` | v0.1.14; package approved August 18, 2026, gate results recorded, row 36 approval applied September 15, 2026 (PO-CBD72-ROW36-001) | `091bb49f6c080c43e45c277b4ef9efa2c9de5f6f` |
 | CBD-73 / CBD-74 / CBD-75 / CBD-76 Jira | Ready; each contains current planning text plus the discrepancies recorded by CBD-95 | Live Jira records, not mirrored locally |
 
 ## 3. Stable identifier inventory
