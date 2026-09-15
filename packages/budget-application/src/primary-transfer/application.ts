@@ -16,7 +16,9 @@
  * recorded, so both are **outcomes**: {@link TransferDenied} and
  * {@link TransferClosed}. A `PrimaryTransferError` is thrown only where
  * nothing has been written and nothing needs to be -- a malformed request, a
- * record that does not exist, and the commit's own preconditions.
+ * record that does not exist, and the commit's own preconditions -- or where
+ * what was written must **not** stay: a completing leg whose commit then
+ * refuses is thrown so the leg rolls back with it (`R-02`).
  *
  * ## The cell is required, not optional
  *
@@ -475,12 +477,19 @@ export async function acceptPrimaryTransfer(
   }
   if (loaded.record.recipientAcceptedAt !== null) return deny(deps, actor, "transfer_not_current", request.transferId);
 
+  // The assurance reference the commit binds to is the one the Primary's own
+  // confirm stored on the row; the accept path never carries one of its own.
+  const assuranceRef = loaded.record.primaryAssuranceRef;
+  if (legDestination(loaded.record.state, "recipient") === "ready") {
+    if (assuranceRef === null) return deny(deps, actor, "assurance_required", request.transferId);
+    const refused = await dischargeBeforeLeg(deps, actor, loaded.record, assuranceRef);
+    if (refused) return refused;
+  }
+
   const accepted = await recordLeg(deps, actor, loaded, "recipient", null);
-  if (accepted.state !== "ready") {
+  if (accepted.state !== "ready" || assuranceRef === null) {
     return { outcome: "recipient_accepted", messageCode: TRANSFER_MESSAGE_CODES.recipientAccepted, transfer: transferView(accepted) };
   }
-  const assuranceRef = accepted.primaryAssuranceRef;
-  if (assuranceRef === null) return deny(deps, actor, "assurance_required", request.transferId);
   return runCommit(deps, actor, accepted, assuranceRef, options);
 }
 
@@ -519,8 +528,17 @@ export async function confirmPrimaryTransfer(
     return deny(deps, actor, "stale_version", request.transferId);
   }
   if (loaded.record.primaryConfirmedAt !== null) return deny(deps, actor, "transfer_not_current", request.transferId);
-  if (options.ledger && !ledgerBoundTo(options.ledger, actor, loaded.record, assuranceRef)) {
-    return deny(deps, actor, "obligation_undischarged", request.transferId);
+
+  // The pre-leg proof. The boundary's ledger is it when one is supplied;
+  // otherwise, when this leg completes the pair, the four discharge here
+  // before anything is written (`R-02`).
+  if (options.ledger) {
+    if (!ledgerBoundTo(options.ledger, actor, loaded.record, assuranceRef)) {
+      return deny(deps, actor, "obligation_undischarged", request.transferId);
+    }
+  } else if (legDestination(loaded.record.state, "primary") === "ready") {
+    const refused = await dischargeBeforeLeg(deps, actor, loaded.record, assuranceRef);
+    if (refused) return refused;
   }
 
   const confirmed = await recordLeg(deps, actor, loaded, "primary", assuranceRef);
@@ -570,25 +588,45 @@ function refusalClassOf(ledger: TransferObligationLedger): PrimaryTransferErrorC
 }
 
 /**
+ * `R-02`: the in-module pre-leg proof. When the leg about to be recorded
+ * completes the pair and no boundary ledger was supplied, the four
+ * obligations are discharged *before* the leg, so that a refusal -- a
+ * registry that moved under the workflow, say -- denies with **nothing**
+ * written (design SS10.3 step 2) rather than committing the leg and
+ * stranding the workflow in `ready`, from which nothing but expiry or
+ * invalidation can leave.
+ */
+async function dischargeBeforeLeg(
+  deps: PrimaryTransferDependencies, actor: ActorContext, record: PrimaryTransferRecord, assuranceRef: string,
+): Promise<TransferDenied | null> {
+  const obligations = primaryTransferObligations(deps);
+  const ledger = obligations.begin(obligationInput(actor, record, assuranceRef));
+  if (await obligations.dischargeAll(ledger)) return null;
+  return deny(deps, actor, refusalClassOf(ledger), record.transferId);
+}
+
+/**
  * Run `TR-73-43` on a workflow that just became `ready`.
  *
- * The four obligations are discharged here, on a fresh ledger begun on this
- * request's input, *after* the completing leg was recorded: the capture the
- * commit acts on then carries the leg's own `stateVersion`, which is the one
- * the commit's re-read has to agree with. A ledger the boundary supplied was
- * already required complete and bound before the leg (`ledgerBoundTo`); it
- * proved the four before the effect and is not re-used as the capture
- * (`R-01`, `SEC-PK7A-F1`). Either way the commit refuses unless all four are
- * discharged.
+ * The four obligations are discharged again here, on a fresh ledger begun on
+ * this request's input, *after* the completing leg was recorded: the capture
+ * the commit acts on then carries the leg's own `stateVersion`, which is the
+ * one the commit's re-read has to agree with. The pre-leg proof -- the
+ * boundary's ledger, required complete and bound (`ledgerBoundTo`), or the
+ * in-module `dischargeBeforeLeg` -- is what makes a refusal here an anomaly
+ * rather than an outcome: the same transaction proved the four a moment ago,
+ * so a refusal now is thrown, and the leg rolls back with it instead of
+ * leaving the workflow `ready` (`R-01`, `R-02`, `SEC-PK7A-F1`). Either way
+ * the commit refuses unless all four are discharged.
  */
 async function runCommit(
   deps: PrimaryTransferDependencies, actor: ActorContext, record: PrimaryTransferRecord,
   assuranceRef: string, options: CommitOptions,
-): Promise<TransferCommitted | TransferDenied> {
+): Promise<TransferCommitted> {
   const obligations = primaryTransferObligations(deps);
   const ledger = obligations.begin(obligationInput(actor, record, assuranceRef));
   if (!(await obligations.dischargeAll(ledger))) {
-    return deny(deps, actor, refusalClassOf(ledger), record.transferId);
+    throw new PrimaryTransferError(refusalClassOf(ledger), "obligations");
   }
   const commitOptions: CommitOptions = options.boundary ? { boundary: options.boundary } : {};
   const receipt = await commitPrimaryTransfer(deps, actor, ledger, commitOptions);

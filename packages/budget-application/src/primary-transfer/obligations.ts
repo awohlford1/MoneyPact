@@ -47,7 +47,7 @@
  * the transfer row. The `confirm` discharge is the one that binds them.
  */
 import { assertCurrentTransferDisclosure } from "./events.ts";
-import { PrimaryTransferError } from "./records.ts";
+import { PrimaryTransferError, isLiveTransferState } from "./records.ts";
 import type {
   PrimaryTransferRecord, TransferConsentRecord, TransferMembershipRecord, TransferSpaceFacts,
 } from "./records.ts";
@@ -219,9 +219,11 @@ export function primaryTransferObligations(deps: PrimaryTransferDependencies): P
   async function dischargeConfirm(ledger: MutableLedger): Promise<boolean> {
     if (!(await load(ledger))) return false;
     const transfer = ledger.transfer as PrimaryTransferRecord;
-    if (transfer.state !== "proposed" && transfer.state !== "recipient_accepted" && transfer.state !== "ready") {
-      return refuse(ledger, "transfer_not_current");
-    }
+    // Every live state admits the discharge: the boundary runs it before the
+    // leg, so the workflow may be at either party's half of the pair. The
+    // Primary's repeat is refused by the command, and the commit by the
+    // state predicate.
+    if (!isLiveTransferState(transfer.state)) return refuse(ledger, "transfer_not_current");
     if (Date.parse(deps.clock.now()) >= Date.parse(transfer.expiresAt)) return refuse(ledger, "transfer_not_current");
     if (ledger.input.freshAssuranceRef.length === 0) return refuse(ledger, "assurance_required");
     if (transfer.primaryAssuranceRef !== null && transfer.primaryAssuranceRef !== ledger.input.freshAssuranceRef) {

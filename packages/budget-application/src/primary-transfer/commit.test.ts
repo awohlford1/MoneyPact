@@ -254,16 +254,51 @@ void test("PK7A-01: a stale disclosure denies at the commit with nothing written
     },
   });
   const deps = { ...world.deps, disclosures: moved };
+  const auditsBefore = world.repository.audit.length;
   const result = await confirmPrimaryTransfer(deps, world.primary("29.transfer_primary_ownership"), { transferId });
-  // The confirm leg itself records (it is not the disclosure check), and the
-  // commit then denies, having written nothing of the transfer.
+  // R-02: the four discharge before the completing leg, so the denial writes
+  // nothing at all -- not the leg, not its audit row -- and the workflow
+  // stays where it was rather than stranded in `ready`.
   assert.equal(result.outcome, "denied");
   if (result.outcome !== "denied") throw new Error("unreachable");
   assert.equal(result.reasonClass, "stale_disclosure");
+  const record = await world.repository.readTransfer(SPACE, transferId);
+  assert.equal(record?.state, "recipient_accepted");
+  assert.equal(record?.stateVersion, 2);
+  assert.equal(record?.primaryConfirmedAt, null);
+  assert.equal(record?.primaryAssuranceRef, null);
   assert.equal((await world.repository.readMembership(SPACE, PRIMARY_MEMBERSHIP))?.role, "primary_owner");
   assert.equal((await world.repository.readConsent(SPACE, PRIMARY_CONSENT))?.state, "current");
   assert.equal(world.repository.notices.length, 0);
   assert.equal(world.cancelled.length, 0);
+  const written = world.repository.audit.slice(auditsBefore);
+  assert.deepEqual(written.map((row) => row.eventSubtype), ["transfer_denied"]);
+
+  // The registry restored, the same confirm completes the pair: the
+  // workflow was not stranded.
+  const retried = await confirmPrimaryTransfer(world.deps, world.primary("29.transfer_primary_ownership"), { transferId });
+  assert.equal(retried.outcome, "committed");
+});
+
+void test("R-02: a stale disclosure on the accept-completes path also writes nothing", async () => {
+  const world = testWorld();
+  const transferId = await readyByAccept(world);
+  const moved = testDisclosures({
+    primary_transfer_recipient: {
+      kind: "primary_transfer_recipient", version: 2, digest: "f".repeat(64),
+      text: { heading: "Becoming the Primary Owner", items: [], acknowledgement: "I agree." },
+    },
+  });
+  const auditsBefore = world.repository.audit.length;
+  const result = await acceptPrimaryTransfer({ ...world.deps, disclosures: moved }, world.recipient("29.accept_primary_transfer"), { transferId });
+  assert.equal(result.outcome, "denied");
+  if (result.outcome !== "denied") throw new Error("unreachable");
+  assert.equal(result.reasonClass, "stale_disclosure");
+  const record = await world.repository.readTransfer(SPACE, transferId);
+  assert.equal(record?.state, "primary_confirmed");
+  assert.equal(record?.recipientAcceptedAt, null);
+  assert.deepEqual(world.repository.audit.slice(auditsBefore).map((row) => row.eventSubtype), ["transfer_denied"]);
+  assert.equal((await world.repository.readMembership(SPACE, RECIPIENT_MEMBERSHIP))?.role, "collaborator");
 });
 
 void test("PK7A-01: every boundary in the commit sequence is reachable and each one aborts before the next write", async () => {
