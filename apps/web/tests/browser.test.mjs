@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer";
+import { pk8Journey } from "./invitations.browser.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const axeSource = readFileSync(fileURLToPath(import.meta.resolve("axe-core/axe.min.js")), "utf8");
@@ -333,5 +334,7 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     await waitText("Sign-in did not complete");
     assert.equal((await text()).includes("untrusted-provider-detail"), false); await accessibility();
   });
+  // PK-8: the invitation ceremony, members, notices and the Primary transfer, on this same development server.
+  await pk8Journey(t, { browser, origin, errors });
   assert.deepEqual(errors, []);
 });
