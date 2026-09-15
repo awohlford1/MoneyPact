@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { handleMockRequest, createServerMock } from "../../../../../../api/mock-server";
 import type { MockWire } from "../../../../../../api/mock-server";
+import { handleMockInvitationRequest, sharedMockDirectory } from "../../../../../../api/mock-invitations";
 import { mockMode } from "@/api/runtime-mode";
 
 const mockGlobal = globalThis as typeof globalThis & { moneyPactMockSessions?: Map<string, MockWire> };
@@ -24,6 +25,13 @@ async function handle(request: Request, context: { params: Promise<{ path: strin
     const response = NextResponse.json({ navigateTo: "/budgets" });
     response.cookies.set(cookieName, id, { httpOnly: true, secure: true, sameSite: "lax", path: "/" });
     response.headers.set("Cache-Control", "no-store"); return response;
+  }
+  // PK-8: the pre-authentication ceremony trio works with or without a mock session (a link holder has none); the
+  // handler applies the trio's own origin rule and reads the ceremony cookie itself.
+  if (request.method === "POST" && path[0] === "invitations" && (path[1] === "resolve" || ["verify-channel", "decline"].includes(path[2] ?? ""))) {
+    const body = await request.json().catch(() => ({}));
+    const answer = await handleMockInvitationRequest(sharedMockDirectory(), undefined, request, path, body);
+    if (answer) return answer;
   }
   const cookie = request.headers.get("cookie")?.split(";").map(part => part.trim()).find(part => part.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1);
   const api = cookie ? sessions.get(cookie) : undefined;

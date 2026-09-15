@@ -8,7 +8,9 @@
  * process on 127.0.0.1:3001 with the local identity adapter and a scratch
  * PostgreSQL database: sign in on the hosted chooser, create a monthly budget
  * through preview and confirm, add two categories with base targets, reload,
- * and see the same plan; then sign out. Both processes are started here with
+ * and see the same plan; then (PK-8) invite a person, run the
+ * invitation ceremony in a second browser, confirm, and transfer primary
+ * ownership with the step-up; then sign out. Both processes are started here with
  * development configuration and stopped afterwards; the `.api-mode` marker is
  * restored to its previous content, or removed if it did not exist.
  *
@@ -84,7 +86,8 @@ async function main() {
     const shots = join(root, "apps/web/.next"); mkdirSync(shots, { recursive: true });
     const errors = []; page.on("pageerror", (error) => errors.push(error.message));
     const requests = [];
-    page.on("request", (request) => { const url = new URL(request.url()); if (url.pathname.startsWith("/v1/")) requests.push(`${request.method()} ${url.pathname}`); });
+    const readTimes = [];
+    page.on("request", (request) => { const url = new URL(request.url()); if (url.pathname.startsWith("/v1/")) requests.push(`${request.method()} ${url.pathname}`); if (request.method() === "GET" && url.pathname.startsWith("/v1/budget-spaces")) readTimes.push(Date.now()); });
     const text = () => page.$eval("main", (node) => node.textContent ?? "");
     const waitText = (value) => page.waitForFunction((value) => document.querySelector("main")?.textContent?.includes(value), {}, value);
     /** One progress row by its category label, every snippet present (CBD-211: the four values are per row, so "0.00 USD, no activity" alone names no category). */
@@ -270,6 +273,96 @@ async function main() {
     log("Remove the whole split expense", "POST .../remove 201 tombstone on the split transaction; both shares go with it, so the settled actual returns to 0.00 USD, no activity, and remaining after settled and after pending to the target for Groceries and Rent alike, in the aggregate and the detail");
     await page.screenshot({ path: join(shots, "walkthrough-12-removed.png") });
 
+    // --- PK-8 (INVITATIONS-DESIGN-001): the invitation ceremony over the web and the Primary transfer with the step-up ---
+    // A second browser context is the invitee's own browser: its own cookie jar, no session, the link in hand.
+    // The owner's reads count on rlp-266-authenticated-read-v1 (60 per sliding minute plus a burst of 10 per actor); the
+    // steps above spend most of that pool, so the PK-8 half starts once the window has drained rather than as a uniform denial.
+    const recentReads = readTimes.filter((at) => Date.now() - at < 60_000);
+    if (recentReads.length >= 30) { const wait = 61_000 - (Date.now() - recentReads[0]); log("Rate-limit window", `${recentReads.length} budget reads in the sliding minute; waiting ${Math.ceil(wait / 1000)} s for surf-266-budget-read to drain`); await pause(wait); }
+    const inviteeContext = await browser.createBrowserContext();
+    const invitee = await inviteeContext.newPage(); invitee.setDefaultTimeout(30_000);
+    invitee.on("pageerror", (error) => errors.push(error.message));
+    invitee.on("request", (request) => { const url = new URL(request.url()); if (url.pathname.startsWith("/v1/")) requests.push(`${request.method()} ${url.pathname}`); });
+    const on = (target) => ({
+      text: () => target.$eval("main", (node) => node.textContent ?? ""),
+      waitText: (value) => target.waitForFunction((value) => document.querySelector("main")?.textContent?.includes(value), {}, value),
+      clickText: async (label) => { for (const handle of await target.$$("button, a")) if ((await handle.evaluate((node) => node.textContent?.trim())) === label) { await handle.scrollIntoView(); await handle.click(); return; } throw new Error(`Missing control: ${label}`); },
+      fill: async (selector, value) => { await target.waitForSelector(selector); await target.focus(selector); await target.keyboard.down("Control"); await target.keyboard.press("KeyA"); await target.keyboard.up("Control"); await target.keyboard.press("Backspace"); await target.type(selector, value); expect((await target.$eval(selector, (node) => node.value)) === value, `typing into ${selector} did not take`); },
+      waitEnabled: (label) => target.waitForFunction((label) => [...document.querySelectorAll("button")].find((node) => node.textContent?.trim() === label)?.disabled === false, {}, label),
+      rows: (count) => target.waitForFunction((count) => document.querySelectorAll('[data-testid="member-row"]').length === count, {}, count),
+      chooser: async (scenario) => { await target.waitForFunction(() => location.pathname === "/v1/identity/local/authorize" && location.port === "3001"); for (const handle of await target.$$("a")) if ((await handle.evaluate((node) => node.textContent?.trim())) === scenario) { await handle.click(); break; } await target.waitForFunction((origin) => location.origin === origin, {}, ORIGIN); },
+    });
+    const owner = on(page); const holder = on(invitee);
+
+    await page.goto(`${ORIGIN}/budgets/${budgetId}/members`); await owner.rows(1); await owner.waitText("Primary Owner");
+    log("Members page", "GET .../members on 1.view_members: one row, display name (the neutral label until a display name exists), role Primary Owner, joined-at");
+    await page.screenshot({ path: join(shots, "walkthrough-13-members.png") });
+
+    await owner.clickText("Invitations"); await owner.waitText("No invitations yet");
+    await owner.fill("#invite-destination", "Invitee@Example.com"); await owner.clickText("Send invitation");
+    await owner.waitText("Invitation sent to i***@example.com as Collaborator."); await owner.waitText("Sent, awaiting a response");
+    const deliveries = await page.evaluate(async () => (await fetch("/v1/local/invitation-deliveries")).json());
+    const delivered = deliveries.deliveries.find((row) => row.destinationMasked === "i***@example.com");
+    expect(delivered && deliveries.fidelityLabel === "simulated", "the simulated delivery surface renders the new invitation");
+    expect(!(await owner.text()).includes(delivered.code), "the bearer never appears on the owner's page");
+    log("Invite a person (Collaborator, i***@example.com)", "POST .../invitations 201 on 24.invite_nonowner with an idempotency key; the list shows the masked destination, role and state; GET /v1/local/invitation-deliveries (FIDELITY_LABEL simulated) carries the link code and the six-digit challenge");
+    await page.screenshot({ path: join(shots, "walkthrough-14-invitations.png") });
+
+    await invitee.goto(`${ORIGIN}/invitation#code=${encodeURIComponent(delivered.code)}`);
+    await invitee.waitForFunction(() => location.pathname.startsWith("/invitation/ceremony/"));
+    await holder.waitText("Prove you received this invitation");
+    const ceremonyCookie = (await inviteeContext.cookies()).find((cookie) => cookie.name === "__Host-mp_invitation_ceremony");
+    expect(ceremonyCookie && ceremonyCookie.httpOnly && ceremonyCookie.secure && ceremonyCookie.sameSite === "Strict", "the ceremony cookie is HttpOnly, Secure, SameSite=Strict on the application origin");
+    expect(!invitee.url().includes(delivered.code), "the code left the address bar");
+    const wrongCode = delivered.channelChallenge === "000000" ? "000001" : "000000";
+    await holder.fill("#channel-code", wrongCode); await holder.clickText("Check code"); await holder.waitText("That code did not match. 4 attempts remain.");
+    await holder.fill("#channel-code", delivered.channelChallenge); await holder.clickText("Check code"); await holder.waitText("Sign in or create your MoneyPact account");
+    expect(!(await holder.text()).includes("Collaborator"), "nothing about the invitation is shown before sign-in");
+    log("Invitee opens the link in a second browser", "POST /v1/invitations/resolve 200 (same-origin, no CSRF header) set __Host-mp_invitation_ceremony; one wrong six-digit code committed its attempt (4 remain); the right one proved the channel; the page offers sign-in or account creation and shows nothing about the invitation yet");
+    await invitee.screenshot({ path: join(shots, "walkthrough-15-ceremony-signin.png") });
+
+    await holder.clickText("Sign in or create your MoneyPact account"); await holder.chooser("subject-b");
+    await invitee.waitForFunction(() => location.pathname.startsWith("/invitation/ceremony/"));
+    await holder.waitText("Before you accept");
+    expect((await invitee.$eval("#choice-accept", (node) => node.checked)) === false && (await invitee.$eval("#choice-decline", (node) => node.checked)) === false, "the choice is presented with no default");
+    await invitee.screenshot({ path: join(shots, "walkthrough-16-disclosure.png") });
+    await invitee.click("#choice-accept"); await invitee.click("#acknowledged-disclosure"); await holder.waitEnabled("Record my acceptance");
+    await holder.clickText("Record my acceptance"); await holder.waitText("Your acceptance is recorded");
+    log("Invitee signs in as subject-b and returns, attaches, reads, accepts", "POST /v1/identity/begin returned to /budgets and the return marker brought the person back; POST .../attach 200 (CSRF header); GET /v1/invitations/{ceremonyId}: the approved invitation_collaborator v1 text with choice {accept: false, decline: false}; POST .../accept 200 awaiting_confirmation with the acknowledged kind and version only");
+    await invitee.screenshot({ path: join(shots, "walkthrough-17-accepted.png") });
+
+    await page.reload(); await owner.waitText("Sent, awaiting a response");
+    await owner.clickText("Confirm acceptance from i***@example.com"); await owner.waitText("Acceptance confirmed: the person joined as Collaborator.");
+    await owner.clickText("Members"); await owner.rows(2); await owner.waitText("Collaborator");
+    await invitee.goto(`${ORIGIN}/budgets/${budgetId}/members`); await holder.rows(2);
+    log("Owner confirms the acceptance (TR-73-39 + TR-73-13)", "POST .../invitations/{id}/confirm 200 with a confirmationIdempotencyKey: the receipt names the role; GET .../members shows Primary Owner and Collaborator to both members");
+    await page.screenshot({ path: join(shots, "walkthrough-18-members-two.png") });
+
+    await page.goto(`${ORIGIN}/budgets/${budgetId}/transfer`); await owner.waitText("Propose a transfer");
+    await page.select("#transfer-recipient", await page.$eval("#transfer-recipient option:nth-child(2)", (node) => node.value));
+    await owner.clickText("Propose transfer"); await page.waitForFunction(() => /\/transfer\/[0-9a-f-]{36}$/u.test(location.pathname));
+    const transferPath = new URL(page.url()).pathname;
+    await owner.waitText("Proposed, awaiting the recipient");
+    log("Primary Owner proposes the transfer", `POST .../primary-transfers 201 on 29.propose_primary_transfer; the status view ${transferPath.split("/").at(-1)} is shown to the two parties only`);
+    await invitee.goto(`${ORIGIN}${transferPath}`); await holder.waitText("Before you accept primary ownership");
+    await invitee.click("#recipient-acknowledged"); await holder.waitEnabled("Accept primary ownership"); await holder.clickText("Accept primary ownership");
+    await holder.waitText("Accepted by the recipient, awaiting the Primary Owner's confirmation");
+    log("Recipient accepts (TR-73-41)", "POST .../accept 200 recipient_accepted after the approved primary_transfer_recipient v1 disclosure was acknowledged");
+    await invitee.screenshot({ path: join(shots, "walkthrough-19-transfer-accepted.png") });
+
+    await owner.clickText("Refresh transfer"); await owner.waitText("Accepted by the recipient");
+    await page.click("#outgoing-acknowledged"); await owner.waitEnabled("Continue to the identity check");
+    await owner.clickText("Continue to the identity check"); await owner.chooser("subject-a");
+    await page.waitForFunction(() => location.search === "?resume=confirm"); await owner.waitText("Identity check complete");
+    await page.click("#outgoing-acknowledged"); await owner.waitEnabled("Confirm the transfer"); await owner.clickText("Confirm the transfer");
+    await owner.waitText("Transfer committed");
+    await page.goto(`${ORIGIN}/budgets/${budgetId}/members`); await owner.rows(2);
+    const roles = await page.$$eval('[data-testid="member-row"] dd', (nodes) => nodes.map((node) => node.textContent));
+    expect(roles.includes("Co-owner") && roles.includes("Primary Owner"), `the roles swapped: ${roles.join(", ")}`);
+    log("Primary Owner steps up and confirms (TR-73-42, TR-73-43)", "POST /v1/identity/step-up/begin bound to 29.transfer_primary_ownership and the space, the hosted chooser, GET /v1/identity/step-up/callback back to /budgets and the return marker; POST .../confirm with an empty body on the live transferId read from the view: committed, freshAssurance consumed; the members list now shows the former Primary Owner as Co-owner and the recipient as Primary Owner");
+    await page.screenshot({ path: join(shots, "walkthrough-20-transfer-committed.png") });
+    await inviteeContext.close();
+
     await clickText("Sign out"); await page.waitForFunction(() => location.pathname === "/");
     expect(!(await browser.cookies()).some((cookie) => cookie.name === "__Host-cobudget_session"), "the session cookie is deleted at logout");
     await page.goto(`${ORIGIN}/budgets`); await page.waitForFunction(() => location.pathname === "/sign-in");
@@ -279,6 +372,10 @@ async function main() {
     console.log("PROTOTYPE-WALKTHROUGH PASSED");
   } catch (error) {
     console.error(`API output (tail):\n${apiOutput.slice(-2000)}\nweb output (tail):\n${webOutput.slice(-2000)}`);
+    // The failing pages, for the person reading the transcript (untracked, like every screenshot here).
+    for (const [index, target] of (browser ? await browser.pages() : []).entries()) {
+      try { await target.screenshot({ path: join(root, "apps/web/.next", `walkthrough-failure-${index}.png`), fullPage: true }); } catch { /* a closed page */ }
+    }
     throw error;
   } finally {
     await browser?.close();
