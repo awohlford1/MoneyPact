@@ -72,6 +72,23 @@ export const PRODUCTION_TABLE_CATALOG: TableCatalog = {
   manual_transaction: "budget-space",
   transaction_allocation: "budget-space",
   // --- END PROTO-INCREMENT-A-001 ---
+  // --- BEGIN PROTO-INVITATIONS-PK2 (CBD-73 invitations, acceptance and
+  // Primary transfer; INVITATIONS-DESIGN-001), 20260915T1000xxZ ---
+  // M2: the DR-73-01/02/03/13 records and the section 13 audit. The outbox is
+  // identity scope because it is a delivery custody record for a person, and
+  // the security event is identity scope because its budget space is
+  // unknowable for the unknown-code case it exists for.
+  budget_space_invitation: "budget-space",
+  budget_space_invitation_code: "budget-space",
+  budget_space_invitation_ceremony: "budget-space",
+  budget_space_invitation_confirmation: "budget-space",
+  budget_space_invitation_outbox: "identity",
+  budget_space_lifecycle_audit: "budget-space",
+  invitation_security_event: "identity",
+  // M3: the DR-73-12 transfer workflow and the DR-73-11 notice.
+  budget_space_primary_transfer: "budget-space",
+  account_lifecycle_notice: "identity",
+  // --- END PROTO-INVITATIONS-PK2 ---
 };
 
 export function isTenantTable(catalog: TableCatalog, table: string): boolean {
