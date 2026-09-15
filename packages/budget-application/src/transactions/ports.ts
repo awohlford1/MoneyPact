@@ -21,7 +21,7 @@
  * constraint is checked.
  */
 import type { AccountRecord } from "../accounts/records.ts";
-import type { AllocationRecord, CategorySummary, PeriodRecord, TransactionRecord, TransactionSnapshot } from "./records.ts";
+import type { AllocationRecord, CategorySummary, IdempotencyRecord, IdempotencyScope, PeriodRecord, TransactionRecord, TransactionSnapshot } from "./records.ts";
 
 export interface Clock {
   /** The current instant as an ISO-8601 UTC string. */
@@ -51,6 +51,10 @@ export interface TransactionsRepository {
   readonly readPeriodLedger: (budgetSpaceId: string, periodId: string) => Promise<readonly TransactionSnapshot[]>;
   /** Stamp the superseded version (if any) and write the new version with its allocation set, atomically. */
   readonly appendVersion: (version: TransactionRecord, allocations: readonly AllocationRecord[], supersedes: Supersession | null) => Promise<void>;
+  /** The committed record for one idempotency scope, or null when the key has never been accepted in it (CBD-200-AC05). */
+  readonly readIdempotency: (scope: IdempotencyScope) => Promise<IdempotencyRecord | null>;
+  /** Record the accepted key with its digest and response; runs in the same transaction as the version it names. */
+  readonly recordIdempotency: (record: IdempotencyRecord) => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +130,18 @@ export interface FinancialAccountRow {
   readonly updated_at: string;
 }
 
+export interface ManualTransactionIdempotencyRow {
+  readonly idempotency_id: string;
+  readonly budget_space_id: string;
+  readonly membership_id: string;
+  readonly action: "create" | "edit" | "remove";
+  readonly idempotency_key: string;
+  readonly request_digest: string;
+  readonly transaction_version_id: string;
+  readonly committed_response: unknown;
+  readonly created_at: string;
+}
+
 export interface TransactionStatements {
   readonly listPeriods: (budgetSpaceId: string) => Promise<readonly BudgetSpacePeriodRow[]>;
   readonly readAccount: (budgetSpaceId: string, accountId: string) => Promise<FinancialAccountRow | null>;
@@ -136,4 +152,11 @@ export interface TransactionStatements {
   readonly insertTransaction: (row: Omit<ManualTransactionRow, "superseded_at">) => Promise<void>;
   readonly insertAllocation: (row: TransactionAllocationRow) => Promise<void>;
   readonly supersedeTransaction: (budgetSpaceId: string, transactionVersionId: string, supersededAt: string) => Promise<number>;
+  /**
+   * The `manual_transaction_idempotency` statements (CBD-200-AC05). Optional
+   * only so a composition that never accepts an Idempotency-Key can omit
+   * them; the adapter fails closed when a key arrives and they are absent.
+   */
+  readonly readIdempotency?: (scope: IdempotencyScope) => Promise<ManualTransactionIdempotencyRow | null>;
+  readonly insertIdempotency?: (row: Omit<ManualTransactionIdempotencyRow, "idempotency_id">) => Promise<void>;
 }

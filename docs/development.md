@@ -311,6 +311,21 @@ tooling itself and is never the demo target.
   (`SEC-P3-F1`): restore refuses a live account, archive refuses an archived
   one, and neither an edit nor an expense is accepted against an archived
   account.
+- An expense edit or removal may state the version it was read from
+  (`expectedTransactionVersionId` in the body, or `If-Match` carrying the
+  version id) and is refused `409 stale_version`, naming the current version,
+  when that basis has moved (CBD-200-AC04); without a basis it behaves as
+  before. The web client sends the version it was last shown. A writer the
+  API's surface gate cannot see -- a second process -- that wins the same
+  version answers the loser `409 conflict`; note that the CBD-266 mutation
+  surface admits one in-flight mutation per actor, so two simultaneous edits
+  from one session are decided at the gate, not in the database.
+  `Idempotency-Key` on an expense create, edit or removal is an operation
+  identity scoped to the budget, the acting membership and the action
+  (CBD-200-AC05): the same key with the same request answers the stored
+  response and writes nothing; the same key with a different request is
+  refused `409 idempotency_mismatch`. The rows live in
+  `manual_transaction_idempotency` and are append-only.
 - Still missing from that half: bank connections and imports (CBD-9), so every
   account and every transaction is manual and settled -- no pending or
   provisional state is representable at all; non-owner roles on the account
