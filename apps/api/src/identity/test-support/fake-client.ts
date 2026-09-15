@@ -36,6 +36,11 @@ const UNIQUE: Readonly<Record<string, readonly (readonly string[])[]>> = {
   session_delivery_result: [["session_handoff_id"], ["session_ref"]],
   provider_security_event: [["environment_id", "issuer", "provider_event_id"]],
   revocation_outbox: [],
+  // PK-4: the grant's write-once key, and the "one live grant per session,
+  // action and space" partial unique index. This fake has no partial-index
+  // concept, so the live index is approximated by the full tuple -- close
+  // enough for the unit tests, and the live proof runs against the real one.
+  account_session_fresh_assurance: [["fresh_assurance_id"], ["challenge_id"]],
 };
 
 function compare(left: unknown, right: unknown): number {
@@ -180,6 +185,21 @@ function bind(db: FakeIdentityDatabase, tables: () => Tables, transaction: DataA
   };
 }
 
+/**
+ * PK-4: the closed subject-scoped membership seam (CBD-246
+ * `readOwnBudgetMemberships`), over whatever `budget_space_membership` rows a
+ * test seeded. It returns only the caller's own active memberships, exactly
+ * like the real statement, so a test cannot accidentally prove a step-up
+ * against a space the subject does not belong to.
+ */
+function fakeOwnBudgetMemberships(db: FakeIdentityDatabase, subject: string): QueryResult {
+  if (typeof subject !== "string" || !subject.trim()) throw new Error("missing membership subject");
+  const rows = (db.tables.get("budget_space_membership") ?? [])
+    .filter((row) => String(row.account_subject_id) === subject && String(row.status) === "active")
+    .map((row) => ({ budget_space_id: row.budget_space_id, membership_id: row.membership_id }));
+  return { rows, rowCount: rows.length } as QueryResult;
+}
+
 export function createFakeIdentityClient(db: FakeIdentityDatabase): DataAccessClient {
   const root: DataAccessClient = bind(db, () => db.tables, async (options, work) => {
     if (options.isolation !== undefined && options.isolation !== "serializable" && options.isolation !== "read committed") throw new RangeError("invalid transaction isolation");
@@ -203,6 +223,7 @@ export function createFakeIdentityClient(db: FakeIdentityDatabase): DataAccessCl
   const bumping = <T extends (...args: never[]) => Promise<QueryResult>>(operation: T): T => (async (...args: Parameters<T>) => { const result = await operation(...args); db.version += 1; return result; }) as T;
   return {
     ...root,
+    readOwnBudgetMemberships: async (subject: string) => fakeOwnBudgetMemberships(db, subject),
     platformInsert: bumping(root.platformInsert),
     platformUpdate: bumping(root.platformUpdate),
     platformDelete: bumping(root.platformDelete),

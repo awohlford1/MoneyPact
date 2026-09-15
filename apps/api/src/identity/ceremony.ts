@@ -16,8 +16,10 @@
  */
 import { createHmac, randomUUID } from "node:crypto";
 import type { DataAccessClient } from "@cobudget/data-access";
-import { buildSessionCookieDeletionHeader, buildSessionCookieHeader, consumeAndIssue, createSessionStore, IssuanceRejectedError, logout as revokeSession, resolveSession, UnsupportedUnderV03Error } from "@cobudget/sessions";
-import type { EnvelopeKeyProvider, SealedSessionDelivery, SessionConfig, SessionIssueCommandV1, SessionStore } from "@cobudget/sessions";
+import { POLICY_VERSIONS, CURRENT_POLICY_VERSION } from "@cobudget/contracts/authorization";
+import { buildSessionCookieDeletionHeader, buildSessionCookieHeader, consumeAndIssue, createSessionStore, findFreshAssuranceByChallenge, issueFreshAssurance, IssuanceRejectedError, logout as revokeSession, resolveSession, UnsupportedUnderV03Error } from "@cobudget/sessions";
+import type { EnvelopeKeyProvider, FreshAssuranceGrant, SealedSessionDelivery, SessionConfig, SessionIssueCommandV1, SessionStore } from "@cobudget/sessions";
+import { findBinding } from "./store.ts";
 import { CEREMONIES, ChallengeStore, ChallengeStoreFullError, oneWayDigest } from "./challenge.ts";
 import type { Ceremony, ChallengeRecord } from "./challenge.ts";
 import { callbackContextMatches } from "./callback-context.ts";
@@ -50,6 +52,9 @@ export type IdentityEvidenceClass =
   | "handoff_terminal_failed"
   | "session_unavailable"
   | "account_unavailable"
+  | "step_up_not_permitted"
+  | "step_up_subject_mismatch"
+  | "step_up_issued"
   | "logout";
 
 export interface IdentityEvidence {
@@ -133,6 +138,48 @@ export interface IdentityView {
 interface CsrfBootstrapEntry {
   readonly value: string;
   readonly expiresAt: Date;
+}
+
+/**
+ * PK-4 (CBD-234 design section 10.4, CBD-236 OQ-236-005).
+ *
+ * A step-up is the sign-in ceremony with the session half removed and a
+ * binding added. It reuses, unchanged, the same `state`, PKCE `code_verifier`,
+ * OIDC `nonce` and single-use challenge store (`challenge.ts`), the same
+ * callback-context check (`callback-context.ts`, the one implementation the
+ * rate-limit gate also predicts with), the same bounded exchange and token
+ * validation (`exchange.ts`, `token.ts`), and the same closed public outcome
+ * vocabulary (`outcomes.ts`). What it does *not* reuse is `mapping.ts` and
+ * CBD-191 issuance: a step-up never creates a subject, a profile or a
+ * binding, and never mints, rotates or revokes a session. Its only effect is
+ * one `account_session_fresh_assurance` row.
+ *
+ * The binding is fixed at `begin`: an action code that the *released* policy
+ * itself marks protected, and a budget space the acting subject is actually a
+ * member of. Neither value is ever taken from the callback, so no provider
+ * answer and no browser navigation can move a grant onto another action or
+ * another space.
+ */
+export type StepUpRejection = BeginRejection | "action_not_protected" | "space_not_permitted";
+export type StepUpBeginResult =
+  | { readonly ok: true; readonly navigateTo: string; readonly challengeId: string; readonly boundAction: string; readonly boundSpaceId: string }
+  | { readonly ok: false; readonly reason: StepUpRejection };
+
+export type StepUpResult =
+  | { readonly kind: "success"; readonly navigateTo: string; readonly challengeId: string; readonly grant: FreshAssuranceGrant; readonly firstDelivery: boolean }
+  | { readonly kind: "outcome"; readonly outcome: PublicOutcome; readonly navigateTo: string; readonly challengeId: string | undefined };
+
+/**
+ * The action codes a step-up may be bound to: exactly the cells the deployed
+ * policy version marks with the `fresh_assurance` obligation (CBD-236 section
+ * 8.2 -- "a cell is protected exactly when CBD-72 names fresh_assurance for
+ * it"). Reading the released policy rather than keeping a second list here is
+ * what keeps the two from drifting: a cell that stops being protected stops
+ * being step-up-able in the same commit, and this packet adds no cell.
+ */
+export function protectedActions(): ReadonlySet<string> {
+  const cells = POLICY_VERSIONS[CURRENT_POLICY_VERSION].userCells as readonly { readonly action: string; readonly obligations: readonly string[] }[];
+  return new Set(cells.filter((cell) => cell.obligations.includes("fresh_assurance")).map((cell) => cell.action));
 }
 
 export class IdentityCeremony {
@@ -227,7 +274,11 @@ export class IdentityCeremony {
   async begin(input: { readonly ceremony: unknown; readonly postResultDestinationId: unknown; readonly origin: string | undefined; readonly secFetchSite: string | undefined; readonly sessionCookie: string | undefined }): Promise<BeginResult> {
     const config = this.#d.config;
     if (input.origin !== config.applicationOrigin || input.secFetchSite === "cross-site") return { ok: false, reason: "origin_rejected" };
-    if (typeof input.ceremony !== "string" || !CEREMONIES.includes(input.ceremony as Ceremony)) return { ok: false, reason: "ceremony_invalid" };
+    // PK-4: `step_up` is in the vocabulary but is not a sign-in intent a browser may
+    // name here. It re-authenticates an existing session against one action and one
+    // space, both of which must be validated server-side first, so `beginStepUp` is
+    // its only entry point and this route refuses it like any unknown value.
+    if (typeof input.ceremony !== "string" || input.ceremony === "step_up" || !CEREMONIES.includes(input.ceremony as Ceremony)) return { ok: false, reason: "ceremony_invalid" };
     const destination = typeof input.postResultDestinationId === "string" ? input.postResultDestinationId : "home";
     if (!Object.hasOwn(config.postResultDestinations, destination)) return { ok: false, reason: "destination_invalid" };
     let currentAccountSubjectId: string | undefined;
@@ -284,6 +335,21 @@ export class IdentityCeremony {
     const contextValid = callbackContextMatches(context, known, this.#d.config.environmentId);
     if (!contextValid) {
       // Wrong environment, origin, callback URI or method: the known challenge terminates and restricted evidence is raised (§7).
+      this.#d.challenges.terminate(known.challengeId);
+      this.#evidence("callback_wrong_context", known.challengeId, "invalid_or_expired");
+      return { kind: "outcome", outcome: "invalid_or_expired", navigateTo: this.#resultNavigation("invalid_or_expired"), challengeId: known.challengeId };
+    }
+    if (known.ceremony === "step_up") {
+      // SEC-PK4-F1: a step-up challenge never completes here, whatever the
+      // context check made of the path. Today the two callbacks have different
+      // fixed paths, so the comparison above already refuses one; that is a
+      // coincidence of routing, not a rule, and the migration's widening of
+      // `identity_session_handoff.ceremony` means the database would no longer
+      // refuse a `step_up` hand-off row either. This is the rule: a step-up maps
+      // no subject and issues no session, so it terminates with the same
+      // wrong-context evidence every other out-of-context delivery raises and
+      // never reaches `#completeSuccess` -- including under a provider that can
+      // register only one redirect URI for both ceremonies.
       this.#d.challenges.terminate(known.challengeId);
       this.#evidence("callback_wrong_context", known.challengeId, "invalid_or_expired");
       return { kind: "outcome", outcome: "invalid_or_expired", navigateTo: this.#resultNavigation("invalid_or_expired"), challengeId: known.challengeId };
@@ -515,6 +581,223 @@ export class IdentityCeremony {
     this.forgetSession(sessionRef);
     this.#evidence("logout", undefined, undefined);
     return [buildSessionCookieDeletionHeader()];
+  }
+
+  /**
+   * PK-4 begin. Same shape as section 4.1 `begin` -- exact application origin,
+   * no cross-site initiation, an opaque destination key, a single-use
+   * challenge carrying state, PKCE and nonce -- with two extra server-side
+   * facts fixed before the redirect is built: the action code must be one the
+   * released policy marks protected, and the acting subject must hold an
+   * active membership in the named space. Both are refused here rather than
+   * at the callback, so an unbindable step-up never reaches the provider.
+   *
+   * The challenge is issued against the step-up redirect URI, so the callback
+   * that completes it is the step-up callback and no other: a step-up `state`
+   * replayed at the sign-in callback fails the context check and terminates.
+   */
+  async beginStepUp(input: {
+    readonly action: unknown;
+    readonly budgetSpaceId: unknown;
+    readonly postResultDestinationId: unknown;
+    readonly origin: string | undefined;
+    readonly secFetchSite: string | undefined;
+    readonly sessionCookie: string | undefined;
+  }): Promise<StepUpBeginResult> {
+    const config = this.#d.config;
+    if (input.origin !== config.applicationOrigin || input.secFetchSite === "cross-site") return { ok: false, reason: "origin_rejected" };
+    const destination = typeof input.postResultDestinationId === "string" ? input.postResultDestinationId : "home";
+    if (!Object.hasOwn(config.postResultDestinations, destination)) return { ok: false, reason: "destination_invalid" };
+    if (typeof input.action !== "string" || !protectedActions().has(input.action)) {
+      this.#evidence("step_up_not_permitted", undefined, undefined, "action");
+      return { ok: false, reason: "action_not_protected" };
+    }
+    if (typeof input.budgetSpaceId !== "string" || input.budgetSpaceId.length === 0 || input.budgetSpaceId.length > 256) {
+      this.#evidence("step_up_not_permitted", undefined, undefined, "space");
+      return { ok: false, reason: "space_not_permitted" };
+    }
+    const resolved = await resolveSession(input.sessionCookie, this.#d.sessionStore, this.#d.sessionConfig, config.environmentId, this.#d.now());
+    if (resolved.status !== "resolved") return { ok: false, reason: "session_required" };
+    // The membership read is the closed subject-scoped seam (CBD-246
+    // `readOwnBudgetMemberships`), not an arbitrary predicate: it returns only
+    // the caller's own active memberships, so naming another subject's space
+    // simply finds nothing. A client without the seam fails closed.
+    if (!this.#d.client.readOwnBudgetMemberships) {
+      this.#evidence("step_up_not_permitted", undefined, undefined, "space");
+      return { ok: false, reason: "space_not_permitted" };
+    }
+    const memberships = await this.#d.client.readOwnBudgetMemberships(resolved.accountSubjectId);
+    const member = (memberships.rows as readonly Record<string, unknown>[]).some((row) => String(row.budget_space_id) === input.budgetSpaceId);
+    if (!member) {
+      this.#evidence("step_up_not_permitted", undefined, undefined, "space");
+      return { ok: false, reason: "space_not_permitted" };
+    }
+    let issued;
+    try {
+      issued = this.#d.challenges.issue({
+        environmentId: config.environmentId, ceremony: "step_up", initiatingOrigin: config.applicationOrigin, callbackUri: config.stepUpCallbackUri,
+        postResultDestinationId: destination, lifetimeSeconds: config.challengeLifetimeSeconds,
+        currentAccountSubjectId: resolved.accountSubjectId, currentSessionRef: resolved.sessionRef,
+        boundAction: input.action, boundSpaceId: input.budgetSpaceId,
+      });
+    } catch (error) {
+      if (error instanceof ChallengeStoreFullError) return { ok: false, reason: "capacity" };
+      throw error;
+    }
+    const target = new URL(config.authorizationEndpoint);
+    target.searchParams.set("client_id", config.clientId);
+    target.searchParams.set("redirect_uri", config.stepUpCallbackUri);
+    target.searchParams.set("response_type", "code");
+    target.searchParams.set("scope", config.scopes.join(" "));
+    target.searchParams.set("code_challenge", issued.codeChallenge);
+    target.searchParams.set("code_challenge_method", "S256");
+    target.searchParams.set("state", issued.state);
+    target.searchParams.set("nonce", issued.nonce);
+    return { ok: true, navigateTo: target.toString(), challengeId: issued.record.challengeId, boundAction: input.action, boundSpaceId: input.budgetSpaceId };
+  }
+
+  /**
+   * PK-4 callback. Every safe-outcome rule section 7 states for the sign-in
+   * callback holds here unchanged: one navigation shape for every failure
+   * class, a known challenge terminated on a malformed envelope or a wrong
+   * context, an unknown state changing nothing.
+   *
+   * The two step-up-specific checks sit between the exchange and the grant:
+   *
+   *   * the verified provider subject must resolve to the binding the acting
+   *     session's subject already holds. It is a re-authentication, so a
+   *     different person at the provider is a failure, never a subject
+   *     mapping -- `findBinding` reads, and nothing here can insert one.
+   *   * the session the grant will belong to must still be live at this
+   *     instant, so a session revoked mid-ceremony cannot collect a grant.
+   *
+   * The grant itself is written by `issueFreshAssurance`, whose unique
+   * `challenge_id` makes it write-once: a replayed callback finds the row
+   * already there and reports the same success without a second grant.
+   */
+  async completeStepUp(context: CallbackContext): Promise<StepUpResult> {
+    const envelope = parseCallbackEnvelope(context.rawQuery);
+    if (envelope.kind === "malformed") {
+      const candidateState = extractStateForTermination(context.rawQuery);
+      const known = candidateState ? this.#d.challenges.find(candidateState) : undefined;
+      if (known && known.status === "pending") this.#d.challenges.terminate(known.challengeId);
+      this.#evidence("callback_malformed", known?.challengeId, "invalid_or_expired");
+      return this.#stepUpOutcome("invalid_or_expired", known?.challengeId);
+    }
+    const known = this.#d.challenges.find(envelope.state);
+    if (!known) {
+      this.#evidence("callback_unknown_state", undefined, "invalid_or_expired");
+      return this.#stepUpOutcome("invalid_or_expired", undefined);
+    }
+    // SEC-PK4-F2 (CBD-190 section 7): the shared context check runs for *any*
+    // known challenge before the ceremony kind is required, so the two
+    // callbacks are symmetric -- a sign-in challenge delivered here terminates
+    // with `callback_wrong_context` exactly as a step-up challenge delivered to
+    // the sign-in callback does, instead of being answered as an unknown state
+    // and left pending for its own callback afterwards. A known challenge of
+    // another kind whose context does match (the one-redirect-URI provider
+    // shape) terminates on the same rule: this entry point completes step-ups
+    // and nothing else.
+    if (!callbackContextMatches(context, known, this.#d.config.environmentId) || known.ceremony !== "step_up") {
+      this.#d.challenges.terminate(known.challengeId);
+      this.#evidence("callback_wrong_context", known.challengeId, "invalid_or_expired");
+      return this.#stepUpOutcome("invalid_or_expired", known.challengeId);
+    }
+    if (known.status !== "pending") {
+      // Write-once in practice as well as in the schema: the grant this
+      // ceremony already produced is reported again, and no second one exists.
+      const existing = await findFreshAssuranceByChallenge(this.#d.client, known.challengeId).catch(() => undefined);
+      if (existing) return { kind: "success", navigateTo: this.#successNavigation(known.postResultDestinationId), challengeId: known.challengeId, grant: existing, firstDelivery: false };
+      this.#evidence("challenge_replayed", known.challengeId, "invalid_or_expired");
+      return this.#stepUpOutcome("invalid_or_expired", known.challengeId);
+    }
+    const taken = this.#d.challenges.take(envelope.state, context.receiptTime);
+    if (!taken) {
+      this.#evidence("challenge_expired", known.challengeId, "invalid_or_expired");
+      return this.#stepUpOutcome("invalid_or_expired", known.challengeId);
+    }
+    if (envelope.kind === "provider_error") {
+      taken.codeVerifier.fill(0);
+      const providerOutcome = outcomeForProviderError(envelope.error);
+      this.#d.challenges.terminate(known.challengeId);
+      this.#evidence("provider_error", known.challengeId, providerOutcome);
+      return this.#stepUpOutcome(providerOutcome, known.challengeId);
+    }
+    const challenge = taken.record;
+    const config = this.#d.config;
+    const exchange: ExchangeOutcome = await runBoundedExchange({
+      transport: this.#d.transport, code: envelope.code, codeVerifier: taken.codeVerifier, redirectUri: challenge.callbackUri, clientId: config.clientId, issuer: config.issuer,
+      allowedAlgorithms: config.allowedAlgorithms, nonceDigest: challenge.nonceDigest, digest: oneWayDigest, receiptTime: context.receiptTime, challengeIssuedAt: challenge.createdAt,
+      clockSkewSeconds: config.clockSkewSeconds, maxLifetimeMs: config.exchangeLifetimeMs,
+    });
+    if (exchange.status === "rejected") {
+      const rejected: PublicOutcome = exchange.rejection === "provider_unavailable" || exchange.rejection === "exchange_timeout" || exchange.rejection === "revocation_failed" || exchange.rejection === "revocation_uncertain" || exchange.rejection === "revocation_missing_token"
+        ? "temporarily_unavailable" : "invalid_or_expired";
+      this.#d.challenges.terminate(challenge.challengeId);
+      this.#evidence("exchange_rejected", challenge.challengeId, rejected, exchange.rejection);
+      this.#reliability(rejected === "temporarily_unavailable" ? "error" : "ok");
+      return this.#stepUpOutcome(rejected, challenge.challengeId);
+    }
+    const subjectId = challenge.currentAccountSubjectId;
+    const sessionRef = challenge.currentSessionRef;
+    const boundAction = challenge.boundAction;
+    const boundSpaceId = challenge.boundSpaceId;
+    if (!subjectId || !sessionRef || !boundAction || !boundSpaceId) {
+      this.#d.challenges.terminate(challenge.challengeId);
+      this.#evidence("step_up_subject_mismatch", challenge.challengeId, "invalid_or_expired", "unbound");
+      return this.#stepUpOutcome("invalid_or_expired", challenge.challengeId);
+    }
+    let binding;
+    try {
+      binding = await findBinding(this.#d.client, config.environmentId, exchange.claims.issuer, exchange.claims.providerSubject);
+    } catch {
+      this.#evidence("mapping_failure", challenge.challengeId, "temporarily_unavailable");
+      this.#reliability("error");
+      return this.#stepUpOutcome("temporarily_unavailable", challenge.challengeId);
+    }
+    if (!binding || binding.lifecycleState !== "active" || binding.accountSubjectId !== subjectId) {
+      // A different person authenticated, or the binding is gone. No subject is
+      // ever created here and no grant is issued; the answer is the same safe
+      // outcome every other failure class produces (section 7).
+      this.#d.challenges.terminate(challenge.challengeId);
+      this.#evidence("step_up_subject_mismatch", challenge.challengeId, "invalid_or_expired", binding ? "other_subject" : "no_binding");
+      return this.#stepUpOutcome("invalid_or_expired", challenge.challengeId);
+    }
+    const live = await this.#d.sessionStore.findBySessionRef(sessionRef).catch(() => undefined);
+    const now = this.#d.now();
+    if (!live || live.state !== "active" || live.environmentId !== config.environmentId || now.getTime() >= live.idleExpiresAt.getTime() || now.getTime() >= live.absoluteExpiresAt.getTime()) {
+      this.#d.challenges.terminate(challenge.challengeId);
+      this.#evidence("session_unavailable", challenge.challengeId, "invalid_or_expired", "session_not_live");
+      return this.#stepUpOutcome("invalid_or_expired", challenge.challengeId);
+    }
+    let issuedGrant;
+    try {
+      issuedGrant = await issueFreshAssurance(this.#d.client, {
+        sessionRef, accountSubjectId: subjectId, environmentId: config.environmentId, challengeId: challenge.challengeId,
+        boundAction, boundSpaceId, issuedAt: now, windowSeconds: this.#d.sessionConfig.freshAssuranceWindowSeconds,
+      });
+    } catch {
+      this.#evidence("session_unavailable", challenge.challengeId, "temporarily_unavailable", "grant_unavailable");
+      this.#reliability("error");
+      return this.#stepUpOutcome("temporarily_unavailable", challenge.challengeId);
+    }
+    if (!issuedGrant.grant) {
+      this.#evidence("session_unavailable", challenge.challengeId, "temporarily_unavailable", "grant_unavailable");
+      this.#reliability("error");
+      return this.#stepUpOutcome("temporarily_unavailable", challenge.challengeId);
+    }
+    this.#evidence("step_up_issued", challenge.challengeId, "success", issuedGrant.status);
+    this.#reliability("ok");
+    return { kind: "success", navigateTo: this.#successNavigation(challenge.postResultDestinationId), challengeId: challenge.challengeId, grant: issuedGrant.grant, firstDelivery: issuedGrant.status === "issued" };
+  }
+
+  #stepUpOutcome(outcome: PublicOutcome, challengeId: string | undefined): StepUpResult {
+    return { kind: "outcome", outcome, navigateTo: this.#resultNavigation(outcome), challengeId };
+  }
+
+  /** Test and route evidence: the grant a step-up ceremony produced, without any cookie or provider material. */
+  async freshAssuranceFor(challengeId: string): Promise<FreshAssuranceGrant | undefined> {
+    return findFreshAssuranceByChallenge(this.#d.client, challengeId);
   }
 
   /** Test evidence helper: the hand-off row by id, without any cookie material. */

@@ -7,6 +7,8 @@
  *   GET  /v1/identity/local/choose     pre-authentication  local synthetic chooser selection (dev/test only)
  *   GET  /v1/identity/me               session-authenticated identity view
  *   GET  /v1/identity/recovery         the same bootstrap view on the independent surf-266-recovery pool (CBD-266 anti-lockout)
+ *   POST /v1/identity/step-up/begin    session-authenticated, CSRF-checked fresh-assurance step-up (PK-4)
+ *   GET  /v1/identity/step-up/callback provider redirect for that step-up (PK-4)
  *   POST /v1/identity/logout           session-authenticated, CSRF-checked sign-out
  *
  * The four pre-authentication routes carry `@PreAuthenticationSurface()`:
@@ -192,6 +194,58 @@ export function identityHttp(runtime: IdentityRuntime | undefined): IdentityHttp
     @Authorize({ action: "profile.read", purpose: "user_delegated", resourceLocator: () => ({ fieldSet: "default", scope: "subject" }) })
     async recovery(@Authorization() effect: EffectContext): Promise<unknown> {
       return this.me(effect);
+    }
+
+    /**
+     * PK-4 (CBD-234 design section 10.4; CBD-236 OQ-236-005). Begins a
+     * fresh-assurance step-up for the current session, bound to one protected
+     * action code and one budget space the caller is a member of. It mints no
+     * session, changes no subject mapping and writes nothing until its own
+     * callback completes; the answer is the provider navigation, in the same
+     * two shapes `POST /v1/identity/begin` uses (a 303 for a navigation
+     * request, the target as JSON otherwise).
+     *
+     * The CSRF check is this route's own, exactly as for `logout`: the
+     * released policy has no cell for beginning a ceremony, so the guards are
+     * the surface gate, the pre-policy session gate and CBD-191 section 5.1.
+     */
+    @Post("step-up/begin")
+    @SessionAuthenticatedSurface()
+    async stepUpBegin(@Req() request: FastifyRequest, @Res() reply: FastifyReply): Promise<void> {
+      if (!runtime) { await reply.code(503).send({ error: "identity_unavailable" }); return; }
+      const cookie = readSessionCookieValue(header(request, "cookie"));
+      const session = await runtime.ceremony.csrfDigestFor(cookie);
+      if (!session) { await reply.code(401).send({ error: "not_authenticated" }); return; }
+      const csrfOk = checkCsrf(runtime.sessionPepper, { method: request.method, origin: header(request, "origin"), allowedOrigin: runtime.ceremony.config.applicationOrigin, secFetchSite: header(request, "sec-fetch-site"), csrfHeaderValue: header(request, CSRF_HEADER), csrfDigest: session.csrfDigest });
+      if (!csrfOk) { await reply.code(403).send({ error: "csrf_rejected" }); return; }
+      const body = (request.body ?? {}) as Record<string, unknown>;
+      const result = await runtime.ceremony.beginStepUp({
+        action: body.action, budgetSpaceId: body.budgetSpaceId, postResultDestinationId: body.postResultDestinationId,
+        origin: header(request, "origin"), secFetchSite: header(request, "sec-fetch-site"), sessionCookie: cookie,
+      });
+      if (!result.ok) {
+        const status = result.reason === "capacity" ? 503 : result.reason === "session_required" ? 401 : result.reason === "action_not_protected" || result.reason === "space_not_permitted" ? 403 : 400;
+        await reply.code(status).send({ error: result.reason });
+        return;
+      }
+      if (wantsNavigation(request)) { await reply.code(303).header("location", result.navigateTo).send(); return; }
+      await reply.code(200).send({ navigateTo: result.navigateTo, challengeId: result.challengeId });
+    }
+
+    /**
+     * PK-4. The step-up ceremony's provider redirect, and the only route that
+     * can complete one. Like `GET /v1/identity/callback` every answer is a 303
+     * navigation -- the post-result destination on success, the
+     * application-owned result page carrying a closed public outcome
+     * otherwise -- and no `Set-Cookie` is ever emitted here, because a
+     * step-up issues no session.
+     */
+    @Get("step-up/callback")
+    @PreAuthenticationSurface({ deniedNavigation: () => runtime ? `${runtime.ceremony.config.applicationOrigin}${runtime.ceremony.config.resultPath}?outcome=invalid_or_expired` : undefined })
+    async stepUpCallback(@Req() request: FastifyRequest, @Res() reply: FastifyReply): Promise<void> {
+      if (!runtime) { await reply.code(503).send({ error: "identity_unavailable" }); return; }
+      const result = await runtime.ceremony.completeStepUp({ rawQuery: rawQuery(request), method: request.method, observedOrigin: observedOrigin(request), path: requestPath(request.url), receiptTime: new Date() });
+      await reply.code(303).header("location", result.navigateTo).send();
     }
 
     // PROTO-ACTIVATION-001: p2 (CBD-236 section 8.5) defines no logout cell and the packet forbids

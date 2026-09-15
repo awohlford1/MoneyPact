@@ -102,7 +102,18 @@ const REFUNDABLE_EFFECT_DENIALS: ReadonlySet<string> = new Set(["proposal_not_cu
  * next to `@Authorize`, so it can never become a silent bypass.
  */
 export const SessionAuthenticatedSurface = (): MethodDecorator => SetMetadata(SESSION_AUTHENTICATED, true);
-const ELIGIBLE_SESSION_AUTHENTICATED_SURFACES: ReadonlySet<string> = new Set(["POST /v1/identity/logout"]);
+const ELIGIBLE_SESSION_AUTHENTICATED_SURFACES: ReadonlySet<string> = new Set([
+  "POST /v1/identity/logout",
+  // PK-4 (CBD-234 section 10.4): the fresh-assurance step-up's begin. The
+  // released policy defines no cell for beginning a step-up -- it is the
+  // ceremony that *produces* the assurance a protected cell then requires --
+  // and this packet may not invent one, so it takes the same closed path
+  // `logout` takes: enforcement first, the pre-policy session gate, and the
+  // route's own CBD-191 section 5.1 CSRF check as the mutation guard. The
+  // action code and budget space it binds are validated against the released
+  // policy and the caller's own memberships inside the handler.
+  "POST /v1/identity/step-up/begin",
+]);
 /**
  * PROTO-IDENTITY-API-001 correction C7 (security S02): the marker previously
  * bypassed policy on metadata alone with no restriction on which routes
@@ -117,6 +128,14 @@ const ELIGIBLE_PRE_AUTHENTICATION_SURFACES: ReadonlySet<string> = new Set([
   "GET /v1/identity/callback",
   "GET /v1/identity/local/authorize",
   "GET /v1/identity/local/choose",
+  // PK-4: the step-up ceremony's own provider redirect. It is a provider
+  // navigation like `GET /v1/identity/callback` -- the browser arrives from
+  // the ceremony origin carrying `state` and `code`, and the ceremony, not
+  // the session gate, decides what it means. The step-up binds to the
+  // session named by its own challenge and re-verifies that the session is
+  // still live before issuing anything, so nothing here is authenticated by
+  // the marker's absence of a session check.
+  "GET /v1/identity/step-up/callback",
 ]);
 const SAFE_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
 const active = new WeakMap<object, EffectContext>();

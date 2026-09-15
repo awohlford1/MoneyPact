@@ -21,6 +21,16 @@
 import type { ConfigFailure, ConfigSchema } from "@cobudget/contracts/config";
 
 export const IDENTITY_CALLBACK_PATH = "/v1/identity/callback";
+/**
+ * PK-4 (CBD-234 design section 10.4): the step-up ceremony's own
+ * provider-registered redirect. It is *derived* from
+ * `COBUDGET_IDENTITY_CALLBACK_URI` rather than configured separately -- a
+ * second variable would be a second thing to cross-wire, and section 3's
+ * rules already pin the sign-in callback to one exact origin. A real provider
+ * registers both URIs on the same client; the local issuer accepts exactly
+ * these two and nothing else.
+ */
+export const IDENTITY_STEP_UP_CALLBACK_PATH = "/v1/identity/step-up/callback";
 export const LOCAL_ISSUER_PATH = "/v1/identity/local";
 /** Application-owned accessible result page for every non-success outcome (§7). */
 export const IDENTITY_RESULT_PATH = "/identity/result";
@@ -131,6 +141,8 @@ export interface LocalIdentityConfig {
   readonly applicationOrigin: string;
   readonly ceremonyOrigin: string;
   readonly callbackUri: string;
+  /** PK-4: the second registered redirect, `callbackUri`'s origin plus `IDENTITY_STEP_UP_CALLBACK_PATH`. */
+  readonly stepUpCallbackUri: string;
   readonly authorizationEndpoint: string;
   readonly allowedAlgorithms: readonly ["RS256"];
   readonly scopes: readonly ["openid"];
@@ -264,6 +276,7 @@ export function resolveIdentityConfig(env: IdentityConfigEnvironment): IdentityC
     applicationOrigin: env.COBUDGET_IDENTITY_APPLICATION_ORIGIN!,
     ceremonyOrigin: env.COBUDGET_IDENTITY_CEREMONY_ORIGIN!,
     callbackUri: env.COBUDGET_IDENTITY_CALLBACK_URI!,
+    stepUpCallbackUri: `${new URL(env.COBUDGET_IDENTITY_CALLBACK_URI!).origin}${IDENTITY_STEP_UP_CALLBACK_PATH}`,
     authorizationEndpoint: `${issuer}/authorize`,
     allowedAlgorithms: ["RS256"] as const,
     scopes: ["openid"] as const,

@@ -198,7 +198,11 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
   );
   const evidence: IdentityEvidence[] = [];
   const evidenceSink: IdentityEvidenceSink = overrides.evidence ?? ((event) => { if (evidence.length < 10_000) evidence.push(event); });
-  const localIssuer = overrides.transport ? undefined : new LocalIssuer({ issuer: identityConfig.issuer, clientId: identityConfig.clientId, callbackUri: identityConfig.callbackUri, now });
+  // PK-4: the local issuer registers both redirect URIs the client actually
+  // uses -- the sign-in callback and the step-up callback -- exactly as a real
+  // provider client registers its redirect set. It still accepts an exact
+  // member and nothing else.
+  const localIssuer = overrides.transport ? undefined : new LocalIssuer({ issuer: identityConfig.issuer, clientId: identityConfig.clientId, callbackUri: identityConfig.callbackUri, stepUpCallbackUri: identityConfig.stepUpCallbackUri, now });
   const transport = overrides.transport ?? localIssuer!;
   // CBD266-SURFACE-STAGES-001: kept as a local binding (not only inside the ceremony's dependencies) so
   // `ceremonyContext` below can read a challenge's own status without a new IdentityCeremony method.
@@ -242,6 +246,21 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
     const url = request.routeOptions.url ?? "";
     const text = (value: unknown): string | undefined => (typeof value === "string" && value ? value : undefined);
     if (url === "/v1/identity/begin") return { ceremonyId: "loopback-cohort:begin", bootstrapStage: "ordinary" as const };
+    // PK-4: the step-up's two routes sit on the same authentication surface
+    // (design section 12, PK-4 row). `begin` has no ceremony of its own yet, so
+    // it counts on the bootstrap record's ordinary sub-pool exactly as the
+    // sign-in `begin` does. The step-up callback resolves its own ceremony and
+    // always counts ordinary: a step-up is a re-authentication of a session
+    // that already exists, so it is never eligible for the reserved
+    // first-sign-in unit, and a callback naming no resolvable ceremony returns
+    // no context and is denied before any counter is touched (SEC-STAGES-F02).
+    if (url === "/v1/identity/step-up/begin") return { ceremonyId: "loopback-cohort:begin", bootstrapStage: "ordinary" as const };
+    if (url === "/v1/identity/step-up/callback") {
+      const rawQuery = request.url.includes("?") ? request.url.slice(request.url.indexOf("?") + 1) : undefined;
+      const candidateState = extractStateForTermination(rawQuery);
+      const id = candidateState ? ceremony.ceremonyIdForState(candidateState) : undefined;
+      return id ? { ceremonyId: id, bootstrapStage: "ordinary" as const } : {};
+    }
     if (url === "/v1/identity/local/choose") { const state = runtime.localIssuer?.stateOf(text(query.request) ?? ""); const id = ceremony.ceremonyIdForState(state); return id ? { ceremonyId: id, bootstrapStage: "ordinary" as const } : {}; }
     if (url === "/v1/identity/local/authorize") { const id = ceremony.ceremonyIdForState(text(query.state)); return id ? { ceremonyId: id, bootstrapStage: "ordinary" as const } : {}; }
     if (url === "/v1/identity/callback") {

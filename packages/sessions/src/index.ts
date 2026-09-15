@@ -83,6 +83,15 @@ export {
 } from "./cookie.ts";
 export type { CsrfCheckInput } from "./cookie.ts";
 
+export {
+  FRESH_ASSURANCE_TABLE,
+  consumeFreshAssurance,
+  findFreshAssuranceByChallenge,
+  findUsableFreshAssurance,
+  issueFreshAssurance,
+} from "./fresh-assurance.ts";
+export type { FreshAssuranceGrant, FreshAssuranceLookup, IssueFreshAssuranceInput, IssueFreshAssuranceOutcome } from "./fresh-assurance.ts";
+
 export { createSessionFactSourceAdapter } from "./fact-source.ts";
 export type { MinimalFactSourceAdapter } from "./fact-source.ts";
 
