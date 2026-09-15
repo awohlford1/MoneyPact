@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | **Proposed — architecture proposal for an Executive decision; nothing in this document is approved, no migration, policy cell, registry entry, or route exists because of it, and no CBD-73 gate closes because of it. The decision items are in §17** |
-| Document version | 0.1 |
+| Document version | 0.1.1 |
 | Proposal identifiers | `IV-001` through `IV-031`; open questions `OQ-IV-001` through `OQ-IV-006`; packets `PK-1` through `PK-9` |
 | Owner | Alexander Wohlford |
 | Jira, as read on September 15, 2026 | Epic [CBD-8](https://awohlford.atlassian.net/browse/CBD-8); story [CBD-41](https://awohlford.atlassian.net/browse/CBD-41) with subtasks [CBD-274](https://awohlford.atlassian.net/browse/CBD-274), [CBD-275](https://awohlford.atlassian.net/browse/CBD-275), [CBD-276](https://awohlford.atlassian.net/browse/CBD-276); [CBD-280](https://awohlford.atlassian.net/browse/CBD-280) under CBD-42; [CBD-287](https://awohlford.atlassian.net/browse/CBD-287) under CBD-43; specification source [CBD-73](https://awohlford.atlassian.net/browse/CBD-73). The packet named [CBD-234](https://awohlford.atlassian.net/browse/CBD-234) and [CBD-235](https://awohlford.atlassian.net/browse/CBD-235); see §1.2 |
@@ -13,7 +13,7 @@
 | Governing permission model | `docs/cbd-72-collaboration-permission-model.md` v0.1.54 — §2, §4.3 rows 24–29, §6.1–§6.3, §8 |
 | Governing authorization contract | `docs/cbd-236-authorization-policy-contract.md` (v0.9 by its revision history; the header cell still says 0.8, `OQ-IV-006`) — §4.4, §6.1, §8.1, §8.2, §8.5, §8.6, §9.4, §9.5, §12, `HO-236-07` |
 | Governing rate-limit contract | `docs/cbd-266-rate-limit-parameter-registry-contract.md` v0.5 — §3, §4.7, §4.7.4, §5, §6 |
-| Consumed contracts | `docs/cbd-231-budget-space-lifecycle-contract.md` v0.1; `docs/cbd-233-budget-creation-confirmation-contract.md` v0.1.1; `docs/cbd-190-identity-ceremony-and-mapping-contract.md` v0.3 §5.3, §6; `docs/cbd-191-session-and-revocation-contract.md` v0.2.2 (`CBD191-ZERO-MEMBERSHIP-001`); `docs/cbd-91-private-mvp-data-inventory.md` v1.0.5 `DI-91-005`, `DI-91-007`, `DI-91-054`, `DI-91-065` |
+| Consumed contracts | `docs/cbd-231-budget-space-lifecycle-contract.md` v0.1; `docs/cbd-233-budget-creation-confirmation-contract.md` v0.1.1; `docs/cbd-190-identity-ceremony-and-mapping-contract.md` v0.4 §5.3, §6; `docs/cbd-191-session-and-revocation-contract.md` v0.3 (`CBD191-ZERO-MEMBERSHIP-001`); `docs/cbd-91-private-mvp-data-inventory.md` v1.0.5 `DI-91-005`, `DI-91-007`, `DI-91-054`, `DI-91-065` |
 | Milestone | `PROTOTYPE-SLICE-001` and `PROVIDERS-LOCAL-001` (Executive, September 12, 2026) |
 | Repository baseline | `12862d4` on `main` (policy `p3` released; consent landing PR #337 merged; container-image fix merged) |
 | Written by | Architecture, assignment `PROTO-INVITATIONS-DESIGN-001`, September 15, 2026 |
@@ -356,7 +356,7 @@ Viewer and Accountability Partner columns stay absent in `p4`: their reads carry
 
 ### 11.5 Negative families
 
-`P4_NEGATIVE_FIXTURES` emits, per cell: wrong role (each unmapped role → `role_not_permitted`, including Viewer and Partner for every §11.4 row and Collaborator for every owner row); wrong space and wrong target (`scope_mismatch`); target absent (`input_invalid`); archived space for every mutation (`lifecycle_blocked`); stale `targetVersion`, `authorizationVersion`, `primaryOwnershipVersion`, and `consentDisclosureVersion` (`stale_version`); consent `superseded`/`ended` (`consent_not_current`); for `29.transfer_primary_ownership` `assurance.level = "session"` (`assurance_required`) and a fresh assurance bound to another action or space (`assurance_required`); for the subject cells the §9.4 families of CBD-236 (another subject, wrong environment, forbidden sections, worker adapter, space-bound shape); a `p4` code under `p3` (`policy_version_unsupported` through `decide`, `input_unsupported` in a `p3` input); every provenance leaf restamped (`input_invalid`). The generators are version-parameterized like `accountNegativeFixtures(version)`.
+`P4_NEGATIVE_FIXTURES` emits, per cell: wrong role (each unmapped role → `role_not_permitted`, including Viewer and Partner for every §11.4 row and Collaborator for every owner row); wrong space and wrong target (`scope_mismatch`); target absent (`input_invalid`); archived space for every mutation (`lifecycle_blocked`); stale `targetVersion`, `authorizationVersion`, `primaryOwnershipVersion`, and `consentDisclosureVersion` (`stale_version`); consent `superseded`/`ended` (`consent_not_current`); for `29.transfer_primary_ownership` `assurance.level = "session"` (`assurance_required`) and a present-but-misbound or expired fresh assurance, bound to another action or space (`assurance_insufficient`, matching contract §5.2 and `evaluate.ts`); for the subject cells the §9.4 families of CBD-236 (another subject, wrong environment, forbidden sections, worker adapter, space-bound shape); a `p4` code under `p3` (`policy_version_unsupported` through `decide`, `input_unsupported` in a `p3` input); every provenance leaf restamped (`input_invalid`). The generators are version-parameterized like `accountNegativeFixtures(version)`.
 
 ## 12. Rate-limit surfaces and records
 
@@ -558,4 +558,5 @@ Each item is numbered, states the choice, and carries a recommendation. Nothing 
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.1.1 | September 15, 2026 | Documentation corrections approved under `EXEC-FOLLOWUPS-003`: §11.5 negative family for a present-but-misbound or expired fresh assurance corrected from `assurance_required` to `assurance_insufficient`, matching contract §5.2 and `evaluate.ts` (`P5-F3`); the consumed-contract row updated to `docs/cbd-190-identity-ceremony-and-mapping-contract.md` v0.4 and `docs/cbd-191-session-and-revocation-contract.md` v0.3 (`AMEND-F11`). No cell, digest, or design decision changed. |
 | 0.1 | September 15, 2026 | Initial proposal: scope cut, invitation record and states, ceremony over HTTP with the simulated delivery adapter and the no-account identity path, disclosure kinds, widening migration and new tables, the acceptance transaction, display identity, Primary transfer as a consent-bearing change with the fresh-assurance prerequisite, `p4` cells, rate-limit registrations, audit and notices, packets, traceability, decision items |

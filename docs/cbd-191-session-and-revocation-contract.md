@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | **Approved — Product Owner, September 15, 2026 (PO-CONTRACT-APPROVALS-004), applying the 0.3 fresh-assurance-record amendment to the 0.2.2 approval of September 13, 2026 (PO-CONTRACT-APPROVALS-001); open questions and residuals stay recorded and open** |
-| Document version | 0.3 |
+| Document version | 0.3.1 |
 | Jira subtask | [CBD-191](https://cobudget.atlassian.net/browse/CBD-191) |
 | Parent | [CBD-21](https://cobudget.atlassian.net/browse/CBD-21) |
 | Repository baseline | `4ea0078` |
@@ -389,11 +389,11 @@ the commit-time recheck see the same value, which is what makes §8's
 `CT-191-013` commit-boundary rule meaningful for assurance as well as for
 session state.
 
-`OQ-191-005` is not decided by this amendment. The prototype assembles
-`assurance.*` from this record under the `idp_evidence` provenance CBD-236 §4.1
-names, because the record holds server-attested identity-provider evidence;
-that is an implementation reading of an undecided cross-contract question, not
-the resolution of it, and this document still does not choose.
+`OQ-191-005` is decided (Executive, `EXEC-FOLLOWUPS-003`): assurance facts
+read from this record carry provenance `idp_evidence`, matching the merged
+fact source, which assembles `assurance.*` from this record under the
+`idp_evidence` provenance CBD-236 §4.1 names because the record holds
+server-attested identity-provider evidence.
 
 ### 5.2 Rotation triggers
 
@@ -787,7 +787,7 @@ retain configuration or provider evidence named above.
 | `OQ-191-002` (Security/Executive) | Cognito's real security-event delivery mechanism and authenticity proof are undecided; no live tenant exists to observe one under `PROVIDERS-LOCAL-001`. | Blocks the provider-only half of AC05/AC06 traceability and the real adapter's §6.2 authenticity check. |
 | `OQ-191-003` (Executive risk decision — conditionally accepted, `CBD191-PROVIDER-BOUND-001`) | Can Cognito supply branch A server-side global invalidation, or branch B a proven hosted-session lifetime no greater than `PR-94-001`? | If neither is supportable, activation is blocked absent explicit Executive acceptance of the exact residual risk; current-browser logout cannot substitute. |
 | `OQ-191-004` (Manager routing) | Which package owns the fixed delegation-retirement port in §7? | Design behavior is fixed, but implementation integration cannot close until a single writer is assigned. |
-| `OQ-191-005` (cross-contract finding) | CBD-236 v0.4 §4.1/§4.2 assigns API `assurance.*` provenance to `idp_evidence`, while CBD-191 persists the validated evidence — at v0.3, in the §5.1.1 record as well as on the session row. | CBD-236 must either define persisted server-attested IdP evidence as `idp_evidence` or amend provenance to `session_store`; CBD-191 does not silently choose. The merged prototype reads the §5.1.1 record under `idp_evidence`, which is an implementation reading and not this resolution; the question stays open, and whichever branch is chosen must be applied to the record as well as to the session row. |
+| `OQ-191-005` (cross-contract finding — decided: `idp_evidence`, `EXEC-FOLLOWUPS-003`) | CBD-236 v0.4 §4.1/§4.2 assigns API `assurance.*` provenance to `idp_evidence`, while CBD-191 persists the validated evidence — at v0.3, in the §5.1.1 record as well as on the session row. | Decided: assurance facts read from `account_session_fresh_assurance` carry provenance `idp_evidence`, matching the merged fact source. §5.1.1 states the decision; CBD-236 §4.1/§4.2 state it in the assurance provenance text as well. |
 | `OQ-191-006` (finding, coordination) | `SessionStorePort` (§3.4) assumes CBD-246 supports environment-scoped statements alongside its budget-space-tenant-scoped ones; CBD-246 is not yet a merged contract. | May require a CBD-246 seam extension or a separate session-store module once CBD246-IMPL-001's actual shape is known. |
 | `OQ-191-007` (cross-contract dependency) | CBD-190 v0.3 lacks server-bound current-session context, `prepared_revocation_epoch`, and a recovery ceremony/input. | An additive upstream revision is required before complete AC03/fenced issuance implementation; v0.3 inputs fail closed where information is absent. |
 
@@ -795,6 +795,7 @@ retain configuration or provider evidence named above.
 
 | Version | Date | Author | Change | Disposition |
 | --- | --- | --- | --- | --- |
+| 0.3.1 | September 15, 2026 | Documentation specialist, dispatched under `PROTO-DOC-SWEEP-003` | `OQ-191-005` closed by Executive decision `EXEC-FOLLOWUPS-003`: assurance facts read from `account_session_fresh_assurance` carry provenance `idp_evidence`, matching the merged fact source. §5.1.1's closing paragraph and the §12 row state the decision; the "does not decide it" caveat is removed. No mechanism changed. | Approved — Executive, September 15, 2026 (`EXEC-FOLLOWUPS-003`). |
 | 0.3 | September 15, 2026 | Specification specialist, dispatched under `PROTO-CBD190-191-STEPUP-AMEND-001` | Applied amendment. Fresh assurance proposed at this version by `PROTO-INVITATIONS-PK4-STEPUP-001` is now normative contract text as a record rather than session-row state, together with the `SEC-PK4-F3` hardening as merged in PR #355. New §5.1.1 (`SC-191-003B`) states `account_session_fresh_assurance` in full: its fields, write-once by unique ceremony reference with every other field immutable, at most one live grant per session/action/space, consumed once by the CBD-236 §5.3 `fresh_assurance` obligation discharge inside the authorizing transaction after the commit-time re-decision, and reachable only through an active unexpired session, enforced by the reader itself. §3.1 records that the four assurance-bearing `account_session` fields are unchanged; §5.1 names `COBUDGET_SESSION_FRESH_ASSURANCE_WINDOW_SECONDS` as the configured window; §5.2 states that a CBD-190 §4.4 `step_up` is not `assurance_elevation` and rotates nothing; §6.1 states that a grant dies with its session and needs no sweep; §8 gains `CT-191-016A`; §11 adds §5.1.1 to AC04 and AC07. `OQ-191-005` is explicitly not decided here. Finding-to-line map follows in §13.1. | **Approved — Product Owner, September 15, 2026 (PO-CONTRACT-APPROVALS-004).** Status and document version bumped in the same change; `OQ-191-002` through `OQ-191-007` stay open. |
 | 0.2.2 (approval) | September 13, 2026 | Manager, in the merge lane | Product Owner approval recorded (PO-CONTRACT-APPROVALS-001). Status Proposed → Approved at the same version; no decision, identifier or contract text changed. | Approved. |
 | 0.2.2 | September 13, 2026 | Manager, in the merge lane | Executive decisions applied: `OQ-191-001` decided as branch B (`CBD191-ZERO-MEMBERSHIP-001`); `OQ-191-003` conditionally accepted (`CBD191-PROVIDER-BOUND-001`). Question text and both branches retained; no mechanism changed. | Proposed. |

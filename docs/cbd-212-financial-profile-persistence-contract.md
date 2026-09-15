@@ -3,14 +3,14 @@
 | Field | Value |
 | --- | --- |
 | Status | **Proposed — architecture contract for implementation and independent review; Security review of the concurrency and migration behavior is required before implementation is accepted as Done** |
-| Document version | 0.2 |
+| Document version | 0.2.1 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-212](https://cobudget.atlassian.net/browse/CBD-212), consuming sibling [CBD-214](https://cobudget.atlassian.net/browse/CBD-214) |
 | Parent | [CBD-22](https://cobudget.atlassian.net/browse/CBD-22) |
 | Governing logical model | CBD-82 v0.2.1 (Approved, `CBD82-APPROVAL-CONDITION-001`) — `EN-82-02`, `CD-82-01`, `FD-82-003`–`FD-82-005`, `HO-82-01` |
 | Governing atomicity decision | Executive decision `CBD190-PROFILE-ATOMIC-001` — a subject never exists without exactly one active profile |
-| Consumed identity contract | `docs/cbd-190-identity-ceremony-and-mapping-contract.md` v0.3 §5 (the mapping transaction that inserts this document's table) |
-| Consumed session contract | `docs/cbd-191-session-and-revocation-contract.md` v0.2.1 (account-subject identity behind every call this document's port accepts) |
+| Consumed identity contract | `docs/cbd-190-identity-ceremony-and-mapping-contract.md` v0.4 §5 (the mapping transaction that inserts this document's table) |
+| Consumed session contract | `docs/cbd-191-session-and-revocation-contract.md` v0.3 (account-subject identity behind every call this document's port accepts) |
 | Consumed authorization contract | `docs/cbd-236-authorization-policy-contract.md` v0.4 §4.2, §8.1, §8.3 (`profile.profileId`/`profileState`/`profileVersion` cells, the bootstrap `space.create` predicate, and `OQ-236-006`) |
 | Persistence seam | `packages/data-access` (CBD-246) — **open PR, unmerged as of this document.** §10 names the port this document needs rather than assuming CBD-246's shape |
 | Milestone | `PROTOTYPE-SLICE-001` |
@@ -495,3 +495,4 @@ of its `PB-82-*` prohibitions.
 | --- | --- | --- | --- | --- |
 | 0.1 | September 13, 2026 | Architecture specialist, dispatched under `CBD212-ARCH-001 v1` | Initial financial-profile persistence contract: schema, database constraint, corrected lifecycle, concurrency contract, migration/backfill contract, CBD-214 read/update seam, and the CBD-246 persistence-port requirement. | Proposed; independent review and Security review required. |
 | 0.2 | September 13, 2026 | Architecture specialist, dispatched under `CBD212-ARCH-002 v1` | Review F1 → unique constraint narrowed to at-most-one and paired deferred commit-time triggers plus subject-only/zero-active/deleted-profile negative tests added (lines 94–141, 414–416); F2 → subject-scoped CBD-246 port made a prerequisite, unscoped fallback removed, and CBD-214 seam bound to it (lines 322–335, 350–395, 471); F3 → standalone port locks and requires an active subject/active existing profile, terminal disposition precedes purge, and unavailable/exact-reuse cases cannot recreate authority (lines 145–169, 186–219, 417–418). Cross-reference pass aligned migration fixtures, `CT-212-*`, traceability, alternatives, dependencies, and `OI-212-01`. | Proposed; repeat independent review and Security review required. |
+| 0.2.1 | September 15, 2026 | Documentation specialist, dispatched under `PROTO-DOC-SWEEP-003` | Consumed-contract pins corrected under `EXEC-FOLLOWUPS-003`: identity contract to `docs/cbd-190-identity-ceremony-and-mapping-contract.md` v0.4 §5, session contract to `docs/cbd-191-session-and-revocation-contract.md` v0.3 (`AMEND-F11`). Nothing those rows cite changed in substance; no other text, cell, or decision identifier changed. | Approved — Executive, September 15, 2026 (`EXEC-FOLLOWUPS-003`). |
