@@ -350,17 +350,52 @@ void test("PROTO-INVITATIONS-PK5 live PostgreSQL: the acceptance transaction, th
         { outcome: "exhausted", attemptsRemaining: 0 },
       );
       const exhausted = (await api.query(
-        "SELECT channel_attempts, channel_proof_state FROM budget_space_invitation_ceremony WHERE ceremony_id = $1", [opened.ceremonyId],
-      )).rows[0] as { channel_attempts: number; channel_proof_state: string };
+        "SELECT channel_attempts, channel_proof_state, state, is_current FROM budget_space_invitation_ceremony WHERE ceremony_id = $1", [opened.ceremonyId],
+      )).rows[0] as { channel_attempts: number; channel_proof_state: string; state: string; is_current: boolean };
       assert.equal(exhausted.channel_attempts, MAX_CHANNEL_ATTEMPTS);
       assert.equal(exhausted.channel_proof_state, "exhausted");
-      assert.deepEqual(
-        await transaction(async (deps) => verifyChannel(deps, { ...boundRequest, channelCode: boundDelivery.challenge })),
-        { outcome: "exhausted", attemptsRemaining: 0 }, "the correct code no longer proves an exhausted ceremony",
+      // SEC-PK6-F2: exhaustion is terminal for the bearer. The exhausting
+      // guess committed the code's invalidation and the ceremony's, so the
+      // correct code answers the uniform class on this ceremony ...
+      assert.equal(exhausted.state, "invalidated");
+      assert.equal(exhausted.is_current, false);
+      await assert.rejects(
+        transaction(async (deps) => verifyChannel(deps, { ...boundRequest, channelCode: boundDelivery.challenge })),
+        (error: unknown) => isInvitationError(error, "ceremony_unusable"), "the correct code no longer proves an exhausted ceremony",
       );
       assert.equal(
         (await listLifecycleAudit(client, boundSpace.spaceId)).filter((row) => row.event_code === "AE-73-09").length,
         MAX_CHANNEL_ATTEMPTS, "one AE-73-09 per attempt that was taken",
+      );
+      // ... and a re-resolve of the same link cannot open a fresh ceremony
+      // bound to the same six digits: the code is dead, the outbox row is
+      // tombstoned, the answer is the uniform outcome with its AE-73-14 row.
+      const deadCode = (await api.query(
+        "SELECT disposition, disposition_reason_class FROM budget_space_invitation_code WHERE invitation_id = $1", [boundId],
+      )).rows[0] as { disposition: string; disposition_reason_class: string | null };
+      assert.deepEqual(deadCode, { disposition: "invalidated", disposition_reason_class: "channel_attempts_exhausted" });
+      assert.equal(
+        ((await api.query("SELECT delivery_state FROM budget_space_invitation_outbox WHERE invitation_id = $1", [boundId]))
+          .rows[0] as { delivery_state: string }).delivery_state,
+        "tombstoned",
+      );
+      const securityRowsBefore = Number(((await api.query(
+        "SELECT count(*)::int AS n FROM invitation_security_event WHERE budget_space_id = $1", [boundSpace.spaceId],
+      )).rows[0] as { n: number }).n);
+      const reresolved = await transaction(async (deps) =>
+        resolveCode(deps, { presentedCode: boundDelivery.bearer, environment: ENVIRONMENT, correlationId: randomUUID() }));
+      assert.equal(reresolved.outcome, "unusable", "the exhausted link no longer resolves");
+      assert.equal(
+        ((await api.query(
+          "SELECT count(*)::int AS n FROM budget_space_invitation_ceremony WHERE invitation_id = $1 AND is_current", [boundId],
+        )).rows[0] as { n: number }).n,
+        0, "no fresh ceremony was opened",
+      );
+      assert.equal(
+        Number(((await api.query(
+          "SELECT count(*)::int AS n FROM invitation_security_event WHERE budget_space_id = $1 AND outcome_class = 'terminal_record'", [boundSpace.spaceId],
+        )).rows[0] as { n: number }).n),
+        securityRowsBefore + 1, "the re-resolve wrote its AE-73-14 terminal_record row",
       );
     }
 

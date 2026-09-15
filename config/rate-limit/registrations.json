@@ -478,5 +478,185 @@
     "registration_lifecycle": "active",
     "introduced_by": "CBD-280",
     "authorization_metadata_id": null
+  },
+  {
+    "registration_id": "api:POST:/v1/budget-spaces/{budgetSpaceId}/invitations",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/invitations/http.ts#InvitationsOwnerController.create",
+    "surface_id": "surf-266-invitation-create",
+    "parameter_record_id": "rlp-266-invitation-create-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "24.invite_nonowner|26.invite_coowner"
+  },
+  {
+    "registration_id": "api:GET:/v1/budget-spaces/{budgetSpaceId}/invitations",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/invitations/http.ts#InvitationsOwnerController.list",
+    "surface_id": "surf-266-invitation-inspect",
+    "parameter_record_id": "rlp-266-invitation-inspect-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "24.view_invitations"
+  },
+  {
+    "registration_id": "api:HEAD:/v1/budget-spaces/{budgetSpaceId}/invitations",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/invitations/http.ts#InvitationsOwnerController.list",
+    "surface_id": "surf-266-invitation-inspect",
+    "parameter_record_id": "rlp-266-invitation-inspect-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "24.view_invitations"
+  },
+  {
+    "registration_id": "api:POST:/v1/budget-spaces/{budgetSpaceId}/invitations/{invitationId}/replace",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/invitations/http.ts#InvitationsOwnerController.replace",
+    "surface_id": "surf-266-invitation-resend",
+    "parameter_record_id": "rlp-266-invitation-resend-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "24.replace_invitation|24.resend_invitation|26.invite_coowner"
+  },
+  {
+    "registration_id": "api:DELETE:/v1/budget-spaces/{budgetSpaceId}/invitations/{invitationId}",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/invitations/http.ts#InvitationsOwnerController.cancel",
+    "surface_id": "surf-266-invitation-cancel",
+    "parameter_record_id": "rlp-266-invitation-cancel-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "24.revoke_nonowner|26.invite_coowner"
+  },
+  {
+    "registration_id": "api:POST:/v1/budget-spaces/{budgetSpaceId}/invitations/{invitationId}/confirm",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/invitations/http.ts#InvitationsOwnerController.confirm",
+    "surface_id": "surf-266-invitation-create",
+    "parameter_record_id": "rlp-266-invitation-create-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "24.confirm_acceptance|26.confirm_acceptance"
+  },
+  {
+    "registration_id": "api:POST:/v1/budget-spaces/{budgetSpaceId}/invitations/{invitationId}/reject",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/invitations/http.ts#InvitationsOwnerController.reject",
+    "surface_id": "surf-266-invitation-create",
+    "parameter_record_id": "rlp-266-invitation-create-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "24.confirm_acceptance|26.confirm_acceptance"
+  },
+  {
+    "registration_id": "api:GET:/v1/budget-spaces/{budgetSpaceId}/members",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/budget-spaces/http.ts#BudgetSpacesController.members",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "1.view_members"
+  },
+  {
+    "registration_id": "api:HEAD:/v1/budget-spaces/{budgetSpaceId}/members",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/budget-spaces/http.ts#BudgetSpacesController.members",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "1.view_members"
+  },
+  {
+    "registration_id": "api:POST:/v1/invitations/resolve",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/invitations/http.ts#InvitationCeremonyController.resolve",
+    "surface_id": "surf-266-invitation-accept",
+    "parameter_record_id": "rlp-266-invitation-ceremony-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "pre_authentication_surface:invitation_ceremony"
+  },
+  {
+    "registration_id": "api:POST:/v1/invitations/{ceremonyId}/verify-channel",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/invitations/http.ts#InvitationCeremonyController.verifyChannel",
+    "surface_id": "surf-266-invitation-accept",
+    "parameter_record_id": "rlp-266-invitation-ceremony-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "pre_authentication_surface:invitation_ceremony"
+  },
+  {
+    "registration_id": "api:POST:/v1/invitations/{ceremonyId}/decline",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/invitations/http.ts#InvitationCeremonyController.decline",
+    "surface_id": "surf-266-invitation-accept",
+    "parameter_record_id": "rlp-266-invitation-ceremony-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "pre_authentication_surface:invitation_ceremony"
+  },
+  {
+    "registration_id": "api:POST:/v1/invitations/{ceremonyId}/attach",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/invitations/http.ts#InvitationCeremonyController.attach",
+    "surface_id": "surf-266-budget-mutation",
+    "parameter_record_id": "rlp-266-mutation-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "invitation.attach"
+  },
+  {
+    "registration_id": "api:GET:/v1/invitations/{ceremonyId}",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/invitations/http.ts#InvitationCeremonyController.read",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "invitation.read_ceremony"
+  },
+  {
+    "registration_id": "api:HEAD:/v1/invitations/{ceremonyId}",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/invitations/http.ts#InvitationCeremonyController.read",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "invitation.read_ceremony"
+  },
+  {
+    "registration_id": "api:POST:/v1/invitations/{ceremonyId}/accept",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/invitations/http.ts#InvitationCeremonyController.accept",
+    "surface_id": "surf-266-budget-mutation",
+    "parameter_record_id": "rlp-266-mutation-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "invitation.accept"
+  },
+  {
+    "registration_id": "api:GET:/v1/local/invitation-deliveries",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/local/http.ts#LocalDeliveriesController.list",
+    "surface_id": "surf-266-operations-query",
+    "parameter_record_id": "rlp-266-local-delivery-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "profile.read"
+  },
+  {
+    "registration_id": "api:HEAD:/v1/local/invitation-deliveries",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/local/http.ts#LocalDeliveriesController.list",
+    "surface_id": "surf-266-operations-query",
+    "parameter_record_id": "rlp-266-local-delivery-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-41",
+    "authorization_metadata_id": "profile.read"
   }
 ]

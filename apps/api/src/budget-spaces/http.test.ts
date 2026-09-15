@@ -6,13 +6,14 @@ import { FastifyAdapter } from "@nestjs/platform-fastify";
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Test } from "@nestjs/testing";
 import type { DataAccessClient } from "@cobudget/data-access";
-import { ordinaryFixture } from "@cobudget/contracts/authorization";
+import { CURRENT_POLICY_VERSION, expectedProvenance, ordinaryFixture } from "@cobudget/contracts/authorization";
+import type { PolicyInput, Role } from "@cobudget/contracts/authorization";
 import { AppModule } from "../app.module.js";
 import { loadApiConfigFrom } from "../config.js";
 import { Harness, testHistory } from "../authorization/test-support.js";
 import { invocation } from "../../../../packages/rate-limit/src/index.ts";
 import { FakeClock } from "../../../../packages/budget-application/src/creation-proposals/support.ts";
-import { budgetSpacesHttp, listOwnSpaces } from "./http.ts";
+import { budgetSpacesHttp, listMembers, listOwnSpaces } from "./http.ts";
 import { proposalHttp } from "../budget-creation/proposal-http.ts";
 
 void test("mounted detail reads a member's stored current period; p2 routes deny without effects or cookies when no environment is configured", async () => {
@@ -77,4 +78,80 @@ void test("list own returns only membership-selected spaces and refuses missing 
   } as unknown as DataAccessClient;
   assert.deepEqual(await listOwnSpaces(client, "owner"), { spaces: [{ budgetSpaceId: "owned", membershipId: "member", name: "Home", nameVersion: 1, lifecycle: "live", lifecycleVersion: 1, currencyCode: "USD", timeZone: "America/New_York" }] });
   await assert.rejects(listOwnSpaces(client, ""));
+});
+
+/**
+ * PK-6 (CBD-234 design section 5.1; `1.view_members`; CBD-8-AC02/AC06): the
+ * members list through the real boundary and the released p5 policy, one
+ * positive per active member role and the two non-member denials.
+ */
+const MEMBER_ROWS = [
+  { membership_id: "membership-1", account_subject_id: "subject-1", role: "primary_owner", status: "active", created_at: new Date("2026-09-01T00:00:00.000Z") },
+  { membership_id: "membership-2", account_subject_id: "subject-2", role: "collaborator", status: "active", created_at: new Date("2026-09-02T00:00:00.000Z") },
+  { membership_id: "membership-3", account_subject_id: "subject-3", role: "co_owner", status: "revoked", created_at: new Date("2026-09-03T00:00:00.000Z") },
+];
+const NAMES: Record<string, string | null> = { "subject-1": "Alex", "subject-2": null };
+
+function membersClient(): DataAccessClient {
+  return {
+    readOwnBudgetMemberships: async (subject: string) => ({ rows: subject === "subject-1" ? [{ budget_space_id: "space-1", membership_id: "membership-1" }] : [] }),
+    tenantSelect: async (query: { table: string; budgetSpaceId: string; conditions?: { column: string; value: unknown }[] }) => {
+      assert.equal(query.budgetSpaceId, "space-1");
+      if (query.table === "budget_space_membership") return { rows: MEMBER_ROWS.filter((row) => (query.conditions ?? []).every((c) => (row as Record<string, unknown>)[c.column] === c.value)) };
+      return { rows: [] };
+    },
+    profileSelect: async (query: { accountSubjectId: string }) => ({ rows: [{ profile_id: `profile-${query.accountSubjectId}`, profile_state: "active", display_name: NAMES[query.accountSubjectId] ?? null, version: 1 }] }),
+  } as unknown as DataAccessClient;
+}
+
+void test("PK6-04: listMembers returns display identity, role and joined-at for active members only, and never a contact", async () => {
+  const listed = await listMembers(membersClient(), "space-1");
+  assert.deepEqual(listed, { budgetSpaceId: "space-1", members: [
+    { membershipId: "membership-1", displayName: "Alex", role: "primary_owner", joinedAt: "2026-09-01T00:00:00.000Z" },
+    { membershipId: "membership-2", displayName: "A MoneyPact member", role: "collaborator", joinedAt: "2026-09-02T00:00:00.000Z" },
+  ] });
+  for (const member of listed.members) assert.deepEqual(Object.keys(member).sort(), ["displayName", "joinedAt", "membershipId", "role"]);
+});
+
+void test("PK6-04: the members route allows every active member role on 1.view_members and denies a non-member and an unmapped role uniformly", async () => {
+  const roleInput = (role: Role): PolicyInput => {
+    const base = ordinaryFixture("1.view_members", role, CURRENT_POLICY_VERSION);
+    return { ...base, provenance: expectedProvenance(base) } as PolicyInput;
+  };
+  const h = new Harness(roleInput("primary_owner"));
+  // The production ApiTransactionStore discharges bind_cache_key (RC-05); the harness store knows only bootstrap obligations.
+  h.store.discharge = async (_transaction, _input, obligation) => obligation.kind === "bind_cache_key";
+  const client = membersClient();
+  const transaction = h.store.transaction;
+  // The handler reads through the transaction handle; the draft state itself stays clonable across calls.
+  h.store.transaction = work => transaction(async tx => work(Object.assign(Object.create(tx as object) as object, client)));
+  const config = loadApiConfigFrom({ API_PORT: "3001", LOG_LEVEL: "info", NODE_ENV: "test", SERVICE_VERSION: "members-route-test",
+    COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local", COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: Buffer.alloc(32, 7).toString("base64"), COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1" });
+  const module = await Test.createTestingModule({ imports: [AppModule.register(config, () => undefined, {
+    modules: [budgetSpacesHttp({ client, clock: new FakeClock("2026-12-01T02:00:00.000Z") })], boundary: h.boundary, surfaceApproved: async () => true, csrf: async () => true, sessionLocator: request => request.headers.cookie,
+    deny: response => { throw new HttpException(response, 403); },
+    rateLimit: { evidence: () => invocation("api:GET:/v1/budget-spaces/:budgetSpaceId/members", "api_route", "test-only", "test-only"),
+      enforce: async () => ({ outcome: "allow", provenance: "test-only", release: async () => undefined }) },
+  }, testHistory)] }).compile();
+  const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { logger: false });
+  try {
+    await app.init(); await app.getHttpAdapter().getInstance().ready();
+    for (const role of ["primary_owner", "co_owner", "collaborator"] as const) {
+      h.input = roleInput(role);
+      const response = await app.inject({ method: "GET", url: "/v1/budget-spaces/space-1/members", headers: { cookie: "opaque" } });
+      assert.equal(response.statusCode, 200, `${role}: ${response.body}`);
+      assert.equal(response.json().members.length, 2, role);
+      assert.equal(h.state.audits.at(-1)?.actionCode, "1.view_members");
+    }
+    // An unmapped role (Viewer) is denied by the policy; a non-member (no membership row) is denied by the pre-policy locator; both are the uniform body.
+    h.input = roleInput("viewer");
+    const viewer = await app.inject({ method: "GET", url: "/v1/budget-spaces/space-1/members", headers: { cookie: "opaque" } });
+    assert.equal(viewer.statusCode, 403); assert.deepEqual(viewer.json(), { outcome: "deny", reason: "denied" });
+    assert.equal(h.state.audits.at(-1)?.reasonClass, "role_not_permitted");
+    h.input = roleInput("primary_owner"); h.input.subject!.accountSubjectId = "subject-9";
+    const stranger = await app.inject({ method: "GET", url: "/v1/budget-spaces/space-1/members", headers: { cookie: "opaque" } });
+    assert.equal(stranger.statusCode, 403); assert.deepEqual(stranger.json(), viewer.json());
+    const noSession = await app.inject({ method: "GET", url: "/v1/budget-spaces/space-1/members" });
+    assert.equal(noSession.statusCode, 403);
+  } finally { await app.close(); }
 });

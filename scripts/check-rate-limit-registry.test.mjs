@@ -101,9 +101,11 @@ it("guard fails a changed approval digest and passes restored evidence, writing 
     const restored = loadPrototypeRegistry(path);
     assert.equal(printReport(checkInventory(discovered, registrations, restored)), true);
     // Five prototype sets plus rlp-266-identity-session-v1 and rlp-266-identity-ceremony-v1, projected next
-    // to rlp-266-bootstrap-v1 on a disjoint stage set (CBD266-IDENTITY-RECORDS-001, CBD266-SURFACE-STAGES-001).
-    assert.equal(restored.approved.size, 7);
-    console.log("Restored approval evidence: approved=7");
+    // to rlp-266-bootstrap-v1 on a disjoint stage set (CBD266-IDENTITY-RECORDS-001, CBD266-SURFACE-STAGES-001),
+    // plus the six invitation records of CBD266-INVITATION-RECORDS-001 (PK-6): rlp-266-invitation-ceremony-v1
+    // on surf-266-invitation-accept and the projected create, resend, cancel, inspect and local-delivery records.
+    assert.equal(restored.approved.size, 13);
+    console.log("Restored approval evidence: approved=13");
   } finally { rmSync(dir, { recursive: true, force: true }); scratchDirectories.delete(dir); }
   // F-BFIX-03 item 1: nothing under config/rate-limit changed, so no restore
   // of a repository file could have been interrupted.

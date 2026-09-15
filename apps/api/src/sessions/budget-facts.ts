@@ -55,6 +55,33 @@
  * the row's `lifecycle_revision`, so a lifecycle change between precheck and
  * commit denies `stale_version`; `resource.lifecycle` is the proposal status.
  * A row the statement does not return is simply absent from the facts.
+ *
+ * PK-6 (CBD-234 design sections 4.4 and 11.3; CBD-236 v0.12 sections 4.4 and
+ * 8.8, `HO-236-11`; `P5-F4`): the invitee cells `invitation.read_ceremony`
+ * and `invitation.accept` name an `invitation_ceremony` target. The ceremony
+ * row is loaded by (environment, attached subject, ceremony id) -- the
+ * pre-authentication locator answers only which budget space the ceremony id
+ * belongs to, then the tenant-scoped statement is keyed on the configured
+ * environment and the acting subject's own `attached_subject_id` -- and its
+ * `attached_subject_id` and `environment` columns are copied into
+ * `resource.owningSubjectId` and `resource.environmentId` for `decide` to
+ * re-prove. An unattached ceremony, another subject's ceremony or a foreign
+ * environment's ceremony returns no row and therefore no `resource.*` leaf,
+ * so the assembler denies `input_invalid` before the handler runs. The
+ * ceremony table carries no version column of its own (design section 4.4
+ * lists none), so `resource.version` is the owning invitation's
+ * `state_version` -- the value `TR-73-38` advances when the ceremony's outcome
+ * moves -- and `resource.lifecycle` is the ceremony's own `state`.
+ *
+ * The owner's invitation cells (`24.invite_nonowner`, `26.invite_coowner`,
+ * `24.replace_invitation`, `24.resend_invitation`, `24.revoke_nonowner`,
+ * `24.confirm_acceptance`, `26.confirm_acceptance`) name an `invitation`
+ * target. Create names the space's invitation set (the server-allocated
+ * candidate row does not exist yet; the `manual_account.create_manual_account`
+ * pattern), so `resourceId === budgetSpaceId` answers with the space's own
+ * leaves; every other owner route names the `budget_space_invitation` row,
+ * whose `state_version` is the captured `targetVersion` and whose `state` is
+ * the lifecycle.
  */
 import type { DataAccessClient } from "@cobudget/data-access";
 import type { FactSource } from "@cobudget/contracts/authorization";
@@ -71,7 +98,7 @@ import type { FactReader } from "./fact-source.ts";
  * locator names something other than the space, the row's own columns answer
  * instead (see `rowResourceFacts`).
  */
-const SPACE_RESOURCE_TYPES: ReadonlySet<string> = new Set(["space", "category", "plan", "report", "account", "transaction"]);
+const SPACE_RESOURCE_TYPES: ReadonlySet<string> = new Set(["space", "category", "plan", "report", "account", "transaction", "invitation"]);
 /** The membership columns the ordinary variant reads. `authorization_version` is the membership's own version and is never relabelled as a disclosure version. */
 const MEMBERSHIP_COLUMNS: readonly string[] = ["membership_id", "role", "status", "authorization_version"];
 /** The consent evidence columns of `budget_space_consent`; `recorded_at` orders the terminal rows and is not a fact. */
@@ -157,6 +184,16 @@ async function rowResourceFacts(client: DataAccessClient, spaceId: string, resou
     if (!row) return null;
     return { "resource.owningSpaceId": row.budget_space_id, "resource.version": integer(row.version), "resource.lifecycle": row.archived_at === null ? "active" : "archived" };
   }
+  if (resourceType === "invitation") {
+    // PK-6: the `budget_space_invitation` row named by replace, cancel, confirm and reject. `state_version`
+    // advances on every transition (design section 4.1), so a record that moved between precheck and
+    // commit denies `stale_version`; `state` is the authoritative lifecycle and is never the projection.
+    const found = await client.tenantSelect({ table: "budget_space_invitation", budgetSpaceId: spaceId, columns: ["budget_space_id", "state", "state_version"],
+      conditions: [{ column: "invitation_id", value: resourceId }] });
+    const row = found.rows[0] as { budget_space_id?: unknown; state?: unknown; state_version?: unknown } | undefined;
+    if (!row) return null;
+    return { "resource.owningSpaceId": row.budget_space_id, "resource.version": integer(row.state_version), "resource.lifecycle": typeof row.state === "string" ? row.state : undefined };
+  }
   return null;
 }
 
@@ -224,6 +261,38 @@ async function proposalFacts(client: DataAccessClient, lookup: FactLookup, subje
   };
 }
 
+/** Where one ceremony id lives, and nothing more: the pre-authentication locator of the PK-5 module (`InvitationLocator.locateByCeremony`). */
+export type CeremonyLocator = (ceremonyId: string) => Promise<{ readonly budgetSpaceId: string } | null>;
+
+/**
+ * PK-6: the invitee's subject-owned target (design section 4.4 last paragraph). Loaded only through the
+ * statement keyed on the configured environment and the acting subject -- an identifier-only lookup never
+ * happens here -- and the row's own `attached_subject_id` and `environment` columns are what `decide`
+ * compares against the session subject and the runtime environment.
+ */
+async function ceremonyFacts(client: DataAccessClient, lookup: FactLookup, subjectId: string, environmentId: string, locate: CeremonyLocator | undefined): Promise<Record<string, unknown> | null> {
+  const ceremonyId = lookup.operation.resourceId;
+  if (typeof ceremonyId !== "string" || !UUID.test(ceremonyId) || !locate) return null;
+  const location = await locate(ceremonyId);
+  if (!location || !UUID.test(location.budgetSpaceId)) return null;
+  const found = await client.tenantSelect({ table: "budget_space_invitation_ceremony", budgetSpaceId: location.budgetSpaceId,
+    columns: ["ceremony_id", "invitation_id", "attached_subject_id", "environment", "state"],
+    conditions: [{ column: "environment", value: environmentId }, { column: "attached_subject_id", value: subjectId }, { column: "ceremony_id", value: ceremonyId }] });
+  const row = found.rows[0] as { invitation_id?: unknown; attached_subject_id?: unknown; environment?: unknown; state?: unknown } | undefined;
+  if (!row || typeof row.invitation_id !== "string") return null;
+  const invitations = await client.tenantSelect({ table: "budget_space_invitation", budgetSpaceId: location.budgetSpaceId, columns: ["state_version"],
+    conditions: [{ column: "invitation_id", value: row.invitation_id }] });
+  const invitation = invitations.rows[0] as { state_version?: unknown } | undefined;
+  if (!invitation) return null;
+  return {
+    "resource.owningSpaceId": "none",
+    "resource.version": integer(invitation.state_version),
+    "resource.lifecycle": typeof row.state === "string" ? row.state : undefined,
+    "resource.owningSubjectId": row.attached_subject_id,
+    "resource.environmentId": row.environment,
+  };
+}
+
 async function bootstrapFacts(client: DataAccessClient, candidates: { readonly spaceId: string; readonly membershipId: string }): Promise<Record<string, unknown> | null> {
   if (!UUID.test(candidates.spaceId) || !UUID.test(candidates.membershipId)) return null;
   const spaces = await client.tenantSelect({ table: "budget_space", budgetSpaceId: candidates.spaceId, columns: ["budget_space_id"] });
@@ -248,5 +317,19 @@ export function budgetFactReader(environmentId: string): FactReader {
     if (lookup.operation.scope === "subject") return lookup.operation.resourceType === "proposal" ? proposalFacts(client, lookup, subjectId, environmentId) : null;
     if (lookup.operation.action === "space.create") return lookup.candidates ? bootstrapFacts(client, lookup.candidates) : null;
     return spaceFacts(client, lookup, subjectId);
+  };
+}
+
+/**
+ * PK-6: the `extend` reader for the invitee's `invitation_ceremony` target, layered beside `budgetFactReader`
+ * by `runtime.ts`. It is a separate reader because it needs the pre-authentication locator, which is a
+ * composition input and not a runtime shape; `budgetFactReader(environmentId)` keeps its one argument.
+ */
+export function ceremonyFactReader(environmentId: string, ceremonies: CeremonyLocator): FactReader {
+  return async (source: FactSource, lookup: FactLookup, client: DataAccessClient) => {
+    if (source !== "datastore" || lookup.operation.scope !== "subject" || lookup.operation.resourceType !== "invitation_ceremony") return null;
+    const subjectId = lookup.identity?.["subject.accountSubjectId"];
+    if (typeof subjectId !== "string" || !subjectId) return null;
+    return ceremonyFacts(client, lookup, subjectId, environmentId, ceremonies);
   };
 }

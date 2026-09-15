@@ -28,7 +28,7 @@ import { describe, it } from "node:test";
 import { decide } from "@cobudget/contracts/authorization";
 import type { DataAccessClient } from "@cobudget/data-access";
 import { FactAssembler, FactFailure } from "../authorization/facts.js";
-import { budgetFactReader, consentFactsOf, currentConsentRow } from "./budget-facts.ts";
+import { budgetFactReader, ceremonyFactReader, consentFactsOf, currentConsentRow } from "./budget-facts.ts";
 import { createApiFactSource } from "./fact-source.ts";
 
 const SPACE = "11111111-1111-4111-8111-111111111111";
@@ -237,5 +237,99 @@ describe("row-level resource facts for the increment-B route targets", () => {
       const facts = await reader(true)(type, "not-a-uuid");
       for (const path of Object.keys(facts ?? {})) assert.equal(path.startsWith("resource."), false, `${type} answered for a malformed identifier`);
     }
+  });
+});
+
+/**
+ * PK-6 (CBD-234 design sections 4.4 and 11.3; CBD-236 sections 4.4 and 8.8;
+ * `P5-F4`, `HO-236-11`): the invitee's `invitation_ceremony` target through
+ * the real assembler and the released p5 policy, and the owner's
+ * `invitation` target for the row routes.
+ */
+describe("PK-6: the ceremony fact reader and the invitation row facts", () => {
+  const CEREMONY = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const INVITATION = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const OTHER = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const ENV = "development";
+  function ceremonyAssembler(row: Record<string, unknown> | undefined, located = true) {
+    const asked: { column: string; value: unknown }[][] = [];
+    const client = {
+      tenantSelect: async (query: { table: string; budgetSpaceId: string; conditions?: { column: string; value: unknown }[] }) => {
+        assert.equal(query.budgetSpaceId, SPACE, "the located space scopes every read");
+        if (query.table === "budget_space_invitation_ceremony") {
+          asked.push(query.conditions ?? []);
+          const matches = row && (query.conditions ?? []).every((c) => row[c.column] === c.value);
+          return { rows: matches ? [row] : [] };
+        }
+        if (query.table === "budget_space_invitation") return { rows: [{ state_version: 3 }] };
+        return { rows: [] };
+      },
+      platformSelect: async (query: { table: string }) => ({ rows: query.table === "account_subject" ? [{ account_subject_id: SUBJECT, lifecycle_state: "active", lifecycle_version: 1 }] : [] }),
+      profileSelect: async () => ({ rows: [{ profile_id: "77777777-7777-4777-8777-777777777777", account_subject_id: SUBJECT, profile_state: "active", version: 1 }] }),
+    } as unknown as DataAccessClient;
+    const sessions = { read: async () => ({ "subject.accountSubjectId": SUBJECT, "subject.sessionRef": "session-ref-1", "subject.sessionVersion": 1 }) };
+    const locate = async (id: string) => located && id === CEREMONY ? { budgetSpaceId: SPACE } : null;
+    const reader = ceremonyFactReader(ENV, locate);
+    const source = createApiFactSource({ sessions, client, extend: reader });
+    return { assembler: new FactAssembler("api", source, () => new Date(), 5_000, undefined, { environmentId: ENV }), asked };
+  }
+  const attached = () => ({ ceremony_id: CEREMONY, invitation_id: INVITATION, attached_subject_id: SUBJECT, environment: ENV, state: "open" });
+  const lookupFor = (action: string, id = CEREMONY) => ({ credential: "opaque", operation: { action, purpose: "user_delegated" as const, mode: "user_delegated" as const, fieldSet: "default" as const, scope: "subject" as const, resourceType: "invitation_ceremony" as const, resourceId: id } });
+
+  it("the attached invitee assembles the row's own owner, environment, state and the invitation's state_version, and both invitee cells allow", async () => {
+    for (const action of ["invitation.read_ceremony", "invitation.accept"]) {
+      const { assembler, asked } = ceremonyAssembler(attached());
+      const input = await assembler.assemble(lookupFor(action));
+      assert.equal(input.resource?.owningSpaceId, "none");
+      assert.equal(input.resource?.owningSubjectId, SUBJECT);
+      assert.equal(input.resource?.environmentId, ENV);
+      assert.equal(input.resource?.lifecycle, "open");
+      assert.equal(input.resource?.version, 3, "the owning invitation's state_version is the captured targetVersion");
+      assert.equal(input.provenance["resource.owningSubjectId"], "datastore");
+      const decision = decide(input);
+      assert.equal(decision.outcome, "allow", action);
+      assert.deepEqual(decision.cellRef, { kind: "subject", action });
+      if (action === "invitation.accept") assert.equal((decision.capturedVersions as { targetVersion?: number } | undefined)?.targetVersion, 3);
+      // The statement is keyed on (environment, attached subject, ceremony id) -- never on the identifier alone.
+      assert.deepEqual(asked.at(-1)?.map((c) => c.column), ["environment", "attached_subject_id", "ceremony_id"]);
+    }
+  });
+
+  it("an unattached ceremony, another subject's ceremony, a foreign environment and an unlocatable id all deny input_invalid before any handler", async () => {
+    const cases: [string, Record<string, unknown> | undefined, boolean][] = [
+      ["unattached", { ...attached(), attached_subject_id: null }, true],
+      ["another subject", { ...attached(), attached_subject_id: OTHER }, true],
+      ["foreign environment", { ...attached(), environment: "test" }, true],
+      ["unlocatable", attached(), false],
+    ];
+    for (const [name, row, located] of cases) {
+      const { assembler } = ceremonyAssembler(row, located);
+      await assert.rejects(assembler.assemble(lookupFor("invitation.read_ceremony")), (error: unknown) => error instanceof FactFailure && error.reason === "input_invalid", name);
+    }
+    const { assembler } = ceremonyAssembler(attached());
+    await assert.rejects(assembler.assemble(lookupFor("invitation.read_ceremony", "not-a-uuid")), (error: unknown) => error instanceof FactFailure && error.reason === "input_invalid", "malformed id");
+  });
+
+  it("the owner's invitation row answers its own state_version and state; the invitation set answers the space (create)", async () => {
+    const client = {
+      tenantSelect: async (query: { table: string; budgetSpaceId: string; conditions?: { column: string; value: unknown }[] }) => {
+        assert.equal(query.budgetSpaceId, SPACE);
+        if (query.table === "budget_space") return { rows: [{ budget_space_id: SPACE, lifecycle: "live", lifecycle_version: 1, primary_owner_membership_id: MEMBERSHIP }] };
+        if (query.table === "budget_space_membership") return { rows: [owner()] };
+        if (query.table === "budget_space_consent") return { rows: [consentRow()] };
+        if (query.table === "budget_space_invitation") return { rows: (query.conditions ?? []).some((c) => c.column === "invitation_id" && c.value === INVITATION) ? [{ budget_space_id: SPACE, state: "awaiting_confirmation", state_version: 4 }] : [] };
+        return { rows: [] };
+      },
+    } as unknown as DataAccessClient;
+    const read = (resourceId: string) => budgetFactReader(ENV)("datastore", {
+      credential: "opaque", identity: { "subject.accountSubjectId": SUBJECT },
+      operation: { action: "24.confirm_acceptance", purpose: "user_delegated", mode: "user_delegated", fieldSet: "default", resourceType: "invitation", resourceId, actingSpaceId: SPACE, actingMembershipId: MEMBERSHIP },
+    }, client);
+    const row = await read(INVITATION);
+    assert.equal(row?.["resource.owningSpaceId"], SPACE); assert.equal(row?.["resource.version"], 4); assert.equal(row?.["resource.lifecycle"], "awaiting_confirmation");
+    const set = await read(SPACE);
+    assert.equal(set?.["resource.owningSpaceId"], SPACE); assert.equal(set?.["resource.version"], 1); assert.equal(set?.["resource.lifecycle"], "live");
+    const foreign = await read(OTHER);
+    for (const path of Object.keys(foreign ?? {})) assert.equal(path.startsWith("resource."), false, `a row the space does not own leaked ${path}`);
   });
 });

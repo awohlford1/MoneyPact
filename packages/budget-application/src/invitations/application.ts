@@ -400,6 +400,13 @@ export async function createInvitation(
   if (existing) {
     const live = await expireOnObservation(deps, existing, owner.correlationId);
     if (!isTerminalInvitationState(live.state)) {
+      // `R-01` / `SEC-PK6-F1`: the implicit replacement is the same `TR-73-05`
+      // transition the explicit `replace` route performs, and carries the same
+      // exact-permission rule: the actor retires the predecessor only while
+      // holding the predecessor's own required permission. A Co-owner (24)
+      // therefore cannot supersede a Primary's co_owner (26) record through
+      // create; the route answers 403 and the transaction rolls back.
+      if (owner.permission !== live.requiredPermission) throw new InvitationError("permission_mismatch", "requiredPermission");
       const replaced = await replaceInvitationRecord(deps, owner, live, request, { disclosure, required, normalizedDestination: token });
       return { ...replaced, supersededInvitationId: live.invitationId };
     }
@@ -854,6 +861,18 @@ export interface VerifyChannelResult {
  * that reopens the page cannot reset it; exhausting it moves the proof state
  * to `exhausted` permanently and the ceremony becomes unusable.
  *
+ * `SEC-PK6-F2`: exhaustion is terminal for the bearer, not only for the
+ * ceremony. The attempt count would otherwise reset through `resolveCode`,
+ * which opens a fresh ceremony bound to the same six digits, and the bound
+ * would be the rate limit rather than `MAX_CHANNEL_ATTEMPTS`. On the
+ * exhausting guess the code is invalidated in the same transaction
+ * (`disposition_reason_class` `channel_attempts_exhausted`, its outbox
+ * tombstoned), so a re-resolve answers the uniform envelope with its
+ * `terminal_record` security event and the inviter's recovery is a resend.
+ * The exhausting ceremony is invalidated with the code (`IC-73-006`), so
+ * every later step on it answers the uniform envelope; its row keeps the
+ * `exhausted` proof state and `MAX_CHANNEL_ATTEMPTS` as the record of why.
+ *
  * `SEC-PK5-F01`. A wrong guess is an **outcome, not an error**. Every command
  * in this module runs inside the caller's transaction, and that transaction
  * rolls back on any thrown error (`packages/data-access/src/binding.ts`), so
@@ -889,7 +908,12 @@ export async function verifyChannel(deps: InvitationDependencies, request: Verif
     payload: { invitationId: invitation.invitationId, ceremonyId: ceremony.ceremonyId, attemptNumber: attempts, attemptsRemaining: Math.max(0, MAX_CHANNEL_ATTEMPTS - attempts) },
   });
   if (matched) return { outcome: "proved", attemptsRemaining: MAX_CHANNEL_ATTEMPTS - attempts };
-  if (exhausted) return { outcome: "exhausted", attemptsRemaining: 0 };
+  if (exhausted) {
+    // `SEC-PK6-F2`: the code and the ceremony die with the bound, in the
+    // same transaction as the increment and the `AE-73-09` row.
+    await invalidateCodeAndCeremonies(deps, invitation, "channel_attempts_exhausted");
+    return { outcome: "exhausted", attemptsRemaining: 0 };
+  }
   return { outcome: "retry", attemptsRemaining: MAX_CHANNEL_ATTEMPTS - attempts };
 }
 

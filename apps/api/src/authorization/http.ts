@@ -88,7 +88,11 @@ export const PreAuthenticationSurface = (options: PreAuthenticationSurfaceOption
  * the ceremony and the corrected confirm is admitted on the same session. `stale_disclosure` belongs here for
  * exactly the reason the other two do (CBD236-CONSENT-SEMANTICS-001 item 4): the person is asked to read the
  * current disclosure and confirm again, which is impossible if the refusal spent their only reserved unit.
- * Ordinary units and committed effects are never refunded (CBD-266 section 4.7 `proto-bootstrap-v1`). */
+ * Ordinary units and committed effects are never refunded (CBD-266 section 4.7 `proto-bootstrap-v1`).
+ * PK-6 (CBD-234 design section 12, `SEC-F01`): the two new consent-bearing effects -- `invitation.accept`
+ * (`TR-73-38`) and the owner's confirm (`TR-73-39` + `TR-73-13`) -- deny `stale_disclosure` the same way
+ * and commit nothing when they do, so the same code covers them; their routes hold no reserved unit today
+ * (they count on ordinary pools), so the refund is inert there until a reserved stage ever names them. */
 const REFUNDABLE_EFFECT_DENIALS: ReadonlySet<string> = new Set(["proposal_not_current", "confirmation_stale", "stale_disclosure"]);
 /**
  * PROTO-ACTIVATION-001: a session-authenticated surface with no policy cell.
@@ -136,6 +140,19 @@ const ELIGIBLE_PRE_AUTHENTICATION_SURFACES: ReadonlySet<string> = new Set([
   // still live before issuing anything, so nothing here is authenticated by
   // the marker's absence of a session check.
   "GET /v1/identity/step-up/callback",
+  // PK-6 (CBD-234 design section 5.1, INVITATIONS-DESIGN-001): the invitation
+  // ceremony's pre-authentication trio. A link holder has no session yet
+  // (CBD-73 section 8.1 item 1: decline must work without an account), so the
+  // three carry no policy decision, exactly as the identity ceremony routes
+  // do. They grant nothing: their only effects are a ceremony row, a channel
+  // proof state and a decline, every one bound to the server-issued
+  // `__Host-mp_invitation_ceremony` cookie. Surface enforcement still runs
+  // first on `rlp-266-invitation-ceremony-v1` (CBD266-INVITATION-RECORDS-001),
+  // and a verify-channel or decline that names no resolvable ceremony is
+  // denied before any counter is touched (apps/api/src/invitations/surface-gate.ts).
+  "POST /v1/invitations/resolve",
+  "POST /v1/invitations/:ceremonyId/verify-channel",
+  "POST /v1/invitations/:ceremonyId/decline",
 ]);
 const SAFE_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
 const active = new WeakMap<object, EffectContext>();
