@@ -69,7 +69,8 @@ import {
 import { COMMIT_BOUNDARIES, commitPrimaryTransfer } from "../primary-transfer/commit.ts";
 import { primaryTransferObligations } from "../primary-transfer/obligations.ts";
 import type { ActorContext, PrimaryTransferDependencies, TransferActionCode } from "../primary-transfer/ports.ts";
-import { isPrimaryTransferError } from "../primary-transfer/records.ts";
+import { OUTGOING_DISCLOSURE_KIND, RECIPIENT_DISCLOSURE_KIND, isPrimaryTransferError } from "../primary-transfer/records.ts";
+import type { TransferDisclosureClaim } from "../primary-transfer/application.ts";
 import { invitationPersistence } from "./invitation-store.ts";
 import { primaryTransferPersistence, runPrimaryTransferTransaction } from "./primary-transfer-store.ts";
 
@@ -226,6 +227,20 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
     const client = bindClient(api, true, PRODUCTION_TABLE_CATALOG);
     const disclosures = liveDisclosures();
     const clock = { now: () => new Date().toISOString() };
+
+    /**
+     * TCF-01 (GAPS-F02 follow-up): the module now refuses an absent or
+     * mismatched claim exactly like a route would, so every accept and
+     * confirm below binds to the registry's own current entry for its kind
+     * -- the same entry `proposePrimaryTransfer` captured onto the row a
+     * moment earlier, the registry never having moved in between.
+     */
+    function claimFor(kind: string): TransferDisclosureClaim {
+      const entry = disclosures.current(kind);
+      return { kind: entry.kind, version: entry.version, digest: entry.digest };
+    }
+    const recipientClaim = (): TransferDisclosureClaim => claimFor(RECIPIENT_DISCLOSURE_KIND);
+    const outgoingClaim = (): TransferDisclosureClaim => claimFor(OUTGOING_DISCLOSURE_KIND);
 
     /**
      * One `serializable` transaction, composed exactly as PK-7B's route will
@@ -424,7 +439,7 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
 
       // The recipient accepts. No role changes.
       const accepted = await transaction((deps) => acceptPrimaryTransfer(
-        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer"), { transferId },
+        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: recipientClaim() },
       ));
       assert.equal(accepted.outcome, "recipient_accepted");
       assert.equal((await spaceCoherence(space)).primaryOwnerMembershipId, space.primaryMembership);
@@ -433,7 +448,7 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
       // The Primary confirms, which completes the pair and commits.
       const committed = await transaction((deps) => confirmPrimaryTransfer(
         deps, actor(space, space.primaryMembership, space.primarySubject, "29.transfer_primary_ownership", { assurance }),
-        { transferId },
+        { transferId, acknowledgedDisclosure: outgoingClaim() },
       ));
       assert.equal(committed.outcome, "committed", JSON.stringify(committed));
       if (committed.outcome !== "committed") throw new Error("unreachable");
@@ -586,7 +601,7 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
       const later = { now: () => new Date(Date.now() + 2000).toISOString() };
       const expiryCorrelation = randomUUID();
       const expired = await transaction((deps) => acceptPrimaryTransfer(
-        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer", { correlationId: expiryCorrelation }), { transferId: expiring },
+        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer", { correlationId: expiryCorrelation }), { transferId: expiring, acknowledgedDisclosure: recipientClaim() },
       ), { clock: later });
       assert.equal(expired.outcome, "expired");
       assert.equal(await scalar<string>("SELECT state FROM budget_space_primary_transfer WHERE transfer_id = $1", [expiring]), "expired");
@@ -634,7 +649,7 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
       });
       const invalidationCorrelation = randomUUID();
       const result = await transaction((deps) => acceptPrimaryTransfer(
-        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer", { correlationId: invalidationCorrelation }), { transferId },
+        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer", { correlationId: invalidationCorrelation }), { transferId, acknowledgedDisclosure: recipientClaim() },
       ));
       assert.equal(result.outcome, "invalidated", drift);
       assert.equal(await scalar<string>("SELECT state FROM budget_space_primary_transfer WHERE transfer_id = $1", [transferId]), "invalidated", drift);
@@ -658,7 +673,7 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
       const assurance = `fresh-assurance:${randomUUID()}`;
       const transferId = await propose(space, recipient);
       await transaction((deps) => acceptPrimaryTransfer(
-        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer"), { transferId },
+        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: recipientClaim() },
       ));
 
       await assert.rejects(
@@ -667,7 +682,7 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
           // Record the Primary's leg, then discharge the four obligations and
           // commit -- the whole of what PK-7B's route does inside one
           // transaction -- with a failure injected at this boundary.
-          const confirmed = await confirmPrimaryTransfer(deps, confirmActor, { transferId }, {
+          const confirmed = await confirmPrimaryTransfer(deps, confirmActor, { transferId, acknowledgedDisclosure: outgoingClaim() }, {
             boundary: (at) => {
               if (at === point) throw new Error(`injected at ${point}`);
             },
@@ -786,7 +801,7 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
       // The transfer, carried to `ready` by the recipient's acceptance.
       const transferId = await propose(space, recipient);
       await transaction((deps) => acceptPrimaryTransfer(
-        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer"), { transferId },
+        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: recipientClaim() },
       ));
 
       const confirmOwner: OwnerContext = {
@@ -796,7 +811,7 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
       const settled = await Promise.allSettled([
         transaction((deps) => confirmPrimaryTransfer(
           deps, actor(space, space.primaryMembership, space.primarySubject, "29.transfer_primary_ownership", { assurance }),
-          { transferId },
+          { transferId, acknowledgedDisclosure: outgoingClaim() },
         )),
         client.transaction({ isolation: "serializable" }, async (scoped) =>
           confirmAcceptance(invitationDeps(scoped), confirmOwner, {
@@ -850,7 +865,7 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
       const assurance = `fresh-assurance:${randomUUID()}`;
       const transferId = await propose(space, recipient);
       await transaction((deps) => acceptPrimaryTransfer(
-        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer"), { transferId },
+        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: recipientClaim() },
       ));
 
       // A commit attempted with an incomplete ledger denies and writes nothing.
@@ -917,7 +932,7 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
       const transferId = await propose(space, recipient);
       if (order === "recipient-first") {
         await transaction((deps) => acceptPrimaryTransfer(
-          deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer"), { transferId },
+          deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: recipientClaim() },
         ));
       }
 
@@ -931,13 +946,13 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
           freshAssuranceRef: assurance, correlationId: confirmActor.correlationId,
         });
         assert.equal(await obligations.dischargeAll(ledger), true, `${order}: ${String(ledger.refusal)}`);
-        return confirmPrimaryTransfer(deps, confirmActor, { transferId }, { ledger });
+        return confirmPrimaryTransfer(deps, confirmActor, { transferId, acknowledgedDisclosure: outgoingClaim() }, { ledger });
       });
       if (order === "primary-first") {
         assert.equal(confirmed.outcome, "primary_confirmed", JSON.stringify(confirmed));
         assert.equal(await scalar<string>("SELECT state FROM budget_space_primary_transfer WHERE transfer_id = $1", [transferId]), "primary_confirmed");
         const completed = await transaction((deps) => acceptPrimaryTransfer(
-          deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer"), { transferId },
+          deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: recipientClaim() },
         ));
         assert.equal(completed.outcome, "committed", JSON.stringify(completed));
       } else {
@@ -957,7 +972,7 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
       // receipt the row is, and writes neither a denial nor a second commit.
       const auditsBefore = await scalar<number>("SELECT count(*)::int FROM budget_space_lifecycle_audit WHERE budget_space_id = $1", [space.spaceId]);
       const retried = await transaction((deps) => confirmPrimaryTransfer(
-        deps, actor(space, space.primaryMembership, space.primarySubject, "29.transfer_primary_ownership", { assurance }), { transferId },
+        deps, actor(space, space.primaryMembership, space.primarySubject, "29.transfer_primary_ownership", { assurance }), { transferId, acknowledgedDisclosure: outgoingClaim() },
       ));
       assert.equal(retried.outcome, "committed", order);
       if (retried.outcome !== "committed") throw new Error("unreachable");
@@ -975,7 +990,7 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
       const assurance = `fresh-assurance:${randomUUID()}`;
       const transferId = await propose(space, recipient);
       await transaction((deps) => acceptPrimaryTransfer(
-        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer"), { transferId },
+        deps, actor(space, recipient.membershipId, recipient.subject, "29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: recipientClaim() },
       ));
       const current = disclosures.current("primary_transfer_outgoing");
       const moved: ConsentDisclosureSource = {
@@ -990,7 +1005,10 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
         confirmPrimaryTransfer(
           { ...transferDeps(scoped), disclosures: moved },
           actor(space, space.primaryMembership, space.primarySubject, "29.transfer_primary_ownership", { assurance }),
-          { transferId },
+          // The claim still matches the captured record -- the registry
+          // "moved" only in the `preserve` discharge's own read below, not in
+          // what assertAcknowledgedTransferDisclosure compares against.
+          { transferId, acknowledgedDisclosure: outgoingClaim() },
         ));
       assert.equal(denied.outcome, "denied", JSON.stringify(denied));
       if (denied.outcome !== "denied") throw new Error("unreachable");
@@ -1011,7 +1029,7 @@ void test("PROTO-INVITATIONS-PK7A live PostgreSQL: the transfer workflow, its co
       assert.equal((await spaceCoherence(space)).primaryOwnerMembershipId, space.primaryMembership);
       // Not stranded: with the registry as it is, the same confirm commits.
       const recovered = await transaction((deps) => confirmPrimaryTransfer(
-        deps, actor(space, space.primaryMembership, space.primarySubject, "29.transfer_primary_ownership", { assurance }), { transferId },
+        deps, actor(space, space.primaryMembership, space.primarySubject, "29.transfer_primary_ownership", { assurance }), { transferId, acknowledgedDisclosure: outgoingClaim() },
       ));
       assert.equal(recovered.outcome, "committed", JSON.stringify(recovered));
     }
