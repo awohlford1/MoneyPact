@@ -14,5 +14,5 @@ export function invocation(registrationId: string, executor: EnforcementEvidence
 }
 export function surfaceOutcome(evidence: EnforcementEvidence, reason: Denial): EnforcementOutcome {
   return { ...evidence, earliest_decisive_gate: "surface", safe_reason_class: reason, authorization_evaluation: "not_run", outcome: "deny", timestamp: new Date().toISOString(),
-    counter_store_evidence: reason === "deny_exhausted" ? "exhausted" : reason === "deny_counter_unavailable" ? "decision_unavailable" : "not_consumed" };
+    counter_store_evidence: reason === "deny_exhausted" || reason === "deny_in_flight" ? "exhausted" : reason === "deny_counter_unavailable" ? "decision_unavailable" : "not_consumed" };
 }

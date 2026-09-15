@@ -19,7 +19,12 @@ export interface ConsumeInput {
  * when the effect the unit admitted was denied after the surface decision; it resolves false (and returns
  * nothing) for an ordinary unit, for a second call, or once the window that held the reservation has ended.
  * Committed effects are never refunded: the caller invokes it only on a post-policy effect denial. */
-export type CounterResult = { outcome: "accepted"; provenance: string; release(): Promise<void>; refund(): Promise<boolean> } | { outcome: "exhausted" };
+/** EXEC-POV-C200F01-001 item 3: `in_flight` is the one refusal the store names -- the record's `concurrency=1`
+ * dimension is held by a unit this same bucket admitted and has not yet released, while the sliding ceiling
+ * still has room. Every other refusal (ceiling reached, burst spent, a reserved stage already taken) stays the
+ * undifferentiated `exhausted`; when the ceiling and the concurrency dimension are both exceeded the ceiling
+ * wins, so a bucket that is out of capacity is never told anything more specific than that. */
+export type CounterResult = { outcome: "accepted"; provenance: string; release(): Promise<void>; refund(): Promise<boolean> } | { outcome: "exhausted" } | { outcome: "in_flight" };
 export interface CounterStore {
   /** One atomic operation across window, burst, quota, reservations and concurrency.
    * A timeout/unknown result must never be retried as a fresh consume. */
@@ -57,7 +62,8 @@ export class InProcessCounterStore implements CounterStore {
     const intervals = Math.floor((now - bucket.refillAt) / r.burst.refill_interval_ms);
     bucket.tokens = Math.min(r.burst.additional_units, bucket.tokens + intervals * r.burst.refill_units);
     bucket.refillAt += intervals * r.burst.refill_interval_ms; bucket.last = now;
-    if (bucket.accepted.length >= r.quota.ceiling || (r.quota.resource_dimensions.includes("concurrency=1") && bucket.inFlight.size)) return { outcome: "exhausted" };
+    if (bucket.accepted.length >= r.quota.ceiling) return { outcome: "exhausted" };
+    if (r.quota.resource_dimensions.includes("concurrency=1") && bucket.inFlight.size) return { outcome: "in_flight" };
     const bootstrap = r.quota.unit === "bootstrap_stage_decision";
     const stage = input.bootstrapStage ?? "ordinary";
     if (bootstrap) {
@@ -120,6 +126,11 @@ export class CountingKeyDeriver {
   }
 }
 
+/** True only for a record whose counting key is the verified actor after authentication, decided for that actor. */
+export function actorOwnedBucket(record: ParameterRecord, context: VerifiedContext): boolean {
+  return record.safe_counting_key.phase === "post_authentication" && record.safe_counting_key.subject_bound_after_authentication
+    && record.safe_counting_key.components.includes("verified_actor_id_v1") && typeof context.actorId === "string" && context.actorId.length > 0;
+}
 export class RateLimitEngine {
   readonly #registry: Registry; readonly #registrations: readonly Registration[]; readonly #store: CounterStore;
   readonly #derivation: CountingKeyDeriver; readonly #timeoutMs: number;
@@ -154,6 +165,12 @@ export class RateLimitEngine {
         ...(input.verifiedContext.bootstrapStage ? { bootstrapStage: input.verifiedContext.bootstrapStage } : {}) }),
       new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error("counter_deadline")), this.#timeoutMs); })]);
       if (result.outcome === "exhausted") return { outcome: "deny_exhausted" };
+      // EXEC-POV-C200F01-001 item 3 (SEC-C200-R01): the concurrency refusal is typed only when the record is
+      // post-authentication and keyed on the verified actor, and this decision carries that actor -- the bucket
+      // the caller is being refused from is the caller's own, so naming the reason discloses nothing about any
+      // other actor, ceremony or cohort. A compound or pre-authentication record, or a call with no verified
+      // actor, keeps the uniform `deny_exhausted`.
+      if (result.outcome === "in_flight") return actorOwnedBucket(record, input.verifiedContext) ? { outcome: "deny_in_flight" } : { outcome: "deny_exhausted" };
       if (result.outcome !== "accepted" || result.provenance !== "single-process-linearizable:consume-v1" || typeof result.release !== "function") return { outcome: "deny_counter_unavailable" };
       return { outcome: "allow", provenance: result.provenance, release: result.release, ...(typeof result.refund === "function" ? { refund: result.refund } : {}) };
     } catch { return { outcome: "deny_counter_unavailable" }; } finally { clearTimeout(timer); }

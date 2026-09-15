@@ -3,12 +3,12 @@
 | Field | Value |
 | --- | --- |
 | Status | **Approved v0.3.1 (`PO-CONTRACT-APPROVALS-002`, September 14, 2026) - the four prototype value sets approved as a whole by `CBD266-PROTOTYPE-DEFAULTS-001` and the terminal recovery set by `CBD266-RECOVERY-RECORD-001`; approval projection, resolver and fail-closed guard merged (PR #322); registry rule widened to one approved record per (surface, stage) by `CBD266-SURFACE-STAGES-001`, projecting `rlp-266-identity-ceremony-v1` next to `rlp-266-bootstrap-v1`; Security/Reliability review of the merged mechanism and hosted-environment evidence remain open and are not waived** |
-| Document version | 0.5 |
+| Document version | 0.6 (proposed: section 7 `deny_in_flight` row, EXEC-POV-C200F01-001 item 3) |
 | Jira subtask | [CBD-266](https://cobudget.atlassian.net/browse/CBD-266) |
 | Parent | [CBD-123](https://cobudget.atlassian.net/browse/CBD-123) |
 | Repository baseline | `ce49e3dd6f795073132d82f4c077b9365045a0e7` |
 | Related contract | CBD-236 proposed v0.4, especially section 7 and `OQ-236-003` |
-| Last updated | September 14, 2026 |
+| Last updated | September 15, 2026 |
 
 ## 1. Purpose, authority, and delivery boundary
 
@@ -659,6 +659,7 @@ closed union:
 | `deny_policy_unavailable` | Record absent/unapproved/invalid/stale, digest unsupported, reference broken, or approval unverifiable. |
 | `deny_counter_unavailable` | Counter read/write/expiry/clock result is failed, timed out, inconsistent, or uncertain. |
 | `deny_input_invalid` | Adapter input, safe-key component, unit, or binding is missing or malformed. |
+| `deny_in_flight` (proposed row, `EXEC-POV-C200F01-001` item 3, `PROTO-CBD266-CONCURRENCY-429-001`) | The `concurrency=1` resource dimension of a `post_authentication`, `verified_actor_id_v1`-keyed record is held by a unit the same verified actor's earlier request consumed and has not yet released, while the sliding ceiling still has room. Nothing is consumed and no protected effect runs. It is produced only when the decision carries the verified actor, and only when the ceiling is not also exhausted (the ceiling check runs first and answers `deny_exhausted`); a `compound` or `pre_authentication` record, or a decision without a verified actor, reports the same store condition as `deny_exhausted`. |
 
 Only `allow` can enter the next gate. No catch block, development mode, health
 flag, store fallback, gateway default, or retry converts a deny/exception into
@@ -666,6 +667,31 @@ allow. The decision discloses no remaining count. API serialization uses the
 single external denial contract and timing tolerance eventually approved under
 `PR-94-003`; worker denial reaches the bounded terminal state and audit path
 required by `RL-92-006` rather than retrying without bound.
+
+`deny_in_flight` is the one denial whose API serialization is not the uniform
+external denial (proposed, `EXEC-POV-C200F01-001` item 3). The API's surface
+hook answers it `429` with body `{"outcome": "retry", "reason": "in_flight"}`
+and the header `Retry-After: 1`, and only after the session gate has resolved
+the verified actor and, for a non-safe method, the request has carried the
+CSRF/origin proof: the answer is keyed on the actor's own bucket, discloses no
+count, no remaining quota and no other actor's, ceremony's or cohort's state,
+and is audited as the earliest decisive gate exactly like every other surface
+denial (`authorization_evaluation: not_run`, `counter_store_evidence:
+exhausted`). A pre-authentication surface, an unauthenticated caller, the
+worker, the reserved-unit path consumed after the pre-policy checks, and every
+other member of the union keep the uniform denial. The answer is unreachable
+before session verification, so the CBD-268 timing-equivalence classes (exists,
+not-exists, unauthorized) are unchanged: an unauthenticated caller is rejected
+at the session gate before any counter is consulted, and the uniform denial's
+bytes, header set and work are the same whether the actor's bucket is idle or
+busy (`apps/api/src/authorization/gate-429.test.ts`). The record
+`rlp-266-mutation-v1` and the other actor-keyed `concurrency=1` records are not
+re-sealed by this row: no parameter, key, store, quota or `failure_mode` value
+changes, and the anti-lockout `notification_behavior` text ("uniform,
+content-safe; neither existence nor remaining quota") still holds for pool
+exhaustion, the only condition that text governs. Whether that text should
+also name the in-flight answer is a wording amendment for the decision that
+ratifies this row, and would require a re-seal at that time.
 
 The counter store performs one atomic consume against the exact canonical key,
 record ID, and release-set digest. It must not split the threshold, burst,
@@ -855,6 +881,7 @@ Done.
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.6 (proposed) | September 15, 2026 | `EXEC-POV-C200F01-001` item 3 (`PROTO-CBD266-CONCURRENCY-429-001`): proposed section 7 row `deny_in_flight` for the concurrency dimension of a post-authentication actor-keyed record, serialized by the API as `429` `{outcome: retry, reason: in_flight}` with `Retry-After: 1` after session verification only; every other denial, every pre-authentication surface and the worker keep the uniform denial; no parameter value, record or approval changed and no record re-sealed |
 | 0.5 | September 14, 2026 | `CBD266-SURFACE-STAGES-001`: widened the registry rule from one approved record per surface to one approved record per `(surface, stage)` (section 4 item 4, new section 4.7.4); projected `rlp-266-identity-ceremony-v1` next to `rlp-266-bootstrap-v1` on `surf-266-authentication` and rebound the authorize, chooser and callback ceremony routes to it, keeping the two reserved stages on the bootstrap record; deleted the now-obsolete unprojectable-proposal note and its parked proposal file; no parameter value changed |
 | 0.4 | September 14, 2026 | Added the `proto-identity-session-v1` set approved by `CBD266-IDENTITY-RECORDS-001` and recorded the approved-but-unprojectable `proto-identity-ceremony-v1` set with the one-record-per-surface reason (PROTO-ACTIVATION-001 correction round); original parameter values, the four prototype sets and the recovery set unchanged |
 | 0.3.1 (approval) | September 14, 2026 | Product Owner approval recorded (`PO-CONTRACT-APPROVALS-002`). Status Proposed → Approved at the same version; status field reconciled with the document version, the two Executive value decisions and the merged projection mechanism (PR #322); no decision, identifier or contract text changed. |

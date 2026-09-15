@@ -15,7 +15,11 @@ export interface Registration {
   registration_id: string; executor_kind: "api_route" | "worker_job"; source_locator: string; surface_id: string;
   parameter_record_id: string | null; registration_lifecycle: "active" | "retired"; introduced_by: string; authorization_metadata_id: string | null;
 }
-export type Denial = "deny_exhausted" | "deny_unregistered" | "deny_policy_unavailable" | "deny_counter_unavailable" | "deny_input_invalid";
+/** `deny_in_flight` (EXEC-POV-C200F01-001 item 3): the `concurrency=1` dimension of a post-authentication,
+ * actor-keyed record is held by the same verified actor's earlier unit that has not yet been released. It is
+ * a denial like every other member of this union -- nothing is consumed and no protected effect runs -- and
+ * only the API's post-verification surface answer serializes it differently (429 + Retry-After). */
+export type Denial = "deny_exhausted" | "deny_in_flight" | "deny_unregistered" | "deny_policy_unavailable" | "deny_counter_unavailable" | "deny_input_invalid";
 /** `refund` (PROTO-QA-FIXES-001 F1) is present only when the admitted unit is a reserved bootstrap unit the
  * store can return once; see `CounterResult`. */
 export type Decision = { outcome: "allow"; provenance: string; release: () => Promise<void>; refund?: () => Promise<boolean> } | { outcome: Denial };

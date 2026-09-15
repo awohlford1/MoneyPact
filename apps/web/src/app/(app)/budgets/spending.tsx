@@ -31,7 +31,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import NextLink from "next/link";
-import { ApiError, fieldErrorFor } from "../../../api/client";
+import { ApiError, fieldErrorFor, IN_FLIGHT_MESSAGE } from "../../../api/client";
 import type { Account, AmountDirection, BudgetDetail, CategoryDetail, Category, ExpenseDraft, Progress, ProgressCell } from "../../../api/client";
 import { useSession } from "../../../session/SessionProvider";
 import { Alert } from "../../../components/Alert";
@@ -43,6 +43,9 @@ const ACCOUNT_TYPES = ["checking", "savings", "cash", "credit-card", "other"] as
 
 /** The canonical code's field, or the generic message when the refusal names no field this form owns. */
 function errorsOf(error: unknown): { fields: Record<string, string>; summary: string } {
+  // A change refused because this session's previous change is still saving (429 after the client's one retry)
+  // names no field: it is a "try again", not a denial.
+  if (error instanceof ApiError && error.status === 429) return { fields: {}, summary: IN_FLIGHT_MESSAGE };
   if (error instanceof ApiError) {
     const reported = error.fieldErrors.length ? error.fieldErrors : [fieldErrorFor(error)];
     const fields: Record<string, string> = {};

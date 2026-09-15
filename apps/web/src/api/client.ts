@@ -305,6 +305,8 @@ const FIELD_OF_CODE: Readonly<Record<string, string>> = Object.freeze({
   transaction_not_found: "transactionId", transaction_removed: "transactionId", stale_version: "transactionId", idempotency_mismatch: "transactionId",
   version_conflict: "label", conflict: "label", constraint_violation: "label", invalid_request: "label",
 });
+/** The sentence a mutation refused as still in flight (429, EXEC-POV-C200F01-001 item 3) shows after its one retry: a "try again", never "Access unavailable". */
+export const IN_FLIGHT_MESSAGE = "Your previous change is still saving. Try again in a moment.";
 /** The sentence shown next to the field. One per canonical code, so no refusal reaches a person as a code. */
 const MESSAGE_OF_CODE: Readonly<Record<string, string>> = Object.freeze({
   label_invalid: "Enter a name between 1 and 120 characters.",
@@ -336,7 +338,13 @@ const MESSAGE_OF_CODE: Readonly<Record<string, string>> = Object.freeze({
   conflict: "This change conflicts with the saved budget. Refresh and try again.",
   constraint_violation: "This change cannot be saved as entered.",
   invalid_request: "Check the values entered and try again.",
+  in_flight: IN_FLIGHT_MESSAGE,
 });
+/** The wait before the single retry of a 429: the server's Retry-After in whole seconds, bounded to [1 s, 5 s]. */
+export function retryAfterMs(header: string | null): number {
+  const seconds = header === null ? NaN : Number(header);
+  return Math.min(5, Math.max(1, Number.isFinite(seconds) ? seconds : 1)) * 1000;
+}
 /** Turns a route's canonical `{ error }` body into the per-field error the form renders. */
 export function fieldErrorFor(error: ApiError): FieldError {
   return { path: FIELD_OF_CODE[error.code] ?? "label", code: error.code, message: MESSAGE_OF_CODE[error.code] ?? "This change could not be saved." };
@@ -424,7 +432,7 @@ export function toExpenseBody(draft: ExpenseDraft, precision: number): Record<st
  * is held in this closure only (CBD-191 section 5.1): never a cookie, never storage, so a reload bootstraps again.
  * Mutations echo it in `X-CoBudget-CSRF`; a bootstrap without a value keeps the held one, and `clear()` drops it.
  */
-export function createHttpClient(base = "/v1", fetcher: typeof fetch = fetch): ApiClient {
+export function createHttpClient(base = "/v1", fetcher: typeof fetch = fetch, wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))): ApiClient {
   let csrf: string | undefined;
   /**
    * The last version this client was shown of each expense, by transaction id: from a category detail
@@ -449,13 +457,23 @@ export function createHttpClient(base = "/v1", fetcher: typeof fetch = fetch): A
       if (!csrf) throw new ApiError(401, "unauthenticated");
       headers["X-CoBudget-CSRF"] = csrf;
     }
-    const response = await fetcher(`${base}${path}`, {
+    const send = () => fetcher(`${base}${path}`, {
       method, headers, credentials: "same-origin", cache: "no-store", signal,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
+    let response = await send();
+    // EXEC-POV-C200F01-001 item 3: a 429 on a mutation means this same session's earlier change is still saving
+    // (the CBD-266 concurrency answer; nothing was consumed, evaluated or written for this attempt), so it is
+    // retried exactly once after the server's Retry-After. A second 429 reaches the form as `in_flight`.
+    if (response.status === 429) {
+      await wait(retryAfterMs(response.headers.get("Retry-After")));
+      if (signal?.aborted) throw new ApiError(429, "in_flight");
+      response = await send();
+    }
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
-      throw new ApiError(response.status, payload.error ?? "request_failed", payload.fieldErrors ?? []);
+      const code = response.status === 429 ? "in_flight" : payload.error ?? "request_failed";
+      throw new ApiError(response.status, code, payload.fieldErrors ?? []);
     }
     return response.status === 204 ? undefined as T : response.json() as Promise<T>;
   }
