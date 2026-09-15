@@ -26,7 +26,12 @@
  * surface gate before authorization: six simultaneous edits by one Primary
  * Owner therefore prove the gate, and the effect-level race is proved
  * against a writer the gate cannot see -- a second transaction on the
- * database standing in for a second API process.
+ * database standing in for a second API process. EXEC-POV-C200F01-001
+ * item 3 (PROTO-CBD266-CONCURRENCY-429-001): the gate's refusal of the
+ * verified actor's own second in-flight mutation is `429 {outcome: retry,
+ * reason: in_flight}` with `Retry-After`, so every loser of the first half
+ * is now a client-actionable 429 or a canonical 409 and never the uniform
+ * 403 -- the case reads as the criterion intended.
  *
  * Same harness shape as scripts/prototype-qa-criteria.mjs (cookie-jar
  * browser, local ceremony, CBD-266 pacing) without that script's phases, so
@@ -353,7 +358,9 @@ async function cbd200(browser, world) {
   await criterion("CBD-200-AC04", "A stale mutation commits no transaction or calculation change and returns a reload-and-retry result (concurrent: six simultaneous edits of one current version; the losers reload and retry)", async () => {
     const current = (await versionsOf(transactionId)).find((v) => v.superseded_at === null);
     // Part 1: six simultaneous edits by one actor. The CBD-266 surface admits one in flight per actor;
-    // the rest are refused at the gate with nothing consumed, evaluated or written.
+    // the rest are refused at the gate with nothing consumed, evaluated or written, answered 429 in_flight
+    // with Retry-After (EXEC-POV-C200F01-001 item 3), which this script does not retry: the losers are
+    // observed as the API answered them.
     const before = await progress();
     await roomFor(browser.subject, 7);
     const attempts = await Promise.all([1, 2, 3, 4, 5, 6].map((i) => browser.fetch(`${transactions}/${transactionId}`, { method: "PATCH", unpaced: true, body: write({ amountMinorUnits: -1_000 - i, description: `racer ${i}`, allocations: [{ categoryId: groceries, amountMinorUnits: -1_000 - i }] }) })));
@@ -375,9 +382,12 @@ async function cbd200(browser, world) {
     expect(reloaded.revision === versions.length, "reload sees the committed revision");
     const retry = await browser.fetch(`${transactions}/${transactionId}`, { method: "PATCH", body: write({ amountMinorUnits: -1_250, description: "retried after reload", allocations: [{ categoryId: groceries, amountMinorUnits: -800 }, { categoryId: transport, amountMinorUnits: -450 }] }) });
     expect(retry.status === 200 && retry.json.current.version.revision === reloaded.revision + 1, `retry ${retry.status} ${retry.text}`);
-    const gated = losers.filter((a) => a.status === 403);
+    const gated = losers.filter((a) => a.status === 429 && a.json?.outcome === "retry" && a.json?.reason === "in_flight" && /^[1-9][0-9]*$/.test(a.headers.get("retry-after") ?? ""));
     const conflicted = losers.filter((a) => a.status === 409 && (a.json?.error === "conflict" || a.json?.error === "stale_version"));
-    expect(gated.length + conflicted.length === losers.length, `expected every loser to be either the CBD-266 surface refusal (403, concurrency=1, before authorization) or a canonical 409 conflict/stale_version; ${summary}; losers ${JSON.stringify(losers.map((a) => `${a.status} ${a.text.slice(0, 80)}`))}`);
+    const denied = losers.filter((a) => a.status === 403);
+    expect(denied.length === 0, `expected no loser to receive the uniform denial (403); a verified actor's own in-flight refusal is 429 in_flight; ${summary}; losers ${JSON.stringify(losers.map((a) => `${a.status} ${a.text.slice(0, 80)}`))}`);
+    expect(gated.length + conflicted.length === losers.length, `expected every loser to be either the CBD-266 in-flight answer (429 {outcome: retry, reason: in_flight} with a Retry-After header, concurrency=1, before authorization) or a canonical 409 conflict/stale_version; ${summary}; losers ${JSON.stringify(losers.map((a) => `${a.status} ${a.text.slice(0, 80)}`))}`);
+    expect(losers.every((a) => a.headers.get("x-ratelimit-remaining") === null && a.headers.get("ratelimit-remaining") === null), "no remaining-quota header on any refusal (CBD-268-AC02)");
 
     // Part 2: the effect-level race the gate cannot fence. A second writer -- this script's own
     // superuser connection, standing in for a second API process -- supersedes the current version
@@ -421,7 +431,7 @@ async function cbd200(browser, world) {
       expect(reloadedAgain.revision === external.revision, `reload sees the writer's revision ${external.revision}, saw ${reloadedAgain.revision}`);
       const retried = await browser.fetch(`${transactions}/${transactionId}`, { method: "PATCH", body: { ...write({ amountMinorUnits: -1_250, description: "retried after the external writer", allocations: [{ categoryId: groceries, amountMinorUnits: -800 }, { categoryId: transport, amountMinorUnits: -450 }] }), expectedTransactionVersionId: reloadedAgain.transactionVersionId } });
       expect(retried.status === 200 && retried.json.current.version.revision === external.revision + 1, `retry after reload ${retried.status} ${retried.text.slice(0, 120)}`);
-      const observed = `${summary}; losers ${losers.length}: ${gated.length} refused by the CBD-266 surface gate (403, concurrency=1 per actor, before authorization) and ${conflicted.length} by a canonical 409; reload sees revision ${reloaded.revision}; retry 200 revision ${reloaded.revision + 1}. Effect-level race: ${raceSummary}; reload sees revision ${reloadedAgain.revision}; retry with the reloaded basis 200 revision ${external.revision + 1}`;
+      const observed = `${summary}; losers ${losers.length}: ${gated.length} answered 429 in_flight with Retry-After ${JSON.stringify([...new Set(gated.map((a) => a.headers.get("retry-after")))])} by the CBD-266 surface gate (concurrency=1 per actor, before authorization), ${conflicted.length} by a canonical 409, ${denied.length} by the uniform 403; reload sees revision ${reloaded.revision}; retry 200 revision ${reloaded.revision + 1}. Effect-level race: ${raceSummary}; reload sees revision ${reloadedAgain.revision}; retry with the reloaded basis 200 revision ${external.revision + 1}`;
       return observed;
     } finally { try { await writer.query("rollback"); } catch { /* already committed */ } await writer.end(); }
   });
