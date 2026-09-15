@@ -66,13 +66,18 @@ async function harness(): Promise<Harness> {
   const { bindClient } = await import("../../../../packages/data-access/src/binding.ts");
   const pool = createApiConnection();
   const client = bindClient(pool, true);
+  // SEC-PK6-F5: the three pre-authentication locator statements read from their own connection, as the
+  // production composition does (runtime.ts lazyLocatorQueryable); sharing the transaction pool starves it
+  // under concurrent ceremony transactions, since each open transaction holds a client and the locator
+  // borrows a second one from the same pool.
+  const locatorPool = createApiConnection();
   const port = 20_000 + Math.floor(Math.random() * 40_000);
   // A stable field-encryption key and version, the same material the PK-5 live suite writes with: the harness
   // default is random per process, and every live outbox row on the scratch database -- an earlier run of this
   // test, or the PK-5 suite's -- must stay readable, because the delivery surface fails closed on a row it cannot
   // open (a real process holds one configured key; SEC-PK5-R09 covers rotation).
   const config = localConfig({ NODE_ENV: "development", COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: Buffer.alloc(32, 11).toString("base64"), COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "pk5-live-v1", COBUDGET_IDENTITY_ENVIRONMENT_ID: ENVIRONMENT, COBUDGET_IDENTITY_CEREMONY_ORIGIN: `http://127.0.0.1:${port}`, COBUDGET_IDENTITY_ISSUER: `http://127.0.0.1:${port}/v1/identity/local` });
-  const { app } = await createComposedApiApplication(config, () => undefined, readReleaseHistory(), { client, locator: pool, scheduler: null });
+  const { app } = await createComposedApiApplication(config, () => undefined, readReleaseHistory(), { client, locator: locatorPool, scheduler: null });
   await app.init();
   await (app.getHttpAdapter().getInstance() as FastifyInstance).ready();
   const cookies: Record<string, string> = {};
@@ -82,7 +87,7 @@ async function harness(): Promise<Harness> {
     for (const header of Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : []) { const [pair] = header.split(";"); const i = pair!.indexOf("="); cookies[pair!.slice(0, i)] = pair!.slice(i + 1); }
     return response as unknown as Response;
   };
-  return { client, app, port, cookies, inject, close: async () => { await app.close(); await pool.end(); } };
+  return { client, app, port, cookies, inject, close: async () => { await app.close(); await pool.end(); await locatorPool.end(); } };
 }
 
 /** Signs in over HTTP exactly as a browser does, replacing the session cookie in the jar, and returns the identity bootstrap. */
