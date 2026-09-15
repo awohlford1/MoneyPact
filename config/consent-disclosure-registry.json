@@ -6,5 +6,37 @@
     "approved_by": "CBD236-CONSENT-SEMANTICS-001",
     "approved_at": "2026-09-14T12:09:08Z",
     "text_ref": "docs/consent-disclosures/primary-owner-self.v1.json"
+  },
+  {
+    "kind": "invitation_collaborator",
+    "version": 1,
+    "digest": "fd6f8827c33d55ddbbdb3e4ea83fa6838d75941204d4f8ef6cde7c8c26133d82",
+    "approved_by": "INVITATIONS-DESIGN-001 item 5",
+    "approved_at": "2026-09-15T02:31:00Z",
+    "text_ref": "docs/consent-disclosures/invitation-collaborator.v1.json"
+  },
+  {
+    "kind": "invitation_co_owner",
+    "version": 1,
+    "digest": "fdba404ebe30a89318b639f13f55a1c7d22d6498bd52e31b2bcb6b15d89d5c7c",
+    "approved_by": "INVITATIONS-DESIGN-001 item 5",
+    "approved_at": "2026-09-15T02:31:00Z",
+    "text_ref": "docs/consent-disclosures/invitation-co-owner.v1.json"
+  },
+  {
+    "kind": "primary_transfer_recipient",
+    "version": 1,
+    "digest": "b5d82e51b581d7c8c5da1407fdabd0acdb9f15726c31d25a8836babc387159da",
+    "approved_by": "INVITATIONS-DESIGN-001 item 5",
+    "approved_at": "2026-09-15T02:31:00Z",
+    "text_ref": "docs/consent-disclosures/primary-transfer-recipient.v1.json"
+  },
+  {
+    "kind": "primary_transfer_outgoing",
+    "version": 1,
+    "digest": "65cf7ac1dc24dfe8fc60841364dccd0d65b9d42688c9ebd13fcbbe0d17ca7ee9",
+    "approved_by": "INVITATIONS-DESIGN-001 item 5",
+    "approved_at": "2026-09-15T02:31:00Z",
+    "text_ref": "docs/consent-disclosures/primary-transfer-outgoing.v1.json"
   }
 ]
