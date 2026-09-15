@@ -68,9 +68,22 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
   });
   let budgetId;
   await t.test("CBD-242-AC06: refresh, restored draft, back/forward and duplicate tab require new previews", async () => {
+    // Every accepted preview response is recorded the moment its headers arrive, as a promise of its
+    // body. The page renders "Complete current period" as soon as the body reaches it, and reading
+    // that body back over the devtools protocol is a separate round trip that loses the race under
+    // load; recording the promise synchronously and settling every body before an assertion makes
+    // the observed preview independent of that timing. Each step also proves a NEW preview was
+    // requested, so a page that silently reused a token fails on the count, not on a timeout.
     const issued = [];
-    const capture = async response => {
-      if (response.request().method() === "POST" && response.url().endsWith("/budget-creation-proposals") && response.ok()) issued.push(await response.json());
+    const capture = response => {
+      if (response.request().method() === "POST" && response.url().endsWith("/budget-creation-proposals") && response.ok()) {
+        const body = response.json(); body.catch(() => { /* Surfaced by latestPreview. */ }); issued.push(body);
+      }
+    };
+    const latestPreview = async () => (await Promise.all(issued)).at(-1);
+    const previewAfter = async (step, before) => {
+      assert.ok(issued.length > before, `${step}: no new preview was requested (previews issued: ${issued.length})`);
+      return latestPreview();
     };
     page.on("response", capture);
     await clickText("Create a budget"); await waitText("Budget and schedule");
@@ -79,14 +92,16 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     assert.equal(await page.$eval('[id="field-acknowledged-disclosure"]', node => node.checked), false, "no box is ticked by default");
     await page.click('[id="field-acknowledged-disclosure"]');
     await page.waitForFunction(() => [...document.querySelectorAll("button")].some(node => node.textContent === "Confirm and create budget" && !node.disabled));
-    const first = issued.at(-1).proposalId;
+    const first = (await previewAfter("typing a name", 0)).proposalId;
+    let count = issued.length;
     await page.reload(); await waitText("Complete current period");
     assert.equal(await page.$eval('[id="field-name"]', node => node.value), "Restored draft");
-    assert.notEqual(issued.at(-1).proposalId, first);
-    const refreshed = issued.at(-1).proposalId;
+    const refreshed = (await previewAfter("reload", count)).proposalId;
+    assert.notEqual(refreshed, first);
+    count = issued.length;
     await clickText("Your budgets"); await waitText("No budgets yet");
     await page.goBack(); await waitText("Complete current period");
-    assert.notEqual(issued.at(-1).proposalId, refreshed);
+    assert.notEqual((await previewAfter("back navigation", count)).proposalId, refreshed);
     await page.goForward(); await waitText("No budgets yet");
     await page.goBack(); await waitText("Complete current period");
     const copiedStorage = await page.evaluate(() => Object.entries(sessionStorage));
@@ -96,7 +111,7 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     const newProposal = duplicate.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith("/budget-creation-proposals") && response.ok());
     await duplicate.goto(`${origin}/budgets/new`);
     const duplicated = await (await newProposal).json();
-    assert.notEqual(duplicated.proposalId, issued.at(-1).proposalId);
+    assert.notEqual(duplicated.proposalId, (await latestPreview()).proposalId);
     assert.equal(duplicated.supersedesProposalId, null);
     await duplicate.close();
     await page.bringToFront(); await waitText("Budget and schedule");
@@ -128,8 +143,11 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     assert.ok(Number.isSafeInteger(body.acknowledgedDisclosure.version) && body.acknowledgedDisclosure.version >= 1);
     await waitText("No categories yet"); budgetId = new URL(page.url()).pathname.split("/").at(-1);
   });
+  // A budget id is the product of the creation step above. Later steps drive routes built from it,
+  // so without one they would each wait 20 s on /budgets/undefined; failing here names the cause.
+  const requireBudget = () => assert.ok(budgetId, "no budget was created by CBD-242-AC01/AC02/AC03/AC04, so this step cannot run");
   await t.test("CBD-218-AC01: plan editing persists across reload and uses server identities", async () => {
-    assert.ok((await text()).includes(budgetId));
+    requireBudget(); assert.ok((await text()).includes(budgetId));
     await clickText("Edit category plan"); await waitText("Add category");
     await page.type("#category-name", "Groceries"); await clickText("Add category"); await waitText("Base target for Groceries");
     const input = await page.$('[id^="target-"]'); await input.click({ clickCount: 3 }); await input.type("450.00"); await clickText("Save target");
@@ -141,7 +159,7 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
   // remaining, open the itemized detail, edit and remove the expense and watch the figures return,
   // and reload to see the same. Every step is driven through the rendered controls only.
   await t.test("CBD-196/CBD-200/CBD-209/CBD-211: account, split expense, progress, detail, edit and removal", async () => {
-    await page.goto(`${origin}/budgets/${budgetId}/plan`); await waitText("Add category");
+    requireBudget(); await page.goto(`${origin}/budgets/${budgetId}/plan`); await waitText("Add category");
     await page.type("#category-name", "Transport"); await clickText("Add category"); await waitText("Base target for Transport");
     // Submitting from inside the control posts that category's own form; the shared button label
     // would otherwise match the first row's button.
@@ -258,24 +276,24 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     ["empty", { ...detailResponse, activePeriod: null }, "No active period"],
     ["partial", { ...detailResponse, scheduleVersion: null }, "Budget details are incomplete"],
   ]) await t.test(`CBD-218-AC02/AC03: ${label}`, async () => {
-    scenario = { body }; await clickText("Refresh budget"); await waitText(expected); await accessibility();
+    requireBudget(); scenario = { body }; await clickText("Refresh budget"); await waitText(expected); await accessibility();
     if (label !== "empty") assert.equal(await page.$("#plan-heading"), null);
   });
   for (const [label, status, expected] of [["denied", 403, "Access unavailable"], ["recoverable", 503, "Unable to load this budget"], ["terminal", 404, "Budget unavailable"]]) await t.test(`CBD-218-AC02: ${label}`, async () => {
-    scenario = { status, body: { error: label } }; await clickText("Refresh budget"); await waitText(expected); await accessibility();
+    requireBudget(); scenario = { status, body: { error: label } }; await clickText("Refresh budget"); await waitText(expected); await accessibility();
   });
   await t.test("CBD-218-AC02: loading, refreshed and success", async () => {
-    scenario = { delay: 1000 }; await clickText("Refresh budget"); await waitText("Loading the active budget period");
+    requireBudget(); scenario = { delay: 1000 }; await clickText("Refresh budget"); await waitText("Loading the active budget period");
     await waitText("Budget refreshed."); scenario = null; await page.reload(); await waitText("The active budget period is ready.");
   });
   await t.test("CBD-218-AC04: navigation discards a slow response from another budget", async () => {
-    scenario = { delay: 1200, body: { ...detailResponse, space: { ...detailResponse.space, name: "Stale response marker" } } };
+    requireBudget(); scenario = { delay: 1200, body: { ...detailResponse, space: { ...detailResponse.space, name: "Stale response marker" } } };
     await clickText("Refresh budget"); await waitText("Loading the active budget period");
     await clickText("Your budgets"); await waitText("Create a budget"); await pause(1400);
     assert.equal((await text()).includes("Stale response marker"), false); scenario = null;
   });
   await t.test("CBD-218-AC05: keyboard, title, main focus, 320px reflow", async () => {
-    await clickText("Our household"); await waitText("The active budget period is ready.");
+    requireBudget(); await clickText("Our household"); await waitText("The active budget period is ready.");
     assert.ok((await page.title()).includes("Budget dashboard"));
     assert.equal(await page.evaluate(() => document.activeElement?.id), "app-main");
     assert.equal(await page.$$eval("main", nodes => nodes.length), 1);
