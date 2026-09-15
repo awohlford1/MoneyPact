@@ -2,8 +2,9 @@ import type { ApiBootstrapUserPolicyInput, ApiOrdinaryUserPolicyInput, ApiSubjec
 import { decide, decideUnderRegisteredVersion, expectedProvenance } from "../evaluate.ts";
 import { CURRENT_POLICY_VERSION, POLICY_VERSIONS } from "../policy/registry.ts";
 import type { RegisteredPolicyVersion } from "../policy/registry.ts";
-import { SUBJECT_ACTION_DEFINITIONS, SUBJECT_CELLS } from "../policy/v2.ts";
+import { SUBJECT_CELLS } from "../policy/v2.ts";
 import { ACCOUNT_PERMISSION, PROGRESS_DETAIL_ACTION } from "../policy/v3.ts";
+import { P5_BASELINE_NON_OWNER_CELLS, P5_COOWNER_INVITATION_CELLS, P5_SPACE_CELLS } from "../policy/v5.ts";
 
 const now = "2026-09-12T12:00:00.000Z";
 const later = "2026-09-12T12:10:00.000Z";
@@ -56,17 +57,28 @@ export function serviceFixture(version: RegisteredPolicyVersion = CURRENT_POLICY
 }
 
 /** p2 subject-scoped variant (section 8.5). The acting subject owns the target row and the row is bound to the
- * configured environment; a subject-self cell (no resourceType) carries no target row at all. */
+ * configured environment; a subject-self cell (no resourceType) carries no target row at all. The definition is read from
+ * the named version's table, so a later version's subject cells (p5: `invitation.*`, section 8.8) use the same fixture. */
 export const SUBJECT_ENVIRONMENT = "env-local-1";
+/** The subject-owned target row per subject-target resource type: a previewed proposal (p2) or an open invitation ceremony (p5). */
+const SUBJECT_TARGETS: Readonly<Partial<Record<string, { id: string; lifecycle: string }>>> = Object.freeze({ proposal: { id: "proposal-1", lifecycle: "previewed" }, invitation_ceremony: { id: "ceremony-1", lifecycle: "open" } });
+/** The subject-scoped cells (permission `subject`) that `version` carries: five through p4, eight in p5. */
+export function subjectCells(version: RegisteredPolicyVersion): readonly { action: string; obligations: readonly string[] }[] {
+  return POLICY_VERSIONS[version].userCells.filter((cell) => cell.permission === "subject");
+}
 export function subjectFixture(action: string, version: RegisteredPolicyVersion = "p2"): ApiSubjectScopedUserPolicyInput {
-  const definition = SUBJECT_ACTION_DEFINITIONS.find((item) => item.action === action);
-  if (!definition) throw new Error(`No subject-scoped fixture definition for ${action}`);
+  // The definition comes from the pinned version; a historical fixture pinned to a version that predates the cell (a p2 cell under
+  // p1, a p5 cell under p4) takes the shape from the latest version defining it, so the not-current negatives stay expressible.
+  const isSubject = (item: { action: string; permission: string }) => item.action === action && item.permission === "subject";
+  const definition = POLICY_VERSIONS[version].actionDefinitions.find(isSubject) ?? Object.values(POLICY_VERSIONS).flatMap((policy) => policy.actionDefinitions).reverse().find(isSubject);
+  if (!definition) throw new Error(`No subject-scoped fixture definition for ${action} in any registered version`);
+  const target = definition.resourceType === undefined ? undefined : { type: definition.resourceType, ...(SUBJECT_TARGETS[definition.resourceType] ?? { id: "target-1", lifecycle: "active" }) };
   const input = {
     subject: { accountSubjectId: "subject-1", sessionRef: "session-ref-1", sessionVersion: 1, subjectState: "active", subjectVersion: 1 },
     assurance: { level: "session" }, profile: { profileId: "profile-1", profileState: "active", profileVersion: 1 },
     environment: { environmentId: SUBJECT_ENVIRONMENT },
-    ...(definition.resourceType === undefined ? {} : {
-      resource: { type: definition.resourceType, id: "proposal-1", owningSpaceId: "none", version: 1, lifecycle: "previewed", owningSubjectId: "subject-1", environmentId: SUBJECT_ENVIRONMENT },
+    ...(target === undefined ? {} : {
+      resource: { type: target.type, id: target.id, owningSpaceId: "none", version: 1, lifecycle: target.lifecycle, owningSubjectId: "subject-1", environmentId: SUBJECT_ENVIRONMENT },
     }),
     request: { action, purpose: "user_delegated", fieldSet: "default" }, versions: { policyVersion: version },
     authority: { mode: "user_delegated" }, evaluation: { adapter: "api", evaluatedAt: now, inputSchemaVersion: 1 }, provenance: {},
@@ -105,6 +117,24 @@ export const P4_FIXTURES = Object.freeze([
   ...SUBJECT_CELLS.map((cell) => ({ id: `p4.subject.${cell.action}.acting_subject.api`, input: subjectFixture(cell.action, "p4"), expected: "allow" })),
   { id: "p4.service.service.SA-92-002.generate_period_state.SA-92-002.worker", input: serviceFixture("p4"), expected: "allow" },
 ]);
+/** p5 = the p4 catalog re-pinned to p5 (every carried cell; the five superseded row-24/26 definitions now bind an `invitation`
+ * target, which `ordinaryFixture` reads from the p5 table) plus every section 8.8.1 cell in its own role, the three invitee
+ * subject cells included. */
+export const P5_FIXTURES = Object.freeze([
+  { id: "p5.user.bootstrap.primary_owner.api", input: bootstrapFixture("p5"), expected: "allow" },
+  ...userCatalog("p5"),
+  ...subjectCells("p5").map((cell) => ({ id: `p5.subject.${cell.action}.acting_subject.api`, input: subjectFixture(cell.action, "p5"), expected: "allow" })),
+  { id: "p5.service.service.SA-92-002.generate_period_state.SA-92-002.worker", input: serviceFixture("p5"), expected: "allow" },
+]);
+
+export const ROLES: readonly Role[] = Object.freeze(["primary_owner", "co_owner", "collaborator", "viewer", "accountability_partner"]);
+/** The roles that hold no cell for `action` in `version`; each denies `role_not_permitted` by absence (section 8.2). */
+export function rolesWithoutCell(action: string, version: RegisteredPolicyVersion): readonly Role[] {
+  return ROLES.filter((role) => !POLICY_VERSIONS[version].userCells.some((cell) => cell.action === action && cell.role === role));
+}
+/** A role the current version maps to no `1.view_space` cell (Viewer and Accountability Partner are unmapped in every version;
+ * p5 maps Co-owner and Collaborator), so the client-asserted-role negatives below survive a release flip (SEC-P2-F6). */
+export const UNMAPPED_ROLE: Role = (() => { const role = rolesWithoutCell("1.view_space", CURRENT_POLICY_VERSION)[0]; if (!role) throw new Error("every role holds a 1.view_space cell"); return role; })();
 
 export const NEGATIVE_FAMILIES = Object.freeze([
   ["NC-236-01", "authentication alone"], ["NC-236-02", "profile ownership alone"], ["NC-236-03", "channel match alone"],
@@ -123,7 +153,7 @@ export const NEGATIVE_FIXTURES = Object.freeze([
   { id: "NC-236-02", input: { ...negativeBase, membership: undefined, profileOwnsResource: true } },
   { id: "NC-236-03", input: { ...negativeBase, membership: undefined, invitationChannelMatch: true } },
   { id: "NC-236-04", input: { ...negativeBase, membership: undefined, invitationLocatorPossessed: true } },
-  { id: "NC-236-05", input: stamp({ ...negativeBase, membership: { ...negativeBase.membership, role: "co_owner" } }) },
+  { id: "NC-236-05", input: stamp({ ...negativeBase, membership: { ...negativeBase.membership, role: UNMAPPED_ROLE } }) },
   { id: "NC-236-06", input: { ...negativeBase, provenance: { ...negativeBase.provenance, "membership.role": "request_locator" } } },
   { id: "NC-236-07", input: { ...negativeBase, subject: undefined } },
   { id: "NC-236-08", input: { ...negativeBase, evaluation: { ...negativeBase.evaluation, inputSchemaVersion: "one" } } },
@@ -183,43 +213,51 @@ function subjectNegatives(action: string, version: RegisteredPolicyVersion = "p2
   ];
 }
 export function subjectNegativeFixtures(version: RegisteredPolicyVersion): readonly SubjectNegativeFixture[] {
-  return Object.freeze(SUBJECT_CELLS.flatMap((cell) => subjectNegatives(cell.action, version)));
+  return Object.freeze(subjectCells(version).flatMap((cell) => subjectNegatives(cell.action, version)));
 }
 export const P2_NEGATIVE_FIXTURES: readonly SubjectNegativeFixture[] = subjectNegativeFixtures("p2");
 
-/** Sections 9.5 and 9.6: the discriminating negative per manual-account cell (p3 Primary Owner cells; p4 adds the Co-owner and
- * Collaborator cells). The cells are ordinary space-bound cells, so the families are the section 9.3 ones stated cell by cell:
- * every role without a cell for the action in `version`, another space, a wrong target type, an inactive space lifecycle, a
- * stale captured version, service authority, an inactive subject, membership, or consent, the subject-scoped shape, and a
- * missing target. Every entry is evaluated under `version` and must deny inertly with the stated reason (PC-236-018). */
-export type AccountNegativeFamily = "other_role" | "other_space" | "wrong_target_type" | "inactive_lifecycle" | "stale_version" | "service_authority" | "inactive_subject" | "inactive_membership" | "consent_not_current" | "subject_scoped_shape" | "missing_target";
-export interface AccountNegativeFixture { readonly id: string; readonly action: string; readonly role: Role; readonly family: AccountNegativeFamily; readonly input: unknown; readonly reason: string }
-export const ROLES: readonly Role[] = Object.freeze(["primary_owner", "co_owner", "collaborator", "viewer", "accountability_partner"]);
-/** The roles that hold no cell for `action` in `version`; each denies `role_not_permitted` by absence (section 8.2). */
-export function rolesWithoutCell(action: string, version: RegisteredPolicyVersion): readonly Role[] {
-  return ROLES.filter((role) => !POLICY_VERSIONS[version].userCells.some((cell) => cell.action === action && cell.role === role));
-}
-function accountNegatives(action: string, role: Role, version: RegisteredPolicyVersion): AccountNegativeFixture[] {
+/** Sections 9.5, 9.6 and 9.7: the discriminating negative per space-bound cell (p3 Primary Owner manual-account cells; p4 adds
+ * the Co-owner and Collaborator cells; p5 adds the invitation, members, transfer and baseline non-owner cells). The cells are
+ * ordinary space-bound cells, so the families are the section 9.3 ones stated cell by cell: every role without a cell for the
+ * action in `version`, another space, a wrong target type, an inactive space lifecycle, each stale captured version (target,
+ * authorization, primary ownership, consent disclosure), service authority, an inactive subject, membership, or consent
+ * (superseded and ended), the subject-scoped shape, and a missing target. Every entry is evaluated under `version` and must deny
+ * inertly with the stated reason (PC-236-018). `AccountNegative*` are the p3/p4 names, kept for the package consumers. */
+export type SpaceBoundNegativeFamily = "other_role" | "other_space" | "wrong_target_type" | "inactive_lifecycle" | "stale_version" | "stale_authorization_version" | "stale_primary_ownership_version" | "stale_consent_version" | "service_authority" | "inactive_subject" | "inactive_membership" | "consent_not_current" | "consent_superseded" | "subject_scoped_shape" | "missing_target";
+export type AccountNegativeFamily = SpaceBoundNegativeFamily;
+export interface SpaceBoundNegativeFixture { readonly id: string; readonly action: string; readonly role: Role; readonly family: SpaceBoundNegativeFamily; readonly input: unknown; readonly reason: string }
+export type AccountNegativeFixture = SpaceBoundNegativeFixture;
+function spaceBoundNegatives(action: string, role: Role, version: RegisteredPolicyVersion): SpaceBoundNegativeFixture[] {
   const positive = ordinaryFixture(action, role, version);
   const precheck = decideUnderRegisteredVersion(version, positive);
   if (!precheck.capturedVersions) throw new Error(`positive ${version} fixture ${action} for ${role} did not capture versions`);
   const read = precheck.effectClass === "read";
-  const entry = (family: AccountNegativeFamily, input: unknown, reason: string, suffix?: string): AccountNegativeFixture =>
+  const entry = (family: SpaceBoundNegativeFamily, input: unknown, reason: string, suffix?: string): SpaceBoundNegativeFixture =>
     ({ id: `${version}.user.${action}.${role}.${family}${suffix === undefined ? "" : `.${suffix}`}`, action, role, family, input, reason });
+  const stale = (family: SpaceBoundNegativeFamily, key: string) =>
+    entry(family, stamp({ ...positive, versions: { policyVersion: version, capturedAtPrecheck: { ...precheck.capturedVersions, [key]: 99 } } }), "stale_version");
   return [
     ...rolesWithoutCell(action, version).map((other) => entry("other_role", ordinaryFixture(action, other, version), "role_not_permitted", other)),
     entry("other_space", stamp({ ...positive, resource: { ...positive.resource, owningSpaceId: "other-space" } }), "scope_mismatch"),
-    entry("wrong_target_type", stamp({ ...positive, resource: { ...positive.resource, type: "report" } }), "scope_mismatch"),
+    entry("wrong_target_type", stamp({ ...positive, resource: { ...positive.resource, type: positive.resource.type === "report" ? "space" : "report" } }), "scope_mismatch"),
     // Archival ends every financial mutation (CBD-72 section 6.5); a read survives archival, so a purged space blocks it.
     entry("inactive_lifecycle", stamp({ ...positive, space: { ...positive.space, lifecycle: read ? "purged" : "archived" } }), "lifecycle_blocked"),
-    entry("stale_version", stamp({ ...positive, versions: { policyVersion: version, capturedAtPrecheck: { ...precheck.capturedVersions, targetVersion: 99 } } }), "stale_version"),
+    stale("stale_version", "targetVersion"),
+    stale("stale_authorization_version", "authorizationVersion"),
+    stale("stale_primary_ownership_version", "primaryOwnershipVersion"),
+    stale("stale_consent_version", "consentDisclosureVersion"),
     entry("service_authority", stamp({ ...serviceFixture(version), request: { ...serviceFixture(version).request, action } }), "authority_mode_unsupported"),
     entry("inactive_subject", stamp({ ...positive, subject: { ...positive.subject, subjectState: "deleted" } }), "subject_not_active"),
     entry("inactive_membership", stamp({ ...positive, membership: { ...positive.membership, status: "revoked" } }), "membership_not_active"),
     entry("consent_not_current", stamp({ ...positive, consent: { ...positive.consent, state: "ended" } }), "consent_not_current"),
+    entry("consent_superseded", stamp({ ...positive, consent: { ...positive.consent, state: "superseded" } }), "consent_not_current"),
     entry("subject_scoped_shape", stamp({ ...subjectFixture("membership.list_own", version), request: { action, purpose: "user_delegated", fieldSet: "default" } }), "input_invalid"),
     entry("missing_target", { ...positive, resource: undefined }, "input_invalid"),
   ];
+}
+export function spaceBoundNegativeFixtures(version: RegisteredPolicyVersion, cells: readonly { action: string; role: Role }[]): readonly SpaceBoundNegativeFixture[] {
+  return Object.freeze(cells.flatMap((cell) => spaceBoundNegatives(cell.action, cell.role, version)));
 }
 /** Every manual-account cell (the four `manual_account` operations and the row-14 detail read) that `version` carries, in
  * the cell's own role: p3 yields the five Primary Owner cells; p4 yields those five plus the eight section 8.7.1 cells. */
@@ -229,7 +267,37 @@ export function accountCells(version: RegisteredPolicyVersion): readonly { actio
     .map((cell) => ({ action: cell.action, role: cell.role as Role }));
 }
 export function accountNegativeFixtures(version: RegisteredPolicyVersion): readonly AccountNegativeFixture[] {
-  return Object.freeze(accountCells(version).flatMap((cell) => accountNegatives(cell.action, cell.role, version)));
+  return spaceBoundNegativeFixtures(version, accountCells(version));
 }
 export const P3_NEGATIVE_FIXTURES: readonly AccountNegativeFixture[] = accountNegativeFixtures("p3");
 export const P4_NEGATIVE_FIXTURES: readonly AccountNegativeFixture[] = accountNegativeFixtures("p4");
+
+/** Section 9.7: the p5 space-bound cells (section 8.8.1 groups 2 and 4, and the row-24 Co-owner column) that `version` carries,
+ * in the cell's own role; empty before p5, every such cell under p5 or any later version that keeps them. */
+const p5SpaceKeys = new Set([...P5_SPACE_CELLS, ...P5_COOWNER_INVITATION_CELLS, ...P5_BASELINE_NON_OWNER_CELLS].map((cell) => `${cell.action}|${cell.role}`));
+export function invitationCells(version: RegisteredPolicyVersion): readonly { action: string; role: Role }[] {
+  return POLICY_VERSIONS[version].userCells.filter((cell) => p5SpaceKeys.has(`${cell.action}|${cell.role}`)).map((cell) => ({ action: cell.action, role: cell.role as Role }));
+}
+/** Section 9.3 assurance family for a protected cell: session-only assurance, and fresh assurance bound to another action, to
+ * another space, or already expired. `29.transfer_primary_ownership` is the p1 protected cell the transfer workflow ends in; the
+ * p5 workflow operations under row 29 are deliberately not protected and are proven to allow at session level in the tests. */
+export type AssuranceNegativeFamily = "session_only" | "bound_to_other_action" | "bound_to_other_space" | "expired";
+export interface AssuranceNegativeFixture { readonly id: string; readonly action: string; readonly role: Role; readonly family: AssuranceNegativeFamily; readonly input: unknown; readonly reason: string }
+export function assuranceNegativeFixtures(action: string, role: Role, version: RegisteredPolicyVersion): readonly AssuranceNegativeFixture[] {
+  const positive = ordinaryFixture(action, role, version);
+  const fresh = (bound: Partial<{ boundAction: string; boundSpaceId: string; expiresAt: string }>): ApiOrdinaryUserPolicyInput["assurance"] =>
+    ({ level: "fresh", boundAction: bound.boundAction ?? action, boundSpaceId: bound.boundSpaceId ?? "space-1", expiresAt: bound.expiresAt ?? later });
+  const entry = (family: AssuranceNegativeFamily, assurance: ApiOrdinaryUserPolicyInput["assurance"], reason: string): AssuranceNegativeFixture =>
+    ({ id: `${version}.user.${action}.${role}.assurance.${family}`, action, role, family, input: stamp({ ...positive, assurance }), reason });
+  return Object.freeze([
+    entry("session_only", { level: "session" }, "assurance_required"),
+    entry("bound_to_other_action", fresh({ boundAction: "1.view_space" }), "assurance_insufficient"),
+    entry("bound_to_other_space", fresh({ boundSpaceId: "space-2" }), "assurance_insufficient"),
+    entry("expired", fresh({ expiresAt: now }), "assurance_insufficient"),
+  ]);
+}
+export const TRANSFER_CONFIRM_ACTION = "29.transfer_primary_ownership" as const;
+export function invitationNegativeFixtures(version: RegisteredPolicyVersion): readonly (SpaceBoundNegativeFixture | AssuranceNegativeFixture)[] {
+  return Object.freeze([...spaceBoundNegativeFixtures(version, invitationCells(version)), ...assuranceNegativeFixtures(TRANSFER_CONFIRM_ACTION, "primary_owner", version)]);
+}
+export const P5_NEGATIVE_FIXTURES: readonly (SpaceBoundNegativeFixture | AssuranceNegativeFixture)[] = invitationNegativeFixtures("p5");

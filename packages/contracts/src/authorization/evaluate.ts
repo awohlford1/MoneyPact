@@ -8,7 +8,6 @@ import type { RegisteredPolicy, RegisteredPolicyVersion } from "./policy/registr
 
 type UnknownRecord = Record<string, unknown>;
 const audit: Obligation = { kind: "audit", eventClass: "policy_decision" };
-const protectedPermissions = new Set(["20a", "20b", "27", "29", "34", "35"]);
 
 function isRecord(value: unknown): value is UnknownRecord { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function isPositiveInteger(value: unknown): value is number { return Number.isSafeInteger(value) && (value as number) >= 0; }
@@ -294,7 +293,11 @@ function evaluate(input: PolicyInput, policy: RegisteredPolicy): PolicyDecision 
   const archivedAllowed = initial.effectClass === "read" || ["20a", "20b", "21"].includes(cell.permission);
   const deletionCancel = input.request.action === "34.cancel_space_deletion";
   if (input.space.lifecycle !== "live" && !(input.space.lifecycle === "archived" && archivedAllowed) && !(input.space.lifecycle === "deletion_pending" && deletionCancel)) return { ...initial, reasonClass: "lifecycle_blocked" };
-  if (protectedPermissions.has(cell.permission)) {
+  // Section 8.2: a cell is protected exactly when CBD-72 names `fresh_assurance` for it, so the predicate reads the cell's
+  // own obligation table rather than a permission number. Through p4 the cells carrying `fresh_assurance` are precisely the
+  // cells of the six protected permissions (20a, 20b, 27, 29, 34, 35), so no p1-p4 decision changes; p5 (section 8.8) adds
+  // unprotected workflow operations under row 29 whose cells do not carry it.
+  if (cell.obligations.includes("fresh_assurance")) {
     if (input.assurance.level !== "fresh") return { ...initial, reasonClass: "assurance_required" };
     if (input.assurance.boundAction !== input.request.action || input.assurance.boundSpaceId !== input.space.spaceId || Date.parse(input.assurance.expiresAt) <= Date.parse(input.evaluation.evaluatedAt)) return { ...initial, reasonClass: "assurance_insufficient" };
   }
