@@ -36,7 +36,7 @@ import { budgetSpacePrimaryTransferStatements } from "../../../data-access/src/b
 import type { PrimaryTransferStatementClient } from "../../../data-access/src/budget-space-primary-transfer.ts";
 import { cancelRecord } from "../invitations/application.ts";
 import type { InvitationDependencies } from "../invitations/application.ts";
-import type { OwnerContext } from "../invitations/ports.ts";
+import type { OwnerSystemContext } from "../invitations/ports.ts";
 import { ACTIVE_INVITATION_STATES } from "../invitations/records.ts";
 import { dataAccessPrimaryTransferRepository, translateStatementFailure } from "../primary-transfer/data-access-adapter.ts";
 import { PrimaryTransferError } from "../primary-transfer/records.ts";
@@ -117,7 +117,7 @@ export function permissionLostCanceller(
       // `authorizationVersion: <long identifier>` as a credential assignment
       // (PK2FIX-F04).
       const version = record.creatingAuthorizationVersion;
-      const owner: OwnerContext = {
+      const owner: OwnerSystemContext = {
         budgetSpaceId: record.budgetSpaceId,
         subjectId: record.createdBySubjectId,
         membershipId: record.createdByMembershipId,

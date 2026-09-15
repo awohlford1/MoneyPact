@@ -15,7 +15,8 @@ import {
   expireOnObservation, parseCreateInvitationRequest, readConfirmationPrompt, readDisclosure,
   replaceInvitation, resolveCode, verifyChannel, UNIFORM_UNUSABLE,
 } from "./application.ts";
-import { confirmAcceptance } from "./acceptance.ts";
+import { confirmAcceptance, rejectAcceptance } from "./acceptance.ts";
+import type { OwnerActorContext, OwnerContext, OwnerSystemContext } from "./ports.ts";
 import { MAX_CHANNEL_ATTEMPTS, NEUTRAL_DISPLAY_LABEL, UNIFORM_LINK_MESSAGE_CODE, isInvitationError } from "./records.ts";
 import { canonicalizeEmailDestination, maskEmailDestination } from "./secrets.ts";
 import { ENVIRONMENT, INVITEE_SUBJECT, OWNER_SUBJECT, SPACE, ownerWithoutPermission, testWorld } from "./support.ts";
@@ -613,4 +614,37 @@ void test("a cancelled record's ceremony is dead too, and the audit payload carr
     assert.ok(!payload.includes("@example.com"), row.eventCode);
     assert.ok(!payload.includes("i***"), row.eventCode);
   }
+});
+
+// ---------------------------------------------------------------------------
+// PK5FIX-F02: the permission equality is in the type.
+// ---------------------------------------------------------------------------
+
+void test("PK5FIX-F02: a system context cannot be passed to an actor command, and an actor context cannot omit its cell", async () => {
+  const world = testWorld();
+  const { invitationId } = await dispatched(world);
+  const { permission, ...system } = world.owner;
+  void permission;
+  const systemContext: OwnerSystemContext = system;
+  // Type-level proof, checked by `tsc`: each line below must fail to compile.
+  // @ts-expect-error a system context carries no decided cell, so replace refuses it at compile time
+  const forReplace: Parameters<typeof replaceInvitation>[1] = systemContext;
+  // @ts-expect-error confirm requires the actor context
+  const forConfirm: Parameters<typeof confirmAcceptance>[1] = systemContext;
+  // @ts-expect-error reject requires the actor context
+  const forReject: Parameters<typeof rejectAcceptance>[1] = systemContext;
+  // @ts-expect-error create requires the actor context (the implicit replacement compares the cell)
+  const forCreate: Parameters<typeof createInvitation>[1] = systemContext;
+  // @ts-expect-error the actor context's permission is required, not optional
+  const missing: OwnerActorContext = system;
+  void [forReplace, forConfirm, forReject, forCreate, missing];
+  // The run-time comparison stays as defence in depth for a context built past
+  // the type (`SEC-PK5-F02`, `R-03`).
+  await assert.rejects(replaceInvitation(world.deps, systemContext as unknown as OwnerActorContext, invitationId), (error: unknown) => isInvitationError(error, "permission_mismatch"));
+  // The commands that act for nobody accept either context: the actor and
+  // the system context both cancel, and the union is what they take.
+  const union: OwnerContext = systemContext;
+  assert.equal(union.permission, undefined);
+  await cancelInvitation(world.deps, systemContext, invitationId);
+  assert.equal(world.repository.invitations.get(invitationId)?.state, "cancelled");
 });

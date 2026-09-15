@@ -47,29 +47,43 @@ export interface PolicyDecision {
   readonly authorizationVersion: number;
 }
 
-/** The owner acting on a space-scoped invitation command. */
-export interface OwnerContext {
+/** What every owner-path context carries: the space, the acting (or creating) membership, the decision tuple and the request's correlation id. */
+interface OwnerContextBase {
   readonly budgetSpaceId: string;
   readonly subjectId: string;
   readonly membershipId: string;
   readonly decision: PolicyDecision;
-  /**
-   * The CBD-72 permission key of the cell the allow decision was taken
-   * against. SS8 step 4 requires the invitation's `required_permission` to
-   * equal it at commit, so an owner holding a different permission than the
-   * one the creation required cannot confirm.
-   *
-   * Optional only because the system path (`ownerFromRecord`) acts on nobody's
-   * decision and never reaches an actor command. `confirmAcceptance`,
-   * `rejectAcceptance` and `replaceInvitation` **require** it and answer
-   * `permission_mismatch` when it is absent (`SEC-PK5-F02`, `R-03`): an
-   * omitted permission is a route that did not decide, not a route that was
-   * allowed.
-   */
-  readonly permission?: "24" | "26";
   /** The correlation id of the request, shared by every audit row and notice the command writes. */
   readonly correlationId: string;
 }
+
+/**
+ * The owner acting on a space-scoped invitation command through a route that
+ * decided against a cell. `permission` is the CBD-72 permission key of that
+ * cell, required in the type (`PK5FIX-F02`): SS8 step 4 requires the
+ * invitation's `required_permission` to equal it at commit, so an owner
+ * holding a different permission than the one the creation required cannot
+ * confirm, reject or replace. A route cannot build this context without
+ * naming the cell it decided; the commands still compare at run time
+ * (`SEC-PK5-F02`, `R-03`) as defence in depth.
+ */
+export interface OwnerActorContext extends OwnerContextBase {
+  readonly permission: "24" | "26";
+}
+
+/**
+ * The system path: a transition nobody is acting on (`ownerFromRecord`, the
+ * `TR-73-06` cancels for `sibling_accepted`, membership state and
+ * `permission_lost`). It carries the record's own creator and the decision
+ * tuple the record was created under, and never a decided permission -- the
+ * key is absent, not `undefined`, so it can never satisfy an actor command.
+ */
+export interface OwnerSystemContext extends OwnerContextBase {
+  readonly permission?: never;
+}
+
+/** Either context, for the commands that need no decided cell: cancel, read and list. */
+export type OwnerContext = OwnerActorContext | OwnerSystemContext;
 
 /** The invitee acting on a ceremony-scoped command. */
 export interface InviteeContext {

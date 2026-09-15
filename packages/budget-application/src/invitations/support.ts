@@ -2,7 +2,7 @@
 import type { ConsentDisclosure, ConsentDisclosureSource } from "../creation-confirmation/disclosure.ts";
 import type { InvitationDependencies } from "./application.ts";
 import { InMemoryInvitationRepository } from "./in-memory.ts";
-import type { InviteeContext, OwnerContext } from "./ports.ts";
+import type { InviteeContext, OwnerActorContext } from "./ports.ts";
 import { ROLE_DISCLOSURE_KIND } from "./records.ts";
 import { codeVerifierDigest, createKeyedDigest } from "./secrets.ts";
 import type { KeyedDigest } from "./secrets.ts";
@@ -75,7 +75,7 @@ export interface TestWorld {
   readonly ids: SequenceIds;
   readonly digest: KeyedDigest;
   readonly deps: InvitationDependencies;
-  readonly owner: OwnerContext;
+  readonly owner: OwnerActorContext;
   readonly invitee: InviteeContext;
   /** The raw bearer and challenge the simulated adapter would render for one invitation. */
   delivery(invitationId: string): { readonly destination: string; readonly bearer: string; readonly challenge: string };
@@ -118,7 +118,7 @@ export function testWorld(options: { readonly correlationId?: string } = {}): Te
     },
   };
 
-  const owner: OwnerContext = {
+  const owner: OwnerActorContext = {
     budgetSpaceId: SPACE, subjectId: OWNER_SUBJECT, membershipId: OWNER_MEMBERSHIP,
     decision: { policyVersion: "p5", policyDigest: "c".repeat(64), authorizationVersion: 1 },
     // The cell the allow decision was taken against. Required on confirm,
@@ -144,15 +144,18 @@ export function testWorld(options: { readonly correlationId?: string } = {}): Te
 }
 
 /**
- * The same owner with the decided cell omitted -- what a PK-6 route that
- * forgot to pass one would supply. `exactOptionalPropertyTypes` makes
- * `permission: undefined` a different thing from an absent key, and it is the
- * absent key the check has to refuse (`SEC-PK5-F02`, `R-03`).
+ * The same owner with the decided cell omitted -- what a route that forgot to
+ * pass one would have supplied before `PK5FIX-F02` made `permission` required
+ * on `OwnerActorContext`. The type now refuses this shape, so the cast is the
+ * only way to build it; the tests keep it to prove the run-time comparison in
+ * the commands still refuses it as defence in depth (`SEC-PK5-F02`, `R-03`).
+ * `exactOptionalPropertyTypes` makes `permission: undefined` a different thing
+ * from an absent key, and it is the absent key the check has to refuse.
  */
-export function ownerWithoutPermission(owner: OwnerContext): OwnerContext {
+export function ownerWithoutPermission(owner: OwnerActorContext): OwnerActorContext {
   const { permission, ...rest } = owner;
   void permission;
-  return rest;
+  return rest as unknown as OwnerActorContext;
 }
 
 /** The kind a role's invitation carries, so a test does not restate the mapping. */

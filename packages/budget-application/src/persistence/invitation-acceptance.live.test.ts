@@ -54,7 +54,7 @@ import type { AcceptanceReceipt } from "../invitations/acceptance.ts";
 import { assertInvitationEdge } from "../invitations/transitions.ts";
 import { createKeyedDigest } from "../invitations/secrets.ts";
 import { MAX_CHANNEL_ATTEMPTS, isInvitationError } from "../invitations/records.ts";
-import type { OwnerContext } from "../invitations/ports.ts";
+import type { OwnerActorContext } from "../invitations/ports.ts";
 import { invitationPersistence } from "./invitation-store.ts";
 
 const database = loadLocalDatabaseConfig();
@@ -197,7 +197,7 @@ void test("PROTO-INVITATIONS-PK5 live PostgreSQL: the acceptance transaction, th
       });
     }
 
-    function ownerContext(space: Space, correlationId = randomUUID()): OwnerContext {
+    function ownerContext(space: Space, correlationId = randomUUID()): OwnerActorContext {
       return {
         budgetSpaceId: space.spaceId, subjectId: space.ownerSubject, membershipId: space.ownerMembership,
         decision: { policyVersion: "p5", policyDigest: "d".repeat(64), authorizationVersion: 1 },

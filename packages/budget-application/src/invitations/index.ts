@@ -42,7 +42,7 @@ export type {
   BudgetSpaceMembershipRow, CeremonyPatch, ChannelChallengeReader, Clock, ConfirmationPatch,
   FinancialProfileDisplayRow, IdGenerator, InviteeContext, InvitationLocation, InvitationLocator,
   InvitationPatch, InvitationRepository, InvitationStatements, LiveCodeBinding, OutboxInsert,
-  OutboxRecord, OutboxTombstoneReason, OwnerContext, PolicyDecision,
+  OutboxRecord, OutboxTombstoneReason, OwnerActorContext, OwnerContext, OwnerSystemContext, PolicyDecision,
 } from "./ports.ts";
 
 export type {
