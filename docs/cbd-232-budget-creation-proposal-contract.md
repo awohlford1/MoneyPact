@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | **Approved — Product Owner, September 15, 2026 (PO-CONTRACT-APPROVALS-003), applying the 0.3 consent amendment to the 0.2.1 approval of September 13, 2026 (PO-CONTRACT-APPROVALS-001); open questions and residuals stay recorded and open** |
-| Document version | 0.3 |
+| Document version | 0.3.1 |
 | Jira subtask | [CBD-232](https://cobudget.atlassian.net/browse/CBD-232) |
 | Parent | [CBD-23](https://cobudget.atlassian.net/browse/CBD-23) |
 | Repository baseline | `8ac588f36ca61fde9ee77c5f4ff9f9cf25041344` |
@@ -120,7 +120,7 @@ persistence.
 
 ### 3.2 API adapter
 
-`apps/api/src/budget-creation-proposals/` is a thin transport and composition
+`apps/api/src/budget-creation/` is a thin transport and composition
 adapter. It authenticates the request, maps HTTP fields into the application
 command, supplies the ports, and maps application results into §4 responses.
 It must not recalculate dates, normalize a second time, trust a client-supplied
@@ -875,6 +875,7 @@ confirmation-transaction participation remain enforceable.
 
 | Version | Date | Author | Change | Disposition |
 | --- | --- | --- | --- | --- |
+| 0.3.1 | September 15, 2026 | Documentation specialist, dispatched under `PROTO-DOC-SWEEP-003` | §3.2 corrected: the implementation directory is `apps/api/src/budget-creation/`, not `apps/api/src/budget-creation-proposals/` (`GUARD-F03`), verified against the merged tree. No other text, cell, or decision identifier changed. | Approved — Executive, September 15, 2026 (`EXEC-FOLLOWUPS-003`). |
 | 0.3 | September 15, 2026 | Specification specialist, dispatched by Manager (`PROTO-CONSENT-AMENDMENTS-001`) | The amendment `CBD236-CONSENT-SEMANTICS-001` item 6 deferred to this package, describing what PR #337 merged: §4.2 adds the `currentDisclosure` preview field with its always-current, outside-the-digest, rendered-verbatim and unticked-by-default acknowledgement rules; §4.4 reconciles the confirmation request with the CBD-233 0.2 `acknowledgedDisclosure` claim; §7.1 records the digest exclusion; §13 gains two traceability rows; §14 records `OQ-CF-004` resolved by reference and `OQ-CF-002`/`OQ-CF-003` left open. | **Approved — Product Owner, September 15, 2026 (`PO-CONTRACT-APPROVALS-003`).** Status and document version bumped in the same change; `OQ-CF-002`, `OQ-CF-003` and `OQ-CF-005` stay open. |
 | 0.2.1 (approval) | September 13, 2026 | Manager, in the merge lane | Product Owner approval recorded (PO-CONTRACT-APPROVALS-001). Status Proposed → Approved at the same version; no decision, identifier or contract text changed. | Approved. |
 | 0.2.1 | September 12, 2026 | Manager, in the merge lane | Re-review closures: `replaceCurrent` evaluation order and terminal-head regeneration defined (re-review finding 1, §11 seam paragraph); empty `Idempotency-Key` now yields `idempotency-key.required` only (finding 2, §5 catalog). No other text changed. | Proposed; re-review findings 1 and 2 closed in the lane. |
