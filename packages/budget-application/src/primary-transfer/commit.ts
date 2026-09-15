@@ -110,11 +110,13 @@ export function transferReceiptOf(record: PrimaryTransferRecord): TransferReceip
  * Commit the transfer the ledger's four discharges captured.
  *
  * `ledger` must be complete: all four of `confirm`, `invalidate`, `notify`
- * and `preserve` discharged, by PK-7B's `ApiTransactionStore` on the confirm
- * route or by `dischargeAll` on the accept-completes path. An incomplete
- * ledger denies `obligation_undischarged` before anything is read, because a
- * protected effect whose obligations were not discharged is precisely what
- * the boundary exists to refuse.
+ * and `preserve` discharged, and discharged on the workflow *as the
+ * completing leg left it* -- `runCommit` in `application.ts` begins a fresh
+ * ledger after the leg for exactly that reason, and the boundary's own
+ * pre-leg ledger is its proof, not its capture (`R-01`, `SEC-PK7A-F1`). An
+ * incomplete ledger denies `obligation_undischarged` before anything is read,
+ * because a protected effect whose obligations were not discharged is
+ * precisely what the boundary exists to refuse.
  */
 export async function commitPrimaryTransfer(
   deps: PrimaryTransferDependencies, actor: ActorContext, ledger: TransferObligationLedger,
@@ -135,6 +137,11 @@ export async function commitPrimaryTransfer(
   // from the ledger's copy, and the ledger's copy is then required to agree.
   const transfer = await repository.readTransfer(actor.budgetSpaceId, capture.transfer.transferId);
   if (!transfer) throw new PrimaryTransferError("transfer_not_found", "transferId");
+  // The direct-ledger replay: a caller that re-runs the commit with the ledger
+  // its first run completed (a retried transaction, say) gets the receipt the
+  // row already is, and writes nothing. The commands never reach this line,
+  // because a fresh ledger cannot discharge on a committed workflow; it serves
+  // `commitPrimaryTransfer`'s own callers only.
   if (transfer.state === "committed") return transferReceiptOf(transfer);
   if (transfer.state !== "ready") throw new PrimaryTransferError("transfer_not_current", "state");
   if (transfer.stateVersion !== capture.transfer.stateVersion) throw new PrimaryTransferError("stale_version", "transfer.stateVersion");

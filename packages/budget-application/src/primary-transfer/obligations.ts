@@ -25,6 +25,20 @@
  * A failure anywhere rolls back the whole transaction, the grant included --
  * which is the property `SEC-PK4-R2` asks for.
  *
+ * ## The boundary's ledger and the leg (`R-01`, `SEC-PK7A-F1`, `SEC-PK7A-F3`)
+ *
+ * The boundary discharges on the workflow *before* the handler records the
+ * Primary's leg, so its capture carries the pre-leg `stateVersion`; the leg
+ * then advances it, and a commit on that capture would lose `stale_version`
+ * to its own request. `confirmPrimaryTransfer` therefore treats a supplied
+ * ledger as the proof that the four discharged before the effect -- it
+ * requires the ledger complete and bound to this request's space, transfer
+ * and evidence reference, and denies `obligation_undischarged` otherwise --
+ * and, once the leg is recorded, discharges a fresh ledger on the same input
+ * inside the same transaction and commits on *that* capture. The four proofs
+ * run twice on the confirm route, both times before any transfer effect and
+ * both times on the boundary's own transaction.
+ *
  * ## Assurance
  *
  * `freshAssuranceRef` is an input. This module never reads a session, a grant
@@ -190,11 +204,17 @@ export function primaryTransferObligations(deps: PrimaryTransferDependencies): P
    * that discharges it is the Primary's own recorded leg bound to this
    * request's fresh-assurance evidence.
    *
-   * It refuses a workflow that is terminal, expired, or whose recipient has
-   * not acted, and -- the binding that matters -- a workflow whose stored
-   * `primaryAssuranceRef` names other evidence than the reference this
-   * request spent. A grant can therefore authorize the confirmation it was
-   * bound to and no other.
+   * It refuses a workflow that is terminal or expired, and -- the binding
+   * that matters -- a workflow whose stored `primaryAssuranceRef` names other
+   * evidence than the reference this request spent. A grant can therefore
+   * authorize the confirmation it was bound to and no other.
+   *
+   * It does **not** require the recipient's leg. The boundary discharges
+   * before the handler records the Primary's leg, so a Primary-first confirm
+   * (`proposed` to `primary_confirmed`) has to pass here or the edge is
+   * unreachable through the route. Whether the pair is complete is the
+   * commit's own precondition -- `commit.ts` refuses every state but `ready`
+   * -- and not this discharge's (`R-01`, `SEC-PK7A-F1`).
    */
   async function dischargeConfirm(ledger: MutableLedger): Promise<boolean> {
     if (!(await load(ledger))) return false;
@@ -207,10 +227,6 @@ export function primaryTransferObligations(deps: PrimaryTransferDependencies): P
     if (transfer.primaryAssuranceRef !== null && transfer.primaryAssuranceRef !== ledger.input.freshAssuranceRef) {
       return refuse(ledger, "assurance_required");
     }
-    // The recipient's leg is the other half of the pair. A confirm may precede
-    // it (`primary_confirmed` then waits), but the *commit* cannot, and the
-    // commit is what this discharge is an obligation of.
-    if (transfer.recipientAcceptedAt === null) return refuse(ledger, "transfer_not_current");
     ledger.discharged.add("confirm");
     return true;
   }

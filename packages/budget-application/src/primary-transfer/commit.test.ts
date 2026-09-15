@@ -5,6 +5,7 @@ import { acceptPrimaryTransfer, confirmPrimaryTransfer, proposePrimaryTransfer }
 import { COMMIT_BOUNDARIES, commitPrimaryTransfer, transferReceiptOf } from "./commit.ts";
 import type { CommitBoundary } from "./commit.ts";
 import { primaryTransferObligations } from "./obligations.ts";
+import type { TransferObligationInput, TransferObligationLedger } from "./obligations.ts";
 import { PrimaryTransferError, isPrimaryTransferError } from "./records.ts";
 import {
   ASSURANCE_REFERENCE, PRIMARY_CONSENT, PRIMARY_MEMBERSHIP, PRIMARY_SUBJECT, RECIPIENT_CONSENT,
@@ -139,6 +140,105 @@ void test("PK7A-01: a repeat commit of a committed workflow returns the stored r
   assert.deepEqual(transferReceiptOf(record!), first.receipt);
   // And an uncommitted row has no receipt to give.
   assert.throws(() => transferReceiptOf({ ...record!, state: "ready" }), PrimaryTransferError);
+});
+
+void test("R-01 SEC-PK7A-F1: a ledger the boundary discharged before the leg commits through confirmPrimaryTransfer", async () => {
+  // The PK-7B composition: `AuthorizationBoundary.execute` discharges the
+  // four obligations before it runs the handler, so the ledger's capture
+  // predates the Primary's leg. The handler must still commit.
+  const world = testWorld();
+  const transferId = await propose(world);
+  await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId });
+  const actor = world.primary("29.transfer_primary_ownership");
+  const obligations = primaryTransferObligations(world.deps);
+  const ledger = obligations.begin({
+    budgetSpaceId: SPACE, transferId, decision: actor.decision,
+    freshAssuranceRef: ASSURANCE_REFERENCE, correlationId: actor.correlationId,
+  });
+  assert.equal(await obligations.dischargeAll(ledger), true, String(ledger.refusal));
+  const captured = ledger.capture?.transfer.stateVersion;
+
+  const result = await confirmPrimaryTransfer(world.deps, actor, { transferId }, { ledger });
+  assert.equal(result.outcome, "committed", JSON.stringify(result));
+  if (result.outcome !== "committed") throw new Error("unreachable");
+  const record = await world.repository.readTransfer(SPACE, transferId);
+  assert.equal(record?.state, "committed");
+  // The leg advanced the version past the boundary's capture, and the commit
+  // acted on a capture of its own rather than losing to that advance.
+  assert.equal(record?.stateVersion, (captured ?? 0) + 2);
+  assert.equal(record?.primaryAssuranceRef, ASSURANCE_REFERENCE);
+  assert.equal((await world.repository.readSpace(SPACE))?.primaryOwnerMembershipId, RECIPIENT_MEMBERSHIP);
+  assert.deepEqual(transferReceiptOf(record!), result.receipt);
+  assert.equal(world.repository.audit.filter((row) => row.eventSubtype === "transfer_committed").length, 1);
+  assert.equal(world.repository.audit.filter((row) => row.eventSubtype === "transfer_denied").length, 0);
+});
+
+void test("R-01 SEC-PK7A-F1: a ledger discharged on a proposed workflow admits the Primary's confirm-first leg", async () => {
+  const world = testWorld();
+  const transferId = await propose(world);
+  const actor = world.primary("29.transfer_primary_ownership");
+  const obligations = primaryTransferObligations(world.deps);
+  const ledger = obligations.begin({
+    budgetSpaceId: SPACE, transferId, decision: actor.decision,
+    freshAssuranceRef: ASSURANCE_REFERENCE, correlationId: actor.correlationId,
+  });
+  assert.equal(await obligations.dischargeAll(ledger), true, String(ledger.refusal));
+
+  const result = await confirmPrimaryTransfer(world.deps, actor, { transferId }, { ledger });
+  assert.equal(result.outcome, "primary_confirmed", JSON.stringify(result));
+  const record = await world.repository.readTransfer(SPACE, transferId);
+  assert.equal(record?.state, "primary_confirmed");
+  assert.equal(record?.primaryAssuranceRef, ASSURANCE_REFERENCE);
+  assert.equal((await world.repository.readMembership(SPACE, PRIMARY_MEMBERSHIP))?.role, "primary_owner");
+
+  // The recipient then completes the pair on the accept path.
+  const accepted = await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId });
+  assert.equal(accepted.outcome, "committed");
+});
+
+void test("SEC-PK7A-F3: a supplied ledger bound to another transfer, space or reference denies obligation_undischarged", async () => {
+  const world = testWorld();
+  const transferId = await propose(world);
+  await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId });
+  const actor = world.primary("29.transfer_primary_ownership");
+  const obligations = primaryTransferObligations(world.deps);
+  const auditsBefore = world.repository.audit.length;
+
+  // A complete ledger for this transfer, then re-labelled: the shape a
+  // capture from another authorizing transaction would present.
+  async function completeLedger(input: Partial<TransferObligationInput>): Promise<TransferObligationLedger> {
+    const ledger = obligations.begin({
+      budgetSpaceId: SPACE, transferId, decision: actor.decision,
+      freshAssuranceRef: ASSURANCE_REFERENCE, correlationId: actor.correlationId,
+    });
+    assert.equal(await obligations.dischargeAll(ledger), true, String(ledger.refusal));
+    return { ...ledger, complete: true, capture: ledger.capture, input: { ...ledger.input, ...input } };
+  }
+  const cases: TransferObligationLedger[] = [
+    await completeLedger({ transferId: "00000000-0000-4000-8000-0000000000ff" }),
+    await completeLedger({ budgetSpaceId: "00000000-0000-4000-8000-00000000dead" }),
+    await completeLedger({ freshAssuranceRef: "fresh-assurance:someone-else" }),
+    // Incomplete: the boundary did not discharge all four.
+    obligations.begin({
+      budgetSpaceId: SPACE, transferId, decision: actor.decision,
+      freshAssuranceRef: ASSURANCE_REFERENCE, correlationId: actor.correlationId,
+    }),
+  ];
+  for (const [index, ledger] of cases.entries()) {
+    const result = await confirmPrimaryTransfer(world.deps, actor, { transferId }, { ledger });
+    assert.equal(result.outcome, "denied", `case ${index}`);
+    if (result.outcome !== "denied") throw new Error("unreachable");
+    assert.equal(result.reasonClass, "obligation_undischarged", `case ${index}`);
+  }
+  // Nothing was written but the four denial rows: no leg, no role, no consent.
+  const record = await world.repository.readTransfer(SPACE, transferId);
+  assert.equal(record?.state, "recipient_accepted");
+  assert.equal(record?.primaryConfirmedAt, null);
+  assert.equal(record?.primaryAssuranceRef, null);
+  assert.equal((await world.repository.readMembership(SPACE, PRIMARY_MEMBERSHIP))?.role, "primary_owner");
+  assert.equal((await world.repository.readConsent(SPACE, PRIMARY_CONSENT))?.state, "current");
+  assert.equal(world.repository.audit.length, auditsBefore + cases.length);
+  assert.equal(world.repository.audit.slice(auditsBefore).every((row) => row.eventSubtype === "transfer_denied"), true);
 });
 
 void test("PK7A-01: a stale disclosure denies at the commit with nothing written", async () => {

@@ -36,7 +36,7 @@ import { commitPrimaryTransfer, transferReceiptOf } from "./commit.ts";
 import type { CommitOptions, TransferReceipt } from "./commit.ts";
 import { NOTICE_EVENT_CODE, TRANSFER_EVENT_CODE, transferAuditEvent } from "./events.ts";
 import { primaryTransferObligations } from "./obligations.ts";
-import type { TransferObligationLedger } from "./obligations.ts";
+import type { TransferObligationInput, TransferObligationLedger } from "./obligations.ts";
 import {
   DEFAULT_TRANSFER_LIFETIMES, TRANSFER_PERMISSION,
 } from "./ports.ts";
@@ -489,9 +489,17 @@ export async function acceptPrimaryTransfer(
  *
  * `actor.freshAssuranceRef` is required: it is the reference the boundary
  * produced when it spent the grant `decide` had already re-proved. When the
- * confirm completes the pair, `TR-73-43` runs in this request. `ledger` is
- * PK-7B's own: pass the ledger `ApiTransactionStore` discharged the four
- * obligations on, and this command uses it rather than discharging again.
+ * confirm completes the pair, `TR-73-43` runs in this request.
+ *
+ * `ledger` is PK-7B's own: the ledger `ApiTransactionStore` discharged the
+ * four obligations on *before* this handler ran. It is the proof that the
+ * four discharged before the effect, and it must be complete and bound to
+ * this request's space, transfer and evidence reference or the command
+ * denies `obligation_undischarged` before writing anything (`SEC-PK7A-F3`).
+ * It is not the capture the commit acts on: the leg this command records
+ * advances `stateVersion` past the boundary's capture, so the commit
+ * discharges a fresh ledger on the same input after the leg and acts on that
+ * (`R-01`, `SEC-PK7A-F1`).
  */
 export async function confirmPrimaryTransfer(
   deps: PrimaryTransferDependencies, actor: ActorContext, request: TransferRequest,
@@ -511,6 +519,9 @@ export async function confirmPrimaryTransfer(
     return deny(deps, actor, "stale_version", request.transferId);
   }
   if (loaded.record.primaryConfirmedAt !== null) return deny(deps, actor, "transfer_not_current", request.transferId);
+  if (options.ledger && !ledgerBoundTo(options.ledger, actor, loaded.record, assuranceRef)) {
+    return deny(deps, actor, "obligation_undischarged", request.transferId);
+  }
 
   const confirmed = await recordLeg(deps, actor, loaded, "primary", assuranceRef);
   if (confirmed.state !== "ready") {
@@ -519,38 +530,65 @@ export async function confirmPrimaryTransfer(
   return runCommit(deps, actor, confirmed, assuranceRef, options);
 }
 
+/** The obligation input one request's discharges are begun on. */
+function obligationInput(actor: ActorContext, record: PrimaryTransferRecord, assuranceRef: string): TransferObligationInput {
+  return {
+    budgetSpaceId: record.budgetSpaceId,
+    transferId: record.transferId,
+    decision: actor.decision,
+    freshAssuranceRef: assuranceRef,
+    correlationId: actor.correlationId,
+  };
+}
+
+/**
+ * `SEC-PK7A-F3`: a ledger supplied by the boundary serves this request only
+ * if it is complete and was begun on this request's space, transfer and
+ * evidence reference. A capture from another authorizing transaction --
+ * another transfer, another space, another grant -- is not a discharge of
+ * this one, whatever it captured.
+ */
+function ledgerBoundTo(
+  ledger: TransferObligationLedger, actor: ActorContext, record: PrimaryTransferRecord, assuranceRef: string,
+): boolean {
+  return ledger.complete
+    && ledger.input.budgetSpaceId === actor.budgetSpaceId
+    && ledger.input.budgetSpaceId === record.budgetSpaceId
+    && ledger.input.transferId === record.transferId
+    && ledger.input.freshAssuranceRef === assuranceRef;
+}
+
+/** The refusal class a discharge left on its ledger, when it is one of this module's codes. */
+function refusalClassOf(ledger: TransferObligationLedger): PrimaryTransferErrorCode {
+  // The refusal class is the discharge's own, when it is one of this
+  // module's codes: a stale disclosure has to say `stale_disclosure`
+  // (SS10.3 step 2), not merely that some obligation did not discharge.
+  const refusal = ledger.refusal;
+  return refusal !== null && (PRIMARY_TRANSFER_ERROR_CODES as readonly string[]).includes(refusal)
+    ? refusal as PrimaryTransferErrorCode
+    : "obligation_undischarged";
+}
+
 /**
  * Run `TR-73-43` on a workflow that just became `ready`.
  *
- * A ledger supplied by PK-7B is used as it is; otherwise one is discharged
- * here through the same four store operations, which is what the accept path
- * and the unit and live proofs do. Either way the commit refuses unless all
- * four are discharged.
+ * The four obligations are discharged here, on a fresh ledger begun on this
+ * request's input, *after* the completing leg was recorded: the capture the
+ * commit acts on then carries the leg's own `stateVersion`, which is the one
+ * the commit's re-read has to agree with. A ledger the boundary supplied was
+ * already required complete and bound before the leg (`ledgerBoundTo`); it
+ * proved the four before the effect and is not re-used as the capture
+ * (`R-01`, `SEC-PK7A-F1`). Either way the commit refuses unless all four are
+ * discharged.
  */
 async function runCommit(
   deps: PrimaryTransferDependencies, actor: ActorContext, record: PrimaryTransferRecord,
-  assuranceRef: string, options: CommitOptions & { readonly ledger?: TransferObligationLedger },
+  assuranceRef: string, options: CommitOptions,
 ): Promise<TransferCommitted | TransferDenied> {
   const obligations = primaryTransferObligations(deps);
-  let ledger = options.ledger;
-  if (!ledger) {
-    ledger = obligations.begin({
-      budgetSpaceId: record.budgetSpaceId,
-      transferId: record.transferId,
-      decision: actor.decision,
-      freshAssuranceRef: assuranceRef,
-      correlationId: actor.correlationId,
-    });
-    if (!(await obligations.dischargeAll(ledger))) {
-      // The refusal class is the discharge's own, when it is one of this
-      // module's codes: a stale disclosure has to say `stale_disclosure`
-      // (SS10.3 step 2), not merely that some obligation did not discharge.
-      const refusal = ledger.refusal;
-      const reasonClass = refusal !== null && (PRIMARY_TRANSFER_ERROR_CODES as readonly string[]).includes(refusal)
-        ? refusal as PrimaryTransferErrorCode
-        : "obligation_undischarged";
-      return deny(deps, actor, reasonClass, record.transferId);
-    }
+  const ledger = obligations.begin(obligationInput(actor, record, assuranceRef));
+  if (!(await obligations.dischargeAll(ledger))) {
+    return deny(deps, actor, refusalClassOf(ledger), record.transferId);
   }
   const commitOptions: CommitOptions = options.boundary ? { boundary: options.boundary } : {};
   const receipt = await commitPrimaryTransfer(deps, actor, ledger, commitOptions);

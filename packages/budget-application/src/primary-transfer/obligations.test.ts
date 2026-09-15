@@ -101,7 +101,7 @@ void test("PK7A-03: confirm binds the evidence reference, and refuses evidence b
   assert.equal(await obligations.discharge(own, "confirm"), true);
 });
 
-void test("PK7A-03: confirm refuses an expired, terminal or unaccepted workflow", async () => {
+void test("PK7A-03: confirm refuses an expired or terminal workflow, and admits an unaccepted one (R-01, SEC-PK7A-F1)", async () => {
   const world = testWorld();
   const transferId = await readyWorkflow(world);
   const obligations = primaryTransferObligations(world.deps);
@@ -112,15 +112,25 @@ void test("PK7A-03: confirm refuses an expired, terminal or unaccepted workflow"
   assert.equal(expired.refusal, "transfer_not_current");
   world.clock.set("2026-09-15T12:00:00.000Z");
 
-  // A workflow with no recipient leg has no pair to complete.
+  // A terminal workflow has nothing left to confirm.
+  const record = await world.repository.readTransfer(SPACE, transferId);
+  await world.repository.updateTransfer(SPACE, transferId, record!.stateVersion, { state: "withdrawn", terminalEventId: "e" });
+  const terminal = ledgerFor(world, transferId);
+  assert.equal(await obligations.discharge(terminal, "confirm"), false);
+  assert.equal(terminal.refusal, "transfer_not_current");
+
+  // A workflow with no recipient leg discharges: the boundary runs this
+  // before the handler records the Primary's leg, and a Primary-first
+  // confirm has to reach the handler. Completeness of the pair is the
+  // commit's precondition, not this discharge's.
   const other = testWorld();
   const proposed = await proposePrimaryTransfer(other.deps, other.primary("29.propose_primary_transfer"), {
     recipientMembershipId: RECIPIENT_MEMBERSHIP,
   });
   if (proposed.outcome !== "proposed") throw new Error("propose failed");
   const unaccepted = ledgerFor(other, proposed.transfer.transferId);
-  assert.equal(await primaryTransferObligations(other.deps).discharge(unaccepted, "confirm"), false);
-  assert.equal(unaccepted.refusal, "transfer_not_current");
+  assert.equal(await primaryTransferObligations(other.deps).discharge(unaccepted, "confirm"), true);
+  assert.equal(unaccepted.refusal, null);
 });
 
 void test("PK7A-03: preserve captures both current consent rows and refuses a moved registry", async () => {
