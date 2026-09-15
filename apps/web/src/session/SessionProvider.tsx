@@ -34,6 +34,9 @@ export function SessionProvider({ children, client }: { children: ReactNode; cli
       handleSessionEnding("access_loss", fromWebStorage(storage), {
         stopSubscriptions() {}, clearQueuedMutations() {},
       });
+      // SEC-PK8-F4: the invitation return marker and the per-tab ceremony memory live outside the session-keyed
+      // prefixes so the sign-in hop keeps them (PK-8); a session that ends here must not hand them to the next person.
+      for (const key of Object.keys(storage)) if (key.startsWith("cobudget.invitation.")) storage.removeItem(key);
     }
     setSession(null);
   }, [api]);
