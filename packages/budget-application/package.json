@@ -9,7 +9,8 @@
     "./targets": "./src/targets/index.ts",
     "./accounts": "./src/accounts/index.ts",
     "./transactions": "./src/transactions/index.ts",
-    "./invitations": "./src/invitations/index.ts"
+    "./invitations": "./src/invitations/index.ts",
+    "./primary-transfer": "./src/primary-transfer/index.ts"
   },
   "scripts": {
     "lint": "eslint .",
