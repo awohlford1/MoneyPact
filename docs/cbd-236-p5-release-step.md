@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Ready to apply, not applied** — `p5` is registered above the unreleased `p4` and not released |
-| Document version | 0.1 |
+| Status | **Applied** — `releaseCommit` `c4add46cb6103e9a2c2b7ee8d14a9afb8afa0acc`; `p5` is released and current, in the combined form of §1 form 2 |
+| Document version | 0.2 |
 | Governing contract | [`docs/cbd-236-authorization-policy-contract.md`](./cbd-236-authorization-policy-contract.md) v0.11 §6 `PC-236-011`, `PC-236-013`, §8.7, §8.8 |
 | Governing decisions | `CBD236-POLICY-APPROVAL-001` (Product Owner and Security sign-off cited in every released row); `PROTO-POLICY-V2-DECISION-001` precedent (add a version through an Architecture packet and a following Security review; release requires both approvals as separate records); `INVITATIONS-DESIGN-001` items 10 and 11 (the approved design whose §11 cells `p5` carries, its `p4` read as `p5`); `PO-CBD72-ROW36-001` (the `p4` cells `p5` composes) |
 | Jira subtask | [CBD-236](https://cobudget.atlassian.net/browse/CBD-236); the increment is CBD-41 (CBD-274, CBD-275, CBD-276), CBD-280 and CBD-287 |
@@ -218,4 +218,5 @@ step and are closed by reference to it.
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 0.2 | September 15, 2026 | Manager, applying this step | Applied in the combined form of §1 form 2 under `PO-P4P5-APPROVAL-001`: one commit appends the `p4` row (`PO-P4P5-APPROVAL-001`, `PROTO-POLICY-V4-SEC-001-RESULT-001`, `releaseCommit` `696d831ab25a226cc178c27e7111ef75c2ffd579`) and then the `p5` row (`PO-P4P5-APPROVAL-001`, `PROTO-POLICY-V5-SEC-001-RESULT-001`, `releaseCommit` `c4add46cb6103e9a2c2b7ee8d14a9afb8afa0acc`), flips `CURRENT_POLICY_VERSION` from `p3` straight to `p5`, and applies the §4.3 literals and the §4.4 test changes. `p4` is released and never deployed. All five digests reproduced before the edit and `P1_DIGEST`–`P4_DIGEST` are unchanged. Two §4.4 predictions held: `subject-scoped.test.ts` needed no edit (165/165 with the `Harness` expressing the `invitation_ceremony` subject target unaided), and the contracts suite needed no edit. Two §3/§4.4 statements were imprecise: the §3 digest one-liner needs `node --import=tsx` to import a `.ts` module, and the §4.4 count of 36 is the `authorization.test.ts` file alone, not the workspace suite. Contracts 65/65, api 475/477 (2 skipped, live PostgreSQL), worker 52/52. |
 | 0.1 | September 15, 2026 | Architecture under `PROTO-POLICY-V5-001` | Initial ready-to-apply release step with the `p4`-first-or-combined rule, the reproducible `p5` digest, the exact history row, the registry flip, every application literal that pins the current version, the contracts suite proven version-derived under a simulated flip, and every application test change the flip requires with the historical `p1`–`p4` literals that stay. Not applied. |

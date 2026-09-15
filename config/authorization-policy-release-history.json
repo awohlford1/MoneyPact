@@ -22,5 +22,21 @@
     "releaseCommit": "2245eea5347263943ae4ec1edc5a2b4d30460220",
     "productApprovalRef": "PO-P3-APPROVAL-001",
     "securityApprovalRef": "PROTO-POLICY-V3-SEC-001-RESULT-001"
+  },
+  {
+    "version": "p4",
+    "digest": "25b2f9e917c19bdb9c26699bb4840a6e9d9544e16ac2f212de9120e6eacd15a9",
+    "schemaVersion": 1,
+    "releaseCommit": "696d831ab25a226cc178c27e7111ef75c2ffd579",
+    "productApprovalRef": "PO-P4P5-APPROVAL-001",
+    "securityApprovalRef": "PROTO-POLICY-V4-SEC-001-RESULT-001"
+  },
+  {
+    "version": "p5",
+    "digest": "68eef40b40f0f04fb8c31cba6f08292bc39a4c98c0f1ccc248f548e561e2fec8",
+    "schemaVersion": 1,
+    "releaseCommit": "c4add46cb6103e9a2c2b7ee8d14a9afb8afa0acc",
+    "productApprovalRef": "PO-P4P5-APPROVAL-001",
+    "securityApprovalRef": "PROTO-POLICY-V5-SEC-001-RESULT-001"
   }
 ]

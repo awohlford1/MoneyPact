@@ -97,7 +97,7 @@ async function freeLoopbackPort(): Promise<number> {
   }
 }
 
-it("real API and worker processes start on the released policy p3 and refuse an empty history", async () => {
+it("real API and worker processes start on the released policy p5 and refuse an empty history", async () => {
   // The two real processes are spawned under tsx while the rest of the workspace
   // suites run in parallel; 15 s was not enough on a loaded machine and the
   // test flaked for three separate agents. The processes exit on their own

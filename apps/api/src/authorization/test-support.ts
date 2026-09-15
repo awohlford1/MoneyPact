@@ -9,7 +9,7 @@ import { FactAssembler } from "./facts.js";
 import type { FactLookup, FactSourceAdapter, Operation } from "./facts.js";
 
 /** Synthetic approvals for isolated tests only; never a runtime release row. */
-export const testHistory = [{ version: "p3", digest: SUPPORTED_POLICY_TUPLES[0]!.expectedDigest, schemaVersion: 1, releaseCommit: "test-only", productApprovalRef: "test-only-product", securityApprovalRef: "test-only-security" }];
+export const testHistory = [{ version: "p5", digest: SUPPORTED_POLICY_TUPLES[0]!.expectedDigest, schemaVersion: 1, releaseCommit: "test-only", productApprovalRef: "test-only-product", securityApprovalRef: "test-only-security" }];
 export const testGovernance = { retentionClass: "test-only", deletionPolicyVersion: "test-only", retentionApprovalRef: "test-only", reasonVocabularyApprovalRef: "test-only" };
 export interface TestState {
   spaces: string[]; memberships: string[]; effects: string[]; derived: string[]; notifications: string[]; versions: number[];
