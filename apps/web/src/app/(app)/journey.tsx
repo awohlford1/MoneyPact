@@ -8,6 +8,9 @@ import { useSession } from "../../session/SessionProvider";
 import { Alert } from "../../components/Alert";
 import { Button } from "../../components/Button";
 import { Input } from "../../components/Input";
+// PROTO-INCREMENT-B-001: accounts, expenses and progress render from the budget this module
+// already read, so the section costs no second detail read of its own.
+import { Spending } from "./budgets/spending";
 
 function useResource<T>(identity: string, load: (signal: AbortSignal) => Promise<T>) {
   const [result, setResult] = useState<{ identity: string; value?: T; error?: unknown; refreshed?: boolean }>();
@@ -81,6 +84,7 @@ function BudgetContent({ budget, refreshed, editing }: { budget: BudgetDetail; r
       </dl>
       {budget.completeness === "complete" && budget.freshness === "current" && <PlanView key={`${budget.id}:${period.id}:${budget.updatedAt}`} budget={budget} editing={editing} />}
       {!editing && <NextLink className="text-interactive underline" href={`/budgets/${encodeURIComponent(budget.id)}/plan`}>Edit category plan</NextLink>}
+      {!editing && budget.completeness === "complete" && budget.freshness === "current" && <Spending key={`spending:${budget.id}:${period.id}`} budget={budget} />}
     </>}
   </>;
 }

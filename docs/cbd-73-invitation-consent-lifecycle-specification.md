@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved v1.0.3 — Product Owner approved this exact specification on August 18, 2026. The §15 open issues remain binding; approval is of the specification, not of any implementation or evidence** |
-| Document version | 1.0.3 |
+| Status | **Approved v1.0.4 — Product Owner approved this exact specification on August 18, 2026 at v1.0.3 and approved the §13.1 v1.0.4 amendment on September 15, 2026 (`PO-CONTRACT-APPROVALS-003`). The §15 open issues remain binding; approval is of the specification, not of any implementation or evidence** |
+| Document version | 1.0.4 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-73](https://cobudget.atlassian.net/browse/CBD-73) |
 | Parent | [CBD-12](https://cobudget.atlassian.net/browse/CBD-12) |
@@ -15,7 +15,6 @@
 | Message inventory | `docs/cbd-73-customer-message-inventory.md` |
 | Test inventory | `docs/cbd-73-negative-recovery-test-inventory.md` |
 | Traceability and review | `docs/cbd-73-acceptance-criteria-traceability.md` |
-| Pending amendment | 1.0.4 **proposed** (§13.1 and the §16 row), awaiting Product Owner approval under `PO-CONTRACT-APPROVALS-001`; the approved v1.0.3 status, version and every other section stand unchanged |
 | Last updated | August 18, 2026 |
 
 > **Authority and blocking boundary:** The approved CBD-72 permission model, CBD-94 security/privacy requirements, CBD-91 data boundaries, the CBD-11/CBD-71 inherited rules, and the August 16, 2026 `RI-93-*` Product Owner decisions are controlling inputs. This specification defines the invitation, informed-consent, membership-change, revocation, and removal lifecycle that consumes them. It cannot weaken or broaden an approved outcome without explicit change control. The conspicuous register in §15 is normative: no behavior named there as blocked may ship, be treated as approved, or be silently resolved by implementation. Execution mechanisms may refine mechanics but not outcomes.
@@ -476,10 +475,10 @@ CBD-91 rules govern existing classes, but several v0.2 records have materially d
 | DR-73-12 | Ownership-transfer workflow | Space; current Primary/recipient memberships and versions; disclosure/version/expiry; recipient-consent and Primary-confirmation/assurance references; each evidence record's pending/consumed/closed disposition and terminal-event link; Proposed/RecipientAccepted/PrimaryConfirmed/Ready/Declined/Withdrawn/Expired/Invalidated/Committed state; resulting authorization and ended-consent links; notice/audit correlation. | `DI-91-007`/`DI-91-009`/`DI-91-052`; any split subject to OI-73-003 |
 | DR-73-13 | Intended-recipient confirmation and binding | Invitation and version; ceremony; acceptor account; confirming membership, exact permission, and authorization version; binding-rule ID/version; requested/confirmed/rejected/expired state with its authoritative expiry; displayed-identity version shown to the confirmer; correlation to the acceptor's pending consent evidence and to the TR-73-13 commit or terminal event. Retained as authority evidence under `IC-73-018`; replay grants nothing. | `DI-91-007` / `DI-91-009`; class assignment remains `OI-73-003` |
 
-### 13.1 `DR-73-04` physical mapping (proposed amendment, not approved)
+### 13.1 `DR-73-04` physical mapping
 
-**Proposed amendment (v1.0.4), pending Product Owner approval under
-`PO-CONTRACT-APPROVALS-001`.** This subsection records the physical record that
+**Amendment v1.0.4, approved by the Product Owner on September 15, 2026 under
+`PO-CONTRACT-APPROVALS-003`.** This subsection records the physical record that
 now implements `DR-73-04` for the Primary Owner's creation-time consent. It is
 the amendment `CBD236-CONSENT-SEMANTICS-001` item 6 deferred to this package. It
 adds no requirement, changes no `DR-73-04` semantic minimum, closes no open
@@ -647,7 +646,7 @@ Audit-placement rules:
 
 | Version | Date | Author | Change | Approval |
 | --- | --- | --- | --- | --- |
-| 1.0.4 (proposed) | September 15, 2026 | Claude specification specialist, dispatched by Manager (`PROTO-CONSENT-AMENDMENTS-001`) | Added §13.1, the physical `DR-73-04` mapping to `budget_space_consent` deferred to this package by `CBD236-CONSENT-SEMANTICS-001` item 6: the column-by-column mapping as merged in PR #337, the `self_disclosure` source value for the Primary Owner's creation-time row, the append-only digest-pinned registry as the disclosure version source, and the `SEC-F02` forward rule binding every later membership insert. No lifecycle transition, invariant, message row, scenario, data requirement, audit code or open-issue gate changed; no open issue closed. | **Proposed, not approved.** The approved v1.0.3 status line and document version are unchanged and no approval is claimed. Pending Product Owner approval under `PO-CONTRACT-APPROVALS-001` |
+| 1.0.4 | September 15, 2026 | Claude specification specialist, dispatched by Manager (`PROTO-CONSENT-AMENDMENTS-001`) | Added §13.1, the physical `DR-73-04` mapping to `budget_space_consent` deferred to this package by `CBD236-CONSENT-SEMANTICS-001` item 6: the column-by-column mapping as merged in PR #337, the `self_disclosure` source value for the Primary Owner's creation-time row, the append-only digest-pinned registry as the disclosure version source, and the `SEC-F02` forward rule binding every later membership insert. No lifecycle transition, invariant, message row, scenario, data requirement, audit code or open-issue gate changed; no open issue closed. | **Approved — Product Owner, September 15, 2026 (`PO-CONTRACT-APPROVALS-003`).** Status line and document version bumped in the same change; the §15 gates stay open |
 | 1.0.3 | September 3, 2026 | Claude with Alexander Wohlford as Product Owner | Brand amendment. The ceremony-entry disclosure in the specification's §7 said the surface discloses "that this is a CoBudget invitation requiring verification"; it now says MoneyPact, matching `EM-92-002` as amended at CBD-92 v1.0.1 and the `MSG-73-002`/`MSG-73-010` rows already corrected at v1.0.2. The naming standard is `RT-75-01`. No lifecycle transition, invariant, message row, scenario, or gate changed. | Consequential amendment to an approved document under change control; the v1.0 approval otherwise stands |
 | 1.0.2 | September 2, 2026 | Claude with Alexander Wohlford as Product Owner | Brand amendment. The two customer-facing strings that named the product, in `MSG-73-002` and `MSG-73-010`, said "a CoBudget invitation". The September 2, 2026 brand decision recorded in `docs/brand-foundation.md` makes MoneyPact the customer-facing name and keeps CoBudget as the internal codename, so a customer-readable invitation must say MoneyPact. Both now do. No semantic rule changes; the naming standard is `RT-75-*` in the CBD-75 package. | Product Owner authorized September 2, 2026 |
 | 1.0.1 | August 18, 2026 | Claude with Alexander Wohlford as Product Owner | Corrected the v1.0 status line, which kept a stale trailing clause and so read as approved and awaiting review at the same time. No rule, decision, or gate changed. | Correction to approved v1.0 |

@@ -43,6 +43,8 @@ import { budgetApiHttp } from "./modules.ts";
 import { CreationAuthorizationStore } from "./transaction-store.js";
 import type { HandleOutcomes } from "./transaction-store.js";
 import { dataAccessTargetsDependencies, TARGET_ACTIONS, TargetsAuthorizationStore, targetsHttp } from "../targets/http.ts";
+import { ACCOUNT_ACTIONS, AccountsAuthorizationStore, accountsHttp, dataAccessAccountsDependencies } from "../accounts/http.ts";
+import { dataAccessTransactionsDependencies, TRANSACTION_ACTIONS, TransactionsAuthorizationStore, transactionsHttp } from "../transactions/http.ts";
 
 export interface BudgetCompositionOptions {
   readonly client: DataAccessClient;
@@ -139,13 +141,25 @@ export function composeBudgetApi(options: BudgetCompositionOptions) {
   );
   const targets = targetsHttp(dataAccessTargetsDependencies(client));
   const targetsStore = new TargetsAuthorizationStore(client);
+  // PROTO-INCREMENT-B-001. `14.view_accounts_balances_transactions` backs both
+  // the account list and the transaction history, and the dispatching store
+  // refuses an action claimed twice, so the transactions store owns it for both
+  // routes; the two stores are behaviourally identical for a read.
+  const accounts = accountsHttp(dataAccessAccountsDependencies(client));
+  const accountsStore = new AccountsAuthorizationStore(client);
+  const transactions = transactionsHttp(dataAccessTransactionsDependencies(client));
+  const transactionsStore = new TransactionsAuthorizationStore(client);
+  const accountActions = [ACCOUNT_ACTIONS.create, ACCOUNT_ACTIONS.edit, ACCOUNT_ACTIONS.archive, ACCOUNT_ACTIONS.restore];
+  const transactionActions = [...new Set(Object.values(TRANSACTION_ACTIONS))];
   return {
-    modules: [...budget.modules, targets.module],
+    modules: [...budget.modules, targets.module, accounts.module, transactions.module],
     candidates: budget.candidates,
     facts: budget.facts,
     stores: [
       { actions: ["space.create"], store: creationStore, observe: (outcomes: HandleOutcomes) => creationStore.observe(outcomes) },
       { actions: Object.values(TARGET_ACTIONS), store: targetsStore, observe: (outcomes: HandleOutcomes) => targetsStore.observe(outcomes) },
+      { actions: accountActions, store: accountsStore, observe: (outcomes: HandleOutcomes) => accountsStore.observe(outcomes) },
+      { actions: transactionActions, store: transactionsStore, observe: (outcomes: HandleOutcomes) => transactionsStore.observe(outcomes) },
     ],
   };
 }

@@ -298,5 +298,155 @@
     "registration_lifecycle": "active",
     "introduced_by": "CBD-266",
     "authorization_metadata_id": "profile.read"
+  },
+  {
+    "registration_id": "api:POST:/v1/budget-spaces/{budgetSpaceId}/accounts",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/accounts/http.ts#AccountsController.create",
+    "surface_id": "surf-266-budget-mutation",
+    "parameter_record_id": "rlp-266-mutation-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-196",
+    "authorization_metadata_id": "manual_account.create_manual_account"
+  },
+  {
+    "registration_id": "api:GET:/v1/budget-spaces/{budgetSpaceId}/accounts",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/accounts/http.ts#AccountsController.list",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-196",
+    "authorization_metadata_id": "14.view_accounts_balances_transactions"
+  },
+  {
+    "registration_id": "api:HEAD:/v1/budget-spaces/{budgetSpaceId}/accounts",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/accounts/http.ts#AccountsController.list",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-196",
+    "authorization_metadata_id": "14.view_accounts_balances_transactions"
+  },
+  {
+    "registration_id": "api:PATCH:/v1/budget-spaces/{budgetSpaceId}/accounts/{accountId}",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/accounts/http.ts#AccountsController.edit",
+    "surface_id": "surf-266-budget-mutation",
+    "parameter_record_id": "rlp-266-mutation-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-196",
+    "authorization_metadata_id": "manual_account.edit_manual_account"
+  },
+  {
+    "registration_id": "api:POST:/v1/budget-spaces/{budgetSpaceId}/accounts/{accountId}/archive",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/accounts/http.ts#AccountsController.archive",
+    "surface_id": "surf-266-budget-mutation",
+    "parameter_record_id": "rlp-266-mutation-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-200",
+    "authorization_metadata_id": "manual_account.archive_manual_account"
+  },
+  {
+    "registration_id": "api:POST:/v1/budget-spaces/{budgetSpaceId}/accounts/{accountId}/restore",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/accounts/http.ts#AccountsController.restore",
+    "surface_id": "surf-266-budget-mutation",
+    "parameter_record_id": "rlp-266-mutation-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-200",
+    "authorization_metadata_id": "manual_account.restore_manual_account"
+  },
+  {
+    "registration_id": "api:POST:/v1/budget-spaces/{budgetSpaceId}/transactions",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/transactions/http.ts#TransactionsController.create",
+    "surface_id": "surf-266-budget-mutation",
+    "parameter_record_id": "rlp-266-mutation-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-199",
+    "authorization_metadata_id": "9.add_manual_transaction"
+  },
+  {
+    "registration_id": "api:PATCH:/v1/budget-spaces/{budgetSpaceId}/transactions/{transactionId}",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/transactions/http.ts#TransactionsController.edit",
+    "surface_id": "surf-266-budget-mutation",
+    "parameter_record_id": "rlp-266-mutation-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-200",
+    "authorization_metadata_id": "9.edit_manual_transaction"
+  },
+  {
+    "registration_id": "api:POST:/v1/budget-spaces/{budgetSpaceId}/transactions/{transactionId}/remove",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/transactions/http.ts#TransactionsController.remove",
+    "surface_id": "surf-266-budget-mutation",
+    "parameter_record_id": "rlp-266-mutation-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-200",
+    "authorization_metadata_id": "9.remove_manual_transaction"
+  },
+  {
+    "registration_id": "api:GET:/v1/budget-spaces/{budgetSpaceId}/transactions/{transactionId}/history",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/transactions/http.ts#TransactionsController.history",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-201",
+    "authorization_metadata_id": "14.view_accounts_balances_transactions"
+  },
+  {
+    "registration_id": "api:HEAD:/v1/budget-spaces/{budgetSpaceId}/transactions/{transactionId}/history",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/transactions/http.ts#TransactionsController.history",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-201",
+    "authorization_metadata_id": "14.view_accounts_balances_transactions"
+  },
+  {
+    "registration_id": "api:GET:/v1/budget-spaces/{budgetSpaceId}/periods/{periodId}/progress",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/transactions/http.ts#TransactionsController.progress",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-209",
+    "authorization_metadata_id": "15.view_planning_and_reports"
+  },
+  {
+    "registration_id": "api:HEAD:/v1/budget-spaces/{budgetSpaceId}/periods/{periodId}/progress",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/transactions/http.ts#TransactionsController.progress",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-209",
+    "authorization_metadata_id": "15.view_planning_and_reports"
+  },
+  {
+    "registration_id": "api:GET:/v1/budget-spaces/{budgetSpaceId}/periods/{periodId}/progress/{categoryId}",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/transactions/http.ts#TransactionsController.detail",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-211",
+    "authorization_metadata_id": "14.view_progress_detail"
+  },
+  {
+    "registration_id": "api:HEAD:/v1/budget-spaces/{budgetSpaceId}/periods/{periodId}/progress/{categoryId}",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/transactions/http.ts#TransactionsController.detail",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-211",
+    "authorization_metadata_id": "14.view_progress_detail"
   }
 ]

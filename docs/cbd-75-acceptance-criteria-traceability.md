@@ -23,7 +23,7 @@ A mechanical audit pass proves structure. It does not prove that a description m
 | Source | Version consumed | What is taken from it |
 | --- | --- | --- |
 | `docs/cbd-72-collaboration-permission-model.md` | v0.1.54 | §2.1 membership model; §2.2 the five roles; §5.1 Viewer hierarchy and the scope label; §5.3 the Accountability Partner field boundary; §5.8 the owner-authorized Viewer snapshot |
-| `docs/cbd-73-invitation-consent-lifecycle-specification.md` and its message inventory | v1.0.3 | §2 cross-cutting semantic rules, generalized into `CS-75-01`–`CS-75-12`; the surfaces `PT-75-01`–`PT-75-05` shape |
+| `docs/cbd-73-invitation-consent-lifecycle-specification.md` and its message inventory | v1.0.4 | §2 cross-cutting semantic rules, generalized into `CS-75-01`–`CS-75-12`; the surfaces `PT-75-01`–`PT-75-05` shape |
 | `docs/cbd-74-accountability-alert-boundary-specification.md` | v1.0.1 | `CP-74-01`–`CP-74-08`; `AB-74-015`; `PB-74-06`, `PB-74-09`, `PB-74-12`; §6.2 and §6.4 |
 | `docs/cbd-93-privacy-coercion-abuse-analysis.md` | Current | `SG-93-021`, `SG-93-093` and the copy safeguards routed to CBD-75 |
 | `docs/cbd-94-risk-mitigation-requirement-register.md` | Current | `SR-94-089`, `SR-94-142`, `SR-94-145` |

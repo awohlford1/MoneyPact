@@ -1140,7 +1140,7 @@
         "cbd-73-review-findings"
       ],
       "policy": "approved",
-      "approved_sha256": "6ca09782332663b417b40276668605a2515ee48d73b4236a42540d7c794901c1"
+      "approved_sha256": "668002dce55d9c23b2791f48b99a6c9c21b1823f2fa02dfbfb1c19707a1b616e"
     },
     {
       "path": "docs/cbd-73-customer-message-inventory.md",
@@ -1157,7 +1157,7 @@
         "cbd-73-specification"
       ],
       "policy": "approved",
-      "approved_sha256": "46c295147f6e355b87cec751a3bdb0f0252ab31f42bcfc4ae0f4d6e277a7e379"
+      "approved_sha256": "da95064f2cde885c579db75f6a646e7a2c1c9ff6633afc1517aed66ba511fad7"
     },
     {
       "path": "docs/cbd-73-exhaustive-review-findings.md",
@@ -1174,7 +1174,7 @@
         "cbd-73-test-inventory"
       ],
       "policy": "approved",
-      "approved_sha256": "d6f3a20ed42ce1edd12638d0b0c93e59e4a19ca38f0f6a4f27cc2cd5584687db"
+      "approved_sha256": "59dc5e1f600fe4bf04038ef65019fb6c6c4a2ce29d7eb469b00a5993c60d5e22"
     },
     {
       "path": "docs/cbd-73-invitation-consent-lifecycle-specification.md",
@@ -1191,7 +1191,7 @@
         "cbd-95-follow-up-register"
       ],
       "policy": "approved",
-      "approved_sha256": "30be1b81bd764e4d3ff75ea5a69d2b6cf30213515a0f0ac7072459ee0ca8dc69"
+      "approved_sha256": "fab24597293196f056ba858a588d29f5e63b6915ed86c3c6b2b58fa24ac3175b"
     },
     {
       "path": "docs/cbd-73-negative-recovery-test-inventory.md",
@@ -1208,7 +1208,7 @@
         "cbd-73-message-inventory"
       ],
       "policy": "approved",
-      "approved_sha256": "1dfccb1fa94d5574b3002ffe425011526476a56e5104081cb89a878dc00a1b61"
+      "approved_sha256": "540d9c70d31bfe072f61ced38eee79da3912b10dc33befbfe633b62c74fa4802"
     },
     {
       "path": "docs/cbd-74-acceptance-criteria-traceability.md",
@@ -1276,7 +1276,7 @@
         "cbd-75-standard"
       ],
       "policy": "approved",
-      "approved_sha256": "9e6928080d420525bda961e9120783db1536ac095e9577b6cd6c5a3d37fff878"
+      "approved_sha256": "f4cb3b5200cf6ac33549b844a96b2b598ecc1dda12576e4bd39d1afe8e8c662a"
     },
     {
       "path": "docs/cbd-75-role-terminology-and-copy-standard.md",
@@ -1661,6 +1661,13 @@
       "rationale": "CBD-236 policy version 3 release step is a repository-only operational record for the Manager; it names approvals that do not yet exist and creates no pages.",
       "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy, matching the docs/cbd-236-p2-release-step.md precedent in this manifest.",
       "reopen_when": "The p3 release row is merged with both approval references, after which the document is historical; a Confluence target is registered only in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-236-p4-release-step.md",
+      "disposition": "unpublished",
+      "rationale": "CBD-236 policy version 4 release step is a repository-only operational record for the Manager; it names approvals that do not yet exist and creates no pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy, matching the docs/cbd-236-p3-release-step.md precedent in this manifest.",
+      "reopen_when": "The p4 release row is merged with both approval references, after which the document is historical; a Confluence target is registered only in a focused merged change."
     },
     {
       "path": "docs/cbd-190-identity-ceremony-and-mapping-contract.md",

@@ -2,12 +2,11 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved — Product Owner, September 13, 2026 (PO-CONTRACT-APPROVALS-001); open questions and residuals stay recorded and open** |
-| Document version | 0.2.1 |
+| Status | **Approved — Product Owner, September 15, 2026 (PO-CONTRACT-APPROVALS-003), applying the 0.3 consent amendment to the 0.2.1 approval of September 13, 2026 (PO-CONTRACT-APPROVALS-001); open questions and residuals stay recorded and open** |
+| Document version | 0.3 |
 | Jira subtask | [CBD-232](https://cobudget.atlassian.net/browse/CBD-232) |
 | Parent | [CBD-23](https://cobudget.atlassian.net/browse/CBD-23) |
 | Repository baseline | `8ac588f36ca61fde9ee77c5f4ff9f9cf25041344` |
-| Pending amendment | 0.3 **proposed** (§15 row), awaiting Product Owner approval under `PO-CONTRACT-APPROVALS-001`; the approved 0.2.1 status and version stand |
 | Last updated | September 12, 2026 |
 
 ## 1. Purpose and authority
@@ -254,11 +253,11 @@ interface BudgetCreationProposalResponse {
   readonly previewDigest: string;
   readonly confirmationBinding: string;
   readonly bindingVersion: "bcp-hmac-sha256/v1";
-  // Proposed amendment (0.3), resolving OQ-CF-004.
+  // Added at 0.3, resolving OQ-CF-004.
   readonly currentDisclosure: ConsentDisclosure;
 }
 
-// Proposed amendment (0.3): the approved consent disclosure, read server-side
+// Added at 0.3: the approved consent disclosure, read server-side
 // from the registry. `text` is presentation copy and is rendered verbatim.
 interface ConsentDisclosure {
   readonly kind: string;
@@ -312,8 +311,8 @@ never changes. `proposalId` is a server-generated opaque identifier formatted as
 revision within the predecessor chain; concurrent independent previews may each
 start at 1. The response deliberately contains no budget-space ID.
 
-**Proposed amendment (0.3), pending Product Owner approval under
-`PO-CONTRACT-APPROVALS-001`; this is the resolution of `OQ-CF-004` in
+**Amendment 0.3, approved by the Product Owner on September 15, 2026 under
+`PO-CONTRACT-APPROVALS-003`; this is the resolution of `OQ-CF-004` in
 `docs/cbd-236-consent-facts-proposal.md` §13, as an additive field rather than a
 separate endpoint.** Every proposal response, on create, regenerate and read,
 carries `currentDisclosure`: the approved consent disclosure for the
@@ -379,7 +378,7 @@ interface ConfirmBudgetCreationRequest {
   readonly proposalId: string;
   readonly confirmationBinding: string;
   readonly confirmationIdempotencyKey: string;
-  // Proposed amendment (0.3): reconciled with the CBD-233 0.2 amendment.
+  // Added at 0.3: reconciled with the CBD-233 0.2 amendment.
   readonly acknowledgedDisclosure?: {
     readonly kind: string;
     readonly version: number;
@@ -399,8 +398,8 @@ does not allow a different confirmation identity to consume an already
 confirmed proposal. These are CBD-232 consumer obligations, not recorded
 decisions of CBD-231 or CBD-233.
 
-**Proposed amendment (0.3), pending Product Owner approval under
-`PO-CONTRACT-APPROVALS-001`.** CBD-233 accepted this shape and added the
+**Amendment 0.3, approved by the Product Owner on September 15, 2026 under
+`PO-CONTRACT-APPROVALS-003`.** CBD-233 accepted this shape and added the
 optional `acknowledgedDisclosure` claim above; that field, its malformed-versus-
 absent handling and the `stale_disclosure` outcome are decided by CBD-233 §§3.1
 and 3.3 and are reproduced here only so the two request shapes agree. CBD-232
@@ -583,7 +582,7 @@ clamping in a displayed short month. Warnings never replace field errors.
 
 `previewDigest` is base64url SHA-256 over RFC 8785 canonical JSON of
 `normalizedInputs + governingVersions + preview`. It is content evidence, not
-authorization. **Proposed amendment (0.3):** the §4.2 `currentDisclosure` field
+authorization. **Amendment 0.3:** the §4.2 `currentDisclosure` field
 is deliberately not an input to this digest and not covered by the binding
 envelope below, for the reason given in §4.2.
 
@@ -840,8 +839,8 @@ confirmation-transaction participation remain enforceable.
 | `CBD-232-AC06` | §§4.2–4.3 and 8 distinguish the immutable issued snapshot from lifecycle metadata and budgets, scope/version/expire drafts, and define logout/account-switch clearing and rebinding. | Read-lifecycle schema, budget-route denial, client clear, server lazy invalidation, and deliberate re-entry tests. |
 | `CBD-232-AC07` | §§4.1, 4.3, 7.1, and 8.1 define context-complete idempotency and lookup, uniform non-disclosure, current-session checks, digest/MAC verification, and cross-environment denial. | Guessed/cross-context/stale-session/altered-payload and cross-context key cases in §11. |
 | `CBD-232-AC08` | §11 enumerates every required cadence, DST/local-midnight, short-month/leap-year, normalization, edit, expiry, replay, concurrency, and cross-subject suite. | Passing implementation test report at the exact candidate revision. |
-| `CBD-232-AC03` (proposed) | §4.2 `currentDisclosure` is read from the approved registry on every response and rendered verbatim. | Response-shape fixtures for create, regenerate and read; a test that the field tracks the registry rather than the stored snapshot. |
-| `CBD-232-AC06` (proposed) | §4.2 acknowledgement rule: unticked by default, dropped on any replacement of the reviewed proposal, echoed as CBD-233 `acknowledgedDisclosure`. | Review-surface tests that confirm is disabled until ticked and disabled again on edit, regeneration or a disclosure-version change, and that the confirm payload carries the reviewed kind and version. |
+| `CBD-232-AC03` (0.3 consent amendment) | §4.2 `currentDisclosure` is read from the approved registry on every response and rendered verbatim. | Response-shape fixtures for create, regenerate and read; a test that the field tracks the registry rather than the stored snapshot. |
+| `CBD-232-AC06` (0.3 consent amendment) | §4.2 acknowledgement rule: unticked by default, dropped on any replacement of the reviewed proposal, echoed as CBD-233 `acknowledgedDisclosure`. | Review-surface tests that confirm is disabled until ticked and disabled again on edit, regeneration or a disclosure-version change, and that the confirm payload carries the reviewed kind and version. |
 
 ## 14. Findings, assumptions, and dependencies
 
@@ -860,7 +859,7 @@ confirmation-transaction participation remain enforceable.
    makes the dependency explicit and versioned rather than selecting a source.
 5. The application package and port names are architectural proposals. Creating
    its manifest, exports, or code belongs to the follow-on implementation packet.
-6. **Proposed amendment (0.3).** `OQ-CF-004` of
+6. **Amendment 0.3.** `OQ-CF-004` of
    `docs/cbd-236-consent-facts-proposal.md` §13 asked whether the preview
    response should carry the disclosure as an additive field or through a
    separate endpoint. It is resolved here by reference: an additive field on the
@@ -876,7 +875,7 @@ confirmation-transaction participation remain enforceable.
 
 | Version | Date | Author | Change | Disposition |
 | --- | --- | --- | --- | --- |
-| 0.3 (proposed) | September 15, 2026 | Specification specialist, dispatched by Manager (`PROTO-CONSENT-AMENDMENTS-001`) | The amendment `CBD236-CONSENT-SEMANTICS-001` item 6 deferred to this package, describing what PR #337 merged: §4.2 adds the `currentDisclosure` preview field with its always-current, outside-the-digest, rendered-verbatim and unticked-by-default acknowledgement rules; §4.4 reconciles the confirmation request with the CBD-233 0.2 `acknowledgedDisclosure` claim; §7.1 records the digest exclusion; §13 gains two traceability rows; §14 records `OQ-CF-004` resolved by reference and `OQ-CF-002`/`OQ-CF-003` left open. | **Proposed, not approved.** The approved 0.2.1 status line and document version are unchanged and no approval is claimed. Pending Product Owner approval under `PO-CONTRACT-APPROVALS-001`. |
+| 0.3 | September 15, 2026 | Specification specialist, dispatched by Manager (`PROTO-CONSENT-AMENDMENTS-001`) | The amendment `CBD236-CONSENT-SEMANTICS-001` item 6 deferred to this package, describing what PR #337 merged: §4.2 adds the `currentDisclosure` preview field with its always-current, outside-the-digest, rendered-verbatim and unticked-by-default acknowledgement rules; §4.4 reconciles the confirmation request with the CBD-233 0.2 `acknowledgedDisclosure` claim; §7.1 records the digest exclusion; §13 gains two traceability rows; §14 records `OQ-CF-004` resolved by reference and `OQ-CF-002`/`OQ-CF-003` left open. | **Approved — Product Owner, September 15, 2026 (`PO-CONTRACT-APPROVALS-003`).** Status and document version bumped in the same change; `OQ-CF-002`, `OQ-CF-003` and `OQ-CF-005` stay open. |
 | 0.2.1 (approval) | September 13, 2026 | Manager, in the merge lane | Product Owner approval recorded (PO-CONTRACT-APPROVALS-001). Status Proposed → Approved at the same version; no decision, identifier or contract text changed. | Approved. |
 | 0.2.1 | September 12, 2026 | Manager, in the merge lane | Re-review closures: `replaceCurrent` evaluation order and terminal-head regeneration defined (re-review finding 1, §11 seam paragraph); empty `Idempotency-Key` now yields `idempotency-key.required` only (finding 2, §5 catalog). No other text changed. | Proposed; re-review findings 1 and 2 closed in the lane. |
 | 0.2 | September 12, 2026 | Architecture specialist, dispatched by Manager | Independent-review corrections: F1 → lines 161–226, 541–561, 627–651, and 710–711; F2 → lines 228–314; F3 → lines 554–558, 627–651, and 711; F4 → lines 34–38, 57–60, 316–339, 619, 666–696, 735–736, and 770–773; F5 → lines 343–401 and 708; F6 → lines 9, 20–26, and 767–769; F7 → lines 88–108. | Proposed; corrected candidate requires independent re-review and implementation evidence. |

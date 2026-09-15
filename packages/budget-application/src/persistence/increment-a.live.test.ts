@@ -94,6 +94,20 @@ void test("PROTO-INCREMENT-A-001 live PostgreSQL: accounts, transactions, alloca
          VALUES ($1,$2,$3,$4,'primary_owner','active',$4)`,
         [membershipId, budgetSpaceId, profileId, subjectId],
       );
+      // PROTO-INCREMENT-B-001: the CBD-236 consent landing (merged after this
+      // suite was written) refuses at commit any membership without a current
+      // consent row, so the fixture now records the creator's self-disclosure
+      // exactly as the confirmation ceremony does. Fixture repair only; no
+      // assertion of this suite changed.
+      await connection.query(
+        `INSERT INTO budget_space_consent (consent_id, budget_space_id, membership_id, account_subject_id, role, resource_scope, source,
+           source_record_id, source_record_version, disclosure_kind, disclosure_version, disclosure_digest, policy_version, policy_digest,
+           state, recorded_by_subject_id)
+         VALUES ($1,$2,$3,$4,'primary_owner','full','self_disclosure',$3,1,'primary_owner_self',1,$5,'p3',$6,'current',$4)`,
+        [randomUUID(), budgetSpaceId, membershipId, subjectId,
+          "093f199283c75721e1d197bbe7c64452e3689715a0a1470a1fe557c805421e34",
+          "b4fbdb8e32a6155705877d7c91846ee855dc717dfce9d57a6f04e07301923e4d"],
+      );
       await connection.query(
         `INSERT INTO budget_space_schedule_version (schedule_version_id, budget_space_id, sequence, status, cadence_definition, proposal_preview_digest)
          VALUES ($1,$2,1,'authoritative','{"cadence":"monthly","anchor":{"kind":"day","day":1}}','digest')`,
