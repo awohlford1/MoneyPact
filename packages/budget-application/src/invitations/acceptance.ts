@@ -256,10 +256,17 @@ export async function confirmAcceptance(
     state: "accepted", projectionState: "accepted", acceptedMembershipId: membershipId,
   });
   if (!accepted) throw new InvitationError("stale_version", "invitation.stateVersion");
-  await repository.updateCodeDisposition(invitation.budgetSpaceId, invitation.invitationId, "active", "consumed", "accepted", now);
+  // `R-06`: both updates are conditional -- the code one on `disposition =
+  // 'active'`, the ceremony one on the row still existing -- and both returned
+  // a boolean the transaction discarded. An acceptance that committed with an
+  // unconsumed code would leave the link usable, so a false answer is a lost
+  // precondition and denies rather than passing silently.
+  const consumed = await repository.updateCodeDisposition(invitation.budgetSpaceId, invitation.invitationId, "active", "consumed", "accepted", now);
+  if (!consumed) throw new InvitationError("invitation_not_current", "code.disposition");
   await repository.tombstoneOutbox(invitation.invitationId, "code_consumed", now);
   assertCeremonyEdge(ceremony.state, "consumed");
-  await repository.updateCeremony(invitation.budgetSpaceId, ceremony.ceremonyId, { state: "consumed", isCurrent: false });
+  const ceremonyConsumed = await repository.updateCeremony(invitation.budgetSpaceId, ceremony.ceremonyId, { state: "consumed", isCurrent: false });
+  if (!ceremonyConsumed) throw new InvitationError("invitation_not_current", "ceremony.state");
   await boundary("after-terminal-states");
 
   // --- 9 (siblings): every enumerable same-space record for this person. ---

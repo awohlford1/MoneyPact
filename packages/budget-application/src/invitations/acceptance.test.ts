@@ -17,6 +17,7 @@ import { acceptInvitation, attachAccount, createInvitation, parseCreateInvitatio
 import { ACCEPTANCE_BOUNDARIES, confirmAcceptance, rejectAcceptance } from "./acceptance.ts";
 import { isInvitationError } from "./records.ts";
 import type { InvitationErrorCode } from "./records.ts";
+import type { InvitationRepository } from "./ports.ts";
 import { ENVIRONMENT, INVITEE_SUBJECT, OWNER_MEMBERSHIP, OWNER_SUBJECT, SPACE, ownerWithoutPermission, testWorld } from "./support.ts";
 import type { TestWorld } from "./support.ts";
 
@@ -289,6 +290,29 @@ void test("a co-owner invitation commits a co_owner membership against its own d
   assert.equal(world.repository.consents[0]?.role, "co_owner");
   assert.equal(world.repository.consents[0]?.disclosureKind, "invitation_co_owner");
   assert.equal(world.repository.consents[0]?.disclosureDigest, "b".repeat(64));
+});
+
+void test("R-06: a step-9 update that matches no row denies instead of committing an unconsumed code", async () => {
+  for (const failing of ["updateCodeDisposition", "updateCeremony"] as const) {
+    const world = testWorld();
+    const { invitationId } = await awaitingConfirmation(world);
+    // The repository is a class, so the one statement whose conditional
+    // predicate loses its row is overridden through a proxy rather than a spread.
+    const base = world.deps.repository;
+    const repository = new Proxy(base, {
+      get(target, property, receiver): unknown {
+        if (property === failing) return async () => false;
+        const value = Reflect.get(target, property, receiver) as unknown;
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }) as InvitationRepository;
+    const deps = { ...world.deps, repository };
+    await assert.rejects(
+      confirmAcceptance(deps, world.owner, { invitationId, confirmationIdempotencyKey: "k" }),
+      (error: unknown) => isInvitationError(error, "invitation_not_current"), failing,
+    );
+    assert.equal(world.repository.invitations.get(invitationId)?.commitIdempotencyKey, null, `${failing}: no receipt was stamped`);
+  }
 });
 
 void test("the injected-failure boundaries name every real step of the sequence", () => {
