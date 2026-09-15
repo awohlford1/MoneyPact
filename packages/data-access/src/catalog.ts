@@ -71,6 +71,8 @@ export const PRODUCTION_TABLE_CATALOG: TableCatalog = {
   financial_account: "budget-space",
   manual_transaction: "budget-space",
   transaction_allocation: "budget-space",
+  // CBD-200-AC05 (PROTO-CBD200-CONCURRENCY-IDEMPOTENCY-001), 20260915T140000Z.
+  manual_transaction_idempotency: "budget-space",
   // --- END PROTO-INCREMENT-A-001 ---
   // --- BEGIN PROTO-INVITATIONS-PK2 (CBD-73 invitations, acceptance and
   // Primary transfer; INVITATIONS-DESIGN-001), 20260915T1000xxZ ---

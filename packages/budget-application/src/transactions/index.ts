@@ -1,20 +1,26 @@
 export type {
   AllocationRecord,
   CategorySummary,
+  IdempotencyRecord,
+  IdempotencyScope,
+  IdempotentTransactionAction,
   PeriodRecord,
   TransactionErrorCode,
   TransactionMutation,
   TransactionRecord,
   TransactionSnapshot,
   TransactionSource,
+  VersionBasis,
 } from "./records.ts";
 export {
+  IDEMPOTENT_TRANSACTION_ACTIONS,
   ISO_DATE_PATTERN,
   MANUAL_TRANSACTION_ORIGIN,
   MAX_DESCRIPTION_LENGTH,
   SETTLED_STATE,
   TRANSACTION_ERROR_CODES,
   TRANSACTION_SOURCES,
+  StaleVersionError,
   TransactionError,
   asTransactionError,
   compareTransactionIds,
@@ -26,6 +32,7 @@ export type {
   Clock,
   FinancialAccountRow,
   IdGenerator,
+  ManualTransactionIdempotencyRow,
   ManualTransactionRow,
   Supersession,
   TransactionAllocationRow,
@@ -39,6 +46,7 @@ export type {
   ProgressTarget,
   TransactionWriteRequest,
   TransactionsDependencies,
+  VersionPrecondition,
 } from "./application.ts";
 export {
   assertAllocationsSum,
@@ -47,9 +55,11 @@ export {
   editManualTransaction,
   isCalendarDate,
   parseTransactionWriteRequest,
+  parseVersionPrecondition,
   readBudgetProgress,
   readTransactionHistory,
   removeManualTransaction,
+  transactionRequestDigest,
 } from "./application.ts";
 
 export { InMemoryTransactionsRepository } from "./in-memory.ts";
@@ -59,6 +69,8 @@ export {
   allocationToRow,
   categorySummaryFromRow,
   dataAccessTransactionsRepository,
+  idempotencyFromRow,
+  idempotencyToRow,
   periodFromRow,
   transactionFromRow,
   transactionToRow,

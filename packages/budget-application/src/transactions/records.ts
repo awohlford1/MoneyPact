@@ -39,6 +39,7 @@ export const TRANSACTION_ERROR_CODES = [
   "transaction_removed",
   "constraint_violation",
   "conflict",
+  "stale_version",
 ] as const;
 
 export type TransactionErrorCode = (typeof TRANSACTION_ERROR_CODES)[number];
@@ -74,6 +75,28 @@ export function asTransactionError(error: unknown): never {
     if (mapped !== undefined) throw new TransactionError(mapped, error.detail);
   }
   throw error;
+}
+
+/** The version the client named as its basis, and the one that is current instead (CBD-200-AC04). */
+export interface VersionBasis {
+  readonly transactionVersionId: string;
+  readonly revision: number;
+}
+
+/**
+ * A mutation whose stated basis is not the current version (CBD-200-AC04).
+ *
+ * Carries the current version so the refusal is a reload-and-retry result
+ * and not just a code: the client learns what it should have been looking at
+ * without a second round trip. Nothing has been written when this is thrown.
+ */
+export class StaleVersionError extends TransactionError {
+  readonly current: VersionBasis;
+  constructor(current: VersionBasis, detail = "expectedTransactionVersionId") {
+    super("stale_version", detail);
+    this.name = "StaleVersionError";
+    this.current = current;
+  }
 }
 
 /** The only origin and the only settlement state this increment can produce (CBD-199-AC02). */
@@ -137,6 +160,28 @@ export interface TransactionSnapshot {
 export interface TransactionMutation {
   readonly previous: TransactionSnapshot | null;
   readonly current: TransactionSnapshot;
+}
+
+/** The three manual-transaction actions an Idempotency-Key can name (CBD-200-AC05). */
+export const IDEMPOTENT_TRANSACTION_ACTIONS = ["create", "edit", "remove"] as const;
+export type IdempotentTransactionAction = (typeof IDEMPOTENT_TRANSACTION_ACTIONS)[number];
+
+/** The idempotency scope: one committed response per key, per action, per acting membership, per budget. */
+export interface IdempotencyScope {
+  readonly budgetSpaceId: string;
+  readonly membershipId: string;
+  readonly action: IdempotentTransactionAction;
+  readonly idempotencyKey: string;
+}
+
+/** The row `manual_transaction_idempotency` (20260915T140000Z) keeps for one accepted key. */
+export interface IdempotencyRecord extends IdempotencyScope {
+  /** SHA-256 hex over the canonical form of the parsed request. */
+  readonly requestDigest: string;
+  /** The current version the committed response names; the row is bound to it. */
+  readonly transactionVersionId: string;
+  readonly committedResponse: TransactionMutation;
+  readonly createdAt: string;
 }
 
 /** One budget period as the assignment rule sees it: an identity and inclusive bounds. */

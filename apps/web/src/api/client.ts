@@ -111,6 +111,12 @@ export interface Progress {
 }
 export interface DetailItem {
   transactionId: string;
+  /**
+   * The version this row was read from: the basis an edit or a removal of
+   * this expense states to the API (CBD-200-AC04). Null when the server did
+   * not state one, in which case the write carries no precondition.
+   */
+  transactionVersionId: string | null;
   accountId: string;
   budgetDate: string;
   description: string | null;
@@ -161,8 +167,14 @@ export interface ApiClient extends ProposalApi {
   archiveAccount(id: string, accountId: string): Promise<Account>;
   restoreAccount(id: string, accountId: string): Promise<Account>;
   recordExpense(id: string, draft: ExpenseDraft, precision: number): Promise<Expense>;
-  editExpense(id: string, transactionId: string, draft: ExpenseDraft, precision: number): Promise<Expense>;
-  removeExpense(id: string, transactionId: string): Promise<void>;
+  /**
+   * `expectedTransactionVersionId` is the version the caller's view was built from (CBD-200-AC04). When
+   * omitted, the client sends the last version it was shown for this expense -- from `categoryDetail`
+   * or from the previous write's result -- and nothing when it has never seen one. A stale basis is
+   * refused `409 stale_version` with the current version in the error, and nothing is written.
+   */
+  editExpense(id: string, transactionId: string, draft: ExpenseDraft, precision: number, expectedTransactionVersionId?: string | null): Promise<Expense>;
+  removeExpense(id: string, transactionId: string, expectedTransactionVersionId?: string | null): Promise<void>;
   progress(id: string, periodId: string, signal?: AbortSignal): Promise<Progress>;
   categoryDetail(id: string, periodId: string, categoryId: string, signal?: AbortSignal): Promise<CategoryDetail>;
   clear(): void;
@@ -204,7 +216,7 @@ export interface WireAccountMutation { previousVersion: number | null; account: 
 /** POST/PATCH /v1/budget-spaces/{id}/transactions[...] (CBD-199, CBD-200, CBD-201). */
 export interface WireTransactionMutation {
   previous: unknown;
-  current: { version: { transactionId: string; revision: number; [field: string]: unknown }; allocations: readonly unknown[] };
+  current: { version: { transactionId: string; transactionVersionId?: string; revision: number; [field: string]: unknown }; allocations: readonly unknown[] };
 }
 /** GET /v1/budget-spaces/{id}/periods/{periodId}/progress (CBD-209). */
 export interface WireProgress {
@@ -226,7 +238,7 @@ export interface WireProgressCell {
 export interface WireCategoryDetail {
   budgetSpaceId: string; periodId: string; categoryId: string; label: string | null; currencyCode: string; minorUnitPrecision: number;
   cell: WireProgressCell | null;
-  items: readonly { transactionId: string; accountId: string; budgetDate: string; description: string | null; amountMinorUnits: number; allocationCount: number }[];
+  items: readonly { transactionId: string; transactionVersionId?: string; accountId: string; budgetDate: string; description: string | null; amountMinorUnits: number; allocationCount: number }[];
 }
 
 /** Minor units to a decimal string in major units: presentation only, exact for safe integers. */
@@ -290,7 +302,7 @@ const FIELD_OF_CODE: Readonly<Record<string, string>> = Object.freeze({
   description_invalid: "description",
   allocations_empty: "allocations", allocation_duplicate_category: "allocations",
   allocation_category_invalid: "allocations", allocation_sum_mismatch: "allocations",
-  transaction_not_found: "transactionId", transaction_removed: "transactionId",
+  transaction_not_found: "transactionId", transaction_removed: "transactionId", stale_version: "transactionId", idempotency_mismatch: "transactionId",
   version_conflict: "label", conflict: "label", constraint_violation: "label", invalid_request: "label",
 });
 /** The sentence shown next to the field. One per canonical code, so no refusal reaches a person as a code. */
@@ -318,6 +330,8 @@ const MESSAGE_OF_CODE: Readonly<Record<string, string>> = Object.freeze({
   allocation_sum_mismatch: "The category amounts must add up to the expense amount exactly.",
   transaction_not_found: "This expense no longer exists. Refresh and try again.",
   transaction_removed: "This expense has already been removed.",
+  stale_version: "This expense changed since you last loaded it. Refresh and try again.",
+  idempotency_mismatch: "This request was already sent with different values. Refresh and try again.",
   version_conflict: "Someone else changed this first. Refresh and try again.",
   conflict: "This change conflicts with the saved budget. Refresh and try again.",
   constraint_violation: "This change cannot be saved as entered.",
@@ -382,7 +396,8 @@ export function toCategoryDetail(wire: WireCategoryDetail): CategoryDetail {
     minorUnitPrecision: wire.minorUnitPrecision,
     cell: wire.cell ? toProgressCell(wire.cell, label, wire.minorUnitPrecision) : null,
     items: wire.items.map(item => ({
-      transactionId: item.transactionId, accountId: item.accountId, budgetDate: item.budgetDate, description: item.description,
+      transactionId: item.transactionId, transactionVersionId: typeof item.transactionVersionId === "string" ? item.transactionVersionId : null,
+      accountId: item.accountId, budgetDate: item.budgetDate, description: item.description,
       amount: formatMinorUnits(Math.abs(item.amountMinorUnits), wire.minorUnitPrecision),
       direction: directionOf(item.amountMinorUnits),
       // A count the server did not state, or stated as something other than a positive whole number,
@@ -411,6 +426,21 @@ export function toExpenseBody(draft: ExpenseDraft, precision: number): Record<st
  */
 export function createHttpClient(base = "/v1", fetcher: typeof fetch = fetch): ApiClient {
   let csrf: string | undefined;
+  /**
+   * The last version this client was shown of each expense, by transaction id: from a category detail
+   * read or from a write's own result. It is the basis an edit or a removal states unless the caller
+   * states one itself (CBD-200-AC04). Held in this closure only; a reload starts with none.
+   */
+  const shown = new Map<string, string>();
+  const remember = (result: WireTransactionMutation): WireTransactionMutation => {
+    const version = result.current.version;
+    if (typeof version.transactionVersionId === "string") shown.set(version.transactionId, version.transactionVersionId);
+    return result;
+  };
+  const basisFor = (transactionId: string, stated: string | null | undefined): Record<string, unknown> => {
+    const basis = stated === undefined ? shown.get(transactionId) ?? null : stated;
+    return basis === null ? {} : { expectedTransactionVersionId: basis };
+  };
   async function request<T>(path: string, method = "GET", body?: unknown, signal?: AbortSignal, idempotency?: string): Promise<T> {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -469,19 +499,23 @@ export function createHttpClient(base = "/v1", fetcher: typeof fetch = fetch): A
     archiveAccount: async (id, accountId) => toAccount((await withField(request<WireAccountMutation>(`/budget-spaces/${encodeURIComponent(id)}/accounts/${encodeURIComponent(accountId)}/archive`, "POST", {}))).account),
     restoreAccount: async (id, accountId) => toAccount((await withField(request<WireAccountMutation>(`/budget-spaces/${encodeURIComponent(id)}/accounts/${encodeURIComponent(accountId)}/restore`, "POST", {}))).account),
     async recordExpense(id, draft, precision) {
-      const result = await withField(request<WireTransactionMutation>(`/budget-spaces/${encodeURIComponent(id)}/transactions`, "POST", toExpenseBody(draft, precision)));
+      const result = remember(await withField(request<WireTransactionMutation>(`/budget-spaces/${encodeURIComponent(id)}/transactions`, "POST", toExpenseBody(draft, precision))));
       return { transactionId: result.current.version.transactionId, revision: result.current.version.revision };
     },
-    async editExpense(id, transactionId, draft, precision) {
-      const result = await withField(request<WireTransactionMutation>(`/budget-spaces/${encodeURIComponent(id)}/transactions/${encodeURIComponent(transactionId)}`, "PATCH", toExpenseBody(draft, precision)));
+    async editExpense(id, transactionId, draft, precision, expectedTransactionVersionId) {
+      const result = remember(await withField(request<WireTransactionMutation>(`/budget-spaces/${encodeURIComponent(id)}/transactions/${encodeURIComponent(transactionId)}`, "PATCH", { ...toExpenseBody(draft, precision), ...basisFor(transactionId, expectedTransactionVersionId) })));
       return { transactionId: result.current.version.transactionId, revision: result.current.version.revision };
     },
-    async removeExpense(id, transactionId) {
-      await withField(request<WireTransactionMutation>(`/budget-spaces/${encodeURIComponent(id)}/transactions/${encodeURIComponent(transactionId)}/remove`, "POST", {}));
+    async removeExpense(id, transactionId, expectedTransactionVersionId) {
+      await withField(request<WireTransactionMutation>(`/budget-spaces/${encodeURIComponent(id)}/transactions/${encodeURIComponent(transactionId)}/remove`, "POST", basisFor(transactionId, expectedTransactionVersionId)));
+      shown.delete(transactionId);
     },
     progress: async (id, periodId, signal) => toProgress(await request<WireProgress>(`/budget-spaces/${encodeURIComponent(id)}/periods/${encodeURIComponent(periodId)}/progress`, "GET", undefined, signal)),
-    categoryDetail: async (id, periodId, categoryId, signal) =>
-      toCategoryDetail(await request<WireCategoryDetail>(`/budget-spaces/${encodeURIComponent(id)}/periods/${encodeURIComponent(periodId)}/progress/${encodeURIComponent(categoryId)}`, "GET", undefined, signal)),
+    categoryDetail: async (id, periodId, categoryId, signal) => {
+      const detail = toCategoryDetail(await request<WireCategoryDetail>(`/budget-spaces/${encodeURIComponent(id)}/periods/${encodeURIComponent(periodId)}/progress/${encodeURIComponent(categoryId)}`, "GET", undefined, signal));
+      for (const item of detail.items) if (item.transactionVersionId !== null) shown.set(item.transactionId, item.transactionVersionId);
+      return detail;
+    },
     clear() { csrf = undefined; },
   };
 }
