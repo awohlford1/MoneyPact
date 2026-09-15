@@ -55,7 +55,13 @@ interface Profile { profileId: OpaqueId; profileState: "absent" | "active" | "de
 interface AssuranceSession { level: "session"; boundAction?: never; boundSpaceId?: never; expiresAt?: never }
 interface AssuranceFresh { level: "fresh"; boundAction: string; boundSpaceId: OpaqueId; expiresAt: string }
 export type Assurance = AssuranceSession | AssuranceFresh;
-interface Space { spaceId: OpaqueId; lifecycle: "live" | "archived" | "deletion_pending" | "purged"; lifecycleVersion: number; primaryOwnerMembershipId: OpaqueId }
+interface Space {
+  spaceId: OpaqueId; lifecycle: "live" | "archived" | "deletion_pending" | "purged"; lifecycleVersion: number;
+  primaryOwnerMembershipId: OpaqueId;
+  /** budget_space.primary_ownership_version (CBD-73 TR-73-43, M1): advanced only by the transfer commit; captured as
+   * primaryOwnershipVersion for every non-read user decision (contract section 6.1). */
+  primaryOwnershipVersion: number;
+}
 interface Membership {
   membershipId: OpaqueId; role: Role; status: "active" | "pending" | "revoked" | "expired" | "inactive";
   authorizationVersion: number; viewerProfile?: { type: "full_budget" | "category_groups" | "bill_groups"; groupIds: readonly OpaqueId[]; version: number };

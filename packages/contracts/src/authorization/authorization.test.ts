@@ -10,11 +10,13 @@ import { ACTION_DEFINITIONS as P4_ACTION_DEFINITIONS, P4_ROLES, P4_USER_CELLS as
 import { ACTION_DEFINITIONS as P5_ACTION_DEFINITIONS, BASELINE_NON_OWNER_ACTIONS, COOWNER_INVITATION_ACTIONS, P5_ACTION_DEFINITIONS as P5_ONLY_ACTION_DEFINITIONS, P5_BASELINE_NON_OWNER_CELLS, P5_COOWNER_INVITATION_CELLS, P5_ROLES, P5_SPACE_CELLS, P5_SUBJECT_CELLS, P5_USER_CELLS as P5_ONLY_USER_CELLS, SERVICE_CELLS as P5_SERVICE_CELLS, SUPERSEDED_ACTIONS, USER_CELLS as P5_USER_CELLS } from "./policy/v5.ts";
 import { CURRENT_POLICY_VERSION, P1_DIGEST, P2_DIGEST, P3_DIGEST, P4_DIGEST, P5_DIGEST, POLICY_VERSIONS, policyCompatibility } from "./policy/registry.ts";
 import type { RegisteredPolicyVersion } from "./policy/registry.ts";
-import { FORBIDDEN_SUBJECT_SECTIONS, NEGATIVE_FAMILIES, NEGATIVE_FIXTURES, P1_FIXTURES, P2_FIXTURES, P2_NEGATIVE_FIXTURES, P3_FIXTURES, P3_NEGATIVE_FIXTURES, P4_FIXTURES, P4_NEGATIVE_FIXTURES, P5_FIXTURES, P5_NEGATIVE_FIXTURES, ROLES, SUBJECT_ENVIRONMENT, TRANSFER_CONFIRM_ACTION, UNMAPPED_ROLE, accountNegativeFixtures, bootstrapFixture, invitationCells, invitationNegativeFixtures, ordinaryFixture, rolesWithoutCell, serviceFixture, subjectCells, subjectFixture, subjectNegativeFixtures } from "./fixtures/index.ts";
+import { FORBIDDEN_SUBJECT_SECTIONS, NEGATIVE_FAMILIES, NEGATIVE_FIXTURES, P1_FIXTURES, P2_FIXTURES, P2_NEGATIVE_FIXTURES, P3_FIXTURES, P3_NEGATIVE_FIXTURES, P4_FIXTURES, P4_NEGATIVE_FIXTURES, P5_FIXTURES, P5_NEGATIVE_FIXTURES, ROLES, SUBJECT_ENVIRONMENT, TRANSFER_CONFIRM_ACTION, UNMAPPED_ROLE, accountNegativeFixtures, bootstrapFixture, independentCaptureFixture, invitationCells, invitationNegativeFixtures, ordinaryFixture, rolesWithoutCell, serviceFixture, spaceBoundNegativeFixtures, subjectCells, subjectFixture, subjectNegativeFixtures } from "./fixtures/index.ts";
 import { generateLocalSigningKeyPair, signLocalDecision, verifyLocalDecision } from "./transport.ts";
 import type { PolicyInput } from "./input.ts";
 
 const CURRENT_DIGEST = POLICY_VERSIONS[CURRENT_POLICY_VERSION].digest;
+/** POV-N01..POV-N04 (CBD-236 v0.13 section 9.7): emitted by the space-bound generator for every space-bound cell in every version. */
+const POV_FAMILIES = ["stale_primary_ownership_column", "missing_primary_ownership_version", "client_asserted_primary_ownership_version", "malformed_primary_ownership_version"] as const;
 const NOT_CURRENT = (Object.keys(POLICY_VERSIONS) as RegisteredPolicyVersion[]).filter((version) => version !== CURRENT_POLICY_VERSION);
 function restamp<T>(input: T): T { return { ...input, provenance: expectedProvenance(input as PolicyInput) }; }
 function denyIsInert(input: unknown, reason?: string, version?: RegisteredPolicyVersion): void {
@@ -392,7 +394,7 @@ describe("policy version p3: manual-account cells, registered and not current", 
   });
 
   it("POLICY-V3-02 denies every other role, another space, a wrong target, an inactive lifecycle, a stale version, service authority and the other families inertly (PC-236-018)", () => {
-    const required = ["other_role", "other_space", "wrong_target_type", "inactive_lifecycle", "stale_version", "service_authority", "inactive_subject", "inactive_membership", "consent_not_current", "subject_scoped_shape", "missing_target"];
+    const required = ["other_role", "other_space", "wrong_target_type", "inactive_lifecycle", "stale_version", "service_authority", "inactive_subject", "inactive_membership", "consent_not_current", "subject_scoped_shape", "missing_target", ...POV_FAMILIES];
     for (const cell of P3_ONLY_USER_CELLS) {
       const families = P3_NEGATIVE_FIXTURES.filter((item) => item.action === cell.action).map((item) => String(item.family));
       for (const family of required) assert.ok(families.includes(family), `${cell.action} lacks the ${family} negative`);
@@ -541,7 +543,7 @@ describe("policy version p4: Co-owner and Collaborator manual-account cells, reg
   });
 
   it("POLICY-V4-02 denies viewer and accountability_partner, every other negative family, and every Primary Owner-only cell for co_owner and collaborator inertly (PC-236-018)", () => {
-    const required = ["other_role", "other_space", "wrong_target_type", "inactive_lifecycle", "stale_version", "service_authority", "inactive_subject", "inactive_membership", "consent_not_current", "subject_scoped_shape", "missing_target"];
+    const required = ["other_role", "other_space", "wrong_target_type", "inactive_lifecycle", "stale_version", "service_authority", "inactive_subject", "inactive_membership", "consent_not_current", "subject_scoped_shape", "missing_target", ...POV_FAMILIES];
     for (const expected of CONTRACT_P4) {
       const own = P4_NEGATIVE_FIXTURES.filter((item) => item.action === expected.action && item.role === expected.role);
       const families = own.map((item) => String(item.family));
@@ -868,7 +870,7 @@ describe("policy version p5: invitations, members and Primary-transfer cells, re
     }
     // Section 9.7 families, cell by cell, for every p5 space-bound cell in its own role.
     // The secret scanner reads an identifier containing "auth" followed by a comma and a long identifier as a credential, so that family is listed last.
-    const required = ["other_role", "other_space", "wrong_target_type", "inactive_lifecycle", "stale_version", "stale_primary_ownership_version", "stale_consent_version", "service_authority", "inactive_subject", "inactive_membership", "consent_not_current", "consent_superseded", "subject_scoped_shape", "missing_target", "stale_authorization_version"];
+    const required = ["other_role", "other_space", "wrong_target_type", "inactive_lifecycle", "stale_version", "stale_primary_ownership_version", "stale_consent_version", "service_authority", "inactive_subject", "inactive_membership", "consent_not_current", "consent_superseded", "subject_scoped_shape", "missing_target", ...POV_FAMILIES, "stale_authorization_version"];
     assert.equal(invitationCells("p5").length, spaceCells.length);
     assert.equal(invitationCells("p4").length, 0);
     for (const cell of spaceCells) {
@@ -928,6 +930,132 @@ describe("policy version p5: invitations, members and Primary-transfer cells, re
     for (const action of P5_ACTION_DEFINITIONS.filter((item) => item.permission !== "reserved")) assert.ok(fixtureActions.has(action.action), action.action);
     for (const cell of P5_ONLY_USER_CELLS) assert.ok(P5_FIXTURES.some((fixture) => fixture.id === (cell.permission === "subject" ? `p5.subject.${cell.action}.acting_subject.api` : `p5.user.${cell.action}.${cell.role}.api`)), `${cell.action} ${cell.role}`);
     for (const fixture of P5_FIXTURES) assert.equal(decideUnderRegisteredVersion("p5", fixture.input).outcome, fixture.expected, fixture.id);
+  });
+});
+
+/**
+ * CBD-236 v0.13 (EXEC-POV-C200F01-001, POV-OPT-C; docs/cbd-236-primary-ownership-version-amendment-proposal.md sections 3 and 5):
+ * `space.primaryOwnershipVersion` is a required datastore leaf on every variant that carries `space`, captured as
+ * `primaryOwnershipVersion` for every non-read user decision from the column rather than from `membership.authorizationVersion`,
+ * carried and not captured by the service variant, and never a way in for the bootstrap or subject-scoped shapes.
+ * `INPUT_SCHEMA_VERSION` stays 1 (POV-R06): an assembler that does not produce the leaf denies `input_invalid` rather than allowing.
+ */
+describe("POV: space.primaryOwnershipVersion is captured from the column (CBD-236 v0.13 sections 4.1, 6.1 and 9.7)", () => {
+  const REGISTERED = Object.keys(POLICY_VERSIONS) as RegisteredPolicyVersion[];
+  /** The captured record as a plain map: the union type narrows per variant, the assertions name keys by string. */
+  const captured = (value: unknown): Record<string, unknown> => (value ?? {}) as Record<string, unknown>;
+  const spaceBoundCells = (version: RegisteredPolicyVersion) => POLICY_VERSIONS[version].userCells
+    .filter((cell) => cell.action !== "space.create" && cell.permission !== "subject" && cell.notation !== "Deny" && cell.notation !== "Not applicable")
+    .map((cell) => ({ action: cell.action, role: cell.role as (typeof ROLES)[number] }));
+
+  it("POV-N01 the column moved and nothing else did: stale_version for every space-bound cell in every registered version", () => {
+    for (const version of REGISTERED) {
+      const negatives = spaceBoundNegativeFixtures(version, spaceBoundCells(version)).filter((item) => item.family === "stale_primary_ownership_column");
+      assert.equal(negatives.length, spaceBoundCells(version).length, version);
+      for (const fixture of negatives) {
+        const input = fixture.input as PolicyInput;
+        assert.equal(input.membership?.authorizationVersion, 1, "the membership version did not move");
+        assert.equal(input.space?.primaryOwnershipVersion, 2, "the column did");
+        assert.equal(captured(input.versions.capturedAtPrecheck).primaryOwnershipVersion, 1, "the precheck captured the pre-transfer column value");
+        denyIsInert(input, "stale_version", version);
+      }
+    }
+    // The same fixture is exact but for the column, so restoring the column value allows: nothing else in it is stale.
+    const restored = ordinaryFixture("2a.edit_plan");
+    const precheck = decide(restored);
+    assert.equal(decide(restamp({ ...restored, versions: { policyVersion: CURRENT_POLICY_VERSION, capturedAtPrecheck: precheck.capturedVersions! } })).outcome, "allow");
+  });
+
+  it("POV-N02, POV-N03, POV-N04 a missing, client-asserted or malformed leaf denies input_invalid inertly for every space-bound cell", () => {
+    for (const version of REGISTERED) {
+      const cells = spaceBoundCells(version);
+      const negatives = spaceBoundNegativeFixtures(version, cells);
+      for (const family of ["missing_primary_ownership_version", "client_asserted_primary_ownership_version"] as const) {
+        const own = negatives.filter((item) => item.family === family);
+        assert.equal(own.length, cells.length, `${version} ${family}`);
+        for (const fixture of own) denyIsInert(fixture.input, "input_invalid", version);
+      }
+      const malformed = negatives.filter((item) => item.family === "malformed_primary_ownership_version");
+      assert.equal(malformed.length, cells.length * 3, `${version} malformed`);
+      for (const suffix of ["string", "negative", "fraction"]) assert.ok(malformed.some((item) => item.id.endsWith(`.${suffix}`)), suffix);
+      for (const fixture of malformed) denyIsInert(fixture.input, "input_invalid", version);
+    }
+    // POV-N02 in both forms: the key deleted from the leaves alone, and restamped from the shape, deny alike.
+    const positive = ordinaryFixture("2a.edit_plan");
+    const { primaryOwnershipVersion: _leaf, ...space } = positive.space;
+    denyIsInert({ ...positive, space }, "input_invalid");
+    denyIsInert(restamp({ ...positive, space } as unknown as PolicyInput), "input_invalid");
+    // POV-N03 is also what the every-leaf provenance loop produces: a datastore leaf from any other producer denies.
+    for (const source of ["request_locator", "route_metadata", "envelope_locator", "session_store", "runtime_configuration", "precheck_decision"] as const) {
+      denyIsInert({ ...positive, provenance: { ...positive.provenance, "space.primaryOwnershipVersion": source } }, "input_invalid");
+    }
+    // The stale-version family of the captured set (POV-F03) stays and still denies; it proves the key is compared, POV-N01 that it is captured.
+    denyIsInert(restamp({ ...positive, versions: { policyVersion: CURRENT_POLICY_VERSION, capturedAtPrecheck: { ...decide(positive).capturedVersions!, primaryOwnershipVersion: 99 } } } as unknown as PolicyInput), "stale_version");
+  });
+
+  it("POV-N05 the two keys are independent dimensions: authorizationVersion 1 and primaryOwnershipVersion 7 are captured as such", () => {
+    for (const version of REGISTERED) {
+      for (const cell of spaceBoundCells(version)) {
+        const input = independentCaptureFixture(cell.action, cell.role, version);
+        const decision = decideUnderRegisteredVersion(version, input);
+        assert.equal(decision.outcome, "allow", `${version} ${cell.action} ${cell.role}`);
+        assert.equal(captured(decision.capturedVersions).authorizationVersion, 1);
+        assert.equal(captured(decision.capturedVersions).primaryOwnershipVersion, 7);
+        assert.equal(captured(decision.capturedVersions).spaceLifecycleVersion, 1);
+        if (decision.effectClass !== "read") {
+          const recheck = decision.obligations.find((item) => item.kind === "recheck_at_commit");
+          assert.equal(recheck && "capturedVersions" in recheck ? captured(recheck.capturedVersions).primaryOwnershipVersion : undefined, 7);
+        }
+      }
+    }
+    // The exact captured record of a current-version mutation names the column value, and the worker user-delegated variant captures the same.
+    const api = decide(independentCaptureFixture("2a.edit_plan"));
+    assert.deepEqual(api.capturedVersions, {
+      sessionVersion: 1, subjectVersion: 1, profileVersion: 1, authorizationVersion: 1, consentDisclosureVersion: 1, spaceLifecycleVersion: 1,
+      primaryOwnershipVersion: 7, targetVersion: 1, policyVersion: CURRENT_POLICY_VERSION, policyDigest: CURRENT_DIGEST, inputSchemaVersion: 1,
+    });
+    const positive = independentCaptureFixture("2a.edit_plan");
+    const { sessionRef: _ref, sessionVersion: _session, ...subject } = positive.subject;
+    const worker = decide(restamp({ ...positive, subject: { ...subject, delegationRef: "delegation-1", delegationVersion: 3 }, evaluation: { ...positive.evaluation, adapter: "worker" } }));
+    assert.equal(worker.outcome, "allow");
+    assert.equal(captured(worker.capturedVersions).primaryOwnershipVersion, 7);
+    assert.equal(captured(worker.capturedVersions).authorizationVersion, 1);
+  });
+
+  it("POV-N06 the service variant carries the leaf, requires it, and does not capture it", () => {
+    const service = serviceFixture();
+    assert.equal(service.space.primaryOwnershipVersion, 1);
+    const decision = decide(service);
+    assert.equal(decision.outcome, "allow");
+    assert.deepEqual(Object.keys(decision.capturedVersions ?? {}).sort(), ["inputSchemaVersion", "policyDigest", "policyVersion", "ruleReferenceDataVersion", "scheduleConfigurationVersion", "servicePolicyVersion", "sourceVersion", "spaceLifecycleVersion", "targetVersion", "workloadIdentityVersion"]);
+    assert.ok(!("primaryOwnershipVersion" in (decision.capturedVersions ?? {})), "the service captured set is exactly section 6.1's ten keys");
+    const { primaryOwnershipVersion: _leaf, ...space } = service.space;
+    denyIsInert({ ...service, space }, "input_invalid");
+    denyIsInert(restamp({ ...service, space } as unknown as PolicyInput), "input_invalid");
+    denyIsInert({ ...service, provenance: { ...service.provenance, "space.primaryOwnershipVersion": "workload_identity" } }, "input_invalid");
+    for (const value of ["2", -1, 1.5]) denyIsInert(restamp({ ...service, space: { ...service.space, primaryOwnershipVersion: value } } as unknown as PolicyInput), "input_invalid");
+    // A moved column does not make a service decision stale: the service captured set never held the key.
+    const precheck = decide(service);
+    assert.equal(decide(restamp({ ...service, space: { ...service.space, primaryOwnershipVersion: 2 }, versions: { policyVersion: CURRENT_POLICY_VERSION, capturedAtPrecheck: precheck.capturedVersions! } })).outcome, "allow");
+  });
+
+  it("POV-N07 the leaf gives the subject-scoped and bootstrap shapes no new way in", () => {
+    assert.equal(FORBIDDEN_SUBJECT_SECTIONS.space.primaryOwnershipVersion, 1, "the populated forbidden section is a complete row");
+    for (const version of REGISTERED) {
+      for (const cell of subjectCells(version)) {
+        const positive = subjectFixture(cell.action, version);
+        denyIsInert(restamp({ ...positive, space: FORBIDDEN_SUBJECT_SECTIONS.space } as unknown as PolicyInput), "input_invalid", version);
+        denyIsInert(restamp({ ...positive, space: { primaryOwnershipVersion: 1 } } as unknown as PolicyInput), "input_invalid", version);
+        denyIsInert({ ...positive, space: { primaryOwnershipVersion: 1 } }, "input_invalid", version);
+      }
+      const bootstrap = bootstrapFixture(version);
+      denyIsInert(restamp({ ...bootstrap, space: { primaryOwnershipVersion: 1 } } as unknown as PolicyInput), "input_invalid", version);
+      denyIsInert({ ...bootstrap, space: { primaryOwnershipVersion: 1 } }, "input_invalid", version);
+      denyIsInert(restamp({ ...bootstrap, space: FORBIDDEN_SUBJECT_SECTIONS.space } as unknown as PolicyInput), "input_invalid", version);
+    }
+    const populated = subjectNegativeFixtures(CURRENT_POLICY_VERSION).filter((item) => item.family === "forbidden_section_populated" && item.id.endsWith(".space"));
+    assert.ok(populated.length > 0);
+    for (const fixture of populated) { assert.equal((fixture.input as PolicyInput).space?.primaryOwnershipVersion, 1); denyIsInert(fixture.input, "input_invalid"); }
   });
 });
 
