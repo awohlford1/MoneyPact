@@ -133,11 +133,16 @@ function snapshotClient(repository: InMemoryInvitationRepository): DataAccessCli
   return client as unknown as DataAccessClient & { attempts: number };
 }
 
-async function application(options: { readonly repositoryFault?: (repository: InvitationRepository) => InvitationRepository } = {}) {
+async function application(options: {
+  readonly repositoryFault?: (repository: InvitationRepository) => InvitationRepository;
+  /** `R-02`: a fault injected around the trio's own transaction seam (the store path is untouched). */
+  readonly clientFault?: (client: DataAccessClient) => DataAccessClient;
+} = {}) {
   const world = testWorld();
   const repository = options.repositoryFault ? options.repositoryFault(world.repository) : world.repository;
   const deps = { ...world.deps, repository };
   const client = snapshotClient(world.repository);
+  const trioClient = options.clientFault ? options.clientFault(client) : client;
   const delivery = createLocalDeliveryAdapter({
     read: async (invitationId) => { const row = world.repository.renderDelivery(invitationId); return row ? { invitationId, fidelityLabel: "simulated", destination: row.destination, bearer: row.bearer, challenge: row.challenge, custodyDeadline: world.repository.outbox.get(invitationId)!.custodyDeadline } : null; },
     listLive: async () => [...world.repository.outbox.keys()].map((id) => { const row = world.repository.renderDelivery(id); return row ? { invitationId: id, fidelityLabel: "simulated" as const, destination: row.destination, bearer: row.bearer, challenge: row.challenge, custodyDeadline: world.repository.outbox.get(id)!.custodyDeadline } : null; }).filter((row): row is NonNullable<typeof row> => row !== null),
@@ -158,7 +163,7 @@ async function application(options: { readonly repositoryFault?: (repository: In
   store.observe({ committed: () => undefined, rolledBack: () => undefined });
 
   const dependencies: InvitationsHttpDependencies = {
-    within: () => scope, client, environmentId: ENVIRONMENT, applicationOrigin: ORIGIN, now: () => new Date(world.clock.now()),
+    within: () => scope, client: trioClient, environmentId: ENVIRONMENT, applicationOrigin: ORIGIN, now: () => new Date(world.clock.now()),
     membership: async (subject, budgetSpaceId) => world.repository.memberships.find((m) => m.accountSubjectId === subject && m.budgetSpaceId === budgetSpaceId && m.status === "active")?.membershipId ?? null,
     requiredPermission: async (budgetSpaceId, invitationId) => { const r = world.repository.invitations.get(invitationId); return r && r.budgetSpaceId === budgetSpaceId ? r.requiredPermission : null; },
     subjectForDestination: async () => null,
@@ -527,6 +532,55 @@ describe("PK-6 invitation routes through the real Fastify instance", () => {
     } finally { await app.close(); }
     assert.throws(() => localDeliveriesHttp({ adapterKind: "unavailable", within: () => { throw new Error("unreachable"); }, now: () => new Date() }), /local delivery surface refused/);
     assert.throws(() => localDeliveriesHttp({ adapterKind: "cognito", within: () => { throw new Error("unreachable"); }, now: () => new Date() }), /local delivery surface refused/);
+  });
+
+  it("PK6-02 (R-02): the trio retries a COMMIT-time serialization failure by sqlState and never answers a framework body", async () => {
+    // A driver error shaped like StatementFailedError: no InvitationError, only a sqlState.
+    const serialization = () => Object.assign(new Error("could not serialize access"), { sqlState: "40001" });
+    let mode: "once" | "always" | "driver" | "none" = "none";
+    let calls = 0;
+    const { app, world, call, ceremony, ceremonyHeaders } = await application({
+      clientFault: (client) => ({
+        ...client,
+        transaction: async (options: unknown, work: (scoped: unknown) => Promise<unknown>) => {
+          calls++;
+          if (mode === "driver") throw new Error("connection reset");
+          if (mode === "always" || (mode === "once" && calls === 1)) throw serialization();
+          return (client.transaction as (o: unknown, w: (scoped: unknown) => Promise<unknown>) => Promise<unknown>)(options, work);
+        },
+      } as unknown as DataAccessClient),
+    });
+    try {
+      const { delivery } = await ceremony("create");
+      // One 40001 at COMMIT, then success: the retry is invisible on the wire.
+      mode = "once"; calls = 0;
+      const resolved = await call("POST", "/v1/invitations/resolve", { code: delivery.bearer }, ceremonyHeaders(undefined));
+      assert.equal(resolved.statusCode, 200, resolved.body);
+      assert.equal(calls, 2, "retried once");
+      assert.equal(typeof resolved.json().ceremonyId, "string");
+      // Every attempt fails: three attempts, then the uniform external denial, not Nest's 500 body.
+      mode = "always"; calls = 0;
+      const exhausted = await call("POST", "/v1/invitations/resolve", { code: delivery.bearer }, ceremonyHeaders(undefined));
+      assert.equal(exhausted.statusCode, 503, exhausted.body);
+      assert.deepEqual(exhausted.json(), { outcome: "deny", reason: "denied" });
+      assert.equal(calls, 3, "SERIALIZATION_ATTEMPTS");
+      // Any other unexpected error on the trio: the same denial, once, and nothing framework-shaped leaks.
+      mode = "driver"; calls = 0;
+      for (const [url, payload] of [
+        ["/v1/invitations/resolve", { code: delivery.bearer }],
+        [`/v1/invitations/${"33333333-3333-4333-8333-333333333333"}/verify-channel`, { channelCode: "000000" }],
+        [`/v1/invitations/${"33333333-3333-4333-8333-333333333333"}/decline`, {}],
+      ] as const) {
+        const answer = await call("POST", url, payload, ceremonyHeaders("not-a-secret"));
+        assert.equal(answer.statusCode, 503, `${url}: ${answer.body}`);
+        assert.deepEqual(answer.json(), { outcome: "deny", reason: "denied" }, url);
+        assert.ok(!answer.body.includes("Internal server error"), url);
+      }
+      assert.equal(calls, 3, "one attempt per route for a non-retryable error");
+      // The ceremony from the first resolve is unaffected: the failed attempts wrote nothing.
+      mode = "none";
+      assert.equal([...world.repository.ceremonies.values()].filter((c) => c.state === "open").length, 1);
+    } finally { await app.close(); }
   });
 
   it("the invitation store returns a rolled-back RouteFailure as the result and retries only the retryable class", async () => {

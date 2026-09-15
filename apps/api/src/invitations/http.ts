@@ -73,6 +73,7 @@ import type { DynamicModule } from "@nestjs/common";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { DataAccessClient } from "@cobudget/data-access";
 import type { Obligation, PolicyInput } from "@cobudget/contracts/authorization";
+import { externalDenial } from "@cobudget/contracts/authorization";
 import { Authorize, Authorization, PreAuthenticationSurface, RouteFailure } from "../authorization/http.js";
 import { AuthorizationDenied } from "../authorization/boundary.js";
 import type { AuthorizationTransactionStore, EffectContext } from "../authorization/boundary.js";
@@ -118,6 +119,20 @@ export class UniformInvitationFailure extends RouteFailure {
   constructor() {
     super(UNIFORM_INVITATION_STATUS, UNIFORM_INVITATION_ERROR);
     Object.defineProperty(this, "response", { value: UNIFORM_INVITATION_BODY, enumerable: true });
+  }
+}
+
+/**
+ * `R-02`: the pre-authentication trio's answer for an error that is neither an
+ * `InvitationError` nor a serialization failure it could retry -- the same
+ * `503 {outcome: deny, reason: denied}` the boundary answers when its store
+ * fails (`deny` in `authorization/http.ts`), so the trio never answers a
+ * framework body. Nothing was written: the transaction rolled back.
+ */
+export class TrioExternalDenial extends RouteFailure {
+  constructor() {
+    super(503, "denied");
+    Object.defineProperty(this, "response", { value: Object.freeze(externalDenial()), enumerable: true });
   }
 }
 
@@ -347,19 +362,27 @@ export function invitationsHttp(dependencies: InvitationsHttpDependencies): { mo
    * returned outcome COMMITS, a thrown `InvitationError` rolls back and becomes
    * the mapped status, and a serialization failure is retried before it is
    * answered. `PK5FIX-F01` is honoured here by construction.
+   *
+   * `R-02`: a serialization failure PostgreSQL raises at COMMIT reaches this
+   * catch as the driver's error, not as the adapter's `retryable_conflict`, and
+   * is retried by `sqlState` exactly as `InvitationsAuthorizationStore` does;
+   * whatever is left that is not a mapped `RouteFailure` is answered as the
+   * uniform external denial, never as the framework's default body.
    */
   const committed = async <T>(work: (scope: InvitationScope) => Promise<T>): Promise<T | RouteFailure> => {
     for (let attempt = 1; ; attempt++) {
       try {
         return await dependencies.client.transaction({ isolation: "serializable" }, (scoped) => work(dependencies.within(scoped)));
       } catch (error) {
+        const state = (error as { sqlState?: string } | null)?.sqlState;
+        if ((state === "40001" || state === "40P01") && attempt < SERIALIZATION_ATTEMPTS) continue;
         try { invitationFailure(error); }
         catch (mapped) {
           if (mapped instanceof RouteFailure) {
             if (RETRYABLE_INVITATION_FAILURES.has(mapped.response.error) && attempt < SERIALIZATION_ATTEMPTS) continue;
             return mapped;
           }
-          throw mapped;
+          return new TrioExternalDenial();
         }
       }
     }
