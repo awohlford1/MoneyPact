@@ -11,9 +11,9 @@
  * for the pre-authentication trio), and nothing here opens one.
  *
  * **The locator.** `packages/budget-application/src/persistence/invitation-store.ts`
- * needs a `Pick<Pool, "query">` for the three closed cross-space statements
- * (`listLiveInvitationCodes`, `locateInvitationCeremony`,
- * `locateInvitationByCode`): the code and ceremony tables are budget-space
+ * needs a `Pick<Pool, "query">` for the closed cross-space statements
+ * (`locateInvitationCodeBySelector`, `listLegacyInvitationCodes`,
+ * `locateInvitationCeremony`, `locateInvitationByCode`): the code and ceremony tables are budget-space
  * scoped, and a pre-authentication request holds no budget space to scope a
  * tenant statement by. `SEC-PK5-R03` asks a later data-access packet to house
  * those statements as closed `DataAccessClient` members; until then this

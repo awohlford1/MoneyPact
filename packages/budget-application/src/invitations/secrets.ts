@@ -27,7 +27,7 @@
  * function arguments and as the values the caller hands to the delivery
  * adapter and the customer.
  */
-import { createHmac, hkdfSync, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, hkdfSync, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 
 import { InvitationError } from "./records.ts";
 
@@ -127,9 +127,66 @@ export function destinationToken(digest: KeyedDigest, canonical: string): Promis
 // The code, the ceremony secret and the channel challenge.
 // ---------------------------------------------------------------------------
 
-/** The raw bearer `TR-73-02` generates exactly once, 256 bits of entropy in a URL-safe alphabet. */
+/**
+ * The secret half of the bearer `TR-73-02` generates exactly once, 256 bits
+ * of entropy in a URL-safe alphabet. The verifier is bound over this half
+ * alone; the selector is a locator, not a secret, and never enters the HMAC.
+ */
 export function generateBearer(): string {
   return `${randomUUID().replaceAll("-", "")}${randomUUID().replaceAll("-", "")}`;
+}
+
+// 32 bytes of unpadded base64url is always exactly 43 characters, the shape
+// packages/sessions gives session_selector (CBD-191 SS3.2). The selector is
+// parsed by this exact shape so a short guessed half is malformed rather
+// than a lookup.
+const CODE_SELECTOR_BYTES = 32;
+const CODE_SELECTOR_LENGTH = 43;
+const CODE_SELECTOR_PATTERN = new RegExp(`^[A-Za-z0-9_-]{${CODE_SELECTOR_LENGTH}}$`);
+const CODE_BEARER_SEPARATOR = ".";
+
+/**
+ * `PK5-F02`: the opaque random handle a code row is looked up by. It encodes
+ * nothing -- not the space, not the record, not the recipient (`IC-73-002`)
+ * -- and is the shape `packages/sessions` uses for `session_selector`.
+ */
+export function generateCodeSelector(): string {
+  return randomBytes(CODE_SELECTOR_BYTES).toString("base64url");
+}
+
+/** The presented value `<selector>.<secret>`, as the session cookie is `<selector>.<verifier>`. */
+export function composeBearer(selector: string, secret: string): string {
+  assertSecret(secret, "code");
+  if (!CODE_SELECTOR_PATTERN.test(selector)) throw new InvitationError("invalid_request", "code");
+  return `${selector}${CODE_BEARER_SEPARATOR}${secret}`;
+}
+
+export interface PresentedCodeParts {
+  readonly selector: string;
+  readonly secret: string;
+}
+
+/**
+ * Split a presented value into its selector and secret halves, or `undefined`
+ * when it does not carry a well-formed selector. A value without the
+ * separator is the pre-selector bearer shape, which the locator still answers
+ * by the scan over rows that have no selector; a value whose first half is
+ * not exactly the selector shape is malformed and locates nothing. Returning
+ * rather than throwing lets the caller keep its fixed-shape work.
+ */
+export function splitPresentedCode(presented: string): PresentedCodeParts | undefined {
+  if (typeof presented !== "string") return undefined;
+  const index = presented.indexOf(CODE_BEARER_SEPARATOR);
+  if (index <= 0 || index === presented.length - 1) return undefined;
+  const selector = presented.slice(0, index);
+  const secret = presented.slice(index + 1);
+  if (secret.includes(CODE_BEARER_SEPARATOR) || !CODE_SELECTOR_PATTERN.test(selector)) return undefined;
+  return { selector, secret };
+}
+
+/** Whether a presented value carries the separator at all, which is what decides the locator's path. */
+export function hasSelectorShape(presented: string): boolean {
+  return typeof presented === "string" && presented.includes(CODE_BEARER_SEPARATOR);
 }
 
 /** The opaque one-time ceremony token the server sets as the `__Host-mp_invitation_ceremony` cookie. */
@@ -156,9 +213,9 @@ export interface CodeVerifierBinding {
  * it is why `TR-73-05` invalidating the predecessor's code cannot be undone
  * by presenting the same raw value to the successor.
  */
-export function codeVerifierDigest(digest: KeyedDigest, binding: CodeVerifierBinding, bearer: string): Promise<string> {
-  assertSecret(bearer, "code");
-  return digest("code-verifier", `${binding.invitationId}|${binding.invitationVersion}|${binding.destinationToken}|${bearer}`);
+export function codeVerifierDigest(digest: KeyedDigest, binding: CodeVerifierBinding, secret: string): Promise<string> {
+  assertSecret(secret, "code");
+  return digest("code-verifier", `${binding.invitationId}|${binding.invitationVersion}|${binding.destinationToken}|${secret}`);
 }
 
 /** The ceremony cookie's digest, bound to the ceremony row it opens. */

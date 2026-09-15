@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | **Remediation verified v1.0.1 — 27 of 29 findings closed; `RV-73-021` and `RV-73-025` retain source-alignment and audit-rebaseline gates. `RV-73-006` and `RV-73-013` closed with the August 18, 2026 Product Owner decisions; `RV-73-026` closed on publication** |
-| Document version | 1.0.4 |
+| Document version | 1.0.5 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-73](https://cobudget.atlassian.net/browse/CBD-73) |
 | Reviewed repository baseline | `c096928a903dd5446b26ba21eaf7eaa2d84ce936` on `main` (PR #64 merge) |
@@ -547,6 +547,7 @@ by repository policy.
 
 | Version | Date | Author | Change | Approval |
 | --- | --- | --- | --- | --- |
+| 1.0.5 | September 15, 2026 | Claude implementation specialist, dispatched by Manager (`PROTO-SCHEMA-FOLLOWUPS-001`) | Package version moved with the specification's §13.2 record of the `DR-73-09` membership-end reason-class vocabulary (`budget_space_membership.ended_reason_class`) under `EXEC-FOLLOWUPS-003` item 5(a). No row in this document changed. | Consequential amendment under change control; the v1.0.4 Product Owner approval otherwise stands |
 | 1.0.4 | September 15, 2026 | Claude specification specialist, dispatched by Manager (`PROTO-CONSENT-APPROVALS-APPLY-001`) | Package version moved with the specification's §13.1 `DR-73-04` physical mapping to `budget_space_consent`, the `self_disclosure` source value, the append-only digest-pinned disclosure registry as the version source and the `SEC-F02` forward rule, approved at v1.0.4. No row in this document changed. | **Approved — Product Owner, September 15, 2026 (`PO-CONTRACT-APPROVALS-003`)** |
 | 1.0.3 | September 3, 2026 | Claude with Alexander Wohlford as Product Owner | Brand amendment. The ceremony-entry disclosure in the specification's §7 said the surface discloses "that this is a CoBudget invitation requiring verification"; it now says MoneyPact, matching `EM-92-002` as amended at CBD-92 v1.0.1 and the `MSG-73-002`/`MSG-73-010` rows already corrected at v1.0.2. The naming standard is `RT-75-01`. No lifecycle transition, invariant, message row, scenario, or gate changed. | Consequential amendment to an approved document under change control; the v1.0 approval otherwise stands |
 | 1.0.1 | August 18, 2026 | Claude with Alexander Wohlford as Product Owner | Corrected the status line and the §1 verdict, and closed `RV-73-006`, `RV-73-013`, and `RV-73-026`, which still read as open after the August 18 decisions and the publication. Twenty-seven of 29 findings are closed. No rule, decision, or gate changed. | Correction to approved v1.0 |

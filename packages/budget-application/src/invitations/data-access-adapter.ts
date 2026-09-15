@@ -33,7 +33,8 @@ import type {
   CeremonyPatch, ConfirmationPatch, InvitationLocation, InvitationLocator, InvitationPatch,
   InvitationRepository, InvitationStatements, OutboxInsert, OutboxRecord, OutboxTombstoneReason,
 } from "./ports.ts";
-import { codeVerifierDigest, digestsEqual } from "./secrets.ts";
+import { codeVerifierDigest, digestsEqual, hasSelectorShape, splitPresentedCode } from "./secrets.ts";
+import type { CodeVerifierBinding } from "./secrets.ts";
 import type { KeyedDigest } from "./secrets.ts";
 
 /** PostgreSQL's serialization failure: two concurrent confirms, exactly the CBD-275-AC03 case. */
@@ -157,6 +158,7 @@ function toCode(row: BudgetSpaceInvitationCodeRow): InvitationCodeRecord {
   return {
     invitationId: row.invitation_id,
     budgetSpaceId: row.budget_space_id,
+    codeSelector: row.code_selector,
     verifierDigest: row.verifier_digest,
     issuedAt: instant(row.issued_at),
     expiresAt: instant(row.expires_at),
@@ -299,7 +301,7 @@ export function dataAccessInvitationRepository(statements: InvitationStatements)
     }),
     insertCode: (record) => guarded(async () => {
       await statements.insertCode({
-        invitation_id: record.invitationId, budget_space_id: record.budgetSpaceId,
+        invitation_id: record.invitationId, budget_space_id: record.budgetSpaceId, code_selector: record.codeSelector,
         verifier_digest: record.verifierDigest, issued_at: record.issuedAt, expires_at: record.expiresAt,
         disposition: record.disposition, disposition_reason_class: record.dispositionReasonClass,
         disposition_at: record.dispositionAt, abuse_fingerprint: record.abuseFingerprint,
@@ -476,16 +478,48 @@ export function dataAccessInvitationRepository(statements: InvitationStatements)
 }
 
 /**
- * The locator over the same statement set. `locateByPresentedCode` recomputes
- * the bound verifier for each live code row and compares in constant time;
- * see the port's own comment for why there is no index to do this with.
+ * A binding that belongs to no row, for the fixed-shape work the selector
+ * path does when the lookup found nothing (`PK5-F02`; the shape
+ * `packages/sessions/src/resolve.ts` gives its synthetic candidate). The
+ * verifier computed under it can never equal a stored digest, because every
+ * stored digest is bound to a real invitation id.
+ */
+const UNKNOWN_BINDING: CodeVerifierBinding = { invitationId: "unknown", invitationVersion: 0, destinationToken: "unknown" };
+
+/**
+ * The locator over the same statement set. `locateByPresentedCode` takes the
+ * selector path for a value shaped `<selector>.<secret>`: one indexed lookup,
+ * then one bound-verifier computation over the secret half and one
+ * constant-time comparison, performed whether or not the lookup found a row
+ * so the unknown, expired and consumed classes do the same work. A value
+ * without the separator is the pre-selector shape and is answered by the
+ * scan over the rows that have no selector, run to completion; see the port's
+ * own comment.
  */
 export function dataAccessInvitationLocator(statements: InvitationStatements, digest: KeyedDigest): InvitationLocator {
   return {
     locateByPresentedCode: (presentedCode) => guarded(async (): Promise<InvitationLocation | null> => {
       if (typeof presentedCode !== "string" || presentedCode.length === 0) return null;
+      if (hasSelectorShape(presentedCode)) {
+        // Fixed-shape step 1: the selector lookup, real or synthetic, always attempted.
+        const parts = splitPresentedCode(presentedCode);
+        const binding = parts === undefined ? null : await statements.locateCodeBySelector(parts.selector);
+        // Fixed-shape step 2: one bound-verifier computation and one
+        // constant-time comparison, always attempted. Without a row the
+        // candidate is computed under a binding no row can carry and compared
+        // against a digest of the same shape, so the same primitive work runs.
+        const secret = parts?.secret ?? presentedCode;
+        const candidate = await codeVerifierDigest(digest, binding === null ? UNKNOWN_BINDING : {
+          invitationId: binding.invitationId,
+          invitationVersion: binding.invitationVersion,
+          destinationToken: binding.destinationToken,
+        }, secret);
+        const reference = binding === null ? await codeVerifierDigest(digest, UNKNOWN_BINDING, `${secret}|reference`) : binding.verifierDigest;
+        const matched = digestsEqual(candidate, reference);
+        return binding !== null && matched ? { budgetSpaceId: binding.budgetSpaceId, invitationId: binding.invitationId } : null;
+      }
       let found: InvitationLocation | null = null;
-      for (const binding of await statements.listLiveCodes()) {
+      for (const binding of await statements.listLegacyCodes()) {
         const candidate = await codeVerifierDigest(digest, {
           invitationId: binding.invitationId,
           invitationVersion: binding.invitationVersion,

@@ -6,7 +6,10 @@
  * secret-derived value is the non-reversible abuse fingerprint. Neither is
  * ever a predicate composed from a customer-supplied value -- the disposition
  * update predicates on the *current* disposition so that "invalidate an
- * active code" cannot silently re-open a consumed one.
+ * active code" cannot silently re-open a consumed one. The one customer-
+ * supplied predicate on this table is the `code_selector` lookup in
+ * `budget-space-invitation.ts`, and a selector is a random handle that
+ * encodes nothing and proves nothing (`PK5-F02`).
  */
 import { instantText, nullableInstantText, textValue } from "./budget-category.ts";
 import type { TenantStatementClient } from "./budget-category.ts";
@@ -16,6 +19,8 @@ export const BUDGET_SPACE_INVITATION_CODE_TABLE = "budget_space_invitation_code"
 export interface BudgetSpaceInvitationCodeRow {
   readonly invitation_id: string;
   readonly budget_space_id: string;
+  /** `PK5-F02` (20260915T130000Z): the opaque lookup handle; null only on rows issued before the column existed. */
+  readonly code_selector: string | null;
   readonly verifier_digest: string;
   readonly issued_at: string;
   readonly expires_at: string;
@@ -34,6 +39,7 @@ function toRow(value: unknown): BudgetSpaceInvitationCodeRow {
   return {
     invitation_id: textValue(row.invitation_id),
     budget_space_id: textValue(row.budget_space_id),
+    code_selector: nullableText(row.code_selector),
     verifier_digest: textValue(row.verifier_digest),
     issued_at: instantText(row.issued_at),
     expires_at: instantText(row.expires_at),

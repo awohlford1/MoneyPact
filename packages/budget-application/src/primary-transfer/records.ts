@@ -41,18 +41,22 @@ export const TRANSFER_MESSAGE_CODES = Object.freeze({
   denied: UNIFORM_DENIAL_MESSAGE_CODE,
 });
 
-/**
- * The only notice code this module writes a durable `account_lifecycle_notice`
- * row for.
- *
- * `M3` closes that table's `message_code` to five values and `MSG-73-042` is
- * the only transfer message among them, so the mandatory lifecycle notices of
- * `TR-73-40`, `TR-73-44`, `TR-73-45` and `TR-73-46` are returned as message
- * codes and audited as `AE-73-30` enqueues rather than persisted as notice
- * rows. Widening that CHECK is a migration and belongs to whoever owns the
- * notice list page (PK-8), not to this packet; see this packet's result.
- */
+/** The commit's mandatory notice to both parties (`TR-73-43`, `IC-73-019`). */
 export const COMMIT_NOTICE_MESSAGE_CODE = "MSG-73-042";
+
+/**
+ * The message codes this module writes a durable `account_lifecycle_notice`
+ * row for (`DR-73-11`), one row per `AE-73-30` enqueue child: the commit's
+ * `MSG-73-042`, and -- since migration `20260915T130001Z` widened the
+ * table's CHECK (`PK7A-F01`) -- the mandatory lifecycle notices of
+ * `TR-73-40` (`MSG-73-040`, recipient), `TR-73-44` (`MSG-73-043`,
+ * proposer), `TR-73-45` (`MSG-73-044`, recipient) and `TR-73-46`
+ * (`MSG-73-045` on expiry and `MSG-73-027` on invalidation, both parties).
+ */
+export const TRANSFER_NOTICE_MESSAGE_CODES = [
+  COMMIT_NOTICE_MESSAGE_CODE, "MSG-73-040", "MSG-73-043", "MSG-73-044", EXPIRY_MESSAGE_CODE, INVALIDATION_MESSAGE_CODE,
+] as const;
+export type TransferNoticeMessageCode = (typeof TRANSFER_NOTICE_MESSAGE_CODES)[number];
 
 export const PRIMARY_TRANSFER_ERROR_CODES = [
   "invalid_request",
@@ -262,7 +266,7 @@ export interface TransferNotice {
   readonly noticeId: string;
   readonly accountSubjectId: string;
   readonly budgetSpaceId: string | null;
-  readonly messageCode: typeof COMMIT_NOTICE_MESSAGE_CODE;
+  readonly messageCode: TransferNoticeMessageCode;
   readonly eventCorrelationId: string;
 }
 

@@ -233,6 +233,19 @@ VOCABULARIES: tuple[Vocabulary, ...] = (
         canonical="docs/cbd-73-invitation-consent-lifecycle-specification.md §13.1",
         applies_to=("cbd-73-*.md", "cbd-232-*.md", "cbd-233-*.md", "cbd-234-*.md"),
     ),
+    # Registered by PROTO-SCHEMA-FOLLOWUPS-001 (EXEC-FOLLOWUPS-003 item 5(a),
+    # PK2FIX-F01). `budget_space_membership.ended_reason_class` (DR-73-09,
+    # CBD-73 §13.2): the M1 migration's CHECK admits exactly these four classes,
+    # so a restatement naming some of them is always a defect. The consent
+    # column's extra `primary_transfer` class (DR-73-04) is deliberately not a
+    # member: it is a different column with a different vocabulary, and a
+    # mention of it beside these four is a contrast, not an enumeration.
+    Vocabulary(
+        name="membership-end-reason-class",
+        members=("self_revocation", "removed_by_owner", "account_closed", "space_archived"),
+        canonical="docs/cbd-73-invitation-consent-lifecycle-specification.md §13.2",
+        applies_to=("cbd-73-*.md", "cbd-234-*.md"),
+    ),
     # CBD-233 §3.3 stable failure outcomes, widened to eight members by the 0.2
     # consent amendment's `stale_disclosure` addition. Naming some of these
     # outcomes without the rest is always a defect: §11's traceability rows,
