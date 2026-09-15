@@ -108,6 +108,11 @@ export interface IdentityView {
   readonly sessionVersion: number;
   readonly environmentId: string;
   readonly assurance: "session" | "fresh";
+  /** CBD-236 p6 `P6-D03`/`P6-E06`: the same `financial_profile.display_name` the ceremony view already loads
+   * through `listProfiles`; `null` when unset. Additive to the response shape only -- `profile.read`'s cell,
+   * provenance and captured-version set are unchanged (the column was already inside the `profile` section's
+   * underlying row). */
+  readonly displayName: string | null;
   /**
    * PROTO-IDENTITY-API-001 correction C9 (Manager ruling): CBD-191 §5.1
    * requires the raw CSRF value to reach the browser only through a
@@ -556,7 +561,7 @@ export class IdentityCeremony {
     const binding = await findBindingBySubject(client, this.#d.config.environmentId, subject.accountSubjectId);
     const profile = (await listProfiles(client, subject.accountSubjectId)).find((candidate) => candidate.profileState === "active");
     if (!binding || !profile) return undefined;
-    return { accountSubjectId: subject.accountSubjectId, profileId: profile.profileId, identityBindingId: binding.identityBindingId, sessionRef: session.sessionRef, sessionVersion: session.sessionVersion, environmentId: this.#d.config.environmentId, assurance: session.assurance, csrfValue: this.#consumeCsrfBootstrap(session.sessionRef) };
+    return { accountSubjectId: subject.accountSubjectId, profileId: profile.profileId, identityBindingId: binding.identityBindingId, sessionRef: session.sessionRef, sessionVersion: session.sessionVersion, environmentId: this.#d.config.environmentId, assurance: session.assurance, displayName: profile.displayName, csrfValue: this.#consumeCsrfBootstrap(session.sessionRef) };
   }
 
   /** RC-06 (bounded retention): the raw value for a live session, erased once its own absolute expiry passes. */

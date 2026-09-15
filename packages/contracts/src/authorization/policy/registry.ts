@@ -4,16 +4,21 @@ import * as v2 from "./v2.ts";
 import * as v3 from "./v3.ts";
 import * as v4 from "./v4.ts";
 import * as v5 from "./v5.ts";
+import * as v6 from "./v6.ts";
 
 /** The deployed version. p2 was released by docs/cbd-236-p2-release-step.md; p3 by
  * docs/cbd-236-p3-release-step.md; p4 and p5 were released together by the combined form of
  * docs/cbd-236-p5-release-step.md section 1 (p4 by docs/cbd-236-p4-release-step.md, released and never
  * deployed), after the release-history rows carrying each version's two approvals (p4:
  * PO-P4P5-APPROVAL-001, PROTO-POLICY-V4-SEC-001-RESULT-001; p5: PO-P4P5-APPROVAL-001,
- * PROTO-POLICY-V5-SEC-001-RESULT-001) were appended (PC-236-011, CBD236-POLICY-APPROVAL-001). */
-export const CURRENT_POLICY_VERSION = "p5" as const;
+ * PROTO-POLICY-V5-SEC-001-RESULT-001) were appended (PC-236-011, CBD236-POLICY-APPROVAL-001). p6 was
+ * released by docs/cbd-236-p6-release-step.md (the combined shape docs/cbd-236-p5-release-step.md's
+ * own p6 row states, applied directly above the already-released p5: `EXEC-P6-RULINGS-001` P6-D05),
+ * after the release-history row carrying its two approvals (PO-P6-APPROVAL-001,
+ * PROTO-CONTRACTS-P6-SEC-001-RESULT) was appended. */
+export const CURRENT_POLICY_VERSION = "p6" as const;
 
-function serialization<V extends string>(version: V, set: { actionDefinitions: readonly v1.ActionDefinition[]; userCells: readonly v4.P4UserCell[]; serviceCells: readonly v1.ServiceCell[] }) {
+function serialization<V extends string>(version: V, set: { actionDefinitions: readonly v1.ActionDefinition[]; userCells: readonly v6.P6UserCell[]; serviceCells: readonly v1.ServiceCell[] }) {
   return Object.freeze({ version, schemaVersion: 1, actionDefinitions: set.actionDefinitions, userCells: set.userCells, serviceCells: set.serviceCells });
 }
 const serializations = Object.freeze({
@@ -22,18 +27,21 @@ const serializations = Object.freeze({
   p3: serialization("p3", { actionDefinitions: v3.ACTION_DEFINITIONS, userCells: v3.USER_CELLS, serviceCells: v3.SERVICE_CELLS }),
   p4: serialization("p4", { actionDefinitions: v4.ACTION_DEFINITIONS, userCells: v4.USER_CELLS, serviceCells: v4.SERVICE_CELLS }),
   p5: serialization("p5", { actionDefinitions: v5.ACTION_DEFINITIONS, userCells: v5.USER_CELLS, serviceCells: v5.SERVICE_CELLS }),
+  p6: serialization("p6", { actionDefinitions: v6.ACTION_DEFINITIONS, userCells: v6.USER_CELLS, serviceCells: v6.SERVICE_CELLS }),
 });
 export const P1_DIGEST = sha256(serializations.p1);
 export const P2_DIGEST = sha256(serializations.p2);
 export const P3_DIGEST = sha256(serializations.p3);
 export const P4_DIGEST = sha256(serializations.p4);
 export const P5_DIGEST = sha256(serializations.p5);
+export const P6_DIGEST = sha256(serializations.p6);
 export const POLICY_VERSIONS = Object.freeze({
   p1: Object.freeze({ ...serializations.p1, digest: P1_DIGEST }),
   p2: Object.freeze({ ...serializations.p2, digest: P2_DIGEST }),
   p3: Object.freeze({ ...serializations.p3, digest: P3_DIGEST }),
   p4: Object.freeze({ ...serializations.p4, digest: P4_DIGEST }),
   p5: Object.freeze({ ...serializations.p5, digest: P5_DIGEST }),
+  p6: Object.freeze({ ...serializations.p6, digest: P6_DIGEST }),
 });
 export type RegisteredPolicyVersion = keyof typeof POLICY_VERSIONS;
 export type RegisteredPolicy = (typeof POLICY_VERSIONS)[RegisteredPolicyVersion];

@@ -2,12 +2,12 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Proposed.** Not applied: no contract edit, no policy cell, no release-history row, no code, and no Jira or Confluence change exists because of this document. The residual choices are Executive decisions (§9) |
+| Status | **Applied.** `PROTO-CONTRACTS-P6-IMPL-001` (implementation candidate) applied the CBD-236 revisions (`P6-R01`–`P6-R09`, v0.13 to v0.14) and registered `p6` (`policy/v6.ts`, `registry.ts`), and `PROTO-CONTRACTS-P6-SPLIT-001` split that into registration (branch `feat/contracts-p6-tables`) and a separate release step (`docs/cbd-236-p6-release-step.md`, branch `chore/release-policy-p6`, this document's own v0.14.1): `p6` is registered and released, `apps/api/src/notices/http.ts` rebinds to `notice.read`/`notice.mark_read`, and `PUT /v1/identity/me/display-name` binds `profile.set_display_name`, with `releaseCommit` naming the registering PR's merge commit per the `p2`..`p5` convention rather than a branch SHA. The CBD-212 and CBD-73 sentences (§11) are routed to their owners, not applied here (`P6-D04`) |
 | Document version | 0.1 |
 | Proposal identifiers | edits `P6-E01`–`P6-E06`; options `P6-OPT-A`, `P6-OPT-B` (action naming); negative fixtures `P6-N01`–`P6-N08`; contract revisions `P6-R01`–`P6-R09`; decisions `P6-D01`–`P6-D05`; findings `P6-F01`–`P6-F04` |
 | Owner | Alexander Wohlford |
 | Jira subtask | [CBD-236](https://cobudget.atlassian.net/browse/CBD-236); the increment that raised the question is the PK-8 gap-closure pass (CBD-41 family) |
-| Governing contract | `docs/cbd-236-authorization-policy-contract.md` \| Document version **0.13** — §4.1, §4.2, §4.4, §5.3, §6, §6.1, §8.5, §8.8, §9.3, §9.4, §9.7, §12, §14 |
+| Governing contract | `docs/cbd-236-authorization-policy-contract.md` \| Document version **0.14.1** (0.13 as read/proposed against; 0.14 registered this proposal; 0.14.1 released it) — §4.1, §4.2, §4.4, §5.3, §6, §6.1, §8.5, §8.8, §8.9, §9.3, §9.4, §9.7, §9.8, §12, §14 |
 | Governing findings | `GAPS-F01` (`PROTO-INVITATIONS-API-GAPS-001-RESULT` r1); `SEC-GAPS-R1` (`PROTO-INVITATIONS-API-GAPS-SEC-001-RESULT` r1, disposition `clear`); `PK8-F06` (`PROTO-INVITATIONS-PK8-WEB-001-RESULT` r2); Executive ruling `EXEC-PK8-RULINGS-001` item b (display-name route precedes the disclosure-text promise) |
 | Release-step precedent | `docs/cbd-236-p5-release-step.md` \| Document version **0.2.1** — the shape a policy-version release follows; §8 of this document states the `p6` step in that shape without applying it |
 | Amendment-proposal precedent | `docs/cbd-236-primary-ownership-version-amendment-proposal.md` \| Document version **0.2** — the shape this document follows |

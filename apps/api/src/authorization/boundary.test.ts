@@ -164,7 +164,7 @@ describe("authorization transaction boundary", () => {
     // p1 was released under CBD236-P1-RELEASE-001: the checked-in history must
     // carry exactly that row and satisfy the guard the processes run at startup.
     const released = readReleaseHistory() as Array<Record<string, unknown>>;
-    assert.equal(released.length, 5, "exactly five released policy rows");
+    assert.equal(released.length, 6, "exactly six released policy rows");
     assert.equal(released[0]?.version, "p1");
     assert.equal(released[0]?.productApprovalRef, "PO-CONTRACT-APPROVALS-001");
     assert.equal(released[0]?.securityApprovalRef, "CBD236-SECURITY-001");
@@ -192,6 +192,13 @@ describe("authorization transaction boundary", () => {
     assert.equal(released[4]?.productApprovalRef, "PO-P4P5-APPROVAL-001");
     assert.equal(released[4]?.securityApprovalRef, "PROTO-POLICY-V5-SEC-001-RESULT-001");
     assert.equal(typeof released[4]?.releaseCommit === "string" && (released[4]?.releaseCommit as string).length > 0, true);
+    // p6 (docs/cbd-236-p6-subject-self-amendment-proposal.md; EXEC-P6-RULINGS-001 P6-D05: release immediately).
+    assert.equal(released[5]?.version, "p6");
+    assert.equal(released[5]?.digest, "7ed466ae58ab3ac7903aeebaea4603aba6bdec81cb336d07d9a230f9456998ea");
+    assert.equal(released[5]?.schemaVersion, 1);
+    assert.equal(released[5]?.productApprovalRef, "PO-P6-APPROVAL-001");
+    assert.equal(released[5]?.securityApprovalRef, "PROTO-CONTRACTS-P6-SEC-001-RESULT");
+    assert.equal(typeof released[5]?.releaseCommit === "string" && (released[5]?.releaseCommit as string).length > 0, true);
     assert.doesNotThrow(() => assertPolicyCompatibility(released));
   });
 });
