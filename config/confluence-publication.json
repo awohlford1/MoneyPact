@@ -1140,7 +1140,7 @@
         "cbd-73-review-findings"
       ],
       "policy": "approved",
-      "approved_sha256": "668002dce55d9c23b2791f48b99a6c9c21b1823f2fa02dfbfb1c19707a1b616e"
+      "approved_sha256": "bc3ea8384c702a0697a90d43de568f4b7715908faff437afddc3e481ac27a744"
     },
     {
       "path": "docs/cbd-73-customer-message-inventory.md",
@@ -1157,7 +1157,7 @@
         "cbd-73-specification"
       ],
       "policy": "approved",
-      "approved_sha256": "da95064f2cde885c579db75f6a646e7a2c1c9ff6633afc1517aed66ba511fad7"
+      "approved_sha256": "88d262f450e54ad30988e786fe7bd80ced0b97839a88b313b7be6b826ad54eda"
     },
     {
       "path": "docs/cbd-73-exhaustive-review-findings.md",
@@ -1174,7 +1174,7 @@
         "cbd-73-test-inventory"
       ],
       "policy": "approved",
-      "approved_sha256": "59dc5e1f600fe4bf04038ef65019fb6c6c4a2ce29d7eb469b00a5993c60d5e22"
+      "approved_sha256": "09eccacecbea580a5985d058dffce0ef2eabfe2e7b2dd40cf8fe5ae0b08fae4d"
     },
     {
       "path": "docs/cbd-73-invitation-consent-lifecycle-specification.md",
@@ -1191,7 +1191,7 @@
         "cbd-95-follow-up-register"
       ],
       "policy": "approved",
-      "approved_sha256": "fab24597293196f056ba858a588d29f5e63b6915ed86c3c6b2b58fa24ac3175b"
+      "approved_sha256": "6ab86130136802c0482e8ae2eee9e65360258485bcc22adba36097a028441d89"
     },
     {
       "path": "docs/cbd-73-negative-recovery-test-inventory.md",
@@ -1208,7 +1208,7 @@
         "cbd-73-message-inventory"
       ],
       "policy": "approved",
-      "approved_sha256": "540d9c70d31bfe072f61ced38eee79da3912b10dc33befbfe633b62c74fa4802"
+      "approved_sha256": "442db77efe01df7ff3d97792859bae48de66ae0d1a31e718e4023d566440535b"
     },
     {
       "path": "docs/cbd-74-acceptance-criteria-traceability.md",
@@ -1276,7 +1276,7 @@
         "cbd-75-standard"
       ],
       "policy": "approved",
-      "approved_sha256": "f4cb3b5200cf6ac33549b844a96b2b598ecc1dda12576e4bd39d1afe8e8c662a"
+      "approved_sha256": "d3115f9534575470f0b3cd712c86c1cbb9431eb4c68c17f4717fc36e1b9d9c29"
     },
     {
       "path": "docs/cbd-75-role-terminology-and-copy-standard.md",
