@@ -251,6 +251,15 @@ function ProgressSection({ id, loaded }: { id: string; loaded: Loaded }) {
  * active period, with the edit and removal of one expense in place. The read
  * is a separate route bound to `14.view_progress_detail` with the category as
  * its target, so a category from another budget is refused by the API.
+ *
+ * **What this page may edit.** A row here is one allocation, not necessarily a
+ * whole expense. The edit below submits the whole transaction with a single
+ * allocation, so it is offered only for an item the API reports as carrying
+ * exactly one allocation (`allocationCount`). A share of a split expense is
+ * shown with a statement of why it cannot be changed here, because the
+ * alternative -- rewriting it as a single-category expense -- would silently
+ * take the other categories' amounts away and lower their `spent` without the
+ * person ever being told (F-REVB-01).
  */
 export function CategoryDetailView({ id, categoryId }: { id: string; categoryId: string }) {
   const { api, session } = useSession();
@@ -328,7 +337,21 @@ export function CategoryDetailView({ id, categoryId }: { id: string; categoryId:
           return <li key={item.transactionId} className="space-y-2 rounded-lg border border-border p-4" data-testid="detail-item">
             <h3 className="break-words font-semibold">{item.description ?? "No description"}</h3>
             <p>{item.budgetDate} · {item.amount} {detail.currencyCode} · {account?.label ?? item.accountId}</p>
-            {editing === item.transactionId
+            {item.allocationCount !== 1
+              // A share of a split expense. The form below rewrites the whole transaction with one
+              // allocation, which would silently discard every other category's share, so this page
+              // refuses the edit rather than performing it (F-REVB-01). Removal is still whole and
+              // still honest: it removes the whole expense, and it says so.
+              ? <div className="space-y-2">
+                <p data-testid="detail-split-notice">
+                  This expense is split across {item.allocationCount ?? "several"} categories, so it cannot be changed from this page.
+                  Edit it where every category&rsquo;s amount is shown, so nothing is dropped.
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <Button variant="secondary" disabled={busy} onClick={() => void run("Expense removed.", () => api.removeExpense(id, item.transactionId))}>Remove this whole expense</Button>
+                </div>
+              </div>
+              : editing === item.transactionId
               ? <form className="flex flex-wrap items-end gap-3" onSubmit={event => {
                 event.preventDefault();
                 void run("Expense updated.", async () => {

@@ -187,19 +187,44 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     // The figures survive a reload, because they are the server's and not the browser's.
     await page.reload(); await waitText("Spent 8.00 USD of 450.00 USD");
 
+    const controls = async () => page.$$eval("button", nodes => nodes.map(node => node.textContent.trim()));
+
     await clickText("Groceries"); await waitText("Transactions in this category");
     assert.ok((await page.title()).includes("Category detail"));
     await waitText("Corner shop");
     await waitText("8.00 USD · Everyday");
+
+    // BFIX-01 (F-REVB-01): this row is the Groceries SHARE of a 12.50 expense split 8.00/4.50.
+    // The in-place edit rewrites the whole transaction with one allocation, so offering it here
+    // would silently take 4.50 away from Transport. The page refuses it and says why; removal is
+    // still offered, and its label says it removes the whole expense.
+    await waitText("This expense is split across 2 categories");
+    assert.equal((await controls()).includes("Edit this expense"), false, "a share of a split expense offers no in-place edit");
+    assert.equal((await controls()).includes("Remove this whole expense"), true);
     await accessibility();
 
+    // A single-category expense is the whole expense, so it does edit in place.
+    await clickText("Back to the budget"); await waitText("Accounts and spending");
+    await fill("#expense-date", periodStart);
+    await fill("#expense-amount", "3.00");
+    await fill("#expense-description", "Milk");
+    await fill(allocationIds[0], "3.00");
+    await clickText("Record expense"); await waitText("Expense recorded.");
+    await waitText("Spent 11.00 USD of 450.00 USD");
+
+    await clickText("Groceries"); await waitText("Transactions in this category");
+    await waitText("Milk");
     await clickText("Edit this expense");
     const amountId = await page.$eval('input[id^="edit-amount-"]', node => `#${node.id}`);
     await fill(amountId, "20.00");
     await clickText("Save expense"); await waitText("Expense updated.");
     await waitText("20.00 USD · Everyday");
+    // The split share is untouched by that edit: it is still there, and still 8.00.
+    await waitText("8.00 USD · Everyday");
+    await accessibility();
 
     await clickText("Remove this expense"); await waitText("Expense removed.");
+    await clickText("Remove this whole expense"); await waitText("Expense removed.");
     await waitText("Nothing has been recorded against this category for the active period.");
     await accessibility();
 

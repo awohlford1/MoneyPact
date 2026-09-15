@@ -186,11 +186,14 @@ describe("CBD-199/200/201/209/211 transaction and progress routes through the re
       assert.equal(detail.json().categoryId, groceries);
       assert.equal(detail.json().label, "Groceries");
       assert.equal(detail.json().cell.settledActualMinorUnits, -800, "CBD-209: aggregate and detail agree for the same cell");
-      const items = detail.json().items as { amountMinorUnits: number; description: string; budgetDate: string }[];
+      const items = detail.json().items as { amountMinorUnits: number; description: string; budgetDate: string; allocationCount: number }[];
       assert.equal(items.length, 1);
       assert.equal(items[0]!.amountMinorUnits, -800);
       assert.equal(items[0]!.description, "Corner shop");
       assert.equal(items[0]!.budgetDate, "2026-09-15");
+      // F-REVB-01: the row shows this category's share, and says the whole expense carries two.
+      // Without this the client cannot tell a whole expense from a share of a split one.
+      assert.equal(items[0]!.allocationCount, 2, "the whole transaction is split across two categories");
       assert.deepEqual(cell(groceries).settledRecordIds, [(detail.json().items as { allocationId: string }[])[0]!.allocationId]);
 
       // An excluded item appears in neither: the tombstone removes it from both at once.
@@ -200,6 +203,64 @@ describe("CBD-199/200/201/209/211 transaction and progress routes through the re
       assert.equal((after.json().cells as { categoryId: string; settledActualMinorUnits: number }[]).find((entry) => entry.categoryId === groceries)!.settledActualMinorUnits, 0);
       const detailAfter = await call("GET", `${space}/periods/${PERIOD_A_OPEN}/progress/${groceries}`);
       assert.deepEqual(detailAfter.json().items, []);
+    } finally { await app.close(); }
+  });
+
+  /**
+   * BFIX-01 (F-REVB-01). A detail row is one allocation, and the client cannot
+   * tell a whole expense from a share of a split one without being told. The
+   * count is the whole version's, so a split expense reports two on either
+   * category's page and a single-category expense reports one.
+   */
+  it("BFIX-01: every detail item states how many categories the whole expense is split across", async () => {
+    const { app, call, space, groceries, transport } = await application();
+    try {
+      await call("POST", `${space}/transactions`, split(groceries, transport));
+      await call("POST", `${space}/transactions`, { ...split(groceries, transport), amountMinorUnits: -300, description: "Milk", allocations: [{ categoryId: groceries, amountMinorUnits: -300 }] });
+
+      const counted = async (categoryId: string) => {
+        const detail = await call("GET", `${space}/periods/${PERIOD_A_OPEN}/progress/${categoryId}`);
+        assert.equal(detail.statusCode, 200, detail.body);
+        // Both expenses carry the same budget date, so the route's tie-break is the allocation id;
+        // this test is about the counts, so it compares a description-ordered projection.
+        return (detail.json().items as { description: string; amountMinorUnits: number; allocationCount: number }[])
+          .map((item) => [item.description, item.amountMinorUnits, item.allocationCount] as const)
+          .sort((a, b) => a[0].localeCompare(b[0]));
+      };
+      assert.deepEqual(await counted(groceries), [["Corner shop", -800, 2], ["Milk", -300, 1]]);
+      // The count is the transaction's, not this category's share of it, so the same expense
+      // reports two from the other side of the split as well.
+      assert.deepEqual(await counted(transport), [["Corner shop", -450, 2]]);
+    } finally { await app.close(); }
+  });
+
+  /**
+   * BFIX-02 (F-REVB-02). The datastore fact reader treats `resourceId ===
+   * spaceId` as the whole-set case, so a row-targeted route handed the acting
+   * space's own id would be authorized against the whole set -- for the
+   * drill-down, a SPACE target, which `HO-236-09` excludes by name. Each route
+   * refuses it with its own 404 in the replay hook, before authorization and
+   * before any repository call.
+   */
+  it("BFIX-02: the acting space's own id is refused as a row id, before authorization", async () => {
+    const { app, call, space, groceries, transport, repositoryCalls } = await application();
+    try {
+      await call("POST", `${space}/transactions`, split(groceries, transport));
+      const before = repositoryCalls();
+      for (const [method, path, payload, error] of [
+        ["PATCH", `transactions/${SPACE_A}`, split(groceries, transport), "transaction_not_found"],
+        ["POST", `transactions/${SPACE_A}/remove`, undefined, "transaction_not_found"],
+        // The drill-down is the one that mattered: it used to answer an empty 200 after a space
+        // target had been evaluated for it.
+        ["GET", `periods/${PERIOD_A_OPEN}/progress/${SPACE_A}`, undefined, "allocation_category_invalid"],
+      ] as const) {
+        const refused = await call(method, `${space}/${path}`, payload);
+        assert.equal(refused.statusCode, 404, `${method} ${path}: ${refused.body}`);
+        assert.deepEqual(refused.json(), { error });
+      }
+      assert.equal(repositoryCalls(), before, "no refusal reached a handler, so none ran a query");
+      // The real category still reads, so the refusal is of an identifier and not of the route.
+      assert.equal((await call("GET", `${space}/periods/${PERIOD_A_OPEN}/progress/${groceries}`)).statusCode, 200);
     } finally { await app.close(); }
   });
 

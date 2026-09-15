@@ -172,6 +172,35 @@ describe("CBD-196 / CBD-200 manual account routes through the real Fastify insta
     } finally { await app.close(); }
   });
 
+  /**
+   * BFIX-02 (F-REVB-02). The datastore fact reader treats `resourceId ===
+   * spaceId` as the whole-set case, so a row-targeted account route handed the
+   * acting space's own id would be authorized against the whole account set
+   * and only then answer 404 from the command. The replay hook refuses it
+   * first, with this route's own 404, before authorization and before any
+   * repository call.
+   */
+  it("BFIX-02: the acting space's own id is refused as an account id, before authorization", async () => {
+    const { app, call, repositoryCalls } = await application();
+    try {
+      const created = await call("POST", `/v1/budget-spaces/${ACCOUNT_SPACE_A}/accounts`, NEW_ACCOUNT);
+      const accountId = (created.json().account as { accountId: string }).accountId;
+      const before = repositoryCalls();
+      for (const [method, path, payload] of [
+        ["PATCH", `accounts/${ACCOUNT_SPACE_A}`, { label: "renamed" }],
+        ["POST", `accounts/${ACCOUNT_SPACE_A}/archive`, undefined],
+        ["POST", `accounts/${ACCOUNT_SPACE_A}/restore`, undefined],
+      ] as const) {
+        const refused = await call(method, `/v1/budget-spaces/${ACCOUNT_SPACE_A}/${path}`, payload);
+        assert.equal(refused.statusCode, 404, `${method} ${path}: ${refused.body}`);
+        assert.deepEqual(refused.json(), { error: "account_not_found" });
+      }
+      assert.equal(repositoryCalls(), before, "no refusal reached a handler, so none ran a query");
+      // The real account still edits, so the refusal is of an identifier and not of the route.
+      assert.equal((await call("PATCH", `/v1/budget-spaces/${ACCOUNT_SPACE_A}/accounts/${accountId}`, { label: "renamed" })).statusCode, 200);
+    } finally { await app.close(); }
+  });
+
   it("INCB-01: a subject without membership and an unauthenticated request are denied inertly, before any repository call", async () => {
     const { app, h, call, repositoryCalls, memberships } = await application();
     try {

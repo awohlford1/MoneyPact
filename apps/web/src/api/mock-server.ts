@@ -346,6 +346,8 @@ export function createServerMock(now = Date.now): MockWire {
         items: settledVersions(value, periodId).flatMap(version => version.allocations.filter(allocation => allocation.categoryId === categoryId).map(allocation => ({
           transactionId: version.transactionId, accountId: version.accountId, budgetDate: version.budgetDate,
           description: version.description, amountMinorUnits: allocation.amountMinorUnits,
+          // As the API counts it: the whole version's allocations, not this category's share (F-REVB-01).
+          allocationCount: version.allocations.length,
         }))).sort((a, b) => a.budgetDate.localeCompare(b.budgetDate) || a.transactionId.localeCompare(b.transactionId)),
       };
     },

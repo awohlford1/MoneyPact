@@ -120,12 +120,23 @@ export function accountsHttp(dependencies: AccountsHttpDependencies): { module: 
     if (typeof id !== "string" || !UUID.test(id)) throw new RouteFailure(404, "account_not_found");
     return id.toLowerCase();
   };
-  /** `row` names the account the path carries; otherwise the target is the space's account set. */
+  /**
+   * `row` names the account the path carries; otherwise the target is the space's account set.
+   *
+   * A row-targeted route refuses the acting space's own id as the account id
+   * with this route's own 404, before authorization (F-REVB-02). The datastore
+   * fact reader treats `resourceId === spaceId` as the whole-set case and
+   * emits the space's own leaves, so without this refusal a row route would be
+   * authorized against the whole account set and only then answer 404 from the
+   * command. The space id is never an account row id, so nothing legitimate is
+   * refused.
+   */
   const authorize = (action: string, resourceType: ResourceType, row: boolean) => Authorize({
     action, purpose: "user_delegated",
     replay: async (request, subject) => {
       const budgetSpaceId = spaceOf(request);
       const accountId = row ? accountOf(request) : null;
+      if (accountId === budgetSpaceId) throw new RouteFailure(404, "account_not_found");
       acting.set(request, { subject, budgetSpaceId, accountId, membershipId: await dependencies.membership(subject, budgetSpaceId) });
       return { kind: "absent" };
     },

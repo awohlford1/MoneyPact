@@ -90,6 +90,14 @@ export interface DetailItem {
   description: string | null;
   /** The positive magnitude of this allocation, for the same reason `spent` is. */
   amount: string;
+  /**
+   * How many categories the whole transaction is split across, as the API
+   * counts them. One means this page sees the whole expense and may edit it in
+   * place; more means it sees one share of a split and must not rewrite it
+   * from here. Anything the server did not state is carried as `null`, which
+   * reads as "not editable here" rather than as one (F-REVB-01).
+   */
+  allocationCount: number | null;
 }
 export interface CategoryDetail {
   budgetSpaceId: string;
@@ -181,7 +189,7 @@ export interface WireProgress {
 export interface WireCategoryDetail {
   budgetSpaceId: string; periodId: string; categoryId: string; label: string | null; currencyCode: string; minorUnitPrecision: number;
   cell: WireProgress["cells"][number] | null;
-  items: readonly { transactionId: string; accountId: string; budgetDate: string; description: string | null; amountMinorUnits: number }[];
+  items: readonly { transactionId: string; accountId: string; budgetDate: string; description: string | null; amountMinorUnits: number; allocationCount: number }[];
 }
 
 /** Minor units to a decimal string in major units: presentation only, exact for safe integers. */
@@ -322,6 +330,10 @@ export function toCategoryDetail(wire: WireCategoryDetail): CategoryDetail {
     items: wire.items.map(item => ({
       transactionId: item.transactionId, accountId: item.accountId, budgetDate: item.budgetDate, description: item.description,
       amount: formatMinorUnits(Math.abs(item.amountMinorUnits), wire.minorUnitPrecision),
+      // A count the server did not state, or stated as something other than a positive whole number,
+      // is carried as null so the view withholds the in-place edit rather than assuming a single
+      // allocation and silently discarding the rest of a split (F-REVB-01).
+      allocationCount: Number.isSafeInteger(item.allocationCount) && item.allocationCount > 0 ? item.allocationCount : null,
     })),
   };
 }

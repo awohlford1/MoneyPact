@@ -135,9 +135,19 @@ export function transactionsFailure(error: unknown): never {
 @Module({})
 export class TransactionsModule {}
 
-/** The itemized rows behind one category's progress figure for one period (CBD-211). */
+/**
+ * The itemized rows behind one category's progress figure for one period (CBD-211).
+ *
+ * Each row carries `allocationCount`, the number of allocations the whole
+ * transaction version carries, not the number this category sees (which is
+ * always one, since a version may not allocate twice to the same category).
+ * A row whose count is greater than one is a share of a split expense: it
+ * cannot be rewritten from this page without deciding what happens to the
+ * other categories' shares, and the detail response says so rather than
+ * leaving the client to guess from a figure it cannot see (F-REVB-01).
+ */
 export function itemizeCategory(ledger: readonly TransactionSnapshot[], categoryId: string): readonly unknown[] {
-  const items: { transactionId: string; transactionVersionId: string; revision: number; accountId: string; budgetDate: string; description: string | null; allocationId: string; amountMinorUnits: number; currencyCode: string; minorUnitPrecision: number }[] = [];
+  const items: { transactionId: string; transactionVersionId: string; revision: number; accountId: string; budgetDate: string; description: string | null; allocationId: string; amountMinorUnits: number; currencyCode: string; minorUnitPrecision: number; allocationCount: number }[] = [];
   for (const snapshot of ledger) {
     // Superseded versions and tombstones never reach the aggregate, so they never reach the detail either.
     if (snapshot.version.supersededAt !== null || snapshot.version.removedAt !== null) continue;
@@ -148,6 +158,7 @@ export function itemizeCategory(ledger: readonly TransactionSnapshot[], category
         revision: snapshot.version.revision, accountId: snapshot.version.accountId, budgetDate: snapshot.version.budgetDate,
         description: snapshot.version.description, allocationId: allocation.allocationId,
         amountMinorUnits: allocation.amountMinorUnits, currencyCode: allocation.currencyCode, minorUnitPrecision: allocation.minorUnitPrecision,
+        allocationCount: snapshot.allocations.length,
       });
     }
   }
@@ -163,12 +174,23 @@ export function transactionsHttp(dependencies: TransactionsHttpDependencies): { 
     return id.toLowerCase();
   };
   const spaceOf = (request: FastifyRequest): string => param(request, "budgetSpaceId", 404, "budget_space_not_found");
-  /** `target` names the path parameter whose row is the policy target, or null for a whole-set target. */
+  /**
+   * `target` names the path parameter whose row is the policy target, or null for a whole-set target.
+   *
+   * A row-targeted route refuses the acting space's own id as the row id with
+   * its own 404, before authorization (F-REVB-02). The datastore fact reader
+   * treats `resourceId === spaceId` as the whole-set case and emits the
+   * space's own leaves, so without this refusal the drill-down would be
+   * measured against a SPACE target -- exactly what `HO-236-09` excludes by
+   * name -- and would answer an empty 200 instead of a denial. The space id is
+   * never a transaction or category row id, so nothing legitimate is refused.
+   */
   const authorize = (action: string, resourceType: ResourceType, target: { readonly name: string; readonly status: number; readonly error: string } | null) => Authorize({
     action, purpose: "user_delegated",
     replay: async (request, subject) => {
       const budgetSpaceId = spaceOf(request);
       const targetId = target ? param(request, target.name, target.status, target.error) : null;
+      if (targetId === budgetSpaceId) throw new RouteFailure(target!.status, target!.error);
       acting.set(request, { subject, budgetSpaceId, targetId, membershipId: await dependencies.membership(subject, budgetSpaceId) });
       return { kind: "absent" };
     },
