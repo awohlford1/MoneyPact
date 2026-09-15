@@ -411,6 +411,37 @@ describe("PK-6 invitation routes through the real Fastify instance", () => {
     } finally { await app.close(); }
   });
 
+  it("PK6-02 (R-01, SEC-PK6-F1): a Co-owner cannot supersede a Primary's co_owner invitation through create -- 403 permission_mismatch, the record stays pending and its code stays usable", async () => {
+    const { app, world, call, ceremony, asOwner, ceremonyHeaders } = await application();
+    try {
+      const primary = await ceremony("create", "co_owner");
+      assert.equal(world.repository.invitations.get(primary.invitationId)?.requiredPermission, "26");
+      const outboxBefore = world.repository.outbox.size;
+      // The Co-owner holds 24.invite_nonowner in p5 and the decision allows, but the implicit
+      // TR-73-05 replacement is the same transition the replace route performs: the actor's
+      // decided permission (24) must equal the record's (26). The module refuses and the
+      // boundary rolls the transaction back.
+      asOwner("co_owner");
+      const denied = await call("POST", `/v1/budget-spaces/${SPACE}/invitations`, { channel: "email", destination: "Invitee@Example.com", proposedRole: "collaborator", idempotencyKey: "k-coowner" });
+      assert.equal(denied.statusCode, 403, denied.body); assert.deepEqual(denied.json(), { error: "permission_mismatch" });
+      const record = world.repository.invitations.get(primary.invitationId)!;
+      assert.equal(record.state, "pending", "the Primary's record was not superseded");
+      assert.equal(record.requiredPermission, "26");
+      assert.equal([...world.repository.invitations.values()].filter((r) => r.budgetSpaceId === SPACE).length, 1, "no successor was created");
+      assert.equal(world.repository.outbox.size, outboxBefore, "no successor delivery was written");
+      // The original code is still usable by the link holder.
+      const resolved = await call("POST", "/v1/invitations/resolve", { code: primary.delivery.bearer }, ceremonyHeaders(undefined));
+      assert.equal(resolved.statusCode, 200, resolved.body);
+      assert.equal(typeof resolved.json().ceremonyId, "string");
+      // The Primary Owner, holding the record's exact permission, still replaces through create.
+      asOwner("primary_owner");
+      const replaced = await call("POST", `/v1/budget-spaces/${SPACE}/invitations`, { channel: "email", destination: "Invitee@Example.com", proposedRole: "co_owner", idempotencyKey: "k-primary-2" });
+      assert.equal(replaced.statusCode, 201, replaced.body);
+      assert.notEqual(replaced.json().invitation.invitationId, primary.invitationId);
+      assert.equal(world.repository.invitations.get(primary.invitationId)?.state, "superseded");
+    } finally { await app.close(); }
+  });
+
   it("PK6-02 (SEC-PK5-F03): verify-channel and decline bind the server's environment key exactly as resolve does", async () => {
     const { app, world, call, ceremony, ceremonyHeaders } = await application();
     try {

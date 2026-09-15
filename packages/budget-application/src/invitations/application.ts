@@ -400,6 +400,13 @@ export async function createInvitation(
   if (existing) {
     const live = await expireOnObservation(deps, existing, owner.correlationId);
     if (!isTerminalInvitationState(live.state)) {
+      // `R-01` / `SEC-PK6-F1`: the implicit replacement is the same `TR-73-05`
+      // transition the explicit `replace` route performs, and carries the same
+      // exact-permission rule: the actor retires the predecessor only while
+      // holding the predecessor's own required permission. A Co-owner (24)
+      // therefore cannot supersede a Primary's co_owner (26) record through
+      // create; the route answers 403 and the transaction rolls back.
+      if (owner.permission !== live.requiredPermission) throw new InvitationError("permission_mismatch", "requiredPermission");
       const replaced = await replaceInvitationRecord(deps, owner, live, request, { disclosure, required, normalizedDestination: token });
       return { ...replaced, supersededInvitationId: live.invitationId };
     }
