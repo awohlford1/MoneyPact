@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Ready to apply, not applied** — `p4` is registered and not released |
-| Document version | 0.1 |
+| Status | **Applied** — `releaseCommit` `696d831ab25a226cc178c27e7111ef75c2ffd579`; `p4` is released, in the combined form of `docs/cbd-236-p5-release-step.md` §1 form 2, and never deployed (`CURRENT_POLICY_VERSION` went from `p3` straight to `p5`, which carries every `p4` cell) |
+| Document version | 0.2 |
 | Governing contract | [`docs/cbd-236-authorization-policy-contract.md`](./cbd-236-authorization-policy-contract.md) v0.10 §6 `PC-236-011`, `PC-236-013`, §8.7 |
 | Governing decisions | `CBD236-POLICY-APPROVAL-001` (Product Owner and Security sign-off cited in every released row); `PROTO-POLICY-V2-DECISION-001` precedent (add a version through an Architecture packet and a following Security review; release requires both approvals as separate records); `PO-CBD72-ROW36-001` (the approved CBD-72 row 36 the `p4` cells carry) |
 | Jira subtask | [CBD-236](https://cobudget.atlassian.net/browse/CBD-236) |
@@ -192,5 +192,6 @@ in a focused change. `OQ-236-011` is already closed by CBD-72 row 36 and needs n
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 0.2 | September 15, 2026 | Manager, applying this step | Applied in the combined form of `docs/cbd-236-p5-release-step.md` §1 form 2: one commit appends the `p4` row (`PO-P4P5-APPROVAL-001`, `PROTO-POLICY-V4-SEC-001-RESULT-001`, `releaseCommit` `696d831ab25a226cc178c27e7111ef75c2ffd579`) and then the `p5` row, and flips `CURRENT_POLICY_VERSION` from `p3` straight to `p5`. The §4.2 flip to `p4` and the §4.3 literals naming `p4` were therefore not applied as written: every literal names `p5`, and `p4` is released and never deployed, which the contract permits. The §4.4 `released.length === 4` row-count change was superseded by the `p5` step's `=== 5`; the `released[3]` `p4` assertions and the `p4` `schemaVersion` 99 mismatch case were applied exactly as listed. Contracts 65/65, api 475/477 (2 skipped, live PostgreSQL), worker 52/52. |
 | 0.1.1 | September 15, 2026 | Manager, applying `SEC-P4-F1` | §1 and §2 attribute the route binding to the unmerged PROTO-INCREMENT-B-001 routes (PR #340) and note when the §4.4 route-test recommendation applies. Not applied. |
 | 0.1 | September 15, 2026 | Architecture under `PROTO-POLICY-V4-001` | Initial ready-to-apply release step with the reproducible `p4` digest, the exact history row, the registry flip, every application literal that pins `p3`, the contracts suite proven version-derived under a simulated flip, and every application test change the flip requires with the historical `p1`, `p2` and `p3` literals that stay. Not applied. |

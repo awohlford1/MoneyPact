@@ -213,7 +213,7 @@ them at `cobudget_dev`.
 - Sessions are opaque cookies per CBD-191; the CSRF value is delivered once in
   the sign-in bootstrap response and sent back as `X-CoBudget-CSRF` on every
   mutation.
-- Authorization is policy version p3, deny by default, evaluated on every
+- Authorization is policy version p5, deny by default, evaluated on every
   protected route. Consent is now a record, not a derivation
   (`CBD236-CONSENT-SEMANTICS-001`): the creation review presents the approved
   Primary Owner self-disclosure and requires an explicit acknowledgement, the

@@ -5,10 +5,13 @@ import * as v3 from "./v3.ts";
 import * as v4 from "./v4.ts";
 import * as v5 from "./v5.ts";
 
-/** The deployed version. p2 was released by docs/cbd-236-p2-release-step.md; p3 was released by
- * docs/cbd-236-p3-release-step.md after the release-history row carrying both approvals
- * (PO-P3-APPROVAL-001, PROTO-POLICY-V3-SEC-001-RESULT-001) was appended (PC-236-011, CBD236-POLICY-APPROVAL-001). */
-export const CURRENT_POLICY_VERSION = "p3" as const;
+/** The deployed version. p2 was released by docs/cbd-236-p2-release-step.md; p3 by
+ * docs/cbd-236-p3-release-step.md; p4 and p5 were released together by the combined form of
+ * docs/cbd-236-p5-release-step.md section 1 (p4 by docs/cbd-236-p4-release-step.md, released and never
+ * deployed), after the release-history rows carrying each version's two approvals (p4:
+ * PO-P4P5-APPROVAL-001, PROTO-POLICY-V4-SEC-001-RESULT-001; p5: PO-P4P5-APPROVAL-001,
+ * PROTO-POLICY-V5-SEC-001-RESULT-001) were appended (PC-236-011, CBD236-POLICY-APPROVAL-001). */
+export const CURRENT_POLICY_VERSION = "p5" as const;
 
 function serialization<V extends string>(version: V, set: { actionDefinitions: readonly v1.ActionDefinition[]; userCells: readonly v4.P4UserCell[]; serviceCells: readonly v1.ServiceCell[] }) {
   return Object.freeze({ version, schemaVersion: 1, actionDefinitions: set.actionDefinitions, userCells: set.userCells, serviceCells: set.serviceCells });
@@ -17,9 +20,7 @@ const serializations = Object.freeze({
   p1: serialization("p1", { actionDefinitions: v1.ACTION_DEFINITIONS, userCells: v1.USER_CELLS, serviceCells: v1.SERVICE_CELLS }),
   p2: serialization("p2", { actionDefinitions: v2.ACTION_DEFINITIONS, userCells: v2.USER_CELLS, serviceCells: v2.SERVICE_CELLS }),
   p3: serialization("p3", { actionDefinitions: v3.ACTION_DEFINITIONS, userCells: v3.USER_CELLS, serviceCells: v3.SERVICE_CELLS }),
-  // p4 is registered and not released (docs/cbd-236-p4-release-step.md); it is never current until that step is applied.
   p4: serialization("p4", { actionDefinitions: v4.ACTION_DEFINITIONS, userCells: v4.USER_CELLS, serviceCells: v4.SERVICE_CELLS }),
-  // p5 is registered above the unreleased p4 and not released (docs/cbd-236-p5-release-step.md); it is never current until that step is applied, which needs the p4 row first or a combined release.
   p5: serialization("p5", { actionDefinitions: v5.ACTION_DEFINITIONS, userCells: v5.USER_CELLS, serviceCells: v5.SERVICE_CELLS }),
 });
 export const P1_DIGEST = sha256(serializations.p1);
