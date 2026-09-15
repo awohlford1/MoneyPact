@@ -20,7 +20,7 @@ import { buildSessionCookieDeletionHeader, buildSessionCookieHeader, consumeAndI
 import type { EnvelopeKeyProvider, SealedSessionDelivery, SessionConfig, SessionIssueCommandV1, SessionStore } from "@cobudget/sessions";
 import { CEREMONIES, ChallengeStore, ChallengeStoreFullError, oneWayDigest } from "./challenge.ts";
 import type { Ceremony, ChallengeRecord } from "./challenge.ts";
-import { IDENTITY_CALLBACK_PATH } from "./config.ts";
+import { callbackContextMatches } from "./callback-context.ts";
 import type { LocalIdentityConfig } from "./config.ts";
 import { extractStateForTermination, parseCallbackEnvelope } from "./envelope.ts";
 import { runBoundedExchange } from "./exchange.ts";
@@ -279,7 +279,9 @@ export class IdentityCeremony {
       this.#evidence("callback_unknown_state", undefined, "invalid_or_expired");
       return { kind: "outcome", outcome: "invalid_or_expired", navigateTo: this.#resultNavigation("invalid_or_expired"), challengeId: undefined };
     }
-    const contextValid = context.method === "GET" && context.path === IDENTITY_CALLBACK_PATH && `${context.observedOrigin}${IDENTITY_CALLBACK_PATH}` === known.callbackUri && known.environmentId === this.#d.config.environmentId;
+    // PROTO-HARDENING-001 (GUARD-STAGES-F03): the one implementation, shared
+    // with the rate-limit gate's prediction in sessions/runtime.ts.
+    const contextValid = callbackContextMatches(context, known, this.#d.config.environmentId);
     if (!contextValid) {
       // Wrong environment, origin, callback URI or method: the known challenge terminates and restricted evidence is raised (§7).
       this.#d.challenges.terminate(known.challengeId);

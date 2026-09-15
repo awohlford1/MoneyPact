@@ -211,8 +211,9 @@ describe("row-level resource facts for the increment-B route targets", () => {
     assert.equal(facts?.["resource.owningSpaceId"], SPACE);
     assert.equal(facts?.["resource.version"], 7, "the category row's own version column");
     assert.equal(Number.isSafeInteger(facts?.["resource.version"]), true);
-    assert.ok(selected.budget_category?.includes("version"), "the category read selects version");
-    assert.ok(!selected.budget_category?.includes("updated_at"), "and no longer reads updated_at as a version");
+    const columns: readonly string[] = selected.budget_category ?? [];
+    assert.ok(columns.includes("version"), "the category read selects version");
+    assert.ok(!columns.includes("updated_at"), "and no longer reads updated_at as a version");
   });
 
   it("the whole-set target is still the space's own row", async () => {
