@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | **Approved at v0.4 — Product Owner, September 13, 2026 (PO-CONTRACT-APPROVALS-001)**; the v0.5 policy-version-2 amendment (§4.4, §8.5, §9.4) is approved and `p2` is released (§8.5.4, `PO-P2-APPROVAL-001`, `PROTO-POLICY-V2-SEC-001`); the v0.8 policy-version-3 amendment (§8.6, §9.5) is approved and `p3` is released (§8.6.4, `PO-P3-APPROVAL-001`, `PROTO-POLICY-V3-SEC-001-RESULT-001`); the v0.10 policy-version-4 amendment (§8.7, §9.6) is approved and `p4` is released (§8.7.4, `PO-P4P5-APPROVAL-001`, `PROTO-POLICY-V4-SEC-001-RESULT-001`); the v0.11 policy-version-5 amendment (§4.4, §8.8, §9.7) is approved and `p5` is released and current (§8.8.4, `PO-P4P5-APPROVAL-001`, `PROTO-POLICY-V5-SEC-001-RESULT-001`), both in the combined release of v0.12; open questions and residuals stay recorded and open, with `OQ-236-012` and `OQ-236-013` closed |
-| Document version | 0.12.1 |
+| Document version | 0.12.2 |
 | Decision | `PC-236-001` through `PC-236-020`; questions `OQ-236-001` through `OQ-236-013`, with `OQ-236-007`, `OQ-236-008`, `OQ-236-011`, `OQ-236-012` and `OQ-236-013` closed |
 | Owner | Alexander Wohlford |
 | Jira subtask | [CBD-236](https://cobudget.atlassian.net/browse/CBD-236) |
@@ -129,6 +129,10 @@ Ticket scope names the sections: account/profile, space, membership role, consen
 | `evaluation` | `evaluatedAt` | UTC timestamp | the assembler's clock | expiry comparisons |
 | `evaluation` | `inputSchemaVersion` | integer | the contracts package | rejects an assembler built against another schema |
 
+`OQ-191-005` is decided (Executive, `EXEC-FOLLOWUPS-003`): assurance facts
+read from `account_session_fresh_assurance` (CBD-191 §5.1.1) carry provenance
+`idp_evidence`, matching the merged fact source.
+
 ### 4.2 Provenance and the request boundary
 
 `FactProvenance` is an exact field-path map, not one marker for a whole section. For every present leaf in the selected input variant, `provenance["section.field"]` records exactly one source from the closed union `session_store`, `delegation_store`, `datastore`, `idp_evidence`, `registry`, `request_locator`, `route_metadata`, `envelope_locator`, `workload_identity`, `server_policy_store`, `precheck_decision`, `assembler_clock`, `contracts_package`, `server_identifier_allocator`, or (v0.5) `runtime_configuration`. The assembler emits exactly one entry per present leaf; missing, extra, section-level-only, or wrong-source entries deny `input_invalid`. `decide` validates every entry against this exhaustive producer matrix; an em dash means the field is forbidden in that variant:
@@ -182,6 +186,11 @@ There are five concrete variants: `ApiOrdinaryUserPolicyInput`, `ApiBootstrapUse
 `request.effect` is deliberately not a `PolicyInput` field and has no provenance entry. The frozen `ACTION_DEFINITIONS` table inside the selected `POLICY_SET` maps each supported `request.action` to exactly one `{ effectClass, resourceType, authorityModes }` record. After input-shape and provenance validation, `decide` performs that lookup and derives the authoritative `effectClass` internally; an absent action definition denies `input_unsupported`. Adapters may transport a `claimedEffectClass` outside `PolicyInput` for routing or envelope validation, but they never stamp it as a fact: the verifier compares it with the decision's authoritative `effectClass`, and mismatch denies. This lookup is part of the one `decide` entry point, not an adapter predicate.
 
 The only caller- or envelope-contributed values are intent and locators in the matrix: they name the action, field set, and row the assembler loads. The assembler then verifies the row's `owningSpaceId` against the acting space, and a mismatch is reported as a cross-space input, not as a lookup failure (`PM-72-010`, CBD-72 §7 last row, `XSP-02`).
+
+The `idp_evidence` entries in the two tables above are, for the API variants,
+assurance facts read from `account_session_fresh_assurance` (CBD-191 §5.1.1).
+`OQ-191-005` is decided (Executive, `EXEC-FOLLOWUPS-003`): that provenance is
+`idp_evidence`, matching the merged fact source.
 
 ### 4.3 Space creation: the one input with no membership
 
@@ -850,6 +859,7 @@ Each row names the section that delivers the criterion at the design level and w
 
 | Version | Date | Author | Change | Approval |
 | --- | --- | --- | --- | --- |
+| 0.12.2 | September 15, 2026 | Documentation specialist, dispatched under `PROTO-DOC-SWEEP-003` | `OQ-191-005` closed by Executive decision `EXEC-FOLLOWUPS-003`: §4.1 and §4.2 now state that assurance facts read from `account_session_fresh_assurance` (CBD-191 §5.1.1) carry provenance `idp_evidence`, matching the merged fact source. No cell, digest, or other decision identifier changed. | Approved — Executive, September 15, 2026 (`EXEC-FOLLOWUPS-003`). |
 | 0.12.1 | September 15, 2026 | Documentation, applying `PROTO-CBD236-DIGEST-COMMAND-FIX-001` finding `P4P5-F01` | §8.5.3, §8.6.3, §8.7.3 and §8.8.3 digest-reproduction commands corrected from plain `node -e` (which cannot load a `.ts` module without a loader) to `node --import=tsx -e`; each corrected command executed from the worktree and confirmed to print its pinned digest (`P2_DIGEST` `374e0b4d2ae86d53afe3fdf02a9d91e52d7b95b2e67df75b975bb54b4163d322`, `P3_DIGEST` `b4fbdb8e32a6155705877d7c91846ee855dc717dfce9d57a6f04e07301923e4d`, `P4_DIGEST` `25b2f9e917c19bdb9c26699bb4840a6e9d9544e16ac2f212de9120e6eacd15a9`, `P5_DIGEST` `68eef40b40f0f04fb8c31cba6f08292bc39a4c98c0f1ccc248f548e561e2fec8`). No digest, cell, decision identifier, or status changed. | Approved; released. |
 | 0.12 | September 15, 2026 | Manager, applying `docs/cbd-236-p4-release-step.md` v0.1 and `docs/cbd-236-p5-release-step.md` v0.1 in the combined form of the `p5` step §1 form 2 | `p4` and `p5` released in one commit: the `p4` row at `releaseCommit` `696d831ab25a226cc178c27e7111ef75c2ffd579` under `PO-P4P5-APPROVAL-001` and `PROTO-POLICY-V4-SEC-001-RESULT-001`, then the `p5` row at `releaseCommit` `c4add46cb6103e9a2c2b7ee8d14a9afb8afa0acc` under `PO-P4P5-APPROVAL-001` and `PROTO-POLICY-V5-SEC-001-RESULT-001`, and `CURRENT_POLICY_VERSION` flipped straight from `p3` to `p5`. `p4` is released and never deployed, which the contract permits. Header status, §8.7.3, §8.7.4, §8.8.3, §8.8.4, the §12 CBD-196/200 non-owner row and the §12 invitations row updated from "registered and not released" to released; the `HO-236-10` "until §8.7.4 is applied" and `HO-236-11` "until §8.8.4 is applied" clauses made historical; `OQ-236-012` (row 1 is the source) and `OQ-236-013` (Primary only) closed by reference to `PO-P4P5-APPROVAL-001` (§14 and the Decision header line). No cell, digest, or decision identifier changed. | Approved; released. |
 | 0.11.1 | September 15, 2026 | Manager, applying `PROTO-HARDENING-001` finding `HARD-F03` | §8.6.1: the category target's `resource.version` is the row's own `version` column (migration `20260915T110000Z`, PR #351) rather than the `updated_at` projection. No cell, digest or predicate change; `p4` and `p5` stay registered and not released | Security clear (`PROTO-POLICY-V5-SEC-001-RESULT-001`); Product Owner approval of §8.8.1 still pending |
