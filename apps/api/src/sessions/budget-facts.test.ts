@@ -147,3 +147,83 @@ describe("the interim derivation is deleted, not disabled", () => {
     assert.match(migration, /CHECK \(state IN \('current', 'superseded', 'ended'\)\)/u);
   });
 });
+
+/**
+ * PROTO-INCREMENT-B-001: the `p3` and row-9/14 route targets that name a real
+ * row. The reader must answer the row's own owning space, version and
+ * lifecycle, and must answer nothing at all for a row the acting space does
+ * not own -- which is what makes a foreign target an inert `input_invalid`
+ * denial rather than a query the handler runs.
+ */
+describe("row-level resource facts for the increment-B route targets", () => {
+  const ACCOUNT = "77777777-7777-4777-8777-777777777771";
+  const TRANSACTION = "66666666-6666-4666-8666-666666666661";
+  const CATEGORY = "99999999-9999-4999-8999-999999999991";
+  const rows: Record<string, Record<string, unknown>[]> = {
+    financial_account: [{ budget_space_id: SPACE, version: 5, archived_at: null }],
+    manual_transaction: [
+      { budget_space_id: SPACE, revision: 1, removed_at: null, superseded_at: "2026-09-15T12:00:00.000Z" },
+      { budget_space_id: SPACE, revision: 2, removed_at: null, superseded_at: null },
+    ],
+    budget_category: [{ budget_space_id: SPACE, archived_at: null, updated_at: "2026-09-15T12:00:00.000Z" }],
+  };
+
+  function reader(present: boolean) {
+    const client = {
+      tenantSelect: async (query: { table: string; budgetSpaceId: string }) => {
+        assert.equal(query.budgetSpaceId, SPACE, "every row read is tenant-scoped on the acting space");
+        if (query.table === "budget_space") return { rows: [{ budget_space_id: SPACE, lifecycle: "live", lifecycle_version: 1, primary_owner_membership_id: MEMBERSHIP }] };
+        if (query.table === "budget_space_membership") return { rows: [owner()] };
+        if (query.table === "budget_space_consent") return { rows: [consentRow()] };
+        return { rows: present ? rows[query.table] ?? [] : [] };
+      },
+    } as unknown as DataAccessClient;
+    return (resourceType: string, resourceId: string) => budgetFactReader("development")("datastore", {
+      credential: "opaque", identity: { "subject.accountSubjectId": SUBJECT },
+      operation: { action: "x", purpose: "user_delegated", mode: "user_delegated", fieldSet: "default", resourceType: resourceType as never, resourceId, actingSpaceId: SPACE, actingMembershipId: MEMBERSHIP },
+    }, client);
+  }
+
+  it("answers the account's own version and a lifecycle projected from archived_at", async () => {
+    const facts = await reader(true)("account", ACCOUNT);
+    assert.equal(facts?.["resource.owningSpaceId"], SPACE);
+    assert.equal(facts?.["resource.version"], 5, "the account row's version, which recheck_at_commit compares");
+    assert.equal(facts?.["resource.lifecycle"], "active");
+  });
+
+  it("answers the current transaction version, never a superseded one", async () => {
+    const facts = await reader(true)("transaction", TRANSACTION);
+    assert.equal(facts?.["resource.version"], 2, "the current version's revision");
+    assert.equal(facts?.["resource.lifecycle"], "active");
+  });
+
+  it("answers the category row for the CBD-211 drill-down, with a monotonic version", async () => {
+    const facts = await reader(true)("category", CATEGORY);
+    assert.equal(facts?.["resource.owningSpaceId"], SPACE);
+    assert.equal(facts?.["resource.version"], Math.floor(Date.parse("2026-09-15T12:00:00.000Z") / 1000));
+    assert.equal(Number.isSafeInteger(facts?.["resource.version"]), true);
+  });
+
+  it("the whole-set target is still the space's own row", async () => {
+    for (const type of ["space", "category", "plan", "report", "account", "transaction"]) {
+      const facts = await reader(true)(type, SPACE);
+      assert.equal(facts?.["resource.owningSpaceId"], SPACE, type);
+      assert.equal(facts?.["resource.version"], 1, type);
+      assert.equal(facts?.["resource.lifecycle"], "live", type);
+    }
+  });
+
+  it("produces no resource leaf at all for a row the acting space does not own", async () => {
+    for (const [type, id] of [["account", ACCOUNT], ["transaction", TRANSACTION], ["category", CATEGORY]] as const) {
+      const facts = await reader(false)(type, id);
+      for (const path of Object.keys(facts ?? {})) assert.equal(path.startsWith("resource."), false, `${type} leaked ${path}`);
+    }
+  });
+
+  it("refuses a target identifier that is not a UUID rather than composing a query with it", async () => {
+    for (const type of ["account", "transaction", "category"]) {
+      const facts = await reader(true)(type, "not-a-uuid");
+      for (const path of Object.keys(facts ?? {})) assert.equal(path.startsWith("resource."), false, `${type} answered for a malformed identifier`);
+    }
+  });
+});

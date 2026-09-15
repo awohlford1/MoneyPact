@@ -11,7 +11,12 @@
  * monthly budget proposal, its confirmation, the budget-space listing and
  * detail, two categories with base targets, the plan for the stored active
  * period, and the same plan read again after a fresh session resolution and
- * after a second sign-in. Every step is printed as a transcript line; the
+ * after a second sign-in. It then drives the PROTO-INCREMENT-B-001 half on the
+ * second session: a manual account created, listed, renamed, archived and
+ * restored (with each inadmissible transition refused by the handler), one
+ * manual expense split across two categories, the period progress aggregate
+ * and the CBD-211 category detail, and the edit and removal that return both
+ * figures to the target. Every step is printed as a transcript line; the
  * process exits non-zero on the first failed expectation.
  *
  *   docker exec cobudget-db-1 psql -U postgres -c "CREATE DATABASE cobudget_activation" \
@@ -249,6 +254,85 @@ async function main() {
     const staleConfirm = await second.fetch(`/v1/budget-creation-proposals/${proposal.proposalId}/confirm`, { method: "POST", body: { confirmationBinding: proposal.confirmationBinding }, headers: { "idempotency-key": randomUUID() } });
     expect(staleConfirm.status === 404, `confirming the old session's superseded predecessor returned ${staleConfirm.status} ${staleConfirm.text}`);
     log("POST .../{old session's superseded predecessor}/confirm (new session)", `404 ${staleConfirm.json?.error} (session-generation bound)`);
+    // --- PROTO-INCREMENT-B-001: manual accounts, manual expenses and budget progress -----------
+    // Driven on the second session, so none of the byte-identical plan comparisons above is disturbed.
+    const accountsUrl = `/v1/budget-spaces/${budgetSpaceId}/accounts`;
+    const transactionsUrl = `/v1/budget-spaces/${budgetSpaceId}/transactions`;
+    const progressUrl = `/v1/budget-spaces/${budgetSpaceId}/periods/${periodId}/progress`;
+
+    const account = await second.fetch(accountsUrl, { method: "POST", body: { accountType: "checking", label: "Everyday", currencyCode: "USD", openingBalanceMinorUnits: 125000 } });
+    expect(account.status === 201 && account.json.account?.version === 1 && account.json.account.origin === "manual", `account create returned ${account.status} ${account.text}`);
+    const accountId = account.json.account.accountId;
+    log("POST /v1/budget-spaces/{id}/accounts (manual_account.create_manual_account)", `201, accountId=${accountId}, version=1, origin=manual, opening=${account.json.account.openingBalanceMinorUnits}`);
+
+    const accountList = await second.fetch(accountsUrl);
+    expect(accountList.status === 200 && accountList.json.accounts?.length === 1, `account list returned ${accountList.status} ${accountList.text}`);
+    log("GET /v1/budget-spaces/{id}/accounts (14.view_accounts_balances_transactions)", `200, ${accountList.json.accounts.length} account(s)`);
+
+    const renamed = await second.fetch(`${accountsUrl}/${accountId}`, { method: "PATCH", body: { label: "Everyday checking" } });
+    expect(renamed.status === 200 && renamed.json.previousVersion === 1 && renamed.json.account.version === 2, `account edit returned ${renamed.status} ${renamed.text}`);
+    log("PATCH /v1/budget-spaces/{id}/accounts/{accountId} (manual_account.edit_manual_account)", `200, version 1 -> 2`);
+
+    // SEC-P3-F1: the policy allows the operation whatever the account's state; the handler refuses the
+    // state. One refusal is proven here; the remaining transitions, and the allocation vocabulary, are
+    // proven in scripts/prototype-qa-criteria.mjs, which has a pacing helper. This proof deliberately
+    // stays inside one CBD-266 mutation window (rlp-266-mutation-v1: 12 per minute per actor and surface),
+    // so it spends its units on the journey rather than on refusals that are covered elsewhere.
+    const restoreLive = await second.fetch(`${accountsUrl}/${accountId}/restore`, { method: "POST", body: {} });
+    expect(restoreLive.status === 409 && restoreLive.json?.error === "account_not_archived", `restore of a live account returned ${restoreLive.status} ${restoreLive.text}`);
+    const archived = await second.fetch(`${accountsUrl}/${accountId}/archive`, { method: "POST", body: {} });
+    expect(archived.status === 201 && archived.json.account.archivedAt !== null, `archive returned ${archived.status} ${archived.text}`);
+    const restored = await second.fetch(`${accountsUrl}/${accountId}/restore`, { method: "POST", body: {} });
+    expect(restored.status === 201 && restored.json.account.archivedAt === null, `restore returned ${restored.status} ${restored.text}`);
+    log("Account-state admissibility is the handler's (SEC-P3-F1)", "restore of a live account 409 account_not_archived; archive 201; restore 201");
+
+    const budgetDate = plan.json.period.start;
+
+    const expense = await second.fetch(transactionsUrl, { method: "POST", body: { accountId, amountMinorUnits: -1250, budgetDate, description: "Corner shop", allocations: [{ categoryId: groceries.categoryId, amountMinorUnits: -800 }, { categoryId: rent.categoryId, amountMinorUnits: -450 }] } });
+    expect(expense.status === 201 && expense.json.current?.allocations?.length === 2, `expense returned ${expense.status} ${expense.text}`);
+    const transactionId = expense.json.current.version.transactionId;
+    expect(expense.json.current.version.periodId === periodId, `the expense was assigned to ${expense.json.current.version.periodId}, not the active period`);
+    expect(expense.json.current.version.settlementState === "settled" && expense.json.current.version.origin === "manual", "a manual expense is manual and settled");
+    log("POST /v1/budget-spaces/{id}/transactions (9.add_manual_transaction)", `201, transactionId=${transactionId}, revision=1, period=${periodId}, settled manual, 2 allocations summing to -1250`);
+
+    const periodProgress = await second.fetch(progressUrl);
+    expect(periodProgress.status === 200, `progress returned ${periodProgress.status} ${periodProgress.text}`);
+    const cellOf = (body, categoryId) => body.cells.find((cell) => cell.categoryId === categoryId);
+    expect(cellOf(periodProgress.json, groceries.categoryId).settledActualMinorUnits === -800, `groceries cell ${JSON.stringify(cellOf(periodProgress.json, groceries.categoryId))}`);
+    expect(cellOf(periodProgress.json, groceries.categoryId).remainingAfterSettledMinorUnits === 39200, "remaining = target + actual, unclamped");
+    expect(cellOf(periodProgress.json, rent.categoryId).remainingAfterSettledMinorUnits === 149550, "rent remaining");
+    log("GET /v1/budget-spaces/{id}/periods/{periodId}/progress (15.view_planning_and_reports)", `200, Groceries spent -800 remaining 39200; Rent spent -450 remaining 149550 (${periodProgress.json.calculationVersion})`);
+
+    const categoryDetail = await second.fetch(`${progressUrl}/${groceries.categoryId}`);
+    expect(categoryDetail.status === 200 && categoryDetail.json.items?.length === 1, `detail returned ${categoryDetail.status} ${categoryDetail.text}`);
+    expect(categoryDetail.json.cell.settledActualMinorUnits === -800, "the detail and the aggregate must agree for the same cell");
+    expect(categoryDetail.json.items[0].transactionId === transactionId && categoryDetail.json.items[0].amountMinorUnits === -800, JSON.stringify(categoryDetail.json.items));
+    log("GET .../progress/{categoryId} (14.view_progress_detail, category target)", `200, label=${categoryDetail.json.label}, 1 item of -800 agreeing with the aggregate`);
+
+    const foreignCategory = await second.fetch(`${progressUrl}/00000000-0000-4000-8000-000000009999`);
+    expect(foreignCategory.status === 403, `a category this budget does not own returned ${foreignCategory.status} ${foreignCategory.text}`);
+    log("GET .../progress/{a category this budget does not own}", "403 (a policy denial, not an empty result)");
+
+    const editedExpense = await second.fetch(`${transactionsUrl}/${transactionId}`, { method: "PATCH", body: { accountId, amountMinorUnits: -2000, budgetDate, description: "Corner shop, corrected", allocations: [{ categoryId: groceries.categoryId, amountMinorUnits: -2000 }] } });
+    expect(editedExpense.status === 200 && editedExpense.json.current.version.revision === 2, `expense edit returned ${editedExpense.status} ${editedExpense.text}`);
+    const afterEdit = await second.fetch(progressUrl);
+    expect(cellOf(afterEdit.json, groceries.categoryId).settledActualMinorUnits === -2000 && cellOf(afterEdit.json, rent.categoryId).settledActualMinorUnits === 0,
+      `after the edit: ${JSON.stringify(afterEdit.json.cells)}`);
+    log("PATCH /v1/budget-spaces/{id}/transactions/{transactionId} (9.edit_manual_transaction)", "200, revision 2; the prior effect is removed and the new one applied exactly once");
+
+    const history = await second.fetch(`${transactionsUrl}/${transactionId}/history`);
+    expect(history.status === 200 && JSON.stringify(history.json.history.map((entry) => entry.version.revision)) === JSON.stringify([1, 2]), `history returned ${history.status} ${history.text}`);
+    log("GET .../transactions/{transactionId}/history", `200, revisions ${history.json.history.map((entry) => entry.version.revision).join(",")} with allocation sets ${history.json.history.map((entry) => entry.allocations.length).join(",")}`);
+
+    const removedExpense = await second.fetch(`${transactionsUrl}/${transactionId}/remove`, { method: "POST", body: {} });
+    expect(removedExpense.status === 201 && removedExpense.json.current.allocations.length === 0, `remove returned ${removedExpense.status} ${removedExpense.text}`);
+    const afterRemoval = await second.fetch(progressUrl);
+    expect(cellOf(afterRemoval.json, groceries.categoryId).settledActualMinorUnits === 0 && cellOf(afterRemoval.json, groceries.categoryId).remainingAfterSettledMinorUnits === 40000,
+      `after the removal: ${JSON.stringify(afterRemoval.json.cells)}`);
+    const detailAfterRemoval = await second.fetch(`${progressUrl}/${groceries.categoryId}`);
+    expect(detailAfterRemoval.json.items.length === 0, "a removed expense must appear in neither the aggregate nor the detail");
+    log("POST .../transactions/{transactionId}/remove (9.remove_manual_transaction)", "201, tombstone with no allocations; spent returns to 0 and remaining to the target in both the aggregate and the detail");
+
     console.log("PROTOTYPE-E2E PASSED");
   } catch (error) {
     console.error(`API output (last 4000 chars):

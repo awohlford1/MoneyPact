@@ -180,6 +180,22 @@ async function main() {
         const wait = 61_000 - (now - recent[0].at); console.log(`   (pacing: waiting ${Math.ceil(wait / 1000)} s for the mutation window)`); await pause(wait);
       }
     };
+    /**
+     * The read half of `roomFor`. Every GET of a budget surface counts against the approved
+     * authenticated-read record (`rlp-266-authenticated-read-v1`: 60 a minute per actor for the whole
+     * surface), and PROTO-INCREMENT-B-001 made one dashboard load cost four of them rather than two,
+     * so a sequence of cases that refresh the dashboard repeatedly can exhaust the window and see the
+     * uniform 403 instead of the state it is testing. Reads were never paced before because two per
+     * load never came close. This is the harness catching up with the page, not a product limit: a
+     * person does not load the dashboard fifteen times a minute.
+     */
+    const roomForReads = async (n) => {
+      for (;;) {
+        const now = Date.now(); const recent = apiRequests.filter((r) => r.method === "GET" && r.path.startsWith("/v1/budget-") && now - r.at < 61_000);
+        if (recent.length + n <= 50) return;
+        const wait = 61_000 - (now - recent[0].at); console.log(`   (pacing: waiting ${Math.ceil(wait / 1000)} s for the read window)`); await pause(wait);
+      }
+    };
     /** Performs the browser's proposal POST from here (same cookie, CSRF and key) so the response can be altered before Chrome sees it. */
     const proxiedPost = async (request) => {
       const cookie = (await browser.cookies()).map((c) => `${c.name}=${c.value}`).join("; ");
@@ -246,7 +262,7 @@ async function main() {
       return { proposal, response };
     };
     const ensureDashboard = async () => {
-      await ensureSignedIn();
+      await ensureSignedIn(); await roomForReads(6);
       if (!budgetId) await createBudget("Household QA");
       await page.goto(`${ORIGIN}/budgets/${budgetId}`);
       await waitText("Active period identity"); await page.waitForFunction(() => [...document.querySelectorAll("button")].some((n) => n.textContent === "Refresh budget"));
@@ -619,6 +635,118 @@ async function main() {
       const amounts = Object.fromEntries(plan.categories.map((c) => [c.label, c.periodTarget.amountMinorUnits]));
       expect(JSON.stringify(amounts) === JSON.stringify(amountsBefore), `plan changed ${JSON.stringify(amounts)}`);
       return `PUT targets -> ${status ?? "not sent (client refused)"}; plan unchanged (${JSON.stringify(amounts)})`;
+    });
+
+    // ------------------------------- manual accounts, expenses and progress (PROTO-INCREMENT-B-001)
+    // These run against the same budget the plan cases built, so Food (100.00) and Housing (200.00)
+    // already carry period targets and the figures below are measured against real ones.
+    const fillById = async (selector, value) => { await page.waitForSelector(selector); await setValue(selector, value); };
+    let expenseCategoryId;
+    await criterion("CBD-196-AC01", "positive (browser): a manual account is added from the dashboard, listed with its type and opening balance, and survives a reload", async () => {
+      await ensureDashboard(); await roomFor(2);
+      await waitText("Accounts and spending");
+      await fillById('[id="account-name"]', "Everyday");
+      await fillById('[id="account-opening"]', "125.00");
+      await clickText("Add account");
+      await waitText("Added Everyday.");
+      await waitText("checking · opening balance 125.00 USD");
+      await page.reload(); await waitText("checking · opening balance 125.00 USD");
+      const listed = (await apiJson(`/v1/budget-spaces/${budgetId}/accounts`)).body;
+      expect(listed.accounts.length === 1 && listed.accounts[0].origin === "manual" && listed.accounts[0].openingBalanceMinorUnits === 12500, JSON.stringify(listed));
+      return `one manual account, opening 12500 minor units, identical after reload; ${await accessibility()}`;
+    });
+    await criterion("CBD-201-AC02", "positive/denial (browser): an inexact split is refused by the server and announced on the allocation fieldset; the exact split is recorded and moves spent and remaining for both categories", async () => {
+      await ensureDashboard(); await roomFor(3);
+      await waitText("Record an expense");
+      const period = (await apiJson(`/v1/budget-spaces/${budgetId}`)).body.activePeriod;
+      const allocationIds = await page.$$eval('input[id^="allocation-"]', (nodes) => nodes.map((node) => `[id="${node.id}"]`));
+      expect(allocationIds.length === 2, `expected one allocation input per live category, got ${allocationIds.length}`);
+      const enter = async (food, housing) => {
+        await fillById('[id="expense-date"]', period.start);
+        await fillById('[id="expense-amount"]', "12.50");
+        await fillById('[id="expense-description"]', "Corner shop");
+        await fillById(allocationIds[0], food);
+        await fillById(allocationIds[1], housing);
+        await clickText("Record expense");
+      };
+      await enter("8.00", "4.00");
+      await waitText("The category amounts must add up to the expense amount exactly.");
+      const afterRefusal = (await apiJson(`/v1/budget-spaces/${budgetId}/periods/${period.periodId}/progress`)).body;
+      expect(afterRefusal.cells.every((cell) => cell.settledActualMinorUnits === 0), `the refused split was recorded: ${JSON.stringify(afterRefusal.cells)}`);
+      const refusalAccessibility = await accessibility();
+
+      await enter("8.00", "4.50");
+      await waitText("Expense recorded.");
+      await waitText("Spent 8.00 USD of 100.00 USD");
+      await waitText("Remaining 92.00 USD");
+      await waitText("Spent 4.50 USD of 200.00 USD");
+      await waitText("Remaining 195.50 USD");
+      const progress = (await apiJson(`/v1/budget-spaces/${budgetId}/periods/${period.periodId}/progress`)).body;
+      const food = progress.cells.find((cell) => progress.labels[cell.categoryId] === "Food");
+      expenseCategoryId = food.categoryId;
+      expect(food.settledActualMinorUnits === -800 && food.remainingAfterSettledMinorUnits === 9200, JSON.stringify(food));
+      await page.reload(); await waitText("Spent 8.00 USD of 100.00 USD");
+      return `inexact split refused with nothing recorded (${refusalAccessibility}); the exact split moves Food to spent 8.00 remaining 92.00 and Housing to spent 4.50 remaining 195.50, identical after reload; ${await accessibility()}`;
+    });
+    await criterion("CBD-211-AC01", "positive (browser): the category row opens the itemized detail, which agrees with the aggregate; a share of a split expense offers no in-place edit and says why (F-REVB-01), a single-category expense edits in place, and removing both returns the figures to the target", async () => {
+      // Four mutations now (record, edit, remove, remove) and roughly twenty reads: two detail
+      // loads, two dashboard loads and the four direct API reads this case makes itself.
+      await ensureDashboard(); await roomFor(5); await roomForReads(20);
+      await waitText("Spent 8.00 USD of 100.00 USD");
+      await clickText("Food");
+      await waitText("Transactions in this category");
+      await waitText("Corner shop");
+      await waitText("8.00 USD · Everyday");
+      const detailAccessibility = await accessibility();
+      expect((await page.title()).includes("Category detail"), `title ${await page.title()}`);
+
+      // F-REVB-01: this row is the Food SHARE of a 12.50 expense split 8.00/4.50. The in-place
+      // edit rewrites the whole transaction with one allocation, so offering it here would take
+      // 4.50 away from Housing with nothing said. The page withholds it and states why.
+      const controls = async () => page.$$eval("button", (nodes) => nodes.map((node) => node.textContent.trim()));
+      await waitText("This expense is split across 2 categories");
+      expect(!(await controls()).includes("Edit this expense"), "a share of a split expense still offers the in-place edit");
+      expect((await controls()).includes("Remove this whole expense"), `removal is missing: ${JSON.stringify(await controls())}`);
+      const period = (await apiJson(`/v1/budget-spaces/${budgetId}`)).body.activePeriod;
+      const shares = (await apiJson(`/v1/budget-spaces/${budgetId}/periods/${period.periodId}/progress/${expenseCategoryId}`)).body;
+      expect(shares.items.length === 1 && shares.items[0].allocationCount === 2, `the API does not report the split: ${JSON.stringify(shares.items)}`);
+
+      // A single-category expense is the whole expense, so it does edit in place.
+      await clickText("Back to the budget"); await waitText("Accounts and spending");
+      // The section's heading renders before its read resolves, so wait for the form itself before
+      // querying its inputs; "Accounts and spending" alone is not the form being there.
+      await waitText("Record an expense"); await page.waitForSelector('input[id^="allocation-"]');
+      const allocationIds = await page.$$eval('input[id^="allocation-"]', (nodes) => nodes.map((node) => `[id="${node.id}"]`));
+      await fillById('[id="expense-date"]', period.start);
+      await fillById('[id="expense-amount"]', "3.00");
+      await fillById('[id="expense-description"]', "Milk");
+      await fillById(allocationIds[0], "3.00");
+      await clickText("Record expense"); await waitText("Expense recorded.");
+      await waitText("Spent 11.00 USD of 100.00 USD");
+
+      await clickText("Food"); await waitText("Transactions in this category");
+      await waitText("Milk");
+      await clickText("Edit this expense");
+      const amountId = await page.$eval('input[id^="edit-amount-"]', (node) => `[id="${node.id}"]`);
+      await fillById(amountId, "20.00");
+      await clickText("Save expense"); await waitText("Expense updated.");
+      await waitText("20.00 USD · Everyday");
+      // The split share is untouched by that edit: still present, still 8.00. This is the
+      // regression F-REVB-01 named, observed against the real API.
+      await waitText("8.00 USD · Everyday");
+      const afterEdit = (await apiJson(`/v1/budget-spaces/${budgetId}/periods/${period.periodId}/progress`)).body;
+      const housing = afterEdit.cells.find((cell) => cell.categoryId !== expenseCategoryId);
+      expect(housing.settledActualMinorUnits === -450, `editing one expense moved another category: ${JSON.stringify(housing)}`);
+
+      await clickText("Remove this expense"); await waitText("Expense removed.");
+      await clickText("Remove this whole expense"); await waitText("Expense removed.");
+      await waitText("Nothing has been recorded against this category for the active period.");
+      await clickText("Back to the budget"); await waitText("Accounts and spending");
+      await waitText("Spent 0.00 USD of 100.00 USD");
+      await waitText("Remaining 100.00 USD");
+      const detail = (await apiJson(`/v1/budget-spaces/${budgetId}/periods/${period.periodId}/progress/${expenseCategoryId}`)).body;
+      expect(detail.items.length === 0 && detail.cell.settledActualMinorUnits === 0, `a removed expense still itemizes: ${JSON.stringify(detail)}`);
+      return `detail 200 with one item agreeing with the aggregate (${detailAccessibility}); the split share reports allocationCount 2, offers no in-place edit and states why; a single-category expense edits in place and leaves Housing at -450; removing both returns spent to 0.00 and remaining to the target in both the aggregate and the detail; ${await accessibility()}`;
     });
 
     // ------------------------------------------------- cross-subject (CBD-242-AC08)

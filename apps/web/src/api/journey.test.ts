@@ -228,3 +228,137 @@ for (const schedule of [
   assert.deepEqual(proposal.normalizedInputs.schedule, schedule);
   assert.ok(proposal.preview.periods.every(period => period.lengthInDays > 0));
 });
+
+
+// --- PROTO-INCREMENT-B-001: manual accounts, manual expenses and budget progress ---------------
+
+/** A signed-in mock session with one confirmed budget, its active period, and two categories with targets. */
+async function budgeted() {
+  const api = createMockClient(clock);
+  assert.ok(await api.me());
+  // The creation ceremony itself is covered above; here it is only the fixture, so the
+  // proposal and confirmation are issued directly rather than through the controller.
+  const proposal = await api.createProposal(structuredClone(draft), crypto.randomUUID());
+  const confirmation = await api.confirmProposal(proposal.proposalId, proposal.confirmationBinding, crypto.randomUUID(),
+    { kind: proposal.currentDisclosure.kind, version: proposal.currentDisclosure.version });
+  const budgetSpaceId = confirmation.budgetSpaceId;
+  const detail = await api.budget(budgetSpaceId);
+  const periodId = detail.activePeriod!.id;
+  const groceries = await api.addCategory(budgetSpaceId, "Groceries");
+  const transport = await api.addCategory(budgetSpaceId, "Transport");
+  await api.saveTarget(budgetSpaceId, groceries.id, "500", 2);
+  await api.saveTarget(budgetSpaceId, transport.id, "200", 2);
+  const budgetDate = detail.activePeriod!.start;
+  return { api, budgetSpaceId, periodId, groceries, transport, budgetDate };
+}
+
+test("CBD-196: an account is created, renamed, archived and restored through the production client", async () => {
+  const { api, budgetSpaceId } = await budgeted();
+  assert.deepEqual(await api.listAccounts(budgetSpaceId), []);
+  const created = await api.addAccount(budgetSpaceId, { label: "Everyday", accountType: "checking", currencyCode: "USD", openingBalance: "1250.00" });
+  assert.equal(created.label, "Everyday");
+  assert.equal(created.openingBalance, "1250.00", "the API's minor units are formatted, never computed in the browser");
+  assert.equal(created.archived, false);
+  assert.equal(created.version, 1);
+
+  const renamed = await api.editAccount(budgetSpaceId, created.id, { label: "Everyday checking" });
+  assert.equal(renamed.label, "Everyday checking");
+  assert.equal(renamed.version, 2);
+
+  const archived = await api.archiveAccount(budgetSpaceId, created.id);
+  assert.equal(archived.archived, true);
+  assert.equal((await api.listAccounts(budgetSpaceId)).length, 1, "archival is lifecycle, not disappearance");
+  assert.equal((await api.restoreAccount(budgetSpaceId, created.id)).archived, false);
+});
+
+test("CBD-196/CBD-200 (SEC-P3-F1): every inadmissible account transition is refused with a canonical field error", async () => {
+  const { api, budgetSpaceId } = await budgeted();
+  const account = await api.addAccount(budgetSpaceId, { label: "Everyday", accountType: "checking", currencyCode: "USD", openingBalance: "0" });
+  const refusal = async (work: Promise<unknown>, code: string, path: string) => {
+    await assert.rejects(work, (error: unknown) => {
+      assert.ok(error instanceof ApiError, String(error));
+      assert.equal(error.code, code);
+      assert.equal(error.fieldErrors[0]?.path, path, `${code} should land on ${path}`);
+      assert.ok(error.fieldErrors[0]!.message.length > 0, "a person never sees the bare code");
+      return true;
+    });
+  };
+  await refusal(api.restoreAccount(budgetSpaceId, account.id), "account_not_archived", "accountId");
+  await refusal(api.addAccount(budgetSpaceId, { label: "  ", accountType: "checking", currencyCode: "USD", openingBalance: "0" }), "label_invalid", "label");
+  await refusal(api.addAccount(budgetSpaceId, { label: "everyday", accountType: "checking", currencyCode: "USD", openingBalance: "0" }), "label_taken", "label");
+  await refusal(api.addAccount(budgetSpaceId, { label: "Brokerage", accountType: "brokerage", currencyCode: "USD", openingBalance: "0" }), "account_type_unsupported", "accountType");
+  await api.archiveAccount(budgetSpaceId, account.id);
+  await refusal(api.archiveAccount(budgetSpaceId, account.id), "account_archived", "accountId");
+  await refusal(api.editAccount(budgetSpaceId, account.id, { label: "renamed" }), "account_archived", "accountId");
+});
+
+test("CBD-200/CBD-201/CBD-209/CBD-211: an expense split across two categories moves spent and remaining, and the detail itemizes it", async () => {
+  const { api, budgetSpaceId, periodId, groceries, transport, budgetDate } = await budgeted();
+  const account = await api.addAccount(budgetSpaceId, { label: "Everyday", accountType: "checking", currencyCode: "USD", openingBalance: "0" });
+
+  const before = await api.progress(budgetSpaceId, periodId);
+  assert.deepEqual(before.cells.map(cell => [cell.label, cell.spent, cell.remaining, cell.over]), [["Groceries", "0.00", "500.00", false], ["Transport", "0.00", "200.00", false]]);
+
+  const recorded = await api.recordExpense(budgetSpaceId, {
+    accountId: account.id, amount: "12.50", budgetDate, description: "Corner shop",
+    allocations: [{ categoryId: groceries.id, amount: "8.00" }, { categoryId: transport.id, amount: "4.50" }],
+  }, 2);
+  assert.equal(recorded.revision, 1);
+
+  const after = await api.progress(budgetSpaceId, periodId);
+  const cell = (label: string) => after.cells.find(entry => entry.label === label)!;
+  assert.equal(cell("Groceries").spent, "8.00", "spent is the magnitude of the API's signed figure");
+  assert.equal(cell("Groceries").remaining, "492.00");
+  assert.equal(cell("Transport").spent, "4.50");
+  assert.equal(cell("Transport").remaining, "195.50");
+
+  const detail = await api.categoryDetail(budgetSpaceId, periodId, groceries.id);
+  assert.equal(detail.label, "Groceries");
+  assert.equal(detail.cell!.spent, "8.00", "CBD-209: the aggregate and the detail report the same figure");
+  assert.deepEqual(detail.items.map(item => [item.description, item.amount, item.budgetDate]), [["Corner shop", "8.00", budgetDate]]);
+
+  // Editing the expense to a single category moves both cells, and removing it returns them.
+  await api.editExpense(budgetSpaceId, detail.items[0]!.transactionId, {
+    accountId: account.id, amount: "20.00", budgetDate, description: "Corner shop, corrected",
+    allocations: [{ categoryId: groceries.id, amount: "20.00" }],
+  }, 2);
+  const edited = await api.progress(budgetSpaceId, periodId);
+  assert.equal(edited.cells.find(entry => entry.label === "Groceries")!.spent, "20.00");
+  assert.equal(edited.cells.find(entry => entry.label === "Transport")!.spent, "0.00");
+
+  await api.removeExpense(budgetSpaceId, detail.items[0]!.transactionId);
+  const removed = await api.progress(budgetSpaceId, periodId);
+  assert.deepEqual(removed.cells.map(cell => [cell.spent, cell.remaining, cell.over]), [["0.00", "500.00", false], ["0.00", "200.00", false]]);
+  assert.deepEqual((await api.categoryDetail(budgetSpaceId, periodId, groceries.id)).items, [], "an excluded item is in neither aggregate nor detail");
+});
+
+test("CBD-209: an overspent category reports a remaining of zero-or-more labelled over, never a clamped figure", async () => {
+  const { api, budgetSpaceId, periodId, groceries, budgetDate } = await budgeted();
+  const account = await api.addAccount(budgetSpaceId, { label: "Everyday", accountType: "checking", currencyCode: "USD", openingBalance: "0" });
+  await api.recordExpense(budgetSpaceId, { accountId: account.id, amount: "620.00", budgetDate, description: "Big shop", allocations: [{ categoryId: groceries.id, amount: "620.00" }] }, 2);
+  const cell = (await api.progress(budgetSpaceId, periodId)).cells.find(entry => entry.label === "Groceries")!;
+  assert.equal(cell.spent, "620.00");
+  assert.equal(cell.over, true);
+  assert.equal(cell.remaining, "120.00", "the magnitude of the negative remaining; the view labels it as over");
+});
+
+test("CBD-201: the exact-sum rule and every other write refusal is the server's, reported on the field it names", async () => {
+  const { api, budgetSpaceId, groceries, transport, budgetDate } = await budgeted();
+  const account = await api.addAccount(budgetSpaceId, { label: "Everyday", accountType: "checking", currencyCode: "USD", openingBalance: "0" });
+  const archived = await api.addAccount(budgetSpaceId, { label: "Retired", accountType: "cash", currencyCode: "USD", openingBalance: "0" });
+  await api.archiveAccount(budgetSpaceId, archived.id);
+  const base = { accountId: account.id, amount: "12.50", budgetDate, description: "Corner shop", allocations: [{ categoryId: groceries.id, amount: "8.00" }, { categoryId: transport.id, amount: "4.50" }] };
+  const refusal = async (override: Record<string, unknown>, code: string, path: string) => {
+    await assert.rejects(api.recordExpense(budgetSpaceId, { ...base, ...override } as typeof base, 2), (error: unknown) => {
+      assert.ok(error instanceof ApiError, String(error));
+      assert.equal(error.code, code);
+      assert.equal(error.fieldErrors[0]?.path, path, `${code} should land on ${path}`);
+      return true;
+    });
+  };
+  await refusal({ allocations: [{ categoryId: groceries.id, amount: "8.00" }] }, "allocation_sum_mismatch", "allocations");
+  await refusal({ allocations: [] }, "allocations_empty", "allocations");
+  await refusal({ allocations: [{ categoryId: groceries.id, amount: "6.00" }, { categoryId: groceries.id, amount: "6.50" }] }, "allocation_duplicate_category", "allocations");
+  await refusal({ budgetDate: "2026-02-30" }, "date_invalid", "budgetDate");
+  await refusal({ accountId: archived.id }, "account_archived", "accountId");
+});
