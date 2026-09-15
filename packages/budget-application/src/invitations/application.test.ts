@@ -448,6 +448,45 @@ void test("PK5-02: a registry that has moved past the invitation's stored versio
   assert.equal(world.repository.invitations.get(invitationId)?.state, "pending");
 });
 
+void test("R-01: TR-73-38 answers an active or stale membership uniformly, cancelling the record privately", async () => {
+  // An active membership created between attach and accept.
+  const active = testWorld();
+  const first = await ceremony(active, "attach");
+  active.repository.seedMembership({
+    membershipId: "99999999-9999-4999-8999-444444444444", budgetSpaceId: SPACE,
+    profileId: "55555555-5555-4555-8555-555555555555", accountSubjectId: INVITEE_SUBJECT,
+    role: "collaborator", status: "active", authorizationVersion: 1, createdBySubjectId: OWNER_SUBJECT, endedAt: null,
+  });
+  const answer = await acceptInvitation(active.deps, active.invitee, {
+    ...first.ceremonyRequest, acknowledgedDisclosure: { kind: "invitation_collaborator", version: 1 },
+  });
+  assert.deepEqual(answer, { outcome: "unusable", messageCode: UNIFORM_LINK_MESSAGE_CODE }, "the same answer a dead link gives");
+  assert.equal(active.repository.invitations.get(first.invitationId)?.state, "cancelled");
+  assert.equal(active.repository.invitations.get(first.invitationId)?.privateTerminalCause, "already_member");
+  assert.equal(active.repository.confirmations.size, 0, "no confirmation was opened");
+
+  // A membership that ended at or after the invitation was issued: the stale
+  // recheck TR-73-38 previously skipped entirely.
+  const stale = testWorld();
+  const second = await ceremony(stale, "attach");
+  const issuedAt = stale.repository.invitations.get(second.invitationId)!.issuedAt;
+  stale.repository.seedMembership({
+    membershipId: "99999999-9999-4999-8999-555555555555", budgetSpaceId: SPACE,
+    profileId: "55555555-5555-4555-8555-555555555555", accountSubjectId: INVITEE_SUBJECT,
+    role: "collaborator", status: "removed", authorizationVersion: 2, createdBySubjectId: OWNER_SUBJECT,
+    endedAt: issuedAt,
+  });
+  assert.deepEqual(
+    await acceptInvitation(stale.deps, stale.invitee, {
+      ...second.ceremonyRequest, acknowledgedDisclosure: { kind: "invitation_collaborator", version: 1 },
+    }),
+    { outcome: "unusable", messageCode: UNIFORM_LINK_MESSAGE_CODE },
+  );
+  assert.equal(stale.repository.invitations.get(second.invitationId)?.privateTerminalCause, "stale_after_membership_end");
+  const audit = stale.repository.audits.find((row) => row.eventCode === "AE-73-06" && row.targetId === second.invitationId);
+  assert.equal(audit?.audience, "restricted");
+});
+
 void test("accept opens a confirmation and writes no consent row", async () => {
   const world = testWorld();
   const { invitationId } = await ceremony(world, "accept");

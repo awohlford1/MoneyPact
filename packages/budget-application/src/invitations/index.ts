@@ -46,8 +46,9 @@ export type {
 } from "./ports.ts";
 
 export type {
-  AcceptInvitationRequest, AttachResult, AttachSuccess, AuditInput, CeremonyRequest, ConfirmAcceptanceRequest,
-  ConfirmationPrompt, CreateInvitationRequest, CreateInvitationResult, DestinationEncryptor, DisclosureView,
+  AcceptInvitationRequest, AcceptResult, AcceptSuccess, AttachResult, AttachSuccess, AuditInput,
+  CeremonyRequest, ConfirmAcceptanceRequest, ConfirmationPrompt, CreateInvitationRequest,
+  CreateInvitationResult, DestinationEncryptor, DisclosureView,
   InvitationDependencies, InvitationLifetimes, ResolveCodeRequest, ResolveCodeResult,
   ResolveCodeSuccess, UnauthenticatedCeremonyRequest, UniformUnusable, VerifyChannelRequest,
   VerifyChannelResult,

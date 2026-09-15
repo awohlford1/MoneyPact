@@ -1056,11 +1056,21 @@ export async function readDisclosure(deps: InvitationDependencies, invitee: Invi
   };
 }
 
-export interface AcceptResult {
+export interface AcceptSuccess {
   readonly confirmationId: string;
   readonly state: "awaiting_confirmation";
   readonly confirmationExpiresAt: string;
 }
+
+/**
+ * `R-01`. `TR-73-38` re-runs the recipient-side half of SS4.4 rule 6 -- "if
+ * later attachment reveals active membership, or issue time at/before latest
+ * membership end, the system executes `TR-73-06` once ... Acceptance repeats
+ * both checks to close races" -- so an active or stale membership answers the
+ * same uniform outcome `attachAccount` gives, not a distinguishable
+ * `already_member`, and the private cancel commits with it (`SEC-PK5-F01`).
+ */
+export type AcceptResult = AcceptSuccess | UniformUnusable;
 
 /**
  * `TR-73-38`. The claim must equal the registry's current entry for the kind
@@ -1077,12 +1087,14 @@ export async function acceptInvitation(deps: InvitationDependencies, invitee: In
 
   assertCurrentDisclosure(deps, invitation, request.acknowledgedDisclosure);
 
-  // Recheck eligibility: a membership may have been created since the attach.
-  const active = await deps.repository.readActiveMembership(invitation.budgetSpaceId, invitee.subjectId);
-  if (active) throw new InvitationError("already_member");
-
   const identity = await deps.repository.readDisplayIdentity(invitee.subjectId);
   if (!identity || identity.profileState !== "active") throw new InvitationError("subject_ineligible", "subjectId");
+
+  // Recheck eligibility last, because it is the one check that writes: a
+  // membership may have been created, or ended, since the attach, and either
+  // cancels the record privately and answers the uniform outcome (`R-01`).
+  const cancelled = await cancelForMembershipState(deps, invitation, invitee.subjectId, request.correlationId);
+  if (cancelled) return cancelled;
 
   const now = deps.clock.now();
   const confirmationExpiresAt = earliest(plusSeconds(now, lifetimes(deps).confirmationSeconds), invitation.expiresAt);
