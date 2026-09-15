@@ -48,6 +48,7 @@ function lookupFor(subjectId: string, sessionRef: string, action: string, acting
 
 interface Fixture {
   readonly client: DataAccessClient;
+  readonly db: FakeIdentityDatabase;
   readonly subjectId: string;
   readonly sessionRef: string;
   readonly spaceId: string;
@@ -62,8 +63,16 @@ function fixture(now = new Date("2026-09-15T12:00:00.000Z")): Fixture {
   const sessionRef = randomUUID();
   const spaceId = randomUUID();
   const source = createApiFactSource({ sessions: noSessions, client, now: () => now });
+  // SEC-PK4-F3: the grant reader requires the session row live in its own
+  // right, so the session this `sessionRef` names has to exist here even
+  // though `session_store` itself is stubbed out above -- the identity leaves
+  // still arrive through the lookup, exactly as the assembler supplies them.
+  db.rows("account_session").push({
+    session_ref: sessionRef, account_subject_id: subjectId, environment_id: ENVIRONMENT, state: "active",
+    session_version: 1, idle_expires_at: new Date(now.getTime() + 900_000), absolute_expires_at: new Date(now.getTime() + 3_600_000),
+  });
   return {
-    client, subjectId, sessionRef, spaceId, now,
+    client, db, subjectId, sessionRef, spaceId, now,
     read: (action, spaceIdForRequest) => source.read("idp_evidence", lookupFor(subjectId, sessionRef, action, spaceIdForRequest)),
   };
 }
@@ -143,6 +152,14 @@ describe("PK4-01: the API fact source emits fresh assurance for exactly the boun
     assert.equal((await f.read(ACTION, f.spaceId))?.["assurance.level"], "fresh");
     assert.equal(await consumeFreshAssurance(f.client, { freshAssuranceId: grant.freshAssuranceId, action: ACTION, now: f.now }), true);
     assert.deepEqual(await f.read(ACTION, f.spaceId), { "assurance.level": "session" });
+  });
+
+  it("SEC-PK4-F3: a grant whose session has been revoked is session, without a sweep", async () => {
+    const f = fixture();
+    await grantFor(f);
+    assert.equal((await f.read(ACTION, f.spaceId))?.["assurance.level"], "fresh");
+    for (const row of (f.db.tables.get("account_session") ?? [])) if (row.session_ref === f.sessionRef) { row.state = "revoked"; }
+    assert.deepEqual(await f.read(ACTION, f.spaceId), { "assurance.level": "session" }, "the grant died with its session");
   });
 
   it("reading the fact twice does not consume it: the commit-time recheck must see what the precheck saw", async () => {

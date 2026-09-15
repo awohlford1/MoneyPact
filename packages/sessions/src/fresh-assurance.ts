@@ -42,7 +42,13 @@
  * Revocation needs no sweep: a grant is reached only through its session,
  * and `findUsableFreshAssurance` requires that session row to be `active`
  * and unexpired, so revoking, rotating or expiring the session takes every
- * grant it holds with it in the same instant (CBD-191 section 6.1).
+ * grant it holds with it in the same instant (CBD-191 section 6.1). That
+ * requirement is this module's own (SEC-PK4-F3), not a property borrowed from
+ * callers who happen to hold a resolved session: the finder reads the session
+ * row itself. The statement seam composes one table per statement, so "the
+ * reader joins the session row" is two selects on the same client -- inside
+ * the authorizing transaction, on that transaction's client -- rather than one
+ * SQL join.
  */
 import { randomUUID } from "node:crypto";
 import type { DataAccessClient } from "@cobudget/data-access";
@@ -50,6 +56,9 @@ import type { AccountSubjectId, Environment, SessionRef } from "./types.ts";
 import { SessionStoreUnavailableError } from "./types.ts";
 
 export const FRESH_ASSURANCE_TABLE = "account_session_fresh_assurance";
+
+/** The session a grant belongs to; read here only to require it live. */
+const SESSION_TABLE = "account_session";
 
 export interface FreshAssuranceGrant {
   readonly freshAssuranceId: string;
@@ -199,6 +208,14 @@ export interface FreshAssuranceLookup {
  * Expiry uses `>` on the stored instant so a request landing exactly on the
  * boundary finds nothing, the same strictness `resolve.ts` applies to the
  * session's own expiries.
+ *
+ * SEC-PK4-F3: the session row is read here too, and the grant is reported only
+ * while that row is `active` and both of its expiries are still ahead of
+ * `now`. Every production caller already resolves a live session before it
+ * gets a `sessionRef`, so this changes no composed behaviour; what it changes
+ * is where the guarantee lives. "A grant dies with its session" is the rule
+ * this function is documented to keep and the migration header states, so it
+ * is checked here rather than assumed of whoever calls next.
  */
 export async function findUsableFreshAssurance(client: DataAccessClient, lookup: FreshAssuranceLookup): Promise<FreshAssuranceGrant | undefined> {
   return withStoreFailure(async () => {
@@ -213,7 +230,22 @@ export async function findUsableFreshAssurance(client: DataAccessClient, lookup:
       ],
     });
     const row = result.rows[0] as Record<string, unknown> | undefined;
-    return row ? toGrant(row) : undefined;
+    if (!row) return undefined;
+    // Second statement rather than a join: this package's seam composes one
+    // table per statement. Both run on the client the caller passed, so inside
+    // the authorization boundary's transaction both are part of it.
+    const live = await client.platformSelect({
+      table: SESSION_TABLE,
+      columns: ["session_ref"],
+      conditions: [
+        { column: "session_ref", value: lookup.sessionRef },
+        { column: "state", value: "active" },
+        { column: "idle_expires_at", operator: ">", value: lookup.now },
+        { column: "absolute_expires_at", operator: ">", value: lookup.now },
+      ],
+    });
+    if (live.rows.length === 0) return undefined;
+    return toGrant(row);
   });
 }
 

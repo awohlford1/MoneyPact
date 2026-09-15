@@ -341,6 +341,24 @@ describe("PK4-02/PK4-03 live: a protected cell allows only with a matching fresh
           { action: ACTION, budgetSpaceId: space.spaceId, postResultDestinationId: "home" });
         assert.equal(noCsrf.statusCode, 403, noCsrf.body);
       });
+      await t.test("SEC-PK4-F3: a revoked session's ref finds no grant, and the finder is what refuses it", async () => {
+        // The partial-index case above left one live grant on this session for
+        // this action and space, so there is something to lose. Signing out
+        // revokes the session row and nothing sweeps the grants; the reader
+        // itself requires the session live, which is what the migration header
+        // and the module doc say and what SEC-PK4-F3 found was only true in
+        // composition. This is the module boundary: a bare `sessionRef`, no
+        // resolved session anywhere in the call.
+        const before = await findUsableFreshAssurance(h.client, { sessionRef: me.sessionRef, boundAction: ACTION, boundSpaceId: space.spaceId, now: new Date() });
+        assert.ok(before, "a live grant on a live session is usable");
+        const signedOut = await h.inject("POST", "/v1/identity/logout", { origin: APPLICATION_ORIGIN, "sec-fetch-site": "same-origin", "x-cobudget-csrf": me.csrfValue });
+        assert.equal(signedOut.statusCode, 200, signedOut.body);
+        const session = await h.client.platformSelect({ table: "account_session", conditions: [{ column: "session_ref", value: me.sessionRef }] });
+        assert.equal((session.rows[0] as Record<string, unknown>).state, "revoked");
+        assert.equal(await findUsableFreshAssurance(h.client, { sessionRef: me.sessionRef, boundAction: ACTION, boundSpaceId: space.spaceId, now: new Date() }), undefined, "the grant died with its session");
+        const grants = await h.client.platformSelect({ table: "account_session_fresh_assurance", conditions: [{ column: "fresh_assurance_id", value: before!.freshAssuranceId }] });
+        assert.equal((grants.rows[0] as Record<string, unknown>).state, "issued", "nothing was swept or rewritten; the row is simply unreachable");
+      });
     } finally {
       await h.close();
     }
