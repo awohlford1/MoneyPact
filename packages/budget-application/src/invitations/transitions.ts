@@ -33,9 +33,14 @@ export const INVITATION_EDGES: readonly (readonly [InvitationState, InvitationSt
   ["awaiting_confirmation", "accepted", "TR-73-13"],
   ["awaiting_confirmation", "cancelled", "TR-73-39-reject"],
   ["awaiting_confirmation", "expired", "TR-73-07"],
-  ["synthetic_created", "synthetic_pending", "TR-73-17"],
-  ["synthetic_created", "synthetic_inactive", "TR-73-18"],
-  ["synthetic_pending", "synthetic_inactive", "TR-73-18"],
+  // `R-05`. CBD-73 SS4.4 names these: `TR-73-16` projects the synthetic
+  // dispatch, `TR-73-17` ends the synthetic lifecycle at its deadline, and
+  // `TR-73-18` is the actor's cancel of a synthetic projection. The last two
+  // draw the *same* edge from either synthetic state, so the label names both
+  // rather than pretending the edge alone identifies which one ran.
+  ["synthetic_created", "synthetic_pending", "TR-73-16"],
+  ["synthetic_created", "synthetic_inactive", "TR-73-17/TR-73-18"],
+  ["synthetic_pending", "synthetic_inactive", "TR-73-17/TR-73-18"],
 ];
 
 const INVITATION_EDGE_SET = new Set(INVITATION_EDGES.map(([from, to]) => `${from}>${to}`));

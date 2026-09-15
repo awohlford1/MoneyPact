@@ -41,9 +41,11 @@ void test("every CBD-73 4.2 edge the prototype executes is admitted, and each na
     ["awaiting_confirmation", "accepted", "TR-73-13"],
     ["awaiting_confirmation", "cancelled", "TR-73-39-reject"],
     ["awaiting_confirmation", "expired", "TR-73-07"],
-    ["synthetic_created", "synthetic_pending", "TR-73-17"],
-    ["synthetic_created", "synthetic_inactive", "TR-73-18"],
-    ["synthetic_pending", "synthetic_inactive", "TR-73-18"],
+    // R-05: CBD-73 4.4's own names. TR-73-16 projects the synthetic dispatch;
+    // TR-73-17 (deadline) and TR-73-18 (actor cancel) share the other edge.
+    ["synthetic_created", "synthetic_pending", "TR-73-16"],
+    ["synthetic_created", "synthetic_inactive", "TR-73-17/TR-73-18"],
+    ["synthetic_pending", "synthetic_inactive", "TR-73-17/TR-73-18"],
   ];
   assert.deepEqual([...INVITATION_EDGES].map((edge) => [...edge]), expected.map((edge) => [...edge]));
   for (const [from, to, transition] of expected) {

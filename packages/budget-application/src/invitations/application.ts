@@ -497,8 +497,9 @@ async function insertInvitationRecord(
   });
 
   if (synthetic) {
-    // TR-73-17: the "equivalence schedule" is immediate in the prototype. No
-    // code, no outbox, and one restricted AE-73-27 that names the real cause.
+    // TR-73-16 (project synthetic dispatch): the "equivalence schedule" is
+    // immediate in the prototype. No code, no outbox, and one restricted
+    // AE-73-27 that names the real cause.
     assertInvitationEdge("synthetic_created", "synthetic_pending");
     await deps.repository.updateInvitation(owner.budgetSpaceId, invitationId, 1, { state: "synthetic_pending" });
     await writeAudit(deps, {
@@ -531,6 +532,11 @@ async function dispatchInvitation(
     invitationId: record.invitationId, invitationVersion: record.invitationVersion, destinationToken: record.destinationToken,
   }, bearer);
 
+  // `R-05`: asserted before the first write, which is this module's stated
+  // rule. The edge is constant so it cannot fail today, but the code and
+  // outbox rows below are writes and the rule should be true textually.
+  assertInvitationEdge("created", "pending");
+
   await deps.repository.insertCode({
     invitationId: record.invitationId, budgetSpaceId: record.budgetSpaceId, verifierDigest: verifier,
     issuedAt: now, expiresAt: record.expiresAt, disposition: "active",
@@ -541,7 +547,6 @@ async function dispatchInvitation(
     channelType: "email", destination, bearer, challenge, custodyDeadline: record.expiresAt,
   });
 
-  assertInvitationEdge("created", "pending");
   const applied = await deps.repository.updateInvitation(record.budgetSpaceId, record.invitationId, record.stateVersion, {
     state: "pending", projectionState: "pending",
   });
