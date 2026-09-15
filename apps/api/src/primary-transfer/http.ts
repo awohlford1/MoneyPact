@@ -192,6 +192,19 @@ export function primaryTransferHttp(dependencies: PrimaryTransferHttpDependencie
    * membership as the target so that the policy still runs and the handler
    * answers `transfer_not_found` to a member, and the uniform denial to
    * anyone else.
+   *
+   * `SEC-PK7B-F1` (the route-level party gate, Manager's decision). The
+   * accept, decline and view cells carry Co-owner and Collaborator columns,
+   * so any same-space member reaches the module, whose terminal-state, expiry
+   * and version checks run before its party check: a non-party who knows a
+   * transferId would learn the workflow's state class, receive the closure
+   * projection and even trigger the `TR-73-46` closure. So for every row
+   * route the workflow's two parties are read here and a member who is
+   * neither is answered `404 transfer_not_found` before the policy runs --
+   * exactly what an unknown or malformed identifier answers, with nothing
+   * written (a pre-policy 404 writes no `AE-73-25` row for the attempt, as a
+   * malformed id does not; accepted). The two parties still reach the module,
+   * which keeps its own party check for each cell.
    */
   const replay = (kind: "propose" | "own" | "recipient") => async (request: FastifyRequest, subject: string) => {
     const budgetSpaceId = spaceOf(request);
@@ -203,9 +216,13 @@ export function primaryTransferHttp(dependencies: PrimaryTransferHttpDependencie
       const recipient = bodyOf(request).recipientMembershipId;
       if (typeof recipient !== "string" || !UUID.test(recipient)) throw new TransferRouteFailure(400, "invalid_request");
       if (await dependencies.membershipExists(budgetSpaceId, recipient.toLowerCase())) targetMembershipId = recipient.toLowerCase();
-    } else if (kind === "recipient" && transferId) {
+    } else if (transferId) {
       const parties = await dependencies.transferParties(budgetSpaceId, transferId);
-      if (parties) targetMembershipId = parties.recipientMembershipId;
+      if (parties) {
+        // SEC-PK7B-F1: a same-space member who is neither party is answered as an unknown identifier, before the policy.
+        if (membershipId !== parties.proposerMembershipId && membershipId !== parties.recipientMembershipId) throw new TransferRouteFailure(404, "transfer_not_found");
+        if (kind === "recipient") targetMembershipId = parties.recipientMembershipId;
+      }
     }
     acting.set(request, { subject, budgetSpaceId, transferId, membershipId, targetMembershipId });
     return { kind: "absent" as const };

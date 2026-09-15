@@ -299,14 +299,15 @@ describe("PK-7B Primary-transfer routes through the real Fastify instance", () =
     const { app, world, call, as, accept, confirm, propose } = await application();
     try {
       const transferId = await propose();
-      // Another Co-owner of the space: the policy allows the cell on their own row, the handler proves they are not the recipient.
+      // SEC-PK7B-F1: another Co-owner of the space is neither party, so the route answers the unknown-identifier 404 before
+      // the policy runs, with nothing written -- see the dedicated party-gate test below for the three workflow states.
       const intruder = await accept(transferId, THIRD);
-      assert.equal(intruder.statusCode, 403, intruder.body);
-      assert.deepEqual(intruder.json(), { error: "authorization_denied", messageCode: UNIFORM_DENIAL_MESSAGE_CODE });
+      assert.equal(intruder.statusCode, 404, intruder.body);
+      assert.deepEqual(intruder.json(), { error: "transfer_not_found" });
       assert.equal(world.repository.transfers.get(transferId)?.state, "proposed");
       as(TRANSFER_ACTIONS.decline, THIRD);
       const intruderDecline = await call("POST", `${BASE}/${transferId}/decline`, {});
-      assert.equal(intruderDecline.statusCode, 403); assert.equal(intruderDecline.json().error, "authorization_denied");
+      assert.equal(intruderDecline.statusCode, 404); assert.deepEqual(intruderDecline.json(), { error: "transfer_not_found" });
       // Accept or decline naming no pending transfer: a workflow that does not exist (404, rolled back, no audit row) ...
       const rows = world.repository.audit.length;
       const missing = await accept("00000000-0000-4000-8000-00000000ffff");
@@ -326,7 +327,8 @@ describe("PK-7B Primary-transfer routes through the real Fastify instance", () =
       assert.equal((await accept(second)).statusCode, 200);
       assert.equal((await confirm(second)).json().outcome, "committed");
       as(TRANSFER_ACTIONS.propose, { ...RECIPIENT("primary_owner"), version: 2 });
-      const third = await call("POST", BASE, { recipientMembershipId: THIRD_MEMBERSHIP });
+      // The new Primary proposes back to the former one, who is therefore a party (the recipient) and passes the route's party gate.
+      const third = await call("POST", BASE, { recipientMembershipId: PRIMARY_MEMBERSHIP });
       assert.equal(third.statusCode, 201, third.body);
       const former = await confirm(third.json().transfer.transferId, { ...PRIMARY, role: "co_owner", version: 2 });
       assert.equal(former.statusCode, 403, former.body);
@@ -334,6 +336,51 @@ describe("PK-7B Primary-transfer routes through the real Fastify instance", () =
       // And a Collaborator has no propose cell at all.
       as(TRANSFER_ACTIONS.propose, { ...THIRD, role: "collaborator" });
       assert.equal((await call("POST", BASE, { recipientMembershipId: RECIPIENT_MEMBERSHIP })).statusCode, 403);
+    } finally { await app.close(); }
+  });
+
+  it("PK7BF-01 (SEC-PK7B-F1): a same-space member who is neither party is answered 404 transfer_not_found on accept, decline and view before the policy runs, over a live, a withdrawn and a stale workflow, with nothing written; the parties still reach the module", async () => {
+    const { app, world, call, as, accept, propose } = await application();
+    try {
+      const snapshot = () => JSON.stringify({ transfers: [...world.repository.transfers.values()], audit: world.repository.audit.length, notices: world.repository.notices.length, memberships: [...world.repository.memberships.values()] });
+      const nonParty = async (transferId: string, label: string) => {
+        const before = snapshot();
+        const answers = [
+          await accept(transferId, THIRD),
+          await (async () => { as(TRANSFER_ACTIONS.decline, THIRD); return call("POST", `${BASE}/${transferId}/decline`, {}); })(),
+          await (async () => { as(TRANSFER_ACTIONS.view, THIRD); return call("GET", `${BASE}/${transferId}`); })(),
+        ];
+        for (const answer of answers) {
+          assert.equal(answer.statusCode, 404, `${label}: ${answer.body}`);
+          assert.deepEqual(answer.json(), { error: "transfer_not_found" }, label);
+        }
+        assert.equal(snapshot(), before, `${label}: the row, the audit rows and the notices are untouched`);
+      };
+      // A live workflow.
+      const live = await propose();
+      await nonParty(live, "live");
+      // The parties are unaffected: the recipient reads and accepts, the Primary reads.
+      as(TRANSFER_ACTIONS.view, RECIPIENT());
+      assert.equal((await call("GET", `${BASE}/${live}`)).statusCode, 200);
+      as(TRANSFER_ACTIONS.view, PRIMARY);
+      assert.equal((await call("GET", `${BASE}/${live}`)).statusCode, 200);
+      assert.equal((await accept(live)).json().outcome, "recipient_accepted");
+      // A withdrawn workflow: the non-party learns nothing of its terminal state.
+      as(TRANSFER_ACTIONS.withdraw, PRIMARY);
+      assert.equal((await call("POST", `${BASE}/${live}/withdraw`, {})).json().outcome, "withdrawn");
+      await nonParty(live, "withdrawn");
+      const stillWithdrawn = await accept(live);
+      assert.equal(stillWithdrawn.statusCode, 409); assert.equal(stillWithdrawn.json().error, "transfer_not_current", "a party still reaches the module's answer");
+      // A stale live workflow (the recipient's version moved after the proposal): the TR-73-46 closure must not be triggered by a non-party.
+      const stale = await propose();
+      const recipient = world.repository.memberships.get(`${SPACE}/${RECIPIENT_MEMBERSHIP}`)!;
+      world.repository.memberships.set(`${SPACE}/${RECIPIENT_MEMBERSHIP}`, { ...recipient, authorizationVersion: recipient.authorizationVersion + 1 });
+      await nonParty(stale, "stale");
+      assert.equal(world.repository.transfers.get(stale)?.state, "proposed", "the closure did not run for the non-party");
+      // The party's next request runs the closure as before.
+      const closed = await accept(stale, { ...RECIPIENT(), version: 2 });
+      assert.equal(closed.statusCode, 409, closed.body); assert.equal(closed.json().error, "transfer_invalidated");
+      assert.equal(world.repository.transfers.get(stale)?.state, "invalidated");
     } finally { await app.close(); }
   });
 
