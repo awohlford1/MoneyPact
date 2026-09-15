@@ -61,6 +61,49 @@ export interface TransactionHooks {
 
 const SERIALIZATION_ATTEMPTS = 3;
 
+const RETRYABLE_SQL_STATES: ReadonlySet<string> = new Set(["40001", "40P01"]);
+
+/**
+ * SEC-PK4-F4. A serialization failure can surface on any statement of an
+ * attempt -- the session row's idle extension inside the commit-time fact
+ * read, the revocation fence, or the grant row -- and the layers between that
+ * statement and this loop legitimately reduce it to their own fail-closed
+ * answers (`resolve.ts` reports `not_authenticated`, the assembler throws
+ * `FactFailure`). PostgreSQL has already aborted the whole transaction at that
+ * point, so whether the attempt is retried cannot depend on which error object
+ * finally arrives here. The scoped client is therefore observed: the SQLSTATE
+ * of every failed statement is reported, and a retryable state seen anywhere in
+ * the attempt retries the attempt. The observed object is the handle the route
+ * receives, so identity-keyed audit buffering keeps working unchanged.
+ */
+function observeSqlState(client: DataAccessClient, seen: (sqlState: string) => void): DataAccessClient {
+  const observed = Object.create(Object.getPrototypeOf(client) as object | null) as Record<string, unknown>;
+  // Every own property, enumerable or not: the api client defines its profile
+  // and membership statements as non-enumerable values.
+  for (const name of Object.getOwnPropertyNames(client)) {
+    const descriptor = Object.getOwnPropertyDescriptor(client, name)!;
+    const member = descriptor.value as unknown;
+    if (typeof member !== "function" || name === "transaction") {
+      Object.defineProperty(observed, name, descriptor);
+      continue;
+    }
+    const call = member as (...inner: unknown[]) => Promise<unknown>;
+    Object.defineProperty(observed, name, {
+      ...descriptor,
+      value: async (...args: unknown[]) => {
+        try {
+          return await call.apply(client, args);
+        } catch (error) {
+          const state = (error as { sqlState?: unknown } | null)?.sqlState;
+          if (typeof state === "string") seen(state);
+          throw error;
+        }
+      },
+    });
+  }
+  return observed as unknown as DataAccessClient;
+}
+
 export class ApiTransactionStore implements AuthorizationTransactionStore {
   readonly #client: DataAccessClient;
   readonly #audit: InProcessRestrictedAuditStore;
@@ -83,19 +126,23 @@ export class ApiTransactionStore implements AuthorizationTransactionStore {
   async transaction<T>(work: (transaction: unknown) => Promise<T>): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       let handle: object | undefined;
+      let observedState: string | undefined;
       try {
         const result = await this.#client.transaction({ isolation: "serializable" }, async (scoped) => {
-          handle = scoped;
-          const value = await work(scoped);
-          if (this.#hooks.beforeCommit) await this.#hooks.beforeCommit(scoped);
+          const observed = observeSqlState(scoped, (state) => { if (RETRYABLE_SQL_STATES.has(state)) observedState = state; });
+          handle = observed;
+          const value = await work(observed);
+          if (this.#hooks.beforeCommit) await this.#hooks.beforeCommit(observed);
           return value;
         });
         if (handle) await this.#audit.commit(handle);
         return result;
       } catch (error) {
         if (handle) this.#audit.discard(handle);
-        const state = (error as { sqlState?: string }).sqlState;
-        if (attempt < SERIALIZATION_ATTEMPTS && (state === "40001" || state === "40P01")) continue;
+        // The thrown error's own state (a wrapped store error, SEC-PK4-F4) or a retryable state any
+        // statement of this attempt reported before a higher layer replaced the error.
+        const state = (error as { sqlState?: string } | null)?.sqlState ?? observedState;
+        if (attempt < SERIALIZATION_ATTEMPTS && state !== undefined && RETRYABLE_SQL_STATES.has(state)) continue;
         throw error;
       }
     }

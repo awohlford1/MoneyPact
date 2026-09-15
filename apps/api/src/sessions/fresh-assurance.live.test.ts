@@ -292,6 +292,44 @@ describe("PK4-02/PK4-03 live: a protected cell allows only with a matching fresh
         assert.equal(await consumeFreshAssurance(h.client, { freshAssuranceId: id, action: ACTION, now: new Date() }), false);
       });
 
+      await t.test("SEC-PK4-F4: two protected commits racing for one grant -- exactly one commits, and the loser is retried to a clean assurance_required", async () => {
+        // A fresh grant: the previous one is consumed, so the partial unique
+        // index admits a second step-up for the same session, action and space.
+        assert.equal(await stepUp(h, port, me.csrfValue, ACTION, space.spaceId), 303);
+        const first = await h.boundary.authorize(lookup);
+        const second = await h.boundary.authorize(lookup);
+        assert.equal(first.decision.outcome, "allow");
+        assert.equal(second.decision.outcome, "allow");
+        const before = h.audit.snapshot().length;
+        // Both effects run their serializable transaction at the same time on
+        // one session row and one grant row. The handler holds its transaction
+        // open long enough that the other side is certainly inside its own
+        // attempt when the first COMMIT lands.
+        let inFlight = 0;
+        let overlapped = false;
+        const work = async () => {
+          inFlight++;
+          if (inFlight > 1) overlapped = true;
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          inFlight--;
+          return "committed";
+        };
+        const settled = await Promise.allSettled([h.boundary.execute(first, work), h.boundary.execute(second, work)]);
+        const committed = settled.filter((outcome) => outcome.status === "fulfilled");
+        assert.equal(committed.length, 1, `exactly one commit: ${JSON.stringify(settled.map((outcome) => outcome.status))}`);
+        assert.equal(overlapped, false, "the handler never ran twice at once: the loser never reached it");
+        const grants = await h.client.platformSelect({ table: "account_session_fresh_assurance", conditions: [{ column: "session_ref", value: me.sessionRef }, { column: "state", value: "consumed" }] });
+        assert.equal(grants.rows.length, 2, "the grant from this race is consumed exactly once, alongside the earlier one");
+        // The denial's class is restricted evidence and reaches only the audit
+        // stream (CBD-236 section 5.2). Before SEC-PK4-F4 the loser's serialization
+        // failure was wrapped without its SQLSTATE, the store's retry never fired
+        // and the attempt was recorded as input_invalid; now the retried attempt
+        // re-assembles, finds the grant spent, and `decide` denies on its own.
+        const denied = h.audit.snapshot().slice(before).filter((event) => event.outcome === "deny");
+        assert.equal(denied.length, 1, "one denial recorded for the losing commit");
+        assert.equal(denied[0]?.reasonClass, "assurance_required");
+      });
+
       await t.test("PK4-03: write-once -- the database refuses to re-point, extend or un-consume a grant", async () => {
         const { createMigrationConnection } = await import("../../../../packages/data-access/src/connection.ts");
         const admin = createMigrationConnection();
