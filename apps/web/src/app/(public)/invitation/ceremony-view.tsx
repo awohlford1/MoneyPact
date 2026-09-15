@@ -106,20 +106,43 @@ export function CeremonyView({ ceremonyId }: { ceremonyId: string }) {
   const heading = useRef<HTMLHeadingElement>(null);
   const path = `/invitation/ceremony/${encodeURIComponent(ceremonyId)}`;
 
-  /** Continues from the remembered state: attach if a session exists, then read the disclosure. */
+  /**
+   * Continues from the remembered state: attach if a session exists, then read the disclosure. R-03
+   * (PROTO-INVITATIONS-PK8-REVIEW-001 finding R-03; PK9-F02): `memory.proved` is this tab's own record of having
+   * entered the code, written only by `verify()` below -- it is not the only thing this function trusts. `writeMemory`
+   * also records `expiresAt` the moment this tab itself resolves the link (`ResolveView.resolve`), so a tab that has
+   * that key has been through the code-entry step of this flow already and is shown it again exactly as before; a
+   * tab with no record of this ceremony at all -- a second tab, a lost sessionStorage, or a direct link to the
+   * ceremony URL -- cannot tell locally whether the channel was already proved elsewhere, so it asks the API rather
+   * than the person: a session lets it try `attach` (an attach on an unproved ceremony answers the uniform 404 and
+   * writes nothing, design 5.2), which both confirms the proof and links the ceremony to that session in one call;
+   * with no session to attach with, it is shown the same sign-in hand-off the page offers right after a proof,
+   * because that is this tab's only way to reach a session and get the API's real answer. Either way the code entry
+   * is shown only when the API itself says the proof is missing, never merely because this tab forgot.
+   */
   const advance = useCallback(async (signal?: AbortSignal) => {
     const memory = readMemory(ceremonyId);
     if (memory.exhausted) { setStep({ kind: "exhausted" }); return; }
-    if (!memory.proved) { setStep({ kind: "verify" }); return; }
+    const knownHere = memory.expiresAt !== undefined;
+    if (!memory.proved && knownHere) { setStep({ kind: "verify" }); return; }
     let session: Awaited<ReturnType<InvitationsClient["session"]>> = null;
     try { session = await api.session(signal); } catch { setStep({ kind: "failed" }); return; }
-    if (!session) { setStep({ kind: "sign_in" }); return; }
+    if (!session) {
+      // Whether memory.proved is true (the ordinary post-proof hand-off) or unset (no local record, no way to
+      // attach without a session): the same sign-in step either way. Once the person is back with a session, this
+      // runs again and `attach` gives the API's real answer.
+      setStep({ kind: "sign_in" }); return;
+    }
     setStep({ kind: "attaching" });
     try {
       if (!memory.attached) {
         const attached = await api.attach(ceremonyId);
-        if (attached === "unusable") { setStep({ kind: "resolve_again" }); return; }
-        writeMemory(ceremonyId, { attached: true });
+        if (attached === "unusable") {
+          // The API's own word that the proof is missing: only now does the code entry appear for a tab that never verified.
+          setStep({ kind: memory.proved ? "resolve_again" : "verify" });
+          return;
+        }
+        writeMemory(ceremonyId, { proved: true, attached: true });
       }
       const view = await api.readCeremony(ceremonyId, signal);
       setStep({ kind: "disclose", view });
