@@ -9,6 +9,7 @@
  */
 import { createPublicKey, timingSafeEqual, verify } from "node:crypto";
 import type { KeyObject } from "node:crypto";
+import { MAX_DISPLAY_NAME_LENGTH } from "../../../../packages/data-access/src/financial-profile.ts";
 import type { Jwk } from "./local-issuer.ts";
 
 export const SUBJECT_MAX_LENGTH = 256;
@@ -33,6 +34,15 @@ export interface ValidatedIdentityClaims {
   readonly providerSubject: string;
   readonly authTime: Date;
   readonly issuedAt: Date;
+  /**
+   * CBD-190 identity amendments proposal §2.1-2.2: the standard OIDC `name`
+   * claim, admitted only in trimmed, bounded form (1..80 code points, the
+   * same bound `writeDisplayName` enforces). Not an identity key -- never
+   * used for `sub` resolution, binding lookup, or any authorization
+   * decision. An absent, non-string, empty-after-trim, or oversized claim is
+   * `undefined`: a silent skip, never a ceremony failure (§2.2).
+   */
+  readonly name: string | undefined;
 }
 
 export type TokenValidation = { readonly ok: true; readonly claims: ValidatedIdentityClaims } | { readonly ok: false; readonly rejection: TokenRejection };
@@ -102,6 +112,14 @@ function numericDate(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
+/** §2.2: trimmed, 1..80 code points (`[...trimmed].length`, matching `writeDisplayName`'s own count), else `undefined`. */
+function boundedName(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  const length = [...trimmed].length;
+  return length >= 1 && length <= MAX_DISPLAY_NAME_LENGTH ? trimmed : undefined;
+}
+
 function constantTimeEqual(a: string, b: string): boolean {
   const left = Buffer.from(a, "utf8");
   const right = Buffer.from(b, "utf8");
@@ -161,5 +179,5 @@ export async function validateIdToken(token: string, expectations: TokenExpectat
     const value = payload[name];
     if (value !== undefined && (typeof value !== "string" || value.length === 0 || value.length > 256)) return reject("header");
   }
-  return { ok: true, claims: { issuer: expectations.issuer, providerSubject: sub, authTime: new Date(authTime * 1000), issuedAt: new Date(iat * 1000) } };
+  return { ok: true, claims: { issuer: expectations.issuer, providerSubject: sub, authTime: new Date(authTime * 1000), issuedAt: new Date(iat * 1000), name: boundedName(payload.name) } };
 }

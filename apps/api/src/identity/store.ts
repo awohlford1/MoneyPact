@@ -159,14 +159,23 @@ export async function listProfiles(client: DataAccessClient, accountSubjectId: s
   }));
 }
 
-/** §5.2 step 3: candidate subject, exactly one active profile through the CBD-212 subject-scoped seam, then the binding -- all on the caller's transaction client. */
-export async function insertSubjectWithProfileAndBinding(client: DataAccessClient, input: { readonly environmentId: string; readonly issuer: string; readonly providerSubject: string; readonly now: Date }): Promise<{ readonly accountSubjectId: string; readonly profileId: string; readonly identityBindingId: string }> {
+/**
+ * §5.2 step 3: candidate subject, exactly one active profile through the CBD-212 subject-scoped
+ * seam, then the binding -- all on the caller's transaction client.
+ *
+ * CBD-190 identity amendments proposal §2.3: `displayName`, when supplied, is written into the
+ * same profile-insert statement -- never a second `UPDATE` after the row exists -- so the row is
+ * created with `display_name` populated (or `NULL`) in one write (`CBD190-PROFILE-ATOMIC-001`).
+ * This function is reachable only from the mapping transaction's `!binding` (first-use) branch;
+ * an existing binding never calls it, which is what makes the write structurally first-use-only.
+ */
+export async function insertSubjectWithProfileAndBinding(client: DataAccessClient, input: { readonly environmentId: string; readonly issuer: string; readonly providerSubject: string; readonly now: Date; readonly displayName?: string | undefined }): Promise<{ readonly accountSubjectId: string; readonly profileId: string; readonly identityBindingId: string }> {
   if (!client.profileInsert) throw new Error("profile statements unavailable on this client");
   const accountSubjectId = randomUUID();
   const profileId = randomUUID();
   const identityBindingId = randomUUID();
   await client.platformInsert({ table: "account_subject", values: { account_subject_id: accountSubjectId, lifecycle_state: "active", lifecycle_version: 1, created_at: input.now, updated_at: input.now } });
-  await client.profileInsert({ table: "financial_profile", accountSubjectId, values: { profile_id: profileId, profile_state: "active", created_at: input.now, updated_at: input.now, version: 1 } });
+  await client.profileInsert({ table: "financial_profile", accountSubjectId, values: { profile_id: profileId, profile_state: "active", created_at: input.now, updated_at: input.now, version: 1, display_name: input.displayName ?? null } });
   await client.platformInsert({ table: "identity_binding", values: {
     identity_binding_id: identityBindingId, environment_id: input.environmentId, issuer: input.issuer, provider_subject: input.providerSubject,
     account_subject_id: accountSubjectId, lifecycle_state: "active", binding_version: 1, created_at: input.now, updated_at: input.now,

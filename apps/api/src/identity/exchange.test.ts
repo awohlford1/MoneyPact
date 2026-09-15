@@ -46,9 +46,12 @@ describe("CBD-190-AC02 bounded exchange state machine (section 10.1, CT-190-016 
     for (let i = 1; i < outcome.evidence.steps.length; i += 1) assert.ok(outcome.evidence.steps[i]!.atMs >= outcome.evidence.steps[i - 1]!.atMs, "monotonic step times");
     assert.equal(outcome.evidence.buffersZeroed, true);
     assert.ok(verifierCopy.every((byte) => byte === 0), "PKCE verifier buffer destroyed");
-    assert.deepEqual(Object.keys(outcome.claims).sort(), ["authTime", "issuedAt", "issuer", "providerSubject"]);
+    assert.deepEqual(Object.keys(outcome.claims).sort(), ["authTime", "issuedAt", "issuer", "name", "providerSubject"]);
     assert.equal(outcome.claims.issuer, ISSUER);
     assert.equal(outcome.claims.providerSubject, prepared.issuer.subjectFor("subject-a"));
+    // CBD-190 identity amendments proposal §2.1-2.2: the local issuer's fixture name claim for
+    // subject-a, trimmed, is the only extra allowlisted field the exchange releases.
+    assert.equal(outcome.claims.name, "Ada A. Local");
     assert.ok(!JSON.stringify(outcome).includes("synthetic@example.invalid"), "contact attribute never leaves the exchange");
     assert.deepEqual(prepared.issuer.familyCounts(), { issued: 1, revoked: 1 });
     assert.equal(prepared.issuer.revocations.length, 1, "issuer-side revocation hook invoked exactly once");

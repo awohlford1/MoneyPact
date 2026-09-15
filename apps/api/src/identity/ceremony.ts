@@ -257,7 +257,21 @@ export class IdentityCeremony {
     return `${this.#d.config.applicationOrigin}${this.#d.config.resultPath}?outcome=${outcome}`;
   }
 
-  #successNavigation(destinationId: string): string {
+  /**
+   * CBD-190 identity amendments proposal §3.3 (`C190-D01`): the reserved
+   * `budget_transfer` key's map value never decides the path -- the path is
+   * derived from the step-up challenge's own bound `budgetSpaceId` instead,
+   * because the map's values are fixed strings by design and a space-scoped
+   * path is not one. `boundSpaceId` is `undefined` on every non-step-up
+   * challenge (`begin()` never binds one and never admits this destination,
+   * §3.6 `PK8N-02`), so the defensive `"/"` fallback below is unreachable in
+   * practice, not a silent `/budgets/undefined/transfer`.
+   */
+  #successNavigation(destinationId: string, boundSpaceId: string | undefined): string {
+    if (destinationId === "budget_transfer") {
+      const path = boundSpaceId ? `/budgets/${encodeURIComponent(boundSpaceId)}/transfer` : "/";
+      return `${this.#d.config.applicationOrigin}${path}`;
+    }
     const path = this.#d.config.postResultDestinations[destinationId] ?? "/";
     return `${this.#d.config.applicationOrigin}${path}`;
   }
@@ -286,6 +300,15 @@ export class IdentityCeremony {
     if (typeof input.ceremony !== "string" || input.ceremony === "step_up" || !CEREMONIES.includes(input.ceremony as Ceremony)) return { ok: false, reason: "ceremony_invalid" };
     const destination = typeof input.postResultDestinationId === "string" ? input.postResultDestinationId : "home";
     if (!Object.hasOwn(config.postResultDestinations, destination)) return { ok: false, reason: "destination_invalid" };
+    // Proposal §3.2-3.3 (C190-D01): `budget_transfer`'s path is derived from a step-up challenge's own
+    // bound budgetSpaceId (§4.4), which this general `begin` command never binds -- so the destination
+    // is unresolvable here and refused exactly like an unknown key (§3.6 PK8N-02), never silently
+    // mapped to `/budgets/undefined/transfer`.
+    if (destination === "budget_transfer") return { ok: false, reason: "destination_invalid" };
+    // Proposal §3.2/§4 (C190-D02, Executive-ruled): `invitation_ceremony` is scoped to the `sign_in`
+    // ceremony only, matching today's actual caller; the other four kinds this command admits have no
+    // caller that leaves an invitation return marker (§3.6 PK8N-01 states the mirror-image step-up rule).
+    if (destination === "invitation_ceremony" && input.ceremony !== "sign_in") return { ok: false, reason: "destination_invalid" };
     let currentAccountSubjectId: string | undefined;
     let currentSessionRef: string | undefined;
     if (input.ceremony === "account_switch") {
@@ -412,7 +435,7 @@ export class IdentityCeremony {
     if (!handoff) return { kind: "outcome", outcome: "callback_failure", navigateTo: this.#resultNavigation("callback_failure"), challengeId: challenge.challengeId };
     if (handoff.state === "consumed" && callback.commitAt) {
       this.#evidence("challenge_replayed", challenge.challengeId, "success");
-      return { kind: "success", navigateTo: this.#successNavigation(challenge.postResultDestinationId), setCookie: [], challengeId: challenge.challengeId, accountSubjectId: handoff.accountSubjectId, sessionRef: handoff.issuedSessionReference ?? "", firstDelivery: false };
+      return { kind: "success", navigateTo: this.#successNavigation(challenge.postResultDestinationId, challenge.boundSpaceId), setCookie: [], challengeId: challenge.challengeId, accountSubjectId: handoff.accountSubjectId, sessionRef: handoff.issuedSessionReference ?? "", firstDelivery: false };
     }
     if (handoff.state === "terminal_failed") return { kind: "outcome", outcome: "callback_failure", navigateTo: this.#resultNavigation("callback_failure"), challengeId: challenge.challengeId };
     // handoff still prepared (or consumed but not finalized): an authorized bounded retry may consume the same unexpired hand-off (§6).
@@ -437,7 +460,7 @@ export class IdentityCeremony {
     const result: VerifiedIdentityResultV1 = {
       contractVersion: 1, environmentId: challenge.environmentId, issuer: exchange.claims.issuer, providerSubject: exchange.claims.providerSubject,
       ceremony: challenge.ceremony, providerEventTime: exchange.claims.authTime, assurance: "session", challengeId: challenge.challengeId, identityEventId: newIdentityEventId(),
-      previousAccountSubjectId: challenge.currentAccountSubjectId, previousSessionRef: challenge.currentSessionRef,
+      previousAccountSubjectId: challenge.currentAccountSubjectId, previousSessionRef: challenge.currentSessionRef, name: exchange.claims.name,
     };
     let mapping;
     try {
@@ -536,7 +559,7 @@ export class IdentityCeremony {
     this.#evidence("handoff_consumed", challenge.challengeId, "success");
     this.#reliability("ok");
     const setCookie = [buildSessionCookieHeader(delivery.cookieValue, delivery.absoluteExpiresAt, now)];
-    return { kind: "success", navigateTo: this.#successNavigation(challenge.postResultDestinationId), setCookie, challengeId: challenge.challengeId, accountSubjectId: handoff.accountSubjectId, sessionRef: delivery.sessionRef, firstDelivery: true };
+    return { kind: "success", navigateTo: this.#successNavigation(challenge.postResultDestinationId, challenge.boundSpaceId), setCookie, challengeId: challenge.challengeId, accountSubjectId: handoff.accountSubjectId, sessionRef: delivery.sessionRef, firstDelivery: true };
   }
 
   /**
@@ -613,6 +636,9 @@ export class IdentityCeremony {
     if (input.origin !== config.applicationOrigin || input.secFetchSite === "cross-site") return { ok: false, reason: "origin_rejected" };
     const destination = typeof input.postResultDestinationId === "string" ? input.postResultDestinationId : "home";
     if (!Object.hasOwn(config.postResultDestinations, destination)) return { ok: false, reason: "destination_invalid" };
+    // Proposal §3.2/§3.6 (PK8N-01, C190-D02 mirror): `invitation_ceremony` is scoped to the sign-in
+    // `begin` path only; the step-up begin never admits it, the same closed refusal an unknown key gets.
+    if (destination === "invitation_ceremony") return { ok: false, reason: "destination_invalid" };
     if (typeof input.action !== "string" || !protectedActions().has(input.action)) {
       this.#evidence("step_up_not_permitted", undefined, undefined, "action");
       return { ok: false, reason: "action_not_protected" };
@@ -712,7 +738,7 @@ export class IdentityCeremony {
       // Write-once in practice as well as in the schema: the grant this
       // ceremony already produced is reported again, and no second one exists.
       const existing = await findFreshAssuranceByChallenge(this.#d.client, known.challengeId).catch(() => undefined);
-      if (existing) return { kind: "success", navigateTo: this.#successNavigation(known.postResultDestinationId), challengeId: known.challengeId, grant: existing, firstDelivery: false };
+      if (existing) return { kind: "success", navigateTo: this.#successNavigation(known.postResultDestinationId, known.boundSpaceId), challengeId: known.challengeId, grant: existing, firstDelivery: false };
       this.#evidence("challenge_replayed", known.challengeId, "invalid_or_expired");
       return this.#stepUpOutcome("invalid_or_expired", known.challengeId);
     }
@@ -793,7 +819,7 @@ export class IdentityCeremony {
     }
     this.#evidence("step_up_issued", challenge.challengeId, "success", issuedGrant.status);
     this.#reliability("ok");
-    return { kind: "success", navigateTo: this.#successNavigation(challenge.postResultDestinationId), challengeId: challenge.challengeId, grant: issuedGrant.grant, firstDelivery: issuedGrant.status === "issued" };
+    return { kind: "success", navigateTo: this.#successNavigation(challenge.postResultDestinationId, challenge.boundSpaceId), challengeId: challenge.challengeId, grant: issuedGrant.grant, firstDelivery: issuedGrant.status === "issued" };
   }
 
   #stepUpOutcome(outcome: PublicOutcome, challengeId: string | undefined): StepUpResult {

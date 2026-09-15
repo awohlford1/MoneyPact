@@ -36,7 +36,19 @@ export const LOCAL_ISSUER_PATH = "/v1/identity/local";
 export const IDENTITY_RESULT_PATH = "/identity/result";
 /** §4.1: `post_result_destination_id` is an opaque server-side allowlist key, never a URL. */
 // PROTO-ACTIVATION-001: `budgets` lets the web land on its authenticated budgets page after the callback.
-export const POST_RESULT_DESTINATIONS: Readonly<Record<string, string>> = Object.freeze({ home: "/", budgets: "/budgets" });
+// CBD-190 identity amendments proposal §3.2 (EXEC-C190-RULINGS-001 D01/D02): `invitation_ceremony` is a
+// direct static entry, admitted on the `begin` sign-in/general path only and scoped there to the
+// `sign_in` ceremony (`ceremony.ts#begin`). `budget_transfer` is a reserved key: the map's value here
+// exists only so `Object.hasOwn` continues to reject every other string; the closed, static-string map
+// cannot itself name a space-scoped path, so `ceremony.ts#successNavigation` derives the real path from
+// the step-up challenge's own bound `budgetSpaceId` rather than this entry, and `begin()`/`beginStepUp()`
+// each scope which of the two reserved keys they accept (§3.3, §3.6 PK8N-01/PK8N-02).
+export const POST_RESULT_DESTINATIONS: Readonly<Record<string, string>> = Object.freeze({
+  home: "/",
+  budgets: "/budgets",
+  invitation_ceremony: "/invitation",
+  budget_transfer: "/budgets",
+});
 
 export type IdentityProviderKind = "local" | "cognito" | "unavailable";
 export type IdentityEnvironmentId = "development" | "test" | "staging" | "production";

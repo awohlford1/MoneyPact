@@ -2,11 +2,11 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved — Product Owner, September 15, 2026 (PO-CONTRACT-APPROVALS-004), applying the 0.4 step-up amendment to the 0.3 approval of September 13, 2026 (PO-CONTRACT-APPROVALS-001); open questions and residuals stay recorded and open** |
-| Document version | 0.4 |
+| Status | **Approved — Product Owner, September 15, 2026 (PO-CONTRACT-APPROVALS-004), applying the 0.4 step-up amendment to the 0.3 approval of September 13, 2026 (PO-CONTRACT-APPROVALS-001), and now the 0.5 identity amendments (the first-sign-in display-name write and the bounded `returnTo` destination class) under `EXEC-C190-RULINGS-001` and `PO-CONTRACT-APPROVALS-001`; open questions and residuals stay recorded and open** |
+| Document version | 0.5 |
 | Jira subtask | [CBD-190](https://cobudget.atlassian.net/browse/CBD-190) |
 | Parent | [CBD-21](https://cobudget.atlassian.net/browse/CBD-21) |
-| Repository baseline | `4ea0078` |
+| Repository baseline | `65e0285` |
 | Last updated | September 15, 2026 |
 
 ## 1. Purpose, authority, and status
@@ -180,7 +180,7 @@ these commands and results.
 | `environment_id` | Server-selected; never accepted from a query parameter. |
 | `ceremony` | Closed vocabulary: `register`, `verify`, `sign_in`, `enroll_factor`, `account_switch`, `step_up`. This command accepts the first five only. `step_up` is a member of the vocabulary but is never a browser-supplied intent here: it must first be bound server-side to one action code and one budget space, so it has its own session-authenticated entry point (section 4.4) and is refused on this command by name, with the same answer an unknown value receives. Account recovery remains provider-hosted under `ID-104-009`, but is not a CBD-190 deliverable or part of this prototype command. `RECOVERY-DEFER-001` defers the separate second-operator recovery principal and does not relax the customer recovery boundary. |
 | `initiating_origin` | Exact member of the environment allowlist. |
-| `post_result_destination_id` | Opaque server-side allowlist key, never an arbitrary URL. |
+| `post_result_destination_id` | Opaque server-side allowlist key, never an arbitrary URL. The closed map (section 4.1.1) is `home`, `budgets`, `invitation_ceremony`, and `budget_transfer`; which of the two entry points (this command or the section 4.4 step-up begin) admits a given key differs by key, not by widening the map's shape. |
 | `current_account_subject_id` | Present only for an authenticated account switch; never sent to the provider. |
 | `request_correlation_id` | Short-lived opaque reliability correlation; not a stable identity. |
 
@@ -203,6 +203,37 @@ kind), `response_type=code`,
 the minimum `openid` scope. Custom-resource, user-administration, and other
 additional scopes are forbidden. Ceremony-specific provider parameters come
 from a closed adapter map; arbitrary authorization parameters are forbidden.
+
+### 4.1.1 Bounded `post_result_destination_id` class (`C190-E03`/`C190-E04`, `EXEC-C190-RULINGS-001`)
+
+The closed destination map is `{ home: "/", budgets: "/budgets", invitation_ceremony:
+"/invitation", budget_transfer: "/budgets" }`. `home` and `budgets` are
+unrestricted static entries, admitted on this command exactly as before.
+
+`invitation_ceremony` is a direct static entry -- the invitation ceremony page
+resolves the ceremony to display from a link fragment the browser already
+holds, so a fixed path is sufficient -- but it is admitted only when this
+command's `ceremony` field is `sign_in` (`C190-D02`; ruled by the Executive):
+`register`, `verify`, `enroll_factor`, and `account_switch` have no caller
+that leaves an invitation return marker, and admitting the destination on
+every kind would widen the closed map's practical reach with no present use.
+It is refused, `destination_invalid`, on the section 4.4 step-up begin, the
+same closed refusal an unknown key gets.
+
+`budget_transfer` is a reserved key. Its map value is present only so this
+command's `Object.hasOwn`-shaped validation continues to refuse every string
+outside the closed set; the map's values are fixed strings by design (section
+4.1's own "never an arbitrary URL"), and a space-scoped path
+(`/budgets/{budgetSpaceId}/transfer`) is not one. This command therefore
+refuses `budget_transfer` unconditionally, `destination_invalid`, because it
+never binds a `budgetSpaceId` -- the value that decides the real path. Only
+the section 4.4 step-up begin admits `budget_transfer`, because step-up begin
+already requires and binds one budget space identifier before any challenge
+exists (section 4.4 "Binding"). At success, the navigation path is derived
+from that bound `budgetSpaceId` rather than looked up by string key a second
+time, so no client-controlled field is added to either begin command and
+`destination_invalid` remains the closed refusal for anything outside the map
+(`C190-D01`; ruled by the Executive).
 
 ### 4.2 Callback envelope
 
@@ -272,6 +303,10 @@ mapping boundary. Access and refresh tokens are never returned by the adapter,
 never placed in a browser response, and never written to a log, database,
 cache, queue, trace, crash report, or metric.
 
+| Claim | Admitted as | Rule |
+| --- | --- | --- |
+| `name` | `ValidatedIdentityClaims.name` (identity amendments proposal `C190-E01`) | Not an identity key -- never used for `sub` resolution, binding lookup, or any authorization decision. Admitted only trimmed and bounded to 1..80 code points (`[...trimmed].length`, the same bound `writeDisplayName` enforces); an absent, non-string, empty-after-trim, or oversized value is `undefined`, a silent skip and never a ceremony failure. Consumed for exactly one downstream purpose, the section 5.2 step 3 first-use display-name write, and discarded everywhere else this section already discards claims (never logged; section 10.2 gains no row for it, governed instead by `docs/cbd-91-private-mvp-data-inventory.md` `DI-91-065`). |
+
 `VerifiedIdentityResultV1` contains only:
 
 * `contract_version = 1`;
@@ -279,9 +314,11 @@ cache, queue, trace, crash report, or metric.
 * `issuer` and immutable `provider_subject`;
 * `ceremony` and `provider_event_time`;
 * minimum `assurance` evidence supported by validated standard claims;
-* `challenge_id`, `identity_event_id`, and safe outcome class; and
+* `challenge_id`, `identity_event_id`, and safe outcome class;
 * optional `previous_account_subject_id` for a validated account switch,
-  taken from server state rather than the provider.
+  taken from server state rather than the provider; and
+* the bounded `name` claim above, consumed only by the section 5.2 step 3
+  first-use branch and by no other step.
 
 A `step_up` result is validated by exactly these rules and released by exactly
 the section 10.1 bounded exchange. It is then consumed only by the section 4.4
@@ -383,7 +420,16 @@ prepares, but does not itself consume, the CBD-191 hand-off:
 3. when absent, insert one candidate account subject, exactly one active
    financial profile through the CBD-82/CBD-212 boundary, and then its binding,
    all inside this same transaction and using the applicable uniqueness
-   constraints;
+   constraints. When the verified result's bounded `name` claim (section 4.3)
+   is present, this same profile insert also sets `financial_profile
+   .display_name` to it -- never a second `UPDATE` after the row exists, so
+   the row is created with `display_name` populated (or `NULL`) in one write
+   (identity amendments proposal `C190-E02`, `CBD190-PROFILE-ATOMIC-001`).
+   This branch is reachable only for a brand-new subject; the existing-binding
+   branch below never calls it, so a later sign-in or account switch with a
+   different or absent name claim never overwrites a value this step, or the
+   subject through the separate `PUT /v1/identity/me/display-name` route,
+   already wrote;
 4. require the resolved subject to have exactly one active financial profile
    as specified in section 5.3;
 5. insert exactly one `identity_session_handoff` in `prepared` state, keyed by
@@ -436,7 +482,13 @@ hosted sign-in ceremony, and binds that former subject into the challenge.
 After validation, the mapping may resolve the same or a different subject. It
 never edits either binding. A success hand-off tells CBD-191 to rotate from
 the former session to the resolved subject atomically; a failure leaves no new
-session and grants no authority from either subject.
+session and grants no authority from either subject. When the resolved
+subject is brand new, this ceremony runs the identical section 5.2 step 3
+first-use branch a plain `sign_in` runs, including its bounded `name`-claim
+display-name write (`C190-D03`; ruled by the Executive: recommended and
+adopted because both ceremonies already share that one code path, and
+carving out an exception would require a new branch this amendment does not
+otherwise need).
 
 ## 6. Session hand-off to CBD-191
 
@@ -886,6 +938,7 @@ conformance.
 
 | Version | Date | Author | Change | Disposition |
 | --- | --- | --- | --- | --- |
+| 0.5 | September 15, 2026 | Implementation specialist, dispatched under `PROTO-CBD190-AMENDMENTS-IMPL-001` | Applied `docs/cbd-190-identity-amendments-proposal.md` (v0.1, merged PR #386) under `EXEC-C190-RULINGS-001` (`C190-D01`-`D03`, all three as recommended). Section 4.1's `post_result_destination_id` row and new section 4.1.1 state the bounded destination class: `invitation_ceremony` (static, admitted on this command's `sign_in` ceremony only, `C190-D02`) and `budget_transfer` (reserved; this command refuses it unconditionally, admitted only on the section 4.4 step-up begin, whose success path derives the navigation from the challenge's own bound `budgetSpaceId`, `C190-D01`). Section 4.3 gains a claims-mapping row for the OIDC `name` claim (trimmed, 1..80 code points, else absent; not an identity key) and lists it in `VerifiedIdentityResultV1`. Section 5.2 step 3 states the first-sign-in `financial_profile.display_name` write in the same profile-insert statement, structurally reachable only for a brand-new subject. Section 5.4 states that account switch resolving a brand-new subject shares that identical first-use branch (`C190-D03`). No section 4.1 field shape, section 4.2/4.3 validation rule, or section 5.2/5.3 transaction step order changed beyond this. | **Applied.** No new Product Owner or Security approval gate; `EXEC-C190-RULINGS-001` and the standing `PO-CONTRACT-APPROVALS-001` authorize this application. A Security reading of the merged code follows before merge (the name claim is `DI-91-065` personal data); `OI-190-002`-`005` stay open. |
 | 0.4 | September 15, 2026 | Specification specialist, dispatched under `PROTO-CBD190-191-STEPUP-AMEND-001` | Applied amendment. The `step_up` ceremony kind proposed at this version by `PROTO-INVITATIONS-PK4-STEPUP-001` is now normative contract text, together with the `SEC-PK4-F1` and `SEC-PK4-F2` hardening as merged in PR #355. Section 2.1 admits step-up re-authentication; section 3 registers the second exact redirect URI `step_up_callback_uri` (`/v1/identity/step-up/callback`), derived from `callback_uri`, and extends validation rule 6 to both; section 4.1 widens the closed ceremony vocabulary to six kinds while refusing `step_up` on the begin command by name, and records the bound action and bound space on the challenge; section 4.2 compares a callback against the challenge's own callback URI and states the symmetric wrong-kind termination as a rule about the ceremony kind rather than about the path; section 4.3 releases a step-up result only to the section 4.4 comparison; new section 4.4 states the ceremony in full; section 5.1 records the `identity_session_handoff.ceremony` vocabulary and that no `step_up` value is ever written into it; section 6 excludes step-up from hand-off and rotation; section 7 gains the step-up outcome rows and the closed restricted-evidence class set; section 10.1 states that the bounded exchange and issuer revocation are unchanged for a step-up; sections 13 and 14 gain the section 4.4 traceability and `OI-190-005`. Finding-to-line map follows in section 15.3. | **Approved — Product Owner, September 15, 2026 (PO-CONTRACT-APPROVALS-004).** Status and document version bumped in the same change; `OI-190-002`, `OI-190-003`, `OI-190-004` and the new `OI-190-005` stay open. |
 | 0.3 (approval) | September 13, 2026 | Manager, in the merge lane | Product Owner approval recorded (PO-CONTRACT-APPROVALS-001). Status Proposed → Approved at the same version; no decision, identifier or contract text changed. | Approved. |
 | 0.1 | September 12, 2026 | Architecture specialist, dispatched under `CBD190-ARCH-001 v1` | Initial callback, mapping, CBD-191 hand-off, local-adapter fidelity, dual-adapter conformance, negative-test, environment, and AC traceability contract under `PROVIDERS-LOCAL-001`. | Proposed; independent Review and Security review required. |

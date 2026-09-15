@@ -103,7 +103,10 @@ describe("CBD-236 p6 live: PUT /v1/identity/me/display-name against real Postgre
   it("sets the caller's own display_name, advances version, is served back from GET /v1/identity/me, denies the 1..80-code-point bound as 400 without a second write, and denies a request with no CSRF value", async () => {
     const h = await harness();
     try {
-      const { accountSubjectId, csrfValue } = await signIn(h);
+      // CBD-190 identity amendments proposal §2: subject-b carries no local-issuer name claim, so this
+      // route-focused live test stays independent of the first-sign-in display-name write (covered
+      // separately in first-sign-in-name.live.test.ts).
+      const { accountSubjectId, csrfValue } = await signIn(h, "subject-b");
       const before = await displayColumn(h.client, accountSubjectId);
       assert.equal(before.display_name, null, "unset until this route writes it (P6-F01)");
 
