@@ -20,7 +20,6 @@ import { Alert } from "../../../components/Alert";
 import { Button } from "../../../components/Button";
 import { Checkbox, Radio } from "../../../components/Choice";
 import { Input } from "../../../components/Input";
-import { leaveReturnMarker } from "../../(app)/invitations-shared";
 import { apiBase } from "@/api/runtime-mode";
 
 /** What this browser tab remembers about one ceremony between steps and across the sign-in hop (never the secret, which is the cookie's). */
@@ -104,7 +103,6 @@ export function CeremonyView({ ceremonyId }: { ceremonyId: string }) {
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
-  const path = `/invitation/ceremony/${encodeURIComponent(ceremonyId)}`;
 
   /**
    * Continues from the remembered state: attach if a session exists, then read the disclosure. R-03
@@ -173,7 +171,11 @@ export function CeremonyView({ ceremonyId }: { ceremonyId: string }) {
   }
   async function signIn() {
     setBusy(true);
-    try { leaveReturnMarker({ path }); window.location.assign(await api.beginSignIn()); }
+    // CBD-190 identity amendments proposal §3.5: `beginSignIn` now names `invitation_ceremony` as the
+    // destination and the API's own post-result navigation returns the browser to `/invitation` -- no
+    // client-held marker survives the provider hop, so a link holder without their code any more re-presents
+    // it (the fragment link, or a pasted code) the same way any first visit does.
+    try { window.location.assign(await api.beginSignIn()); }
     catch { setBusy(false); setStep({ kind: "sign_in", error: "We could not start sign-in. You can try again." }); }
   }
   async function decline() {

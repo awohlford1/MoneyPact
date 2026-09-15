@@ -141,7 +141,7 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
   for (const person of [owner, invitee]) person.page.on("request", request => { const url = new URL(request.url()); if (url.pathname.startsWith("/v1/")) requests.push(`${request.method()} ${url.pathname.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gu, "{id}").replace(/bcp_[0-9a-f]+/gu, "{id}")}`); });
   // The two synthetic subjects persist on a reused scratch database, so the budget name is unique per run.
   const budgetName = `PK-8 live ${randomBytes(3).toString("hex")}`;
-  let budgetId; let code; let challenge; let transferUrl; let ownerMembershipId; let recipientMembershipId;
+  let budgetId; let code; let challenge; let transferUrl; let ownerMembershipId; let recipientMembershipId; let ceremonyUrl;
 
   await t.test("the owner (subject-a) signs in on the hosted chooser and creates a budget", async () => {
     await owner.page.goto(`${origin}/budgets`); await owner.page.waitForFunction(() => location.pathname === "/sign-in");
@@ -175,6 +175,7 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
   await t.test("the link holder resolves the link in a second browser, gets the first-party ceremony cookie, and proves the channel after one wrong code", async () => {
     await invitee.page.goto(`${origin}/invitation#code=${encodeURIComponent(code)}`);
     await invitee.page.waitForFunction(() => location.pathname.startsWith("/invitation/ceremony/"));
+    ceremonyUrl = invitee.page.url();
     await invitee.waitText("Prove you received this invitation");
     const ceremony = (await inviteeContext.cookies()).find(cookie => cookie.name === "__Host-mp_invitation_ceremony");
     assert.ok(ceremony, "the __Host- cookie the API set through the same-origin proxy is first-party to the web origin");
@@ -188,8 +189,13 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
     await invitee.waitText("Sign in or create your MoneyPact account"); await invitee.accessibility();
   });
 
-  await t.test("the invitee signs in as subject-b from the ceremony page, returns to it, is attached, reads the approved disclosure with no default choice, and accepts", async () => {
+  await t.test("the invitee signs in as subject-b from the ceremony page, returns to the invitation entry page (CBD-190 §3.5: the API's own `invitation_ceremony` destination, not a stored marker), reopens the ceremony, is attached, reads the approved disclosure with no default choice, and accepts", async () => {
     await invitee.clickText("Sign in or create your MoneyPact account"); await invitee.choose("subject-b");
+    // WRD-01: no per-invitation identifier travels through the identity challenge -- the browser lands on the
+    // fixed `/invitation` destination and the person reopens the link (here, the same ceremony URL) to continue.
+    await invitee.page.waitForFunction(() => location.pathname === "/invitation");
+    assert.equal(await invitee.page.evaluate(() => sessionStorage.getItem("cobudget.invitation.return")), null, "the retired return marker is never written");
+    await invitee.page.goto(ceremonyUrl);
     await invitee.page.waitForFunction(() => location.pathname.startsWith("/invitation/ceremony/"));
     await invitee.waitText("Before you accept");
     assert.ok((await invitee.text()).includes("join a budget space as a Collaborator"));
@@ -255,14 +261,18 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
     await owner.clickText("Refresh transfer"); await owner.waitText("Accepted by the recipient"); await owner.waitText("required before confirming");
     await owner.page.click("#outgoing-acknowledged"); await owner.waitEnabled("Continue to the identity check");
     await owner.clickText("Continue to the identity check"); await owner.choose("subject-a");
+    // CBD-190 identity amendments proposal §3.5: `budget_transfer` lands on this space's general transfer page
+    // (derived server-side from the bound budget space); ProposeTransferView reads the live transfer back and
+    // forwards to the specific one with `resume=confirm` -- no return marker anywhere in this round trip.
     await owner.waitText("Back from the identity check");
     await owner.page.waitForFunction(() => location.search === "" && /\/transfer\/[0-9a-f-]{36}$/u.test(location.pathname));
     await owner.waitText("returned from the check"); await owner.accessibility();
+    assert.equal(await owner.page.evaluate(() => sessionStorage.getItem("cobudget.invitation.return")), null, "the retired return marker is never written");
     await owner.page.click("#outgoing-acknowledged"); await owner.waitEnabled("Confirm the transfer");
     await owner.clickText("Confirm the transfer");
     await owner.waitText("Transfer committed"); await owner.accessibility();
     const begin = posted.find(entry => entry.url === "/v1/identity/step-up/begin"); const confirm = posted.find(entry => entry.url.endsWith("/confirm"));
-    assert.deepEqual(JSON.parse(begin.body), { action: "29.transfer_primary_ownership", budgetSpaceId: budgetId, postResultDestinationId: "budgets" });
+    assert.deepEqual(JSON.parse(begin.body), { action: "29.transfer_primary_ownership", budgetSpaceId: budgetId, postResultDestinationId: "budget_transfer" });
     assert.ok(confirm.url.endsWith(`/${transferUrl.split("/").at(-1)}/confirm`));
     // PK8-F03: the claim of the outgoing disclosure the page showed, and nothing else: no reference, no ledger.
     assert.deepEqual(Object.keys(JSON.parse(confirm.body)), ["acknowledgedDisclosure"]);

@@ -20,9 +20,13 @@ async function handle(request: Request, context: { params: Promise<{ path: strin
   if (request.method === "POST" && path.join("/") === "identity/begin") {
     if (request.headers.get("origin") !== url.origin || request.headers.get("sec-fetch-site") !== "same-origin") return new Response(null, { status: 403 });
     const body = await request.json();
-    if (body.ceremony !== "sign_in" || !["home", "budgets"].includes(body.postResultDestinationId)) return new Response(null, { status: 400 });
+    // CBD-190 identity amendments proposal §3.2/§3.5: `invitation_ceremony` is admitted here (the sign-in
+    // `begin` path) and resolves to `/invitation`, exactly as the real API's closed destination map does;
+    // `budget_transfer` stays step-up-only (mock-invitations.ts), unreachable from this route.
+    if (body.ceremony !== "sign_in" || !["home", "budgets", "invitation_ceremony"].includes(body.postResultDestinationId)) return new Response(null, { status: 400 });
     const id = randomUUID(); sessions.set(id, createServerMock());
-    const response = NextResponse.json({ navigateTo: "/budgets" });
+    const navigateTo = body.postResultDestinationId === "home" ? "/" : body.postResultDestinationId === "invitation_ceremony" ? "/invitation" : "/budgets";
+    const response = NextResponse.json({ navigateTo });
     response.cookies.set(cookieName, id, { httpOnly: true, secure: true, sameSite: "lax", path: "/" });
     response.headers.set("Cache-Control", "no-store"); return response;
   }

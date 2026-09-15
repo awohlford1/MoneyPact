@@ -8,7 +8,10 @@
  * Path=/), the same 403 pre-counter denial for a verify-channel naming no ceremony, the same bounded five
  * attempts with terminal exhaustion (SEC-PK6-F2), the same confirm vocabulary with `freshAssurance` and `next`,
  * and the same route-level party gate on the transfer rows (SEC-PK7B-F1). The step-up here issues its grant
- * without a chooser hop and navigates straight to `/budgets`, which is what the real callback also lands on.
+ * without a chooser hop; CBD-190 identity amendments proposal §3.2/§3.3: `home`/`budgets` navigate as before,
+ * and the reserved `budget_transfer` destination navigates to this space's own transfer page -- derived from
+ * the bound `budgetSpaceId`, exactly as the real API's `#successNavigation` derives it, never from a client
+ * value or a second map entry.
  *
  * The approved disclosure texts are read from `docs/consent-disclosures/`, as the real registry serves them.
  */
@@ -234,11 +237,15 @@ export async function handleMockInvitationRequest(directory: MockDirectory, sess
     const fields = await body();
     if (fields.action !== TRANSFER_ACTION) return json({ error: "action_not_protected" }, 403);
     if (typeof fields.budgetSpaceId !== "string" || !activeMembership(directory, fields.budgetSpaceId, subject)) return json({ error: "space_not_permitted" }, 403);
-    if (!["home", "budgets"].includes(String(fields.postResultDestinationId ?? "home"))) return json({ error: "destination_invalid" }, 400);
+    const destination = String(fields.postResultDestinationId ?? "home");
+    if (!["home", "budgets", "budget_transfer"].includes(destination)) return json({ error: "destination_invalid" }, 400);
     for (const grant of directory.grants) if (grant.accountSubjectId === subject && grant.action === TRANSFER_ACTION && grant.budgetSpaceId === fields.budgetSpaceId && !grant.consumed) grant.consumed = true;
     const grant: MockGrant = { grantId: randomUUID(), accountSubjectId: subject, action: TRANSFER_ACTION, budgetSpaceId: fields.budgetSpaceId, expiresAt: new Date(now() + FRESH_ASSURANCE_WINDOW_MS).toISOString(), consumed: false };
     directory.grants.push(grant);
-    return json({ navigateTo: fields.postResultDestinationId === "home" ? "/" : "/budgets", challengeId: randomUUID() });
+    // CBD-190 identity amendments proposal §3.3 (C190-D01): `budget_transfer`'s path is derived from the bound
+    // `budgetSpaceId` above, never from a second, client-supplied value.
+    const navigateTo = destination === "home" ? "/" : destination === "budget_transfer" ? `/budgets/${encodeURIComponent(fields.budgetSpaceId)}/transfer` : "/budgets";
+    return json({ navigateTo, challengeId: randomUUID() });
   }
 
   // --- notices ------------------------------------------------------------------------------------

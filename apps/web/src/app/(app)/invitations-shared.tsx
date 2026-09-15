@@ -1,16 +1,13 @@
 "use client";
-// PK-8: what the invitation, members, transfer and notices views share -- the client, a cancellable read, the
-// space navigation and the return marker the two provider hops (sign-in, step-up) need. Client state and
-// browser storage require client components.
+// PK-8: what the invitation, members, transfer and notices views share -- the client, a cancellable read, and the
+// space navigation. Client state requires client components.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import NextLink from "next/link";
-import { useRouter } from "next/navigation";
 import { createInvitationsClient, InvitationApiError } from "../../api/invitations";
 import type { InvitationsClient } from "../../api/invitations";
 import { Alert } from "../../components/Alert";
 import { Button } from "../../components/Button";
 import { apiBase } from "@/api/runtime-mode";
-import { sameOriginPath } from "../../api/return-path";
 
 /** One client per mounted view; the CSRF value it captures lives only in that closure. */
 export function useInvitationsClient(): InvitationsClient {
@@ -75,37 +72,9 @@ export function SpaceNavigation({ id, current }: { id: string; current?: "member
   </ul></nav>;
 }
 
-/**
- * The provider hops end on `/budgets` (the API's closed destination map has no entry for the ceremony or transfer pages,
- * finding PK8-F02), so a page that starts one leaves this marker and the budgets page follows it once. The key is
- * outside the session-keyed prefixes on purpose: a sign-in that starts a new session clears those, and this marker
- * must survive exactly that.
- */
-export const RETURN_KEY = "cobudget.invitation.return";
-export interface ReturnMarker { path: string; resume?: "confirm" }
-export function leaveReturnMarker(marker: ReturnMarker): void {
-  try { sessionStorage.setItem(RETURN_KEY, JSON.stringify(marker)); } catch { /* No storage: the person navigates back by hand. */ }
-}
-export function takeReturnMarker(origin: string = window.location.origin): ReturnMarker | undefined {
-  try {
-    const raw = sessionStorage.getItem(RETURN_KEY);
-    if (!raw) return undefined;
-    sessionStorage.removeItem(RETURN_KEY);
-    const parsed = JSON.parse(raw) as Partial<ReturnMarker>;
-    const path = sameOriginPath(parsed.path, origin);
-    if (!path) return undefined;
-    return { path, ...(parsed.resume === "confirm" ? { resume: "confirm" as const } : {}) };
-  } catch { return undefined; }
-}
-/** Mounted on the budgets page: follows a return marker left by the ceremony or transfer page. */
-export function ResumeAfterCeremony() {
-  const router = useRouter();
-  useEffect(() => {
-    const marker = takeReturnMarker(window.location.origin);
-    if (!marker) return;
-    // The same check again on the string handed to the router, so no later change to the marker's shape can widen it.
-    const target = sameOriginPath(marker.resume ? `${marker.path}${marker.path.includes("?") ? "&" : "?"}resume=${marker.resume}` : marker.path, window.location.origin);
-    if (target) router.replace(target);
-  }, [router]);
-  return null;
-}
+// PK-8 / CBD-190 identity amendments proposal §3.5, SEC-PK8-R2: the invitation ceremony page and the Primary-transfer
+// page each begin their provider hop with a server-validated `postResultDestinationId` (`invitation_ceremony`,
+// `budget_transfer`) instead of the always-`budgets` value the API previously required; `#successNavigation`
+// (`apps/api/src/identity/ceremony.ts`) now returns the caller directly to the page it started from. The
+// sessionStorage return marker this file used to keep (`RETURN_KEY`, `leaveReturnMarker`, `takeReturnMarker`,
+// `ResumeAfterCeremony`) is retired: nothing here stores or reads a client-held navigation target any more.
