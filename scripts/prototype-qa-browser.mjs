@@ -621,6 +621,84 @@ async function main() {
       return `PUT targets -> ${status ?? "not sent (client refused)"}; plan unchanged (${JSON.stringify(amounts)})`;
     });
 
+    // ------------------------------- manual accounts, expenses and progress (PROTO-INCREMENT-B-001)
+    // These run against the same budget the plan cases built, so Food (100.00) and Housing (200.00)
+    // already carry period targets and the figures below are measured against real ones.
+    const fillById = async (selector, value) => { await page.waitForSelector(selector); await setValue(selector, value); };
+    let expenseCategoryId;
+    await criterion("CBD-196-AC01", "positive (browser): a manual account is added from the dashboard, listed with its type and opening balance, and survives a reload", async () => {
+      await ensureDashboard(); await roomFor(2);
+      await waitText("Accounts and spending");
+      await fillById('[id="account-name"]', "Everyday");
+      await fillById('[id="account-opening"]', "125.00");
+      await clickText("Add account");
+      await waitText("Added Everyday.");
+      await waitText("checking · opening balance 125.00 USD");
+      await page.reload(); await waitText("checking · opening balance 125.00 USD");
+      const listed = (await apiJson(`/v1/budget-spaces/${budgetId}/accounts`)).body;
+      expect(listed.accounts.length === 1 && listed.accounts[0].origin === "manual" && listed.accounts[0].openingBalanceMinorUnits === 12500, JSON.stringify(listed));
+      return `one manual account, opening 12500 minor units, identical after reload; ${await accessibility()}`;
+    });
+    await criterion("CBD-201-AC02", "positive/denial (browser): an inexact split is refused by the server and announced on the allocation fieldset; the exact split is recorded and moves spent and remaining for both categories", async () => {
+      await ensureDashboard(); await roomFor(3);
+      await waitText("Record an expense");
+      const period = (await apiJson(`/v1/budget-spaces/${budgetId}`)).body.activePeriod;
+      const allocationIds = await page.$$eval('input[id^="allocation-"]', (nodes) => nodes.map((node) => `[id="${node.id}"]`));
+      expect(allocationIds.length === 2, `expected one allocation input per live category, got ${allocationIds.length}`);
+      const enter = async (food, housing) => {
+        await fillById('[id="expense-date"]', period.start);
+        await fillById('[id="expense-amount"]', "12.50");
+        await fillById('[id="expense-description"]', "Corner shop");
+        await fillById(allocationIds[0], food);
+        await fillById(allocationIds[1], housing);
+        await clickText("Record expense");
+      };
+      await enter("8.00", "4.00");
+      await waitText("The category amounts must add up to the expense amount exactly.");
+      const afterRefusal = (await apiJson(`/v1/budget-spaces/${budgetId}/periods/${period.periodId}/progress`)).body;
+      expect(afterRefusal.cells.every((cell) => cell.settledActualMinorUnits === 0), `the refused split was recorded: ${JSON.stringify(afterRefusal.cells)}`);
+      const refusalAccessibility = await accessibility();
+
+      await enter("8.00", "4.50");
+      await waitText("Expense recorded.");
+      await waitText("Spent 8.00 USD of 100.00 USD");
+      await waitText("Remaining 92.00 USD");
+      await waitText("Spent 4.50 USD of 200.00 USD");
+      await waitText("Remaining 195.50 USD");
+      const progress = (await apiJson(`/v1/budget-spaces/${budgetId}/periods/${period.periodId}/progress`)).body;
+      const food = progress.cells.find((cell) => progress.labels[cell.categoryId] === "Food");
+      expenseCategoryId = food.categoryId;
+      expect(food.settledActualMinorUnits === -800 && food.remainingAfterSettledMinorUnits === 9200, JSON.stringify(food));
+      await page.reload(); await waitText("Spent 8.00 USD of 100.00 USD");
+      return `inexact split refused with nothing recorded (${refusalAccessibility}); the exact split moves Food to spent 8.00 remaining 92.00 and Housing to spent 4.50 remaining 195.50, identical after reload; ${await accessibility()}`;
+    });
+    await criterion("CBD-211-AC01", "positive (browser): the category row opens the itemized detail, which agrees with the aggregate; editing and removing the expense from there returns both figures to the target", async () => {
+      await ensureDashboard(); await roomFor(2);
+      await waitText("Spent 8.00 USD of 100.00 USD");
+      await clickText("Food");
+      await waitText("Transactions in this category");
+      await waitText("Corner shop");
+      await waitText("8.00 USD · Everyday");
+      const detailAccessibility = await accessibility();
+      expect((await page.title()).includes("Category detail"), `title ${await page.title()}`);
+
+      await clickText("Edit this expense");
+      const amountId = await page.$eval('input[id^="edit-amount-"]', (node) => `[id="${node.id}"]`);
+      await fillById(amountId, "20.00");
+      await clickText("Save expense"); await waitText("Expense updated.");
+      await waitText("20.00 USD · Everyday");
+
+      await clickText("Remove this expense"); await waitText("Expense removed.");
+      await waitText("Nothing has been recorded against this category for the active period.");
+      await clickText("Back to the budget"); await waitText("Accounts and spending");
+      await waitText("Spent 0.00 USD of 100.00 USD");
+      await waitText("Remaining 100.00 USD");
+      const period = (await apiJson(`/v1/budget-spaces/${budgetId}`)).body.activePeriod;
+      const detail = (await apiJson(`/v1/budget-spaces/${budgetId}/periods/${period.periodId}/progress/${expenseCategoryId}`)).body;
+      expect(detail.items.length === 0 && detail.cell.settledActualMinorUnits === 0, `a removed expense still itemizes: ${JSON.stringify(detail)}`);
+      return `detail 200 with one item agreeing with the aggregate (${detailAccessibility}); edit then removal return spent to 0.00 and remaining to the target in both the aggregate and the detail; ${await accessibility()}`;
+    });
+
     // ------------------------------------------------- cross-subject (CBD-242-AC08)
     await criterion("CBD-242-AC08", "denial: another subject's proposal identifier cannot be read or confirmed from this browser; an account switch reveals no other draft/preview", async () => {
       await ensureDashboard(); const myName = confirmedName;
