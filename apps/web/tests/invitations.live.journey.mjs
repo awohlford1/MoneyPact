@@ -230,8 +230,9 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
     await owner.clickText("Refresh transfer"); await owner.waitText("Accepted by the recipient"); await owner.waitText("required before confirming");
     await owner.page.click("#outgoing-acknowledged"); await owner.waitEnabled("Continue to the identity check");
     await owner.clickText("Continue to the identity check"); await owner.choose("subject-a");
-    await owner.page.waitForFunction(() => location.search === "?resume=confirm");
-    await owner.waitText("Identity check complete"); await owner.waitText("completed for this transfer"); await owner.accessibility();
+    await owner.waitText("Back from the identity check");
+    await owner.page.waitForFunction(() => location.search === "" && /\/transfer\/[0-9a-f-]{36}$/u.test(location.pathname));
+    await owner.waitText("returned from the check"); await owner.accessibility();
     await owner.page.click("#outgoing-acknowledged"); await owner.waitEnabled("Confirm the transfer");
     await owner.clickText("Confirm the transfer");
     await owner.waitText("Transfer committed"); await owner.accessibility();

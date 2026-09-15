@@ -193,9 +193,10 @@ export async function pk8Journey(t, { browser, origin, errors }) {
     await owner.page.click("#outgoing-acknowledged"); await owner.waitEnabled("Continue to the identity check");
     await owner.clickText("Continue to the identity check");
     // The provider hop lands on /budgets; the return marker brings the person back with the confirm control.
-    await owner.page.waitForFunction(() => location.search === "?resume=confirm");
-    await owner.waitText("Identity check complete");
-    await owner.waitText("completed for this transfer");
+    await owner.waitText("Back from the identity check");
+    // R-02: the resume signal is one-shot -- the query is gone from the address bar once the page has taken it.
+    await owner.page.waitForFunction(() => location.search === "" && /\/transfer\/[0-9a-f-]{36}$/u.test(location.pathname));
+    await owner.waitText("returned from the check");
     await owner.accessibility();
     const begin = posted.find(entry => entry.url.endsWith("/identity/step-up/begin"));
     assert.deepEqual(JSON.parse(begin.body), { action: "29.transfer_primary_ownership", budgetSpaceId: budgetId, postResultDestinationId: "budgets" });

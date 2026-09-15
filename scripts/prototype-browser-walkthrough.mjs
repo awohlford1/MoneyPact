@@ -353,7 +353,7 @@ async function main() {
     await owner.clickText("Refresh transfer"); await owner.waitText("Accepted by the recipient");
     await page.click("#outgoing-acknowledged"); await owner.waitEnabled("Continue to the identity check");
     await owner.clickText("Continue to the identity check"); await owner.chooser("subject-a");
-    await page.waitForFunction(() => location.search === "?resume=confirm"); await owner.waitText("Identity check complete");
+    await owner.waitText("Back from the identity check"); await page.waitForFunction(() => location.search === "");
     await page.click("#outgoing-acknowledged"); await owner.waitEnabled("Confirm the transfer"); await owner.clickText("Confirm the transfer");
     await owner.waitText("Transfer committed");
     await page.goto(`${ORIGIN}/budgets/${budgetId}/members`); await owner.rows(2);

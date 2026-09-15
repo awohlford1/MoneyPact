@@ -15,8 +15,8 @@
 // The recipient's and the outgoing disclosures are the approved texts under docs/consent-disclosures/. The view
 // carries their kind and version but not their text (finding PK8-F03), so the approved v1 files are bundled here
 // and each is shown only when its kind and version equal the ones the transfer was proposed under.
-import { useCallback, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import recipientDisclosure from "../../../../../../../../docs/consent-disclosures/primary-transfer-recipient.v1.json" with { type: "json" };
 import outgoingDisclosure from "../../../../../../../../docs/consent-disclosures/primary-transfer-outgoing.v1.json" with { type: "json" };
 import { InvitationApiError, TRANSFER_STATE_LABELS, roleLabel, sentenceFor } from "../../../../../api/invitations";
@@ -86,8 +86,14 @@ export function TransferView({ id, transferId, resume }: { id: string; transferI
     return { transfer, members, own };
   }, [api, id, transferId]);
   const read = useRead(`${session.sessionRef}:${id}:${transferId}`, load);
+  const router = useRouter();
+  const pathname = usePathname();
+  // R-02 / SEC-PK8-F3: the resume signal is one-shot -- the query is replaced by the bare path on mount, so a reload, a
+  // bookmark or a typed ?resume=confirm does not re-offer the confirm control; and the copy asserts nothing the page
+  // cannot know (only the API sees whether a grant exists).
+  useEffect(() => { if (resume) router.replace(pathname); }, [resume, router, pathname]);
   const [notice, setNotice] = useState<{ tone: "neutral" | "danger"; title?: string; text: string } | undefined>(() => resume
-    ? { tone: "neutral", title: "Identity check complete", text: "Read the consequences again, then confirm the transfer. The check is valid for a few minutes and is used by exactly one confirmation." }
+    ? { tone: "neutral", title: "Back from the identity check", text: "If your identity check completed, read the consequences again and confirm below. A completed check is valid for a few minutes and is used by exactly one confirmation; if it did not complete, run it again." }
     : undefined);
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState<string>();
@@ -155,7 +161,7 @@ export function TransferView({ id, transferId, resume }: { id: string; transferI
         <div><dt className="font-semibold">Primary Owner confirmed</dt><dd>{formatInstant(transfer.primaryConfirmedAt)}</dd></div>
         <div><dt className="font-semibold">{transfer.committedAt ? "Committed" : "Expires"}</dt><dd>{formatInstant(transfer.committedAt ?? transfer.expiresAt)}</dd></div>
         {/* The bootstrap reports `fresh` only for the request's own action and space (PK-4), so a page cannot read the grant; it reports the step it took. */}
-        {party === "proposer" && <div><dt className="font-semibold">Identity check</dt><dd>{stepUpDone ? "completed for this transfer; used by exactly one confirmation" : "required before confirming"}</dd></div>}
+        {party === "proposer" && <div><dt className="font-semibold">Identity check</dt><dd>{stepUpDone ? "returned from the check; confirm below if it completed" : "required before confirming"}</dd></div>}
       </dl>
       <Button variant="secondary" onClick={read.refresh}>Refresh transfer</Button>
       {live && party === "recipient" && (transfer.state === "proposed" || transfer.state === "primary_confirmed") && <DisclosureSurface file={RECIPIENT} kind={transfer.recipientDisclosureKind} version={transfer.recipientDisclosureVersion} acknowledged={acknowledged} onAcknowledged={setAcknowledged} idPrefix="recipient">
