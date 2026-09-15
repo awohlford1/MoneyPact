@@ -97,6 +97,7 @@ export interface CategoryDetail {
   categoryId: string;
   label: string;
   currencyCode: string;
+  minorUnitPrecision: number;
   cell: ProgressCell | null;
   items: readonly DetailItem[];
 }
@@ -316,6 +317,7 @@ export function toCategoryDetail(wire: WireCategoryDetail): CategoryDetail {
   const label = wire.label ?? wire.categoryId;
   return {
     budgetSpaceId: wire.budgetSpaceId, periodId: wire.periodId, categoryId: wire.categoryId, label, currencyCode: wire.currencyCode,
+    minorUnitPrecision: wire.minorUnitPrecision,
     cell: wire.cell ? toProgressCell(wire.cell, label, wire.minorUnitPrecision) : null,
     items: wire.items.map(item => ({
       transactionId: item.transactionId, accountId: item.accountId, budgetDate: item.budgetDate, description: item.description,

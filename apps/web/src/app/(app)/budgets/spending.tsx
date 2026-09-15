@@ -11,9 +11,14 @@
  * server's canonical code mapped to the field it names (`fieldErrorFor`), so no
  * rule is restated here that the API could disagree with.
  *
- * The section reads the budget detail itself rather than taking it from the
- * dashboard above it: the two are composed side by side in `[id]/page.tsx`, and
- * an independent read keeps the CBD-153 journey module untouched.
+ * **Read cost.** Every request this section makes counts against the CBD-266
+ * authenticated-read surface, which admits 60 a minute per actor for the whole
+ * surface, so the section is deliberately frugal: it takes the budget the
+ * dashboard above it already read rather than reading it again, and it takes
+ * the category set, the currency and the precision from the progress response
+ * rather than reading the plan a second time. One dashboard load therefore
+ * costs the detail and plan the dashboard already paid for, plus exactly two
+ * more: the account list and the period progress.
  *
  * Accessibility: one labelled region per concern, a heading per region, every
  * control labelled, each form's outcome announced through a polite live region
@@ -23,7 +28,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import NextLink from "next/link";
 import { ApiError, fieldErrorFor } from "../../../api/client";
-import type { Account, CategoryDetail, Category, ExpenseDraft, Progress } from "../../../api/client";
+import type { Account, BudgetDetail, CategoryDetail, Category, ExpenseDraft, Progress } from "../../../api/client";
 import { useSession } from "../../../session/SessionProvider";
 import { Alert } from "../../../components/Alert";
 import { Button } from "../../../components/Button";
@@ -53,8 +58,10 @@ interface Loaded {
 }
 
 /** One read of everything the section shows, so a mutation refreshes all of it at once and nothing can disagree. */
-export function Spending({ id }: { id: string }) {
+export function Spending({ budget }: { budget: BudgetDetail }) {
   const { api, session } = useSession();
+  const id = budget.id;
+  const periodId = budget.activePeriod?.id;
   const [state, setState] = useState<{ value?: Loaded; error?: unknown }>();
   const [revision, setRevision] = useState(0);
   const sequence = useRef(0);
@@ -63,22 +70,25 @@ export function Spending({ id }: { id: string }) {
     const request = ++sequence.current;
     void (async () => {
       try {
-        const budget = await api.budget(id, abort.signal);
-        const period = budget.activePeriod;
-        if (!period) { if (request === sequence.current) setState({ error: new ApiError(409, "no_active_period") }); return; }
-        const [accounts, plan, progress] = await Promise.all([
+        if (!periodId) { if (request === sequence.current) setState({ error: new ApiError(409, "no_active_period") }); return; }
+        // Two reads, not four: the category set, the currency and the precision are all in the
+        // progress response, and the budget detail was read by the dashboard above.
+        const [accounts, progress] = await Promise.all([
           api.listAccounts(id, abort.signal),
-          api.plan(id, period.id, abort.signal),
-          api.progress(id, period.id, abort.signal),
+          api.progress(id, periodId, abort.signal),
         ]);
         if (abort.signal.aborted || request !== sequence.current) return;
-        setState({ value: { accounts, categories: plan.categories, progress, periodId: period.id, currencyCode: plan.currencyCode, precision: plan.minorUnitPrecision } });
+        setState({ value: {
+          accounts, progress, periodId,
+          categories: progress.cells.map(cell => ({ id: cell.categoryId, name: cell.label })),
+          currencyCode: progress.currencyCode, precision: progress.minorUnitPrecision,
+        } });
       } catch (error) {
         if (!abort.signal.aborted && request === sequence.current) setState({ error });
       }
     })();
     return () => { abort.abort(); };
-  }, [api, id, revision, session.sessionRef]);
+  }, [api, id, periodId, revision, session.sessionRef]);
   const reload = useCallback(() => { sequence.current++; setState(undefined); setRevision(value => value + 1); }, []);
   // The live region belongs to this component and not to the forms below it: a mutation reloads the
   // section, which unmounts its forms, and an announcement held inside one would disappear before it
@@ -255,13 +265,13 @@ export function CategoryDetailView({ id, categoryId }: { id: string; categoryId:
         const budget = await api.budget(id, abort.signal);
         const period = budget.activePeriod;
         if (!period) { if (request === sequence.current) setState({ error: new ApiError(409, "no_active_period") }); return; }
-        const [detail, accounts, plan] = await Promise.all([
+        // The detail response carries its own precision, so no plan read is needed.
+        const [detail, accounts] = await Promise.all([
           api.categoryDetail(id, period.id, categoryId, abort.signal),
           api.listAccounts(id, abort.signal),
-          api.plan(id, period.id, abort.signal),
         ]);
         if (abort.signal.aborted || request !== sequence.current) return;
-        setState({ value: { detail, accounts, precision: plan.minorUnitPrecision } });
+        setState({ value: { detail, accounts, precision: detail.minorUnitPrecision } });
       } catch (error) {
         if (!abort.signal.aborted && request === sequence.current) setState({ error });
       }
