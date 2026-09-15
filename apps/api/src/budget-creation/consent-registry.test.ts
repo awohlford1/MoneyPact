@@ -25,9 +25,24 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
-import { buildConsentDisclosureSource, ConsentDisclosureRegistryError, loadConsentDisclosureRegistry, repositoryRootFrom } from "./consent-registry.ts";
+import { buildConsentDisclosureSource, ConsentDisclosureRegistryError, loadConsentDisclosureRegistry, REQUIRED_DISCLOSURE_KINDS, repositoryRootFrom } from "./consent-registry.ts";
 import { digestOf, validateConsentDisclosureRegistry } from "../../../../scripts/check-consent-disclosure-registry.mjs";
 import { PRIMARY_OWNER_SELF_DISCLOSURE } from "../../../../packages/budget-application/src/creation-confirmation/disclosure.ts";
+
+/**
+ * The kinds registered by the invitations design (INVITATIONS-DESIGN-001 item
+ * 5; docs/cbd-234-invitations-consent-design-proposal.md section 6). They are
+ * registered and digest-pinned here one packet ahead of the routes that
+ * present them, so `REQUIRED_DISCLOSURE_KINDS` still names only
+ * `primary_owner_self`: a kind the running routes do not need must not fail
+ * startup, and a kind they do need must.
+ */
+const INVITATION_DISCLOSURE_KINDS = [
+  "invitation_collaborator",
+  "invitation_co_owner",
+  "primary_transfer_recipient",
+  "primary_transfer_outgoing",
+] as const;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = repositoryRootFrom(here);
@@ -49,8 +64,43 @@ describe("the registry as it stands", () => {
     assert.match(disclosure.digest, /^[0-9a-f]{64}$/u);
     assert.ok(disclosure.text.items.length > 0 && disclosure.text.acknowledgement.length > 0);
   });
-  it("registers no kind the API cannot present", () => {
-    assert.deepEqual([...new Set(entries.map((entry) => entry.kind))], [PRIMARY_OWNER_SELF_DISCLOSURE]);
+  it("registers exactly the approved kinds and nothing else", () => {
+    assert.deepEqual([...new Set(entries.map((entry) => entry.kind))], [PRIMARY_OWNER_SELF_DISCLOSURE, ...INVITATION_DISCLOSURE_KINDS]);
+  });
+  it("still requires only the kinds the running routes present", () => {
+    assert.deepEqual([...REQUIRED_DISCLOSURE_KINDS], [PRIMARY_OWNER_SELF_DISCLOSURE]);
+  });
+  it("carries every invitation and transfer kind at a version the API can read", () => {
+    const source = loadConsentDisclosureRegistry(here);
+    for (const kind of INVITATION_DISCLOSURE_KINDS) {
+      const disclosure = source.current(kind);
+      assert.equal(disclosure.kind, kind);
+      assert.equal(disclosure.version, 1);
+      assert.match(disclosure.digest, /^[0-9a-f]{64}$/u);
+      assert.ok(disclosure.text.items.length > 0, `${kind} has no items`);
+      // The acknowledgement names the role and the space (section 6).
+      assert.match(disclosure.text.acknowledgement, /budget space/u);
+    }
+  });
+});
+
+/**
+ * CBD-287-AC06 / `RI-93-016` / CBD-73 section 6 rule 5: the record is evidence
+ * of the person's explicit action, never a claim that the product agreed on
+ * their behalf. The CBD-75 prohibited-language register is checked against
+ * these texts by `npm run check:copy`'s engine; what is asserted here is the
+ * positive half the register cannot express -- that every registered
+ * invitation and transfer text actually says whose action the record is.
+ */
+describe("what the approved disclosure texts claim about the record", () => {
+  it("says the person acted, and never that agreement was given to them", () => {
+    for (const kind of INVITATION_DISCLOSURE_KINDS) {
+      const entry = entries.find((row) => row.kind === kind)!;
+      const content = JSON.parse(readFileSync(join(root, entry.text_ref), "utf8")) as { items: { text: string }[] };
+      const body = content.items.map((item) => item.text).join(" ");
+      assert.match(body, /evidence of the action you took/u, `${kind} does not say the record evidences the person's action`);
+      assert.match(body, /nothing agrees on your behalf/u, `${kind} does not deny that anything agrees for the person`);
+    }
   });
 });
 
@@ -96,6 +146,37 @@ describe("deliberate violations the build-time guard must fail", () => {
     const repeated = [...clone(entries), ...clone(entries)];
     assert.ok(validate(repeated, contentsOf(repeated), []).some((failure) => /dense and ascending/u.test(failure)));
   });
+  // The same three violations, driven once per newly registered kind: a guard
+  // that has only ever been broken on the first entry has not been shown to
+  // guard the fifth.
+  for (const kind of INVITATION_DISCLOSURE_KINDS) {
+    const indexOf = () => entries.findIndex((entry) => entry.kind === kind);
+
+    it(`fails when the approved ${kind} text is edited without a new version`, () => {
+      const index = indexOf();
+      const contents = contentsOf(entries);
+      const content = contents[entries[index]!.text_ref] as { items: { text: string }[] };
+      content.items[0]!.text = "Somebody has already agreed to this on your behalf.";
+      const failures = validate(entries, contents);
+      assert.ok(failures.some((failure) => new RegExp(`entry ${index}: .* does not reproduce the pinned digest`, "u").test(failure)), failures.join("; "));
+    });
+    it(`fails when the approved ${kind} entry is removed`, () => {
+      const rows = clone(entries).filter((entry) => entry.kind !== kind);
+      const failures = validate(rows, contentsOf(rows));
+      assert.ok(failures.some((failure) => /append-only and may not be removed|may not be changed or reordered/u.test(failure)), failures.join("; "));
+    });
+    it(`fails when ${kind} skips version 1`, () => {
+      const rows = clone(entries);
+      const index = indexOf();
+      rows[index]!.version = 2;
+      const contents = contentsOf(rows);
+      (contents[rows[index]!.text_ref] as { version: number }).version = 2;
+      rows[index]!.digest = digestOf(contents[rows[index]!.text_ref]);
+      const failures = validate(rows, contents, []);
+      assert.ok(failures.some((failure) => /dense and ascending from 1/u.test(failure)), failures.join("; "));
+    });
+  }
+
   it("fails when the content file is missing or declares another version", () => {
     assert.ok(validate(entries, {}).some((failure) => /content file .* is missing/u.test(failure)));
     const contents = contentsOf(entries);
@@ -128,6 +209,23 @@ describe("deliberate violations the API startup guard must fail", () => {
     rows[0]!.digest = digestOf(content);
     assert.throws(build(rows, contents), /content_incomplete/u);
   });
+  for (const kind of INVITATION_DISCLOSURE_KINDS) {
+    it(`refuses to start when the ${kind} digest does not reproduce`, () => {
+      const contents = contentsOf(entries);
+      const entry = entries.find((row) => row.kind === kind)!;
+      (contents[entry.text_ref] as { heading: string }).heading = "Tampered heading";
+      assert.throws(build(entries, contents), (error: unknown) =>
+        error instanceof ConsentDisclosureRegistryError && new RegExp(`digest_mismatch: ${entry.text_ref}`, "u").test((error as Error).message));
+    });
+    it(`refuses to start when the ${kind} content file is absent`, () => {
+      const entry = entries.find((row) => row.kind === kind)!;
+      const contents = contentsOf(entries);
+      delete contents[entry.text_ref];
+      assert.throws(build(entries, contents), (error: unknown) =>
+        error instanceof ConsentDisclosureRegistryError && new RegExp(`content_missing: ${entry.text_ref}`, "u").test((error as Error).message));
+    });
+  }
+
   it("refuses a kind whose versions are not dense from 1", () => {
     const rows = clone(entries);
     rows[0]!.version = 2;

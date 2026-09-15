@@ -1,0 +1,36 @@
+{
+  "kind": "primary_transfer_outgoing",
+  "version": 1,
+  "heading": "Before you confirm this transfer of primary ownership",
+  "items": [
+    {
+      "id": "recipient",
+      "text": "This confirmation names the budget space and the display name of the member you propose to make its Primary Owner."
+    },
+    {
+      "id": "outcome",
+      "text": "When the transfer commits, that member becomes the sole Primary Owner of this budget space and you become a Co-owner of it."
+    },
+    {
+      "id": "powers",
+      "text": "You lose the powers only a Primary Owner has, including inviting a Co-owner, removing a Co-owner, handing primary ownership to another member, and deleting or archiving this budget space. What a Co-owner may do remains yours."
+    },
+    {
+      "id": "other_members",
+      "text": "Existing Co-owners of this budget space keep the roles they hold, and no other member's role changes."
+    },
+    {
+      "id": "connections",
+      "text": "No bank-connection authority is handed over with this budget space. Each person's bank connection stays theirs. Confirming creates no payment, financial, legal, or bank-account authority, and it moves no money."
+    },
+    {
+      "id": "invitations",
+      "text": "Every open invitation you created under the Primary-only power to invite a Co-owner is cancelled when the transfer commits, and nobody holding one of them can accept it afterwards."
+    },
+    {
+      "id": "choice",
+      "text": "Confirming or withdrawing is your explicit choice, and neither is selected for you. The transfer commits only once the named member also accepts it, and no role changes before then. The record kept of this step is evidence of the action you took here; nothing agrees on your behalf."
+    }
+  ],
+  "acknowledgement": "I have read the items above and I agree to hand primary ownership of this budget space to the named member and to become a Co-owner of it."
+}
