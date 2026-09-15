@@ -245,7 +245,10 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
     const begin = posted.find(entry => entry.url === "/v1/identity/step-up/begin"); const confirm = posted.find(entry => entry.url.endsWith("/confirm"));
     assert.deepEqual(JSON.parse(begin.body), { action: "29.transfer_primary_ownership", budgetSpaceId: budgetId, postResultDestinationId: "budgets" });
     assert.ok(confirm.url.endsWith(`/${transferUrl.split("/").at(-1)}/confirm`));
-    assert.deepEqual(JSON.parse(confirm.body), {});
+    // PK8-F03: the claim of the outgoing disclosure the page showed, and nothing else: no reference, no ledger.
+    assert.deepEqual(Object.keys(JSON.parse(confirm.body)), ["acknowledgedDisclosure"]);
+    assert.equal(JSON.parse(confirm.body).acknowledgedDisclosure.kind, "primary_transfer_outgoing");
+    assert.match(JSON.parse(confirm.body).acknowledgedDisclosure.digest, /^[0-9a-f]{64}$/u);
     assert.ok(posted.indexOf(begin) < posted.indexOf(confirm));
     assert.equal(posted.filter(entry => entry.url.endsWith("/confirm")).length, 1);
     await owner.clickText("Refresh transfer"); await owner.waitText("Committed");

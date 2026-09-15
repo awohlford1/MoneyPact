@@ -12,15 +12,14 @@
 // reference, ledger or digest field is ever placed in a request; and transfer ids are shown only to the two parties
 // (anyone else is answered `transfer_not_found`, which this page shows as "no such transfer for you").
 //
-// The recipient's and the outgoing disclosures are the approved texts under docs/consent-disclosures/. The view
-// carries their kind and version but not their text (finding PK8-F03), so the approved v1 files are bundled here
-// and each is shown only when its kind and version equal the ones the transfer was proposed under.
+// The recipient's and the outgoing disclosures are the approved registry texts the view serves at the kind, version
+// and digest the transfer was proposed under (PK8-F03); nothing is bundled here. Accept and confirm send the claim of
+// exactly the text shown; the API compares it against the captured values and answers 409 stale_disclosure, writing
+// nothing, when they differ. A view whose text is null (the registry moved) offers neither control.
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import recipientDisclosure from "../../../../../../../../docs/consent-disclosures/primary-transfer-recipient.v1.json" with { type: "json" };
-import outgoingDisclosure from "../../../../../../../../docs/consent-disclosures/primary-transfer-outgoing.v1.json" with { type: "json" };
-import { InvitationApiError, TRANSFER_STATE_LABELS, roleLabel, sentenceFor } from "../../../../../api/invitations";
-import type { ConfirmTransferOutcome, WireMember } from "../../../../../api/invitations";
+import { InvitationApiError, TRANSFER_STATE_LABELS, claimOf, roleLabel, sentenceFor } from "../../../../../api/invitations";
+import type { ConfirmTransferOutcome, ConsentDisclosure, WireMember } from "../../../../../api/invitations";
 import { useSession } from "../../../../../session/SessionProvider";
 import { Alert } from "../../../../../components/Alert";
 import { Button } from "../../../../../components/Button";
@@ -29,9 +28,6 @@ import { Select } from "../../../../../components/Select";
 import { ReadFailure, SpaceNavigation, describeFailure, formatInstant, leaveReturnMarker, useInvitationsClient, useRead } from "../../../invitations-shared";
 
 const LIVE: readonly string[] = ["proposed", "recipient_accepted", "primary_confirmed", "ready"];
-interface DisclosureFile { kind: string; version: number; heading: string; items: readonly { id: string; text: string }[]; acknowledgement: string }
-const RECIPIENT: DisclosureFile = recipientDisclosure;
-const OUTGOING: DisclosureFile = outgoingDisclosure;
 
 /** The Primary Owner proposes the transfer to one active member of the space (TR-73-40). */
 export function ProposeTransferView({ id }: { id: string }) {
@@ -81,9 +77,9 @@ export function TransferView({ id, transferId, resume }: { id: string; transferI
   const { session } = useSession();
   const api = useInvitationsClient();
   const load = useCallback(async (signal: AbortSignal) => {
-    const transfer = await api.viewTransfer(id, transferId, signal);
+    const { transfer, disclosures } = await api.viewTransfer(id, transferId, signal);
     const [members, own] = await Promise.all([api.listMembers(id, signal), api.ownMembership(id, signal)]);
-    return { transfer, members, own };
+    return { transfer, disclosures, members, own };
   }, [api, id, transferId]);
   const read = useRead(`${session.sessionRef}:${id}:${transferId}`, load);
   const router = useRouter();
@@ -109,6 +105,7 @@ export function TransferView({ id, transferId, resume }: { id: string; transferI
     try { setNotice({ tone: "neutral", ...(await work()) }); read.refresh(); }
     catch (failure) {
       if (failure instanceof InvitationApiError && failure.code === "transfer_not_found") setNotice({ tone: "danger", text: "There is no such transfer for you." });
+      else if (failure instanceof InvitationApiError && failure.code === "stale_disclosure") setNotice({ tone: "danger", title: "The disclosure changed", text: "What you read is no longer the current disclosure for this transfer. Nothing was recorded. Refresh, read it again, then choose." });
       else if (failure instanceof InvitationApiError && failure.status === 409) setNotice({ tone: "danger", text: `${sentenceFor(String(failure.body.messageCode ?? "MSG-73-046"))} Refresh to read the current state.` });
       else setNotice({ tone: "danger", text: describeFailure(failure) });
     } finally { setBusy(undefined); }
@@ -123,21 +120,24 @@ export function TransferView({ id, transferId, resume }: { id: string; transferI
   async function confirm() {
     setBusy("confirm"); setNotice(undefined);
     try {
-      // The live transfer id, read from the view immediately before the confirm: a stale or remembered id costs a step-up.
+      // The live transfer id and the outgoing disclosure, read from the view immediately before the confirm: a stale or
+      // remembered id costs a step-up, and the claim names exactly the text the person acknowledged.
       const current = await api.viewTransfer(id, transferId);
       // R-01: a confirm that reaches the module consumes the grant whatever it answers (PR 368 finding 2), so a transfer
       // the read shows as no longer live is not confirmed at all; the grant stays unspent for the next attempt.
-      if (!LIVE.includes(current.state)) {
-        setNotice({ tone: "danger", title: "Not confirmed", text: `${sentenceFor(current.state === "withdrawn" ? "MSG-73-044" : current.state === "declined" ? "MSG-73-043" : current.state === "expired" ? "MSG-73-045" : current.state === "committed" ? "MSG-73-042" : "MSG-73-027")} Your identity check was not used.` });
+      if (!LIVE.includes(current.transfer.state)) {
+        setNotice({ tone: "danger", title: "Not confirmed", text: `${sentenceFor(current.transfer.state === "withdrawn" ? "MSG-73-044" : current.transfer.state === "declined" ? "MSG-73-043" : current.transfer.state === "expired" ? "MSG-73-045" : current.transfer.state === "committed" ? "MSG-73-042" : "MSG-73-027")} Your identity check was not used.` });
         read.refresh();
         return;
       }
-      const outcome: ConfirmTransferOutcome = await api.confirmTransfer(id, current.transferId);
+      if (!current.disclosures.outgoing) { setNotice({ tone: "danger", title: "The disclosure changed", text: "The approved disclosure for this transfer is no longer current. Nothing was confirmed and your identity check was not used. Refresh to read the state." }); return; }
+      const outcome: ConfirmTransferOutcome = await api.confirmTransfer(id, current.transfer.transferId, claimOf(current.disclosures.outgoing));
       setStepUpDone(false);
       if (outcome.outcome === "committed") setNotice({ tone: "neutral", title: "Transfer committed", text: "The recipient is now the Primary Owner of this budget space and you are a Co-owner. Any Co-owner invitation you had sent was cancelled." });
       else if (outcome.outcome === "primary_confirmed" || outcome.outcome === "ready") setNotice({ tone: "neutral", title: "Your confirmation is recorded", text: "The transfer commits once the recipient accepts. Your identity check was used by this confirmation." });
       else if (outcome.outcome === "step_up_again") setNotice({ tone: "danger", title: "Run the identity check again", text: `${sentenceFor(outcome.messageCode)} That attempt used your identity check, so run it again before trying again.` });
       else if (outcome.outcome === "denied") setNotice({ tone: "danger", title: "Not confirmed", text: "This is not the live transfer, you are not its Primary Owner, or your identity check is not fresh or was made for something else. Refresh, then run the identity check again." });
+      else if (outcome.outcome === "refused" && outcome.error === "stale_disclosure") setNotice({ tone: "danger", title: "The disclosure changed", text: "What you read is no longer the current disclosure for this transfer. Nothing was confirmed and your identity check was not used. Refresh, read it again, then confirm." });
       else if (outcome.outcome === "refused") setNotice({ tone: "danger", text: `${describeFailure(new InvitationApiError(outcome.status, outcome.error))} Your identity check was not used.` });
       read.refresh();
     } catch (failure) { setNotice({ tone: "danger", text: describeFailure(failure) }); }
@@ -164,16 +164,16 @@ export function TransferView({ id, transferId, resume }: { id: string; transferI
         {party === "proposer" && <div><dt className="font-semibold">Identity check</dt><dd>{stepUpDone ? "returned from the check; confirm below if it completed" : "required before confirming"}</dd></div>}
       </dl>
       <Button variant="secondary" onClick={read.refresh}>Refresh transfer</Button>
-      {live && party === "recipient" && (transfer.state === "proposed" || transfer.state === "primary_confirmed") && <DisclosureSurface file={RECIPIENT} kind={transfer.recipientDisclosureKind} version={transfer.recipientDisclosureVersion} acknowledged={acknowledged} onAcknowledged={setAcknowledged} idPrefix="recipient">
+      {live && party === "recipient" && (transfer.state === "proposed" || transfer.state === "primary_confirmed") && <DisclosureSurface disclosure={value.disclosures.recipient} kind={transfer.recipientDisclosureKind} version={transfer.recipientDisclosureVersion} acknowledged={acknowledged} onAcknowledged={setAcknowledged} idPrefix="recipient">
         <p>Accepting or declining is your explicit choice. Nothing is chosen for you.</p>
         <div className="flex flex-wrap gap-3">
-          <Button loading={busy === "accept"} disabled={!acknowledged || Boolean(busy)} onClick={() => void act("accept", async () => { const answer = await api.acceptTransfer(id, transferId); return answer.outcome === "committed" ? { title: "Transfer committed", text: "You are now the Primary Owner of this budget space." } : { title: "Acceptance recorded", text: sentenceFor(answer.messageCode) + " The transfer commits once the Primary Owner confirms after a fresh identity check." }; })}>Accept primary ownership</Button>
+          <Button loading={busy === "accept"} disabled={!acknowledged || Boolean(busy)} onClick={() => void act("accept", async () => { const answer = await api.acceptTransfer(id, transferId, claimOf(value.disclosures.recipient!)); return answer.outcome === "committed" ? { title: "Transfer committed", text: "You are now the Primary Owner of this budget space." } : { title: "Acceptance recorded", text: sentenceFor(answer.messageCode) + " The transfer commits once the Primary Owner confirms after a fresh identity check." }; })}>Accept primary ownership</Button>
           <Button variant="danger" loading={busy === "decline"} disabled={Boolean(busy)} onClick={() => void act("decline", async () => { await api.declineTransfer(id, transferId); return { title: "Transfer declined", text: "Roles are unchanged. The Primary Owner learns only that the transfer ended." }; })}>Decline</Button>
         </div>
       </DisclosureSurface>}
       {live && party === "recipient" && transfer.state === "recipient_accepted" && <Alert>You accepted. The transfer commits once the Primary Owner confirms after a fresh identity check.</Alert>}
       {live && party === "proposer" && <>
-        {(transfer.state === "proposed" || transfer.state === "recipient_accepted") && <DisclosureSurface file={OUTGOING} kind={transfer.outgoingDisclosureKind} version={transfer.outgoingDisclosureVersion} acknowledged={acknowledged} onAcknowledged={setAcknowledged} idPrefix="outgoing">
+        {(transfer.state === "proposed" || transfer.state === "recipient_accepted") && <DisclosureSurface disclosure={value.disclosures.outgoing} kind={transfer.outgoingDisclosureKind} version={transfer.outgoingDisclosureVersion} acknowledged={acknowledged} onAcknowledged={setAcknowledged} idPrefix="outgoing">
           <p>Confirming asks for a fresh identity check first. The check is bound to this action and this budget space, and one check is used by exactly one confirmation.</p>
           <div className="flex flex-wrap gap-3">
             {!stepUpDone && <Button loading={busy === "step-up"} disabled={!acknowledged || Boolean(busy)} onClick={() => void stepUp()}>Continue to the identity check</Button>}
@@ -189,15 +189,15 @@ export function TransferView({ id, transferId, resume }: { id: string; transferI
   </section>;
 }
 
-/** The approved disclosure for one leg, shown only when its kind and version are the ones this transfer was proposed under. */
-function DisclosureSurface({ file, kind, version, acknowledged, onAcknowledged, idPrefix, children }: { file: DisclosureFile; kind: string; version: number; acknowledged: boolean; onAcknowledged(value: boolean): void; idPrefix: string; children: React.ReactNode }) {
-  if (file.kind !== kind || file.version !== version) {
-    return <Alert tone="danger" title="The disclosure for this transfer is not available here">This transfer was proposed under disclosure {kind} version {version}, which this page does not carry. Nothing can be accepted or confirmed from here until it does.</Alert>;
+/** The approved disclosure for one leg as the view served it; null (the registry no longer carries the captured version) offers no control. */
+function DisclosureSurface({ disclosure, kind, version, acknowledged, onAcknowledged, idPrefix, children }: { disclosure: ConsentDisclosure | null; kind: string; version: number; acknowledged: boolean; onAcknowledged(value: boolean): void; idPrefix: string; children: React.ReactNode }) {
+  if (!disclosure || disclosure.kind !== kind || disclosure.version !== version) {
+    return <Alert tone="danger" title="The disclosure for this transfer is no longer current">This transfer was proposed under disclosure {kind} version {version}, which is no longer the approved text. Nothing can be accepted or confirmed on it; a new proposal is needed.</Alert>;
   }
   return <section aria-labelledby={`${idPrefix}-disclosure-heading`} className="space-y-4 rounded-lg border border-border p-4">
-    <h2 id={`${idPrefix}-disclosure-heading`} className="text-2xl font-semibold">{file.heading}</h2>
-    <ul className="list-disc space-y-2 pl-6">{file.items.map(item => <li key={item.id}>{item.text}</li>)}</ul>
-    <Checkbox id={`${idPrefix}-acknowledged`} checked={acknowledged} onChange={event => onAcknowledged(event.target.checked)} label={file.acknowledgement} />
+    <h2 id={`${idPrefix}-disclosure-heading`} className="text-2xl font-semibold">{disclosure.text.heading}</h2>
+    <ul className="list-disc space-y-2 pl-6">{disclosure.text.items.map(item => <li key={item.id}>{item.text}</li>)}</ul>
+    <Checkbox id={`${idPrefix}-acknowledged`} checked={acknowledged} onChange={event => onAcknowledged(event.target.checked)} label={disclosure.text.acknowledgement} />
     {children}
   </section>;
 }

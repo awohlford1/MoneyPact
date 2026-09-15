@@ -47,13 +47,14 @@ export { COMMIT_BOUNDARIES, commitPrimaryTransfer, transferReceiptOf } from "./c
 
 export type {
   AcceptResult, ConfirmResult, MembershipResourceLeaves, ProposeResult, ProposeTransferRequest,
-  TerminateResult, TransferClosed, TransferCommitted, TransferDenied, TransferLegRecorded,
-  TransferProposed, TransferRequest, TransferTerminated, ViewResult,
+  TerminateResult, TransferClosed, TransferCommitted, TransferDenied, TransferDisclosureClaim,
+  TransferDisclosureTexts, TransferLegRecorded, TransferLegRequest, TransferProposed, TransferRequest,
+  TransferTerminated, ViewResult,
 } from "./application.ts";
 export {
-  acceptPrimaryTransfer, confirmPrimaryTransfer, declinePrimaryTransfer, parseProposeTransferRequest,
-  parseTransferRequest, proposePrimaryTransfer, readMembershipResourceLeaves, viewPrimaryTransfer,
-  withdrawPrimaryTransfer,
+  acceptPrimaryTransfer, assertAcknowledgedTransferDisclosure, confirmPrimaryTransfer, declinePrimaryTransfer,
+  parseProposeTransferRequest, parseTransferDisclosureClaim, parseTransferRequest, proposePrimaryTransfer,
+  readMembershipResourceLeaves, transferDisclosureTexts, viewPrimaryTransfer, withdrawPrimaryTransfer,
 } from "./application.ts";
 
 export { InMemoryPrimaryTransferRepository } from "./in-memory.ts";

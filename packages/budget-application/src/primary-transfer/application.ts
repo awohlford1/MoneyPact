@@ -36,6 +36,7 @@
  */
 import { commitPrimaryTransfer, transferReceiptOf } from "./commit.ts";
 import type { CommitOptions, TransferReceipt } from "./commit.ts";
+import type { ConsentDisclosure } from "../creation-confirmation/disclosure.ts";
 import { NOTICE_EVENT_CODE, TRANSFER_EVENT_CODE, transferAuditEvent } from "./events.ts";
 import { primaryTransferObligations } from "./obligations.ts";
 import type { TransferObligationInput, TransferObligationLedger } from "./obligations.ts";
@@ -115,7 +116,20 @@ export type ProposeResult = TransferProposed | TransferDenied;
 export type AcceptResult = TransferLegRecorded | TransferCommitted | TransferClosed | TransferDenied;
 export type ConfirmResult = TransferLegRecorded | TransferCommitted | TransferClosed | TransferDenied;
 export type TerminateResult = TransferTerminated | TransferClosed | TransferDenied;
-export type ViewResult = { readonly outcome: "view"; readonly transfer: TransferView } | TransferDenied;
+/**
+ * PK8-F03: the approved registry text of each party's disclosure, at the
+ * kind, version and digest the workflow captured at proposal (SS10.1). The
+ * registry serves its current entry per kind; when that entry is no longer
+ * the captured one (the registry moved under the workflow, or the kind is
+ * gone) the text is `null` -- there is no approved text to show for what was
+ * captured, and the next leg denies `stale_disclosure` at the commit's own
+ * currency check (SS10.3 step 2).
+ */
+export interface TransferDisclosureTexts {
+  readonly recipient: ConsentDisclosure | null;
+  readonly outgoing: ConsentDisclosure | null;
+}
+export type ViewResult = { readonly outcome: "view"; readonly transfer: TransferView; readonly disclosures: TransferDisclosureTexts } | TransferDenied;
 
 // ---------------------------------------------------------------------------
 // Requests.
@@ -127,6 +141,66 @@ export interface ProposeTransferRequest {
 
 export interface TransferRequest {
   readonly transferId: string;
+}
+
+/**
+ * PK8-F03 (CBD-287-AC02, CBD-280-AC04; the PK-5 `acknowledgedDisclosure`
+ * pattern): what the party says they read before `TR-73-41` (the recipient
+ * disclosure) or `TR-73-42` (the outgoing disclosure) -- the kind, version and
+ * digest, compared in the transaction against the values the workflow
+ * captured at proposal and never against a request value.
+ */
+export interface TransferDisclosureClaim {
+  readonly kind: string;
+  readonly version: number;
+  readonly digest: string;
+}
+
+/** The accept and confirm request: the workflow and the claim. */
+export interface TransferLegRequest extends TransferRequest {
+  /**
+   * `null` is a claim the route could not parse and is a stale claim: a leg
+   * taken without the current disclosure is not consent (CBD-73 SS6 rule 1).
+   * `undefined` (the key absent) is an in-process caller that requests no
+   * binding -- the persistence proofs and the obligation suites -- and is
+   * never what a route sends: the route always parses the body to a claim
+   * or `null`.
+   */
+  readonly acknowledgedDisclosure?: TransferDisclosureClaim | null;
+}
+
+/** The route's parse: a well-formed `{ kind, version, digest }` claim or `null`. Nothing else is read from the body. */
+export function parseTransferDisclosureClaim(body: unknown): TransferDisclosureClaim | null {
+  if (typeof body !== "object" || body === null) return null;
+  const claim = (body as Record<string, unknown>).acknowledgedDisclosure;
+  if (typeof claim !== "object" || claim === null) return null;
+  const { kind, version, digest } = claim as Record<string, unknown>;
+  if (typeof kind !== "string" || kind.length === 0 || kind.length > 64) return null;
+  if (typeof version !== "number" || !Number.isSafeInteger(version) || version < 1) return null;
+  if (typeof digest !== "string" || !/^[0-9a-f]{64}$/u.test(digest)) return null;
+  return { kind, version, digest };
+}
+
+/**
+ * The claim must equal the captured kind, version and digest of the leg's
+ * disclosure; anything else -- including no claim -- throws
+ * `stale_disclosure`, which rolls the transaction back with nothing written
+ * (CBD-41-AC02, `PK5-02`, `R-02`). Called after the party check and the
+ * retry answers, so a party's repeat of a leg already recorded is recovered
+ * without a claim, and before any write.
+ */
+export function assertAcknowledgedTransferDisclosure(
+  record: Pick<PrimaryTransferRecord, "recipientDisclosureKind" | "recipientDisclosureVersion" | "recipientDisclosureDigest" | "outgoingDisclosureKind" | "outgoingDisclosureVersion" | "outgoingDisclosureDigest">,
+  leg: "recipient" | "primary",
+  claim: TransferDisclosureClaim | null | undefined,
+): void {
+  if (claim === undefined) return;
+  const captured = leg === "recipient"
+    ? { kind: record.recipientDisclosureKind, version: record.recipientDisclosureVersion, digest: record.recipientDisclosureDigest }
+    : { kind: record.outgoingDisclosureKind, version: record.outgoingDisclosureVersion, digest: record.outgoingDisclosureDigest };
+  if (claim === null || claim.kind !== captured.kind || claim.version !== captured.version || claim.digest !== captured.digest) {
+    throw new PrimaryTransferError("stale_disclosure", "acknowledgedDisclosure");
+  }
 }
 
 function requireUuidish(value: unknown, field: string): string {
@@ -528,7 +602,7 @@ function repeatedLegAnswer(record: PrimaryTransferRecord, leg: "recipient" | "pr
  * leg answers the prior result, both without writing (`R-03`, `R-06`).
  */
 export async function acceptPrimaryTransfer(
-  deps: PrimaryTransferDependencies, actor: ActorContext, request: TransferRequest,
+  deps: PrimaryTransferDependencies, actor: ActorContext, request: TransferLegRequest,
   options: CommitOptions = {},
 ): Promise<AcceptResult> {
   if (!decidedCell(actor, "29.accept_primary_transfer")) return deny(deps, actor, "permission_mismatch", request.transferId);
@@ -542,6 +616,8 @@ export async function acceptPrimaryTransfer(
     return deny(deps, actor, "stale_version", request.transferId);
   }
   if (loaded.record.recipientAcceptedAt !== null) return repeatedLegAnswer(loaded.record, "recipient");
+  // PK8-F03: the recipient's claim against the captured recipient disclosure; a stale claim rolls back, nothing written.
+  assertAcknowledgedTransferDisclosure(loaded.record, "recipient", request.acknowledgedDisclosure);
 
   // The assurance reference the commit binds to is the one the Primary's own
   // confirm stored on the row; the accept path never carries one of its own.
@@ -580,7 +656,7 @@ export async function acceptPrimaryTransfer(
  * leg answers the prior result, both without writing (`R-03`, `R-06`).
  */
 export async function confirmPrimaryTransfer(
-  deps: PrimaryTransferDependencies, actor: ActorContext, request: TransferRequest,
+  deps: PrimaryTransferDependencies, actor: ActorContext, request: TransferLegRequest,
   options: CommitOptions & { readonly ledger?: TransferObligationLedger } = {},
 ): Promise<ConfirmResult> {
   if (!decidedCell(actor, "29.transfer_primary_ownership")) return deny(deps, actor, "permission_mismatch", request.transferId);
@@ -598,6 +674,9 @@ export async function confirmPrimaryTransfer(
     return deny(deps, actor, "stale_version", request.transferId);
   }
   if (loaded.record.primaryConfirmedAt !== null) return repeatedLegAnswer(loaded.record, "primary");
+  // PK8-F03: the Primary's claim against the captured outgoing disclosure; a stale claim rolls back, nothing written
+  // and the grant returned with the rollback.
+  assertAcknowledgedTransferDisclosure(loaded.record, "primary", request.acknowledgedDisclosure);
 
   // The pre-leg proof. The boundary's ledger is it when one is supplied;
   // otherwise, when this leg completes the pair, the four discharge here
@@ -810,7 +889,25 @@ export async function viewPrimaryTransfer(
   if (!party || party.status !== "active" || party.accountSubjectId !== actor.subjectId) {
     return deny(deps, actor, "authorization_denied", request.transferId);
   }
-  return { outcome: "view", transfer: transferView(record) };
+  return { outcome: "view", transfer: transferView(record), disclosures: transferDisclosureTexts(deps, record) };
+}
+
+/** The registry's entry for a captured (kind, version, digest), or null when the registry no longer carries exactly that. */
+function disclosureTextAt(deps: Pick<PrimaryTransferDependencies, "disclosures">, kind: string, version: number, digest: string): ConsentDisclosure | null {
+  try {
+    const current = deps.disclosures.current(kind);
+    return current.version === version && current.digest === digest ? current : null;
+  } catch {
+    return null;
+  }
+}
+
+/** PK8-F03: both parties' texts at the captured values (see `TransferDisclosureTexts`). Read server-side, never from a request. */
+export function transferDisclosureTexts(deps: Pick<PrimaryTransferDependencies, "disclosures">, record: PrimaryTransferRecord): TransferDisclosureTexts {
+  return {
+    recipient: disclosureTextAt(deps, record.recipientDisclosureKind, record.recipientDisclosureVersion, record.recipientDisclosureDigest),
+    outgoing: disclosureTextAt(deps, record.outgoingDisclosureKind, record.outgoingDisclosureVersion, record.outgoingDisclosureDigest),
+  };
 }
 
 /** The receipt a committed workflow already carries, for a repeat read of a committed transfer. */

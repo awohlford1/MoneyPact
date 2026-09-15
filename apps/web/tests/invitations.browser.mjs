@@ -207,7 +207,10 @@ export async function pk8Journey(t, { browser, origin, errors }) {
     await owner.waitText("Committed");
     const confirm = posted.find(entry => entry.url.endsWith("/confirm"));
     assert.ok(confirm.url.endsWith(`/${transferUrl.split("/").at(-1)}/confirm`), "the live transfer id from the view");
-    assert.deepEqual(JSON.parse(confirm.body), {}, "no reference, ledger or digest field");
+    // PK8-F03: the body is the claim of the outgoing disclosure the page showed, and nothing else: no reference, no ledger.
+    assert.deepEqual(Object.keys(JSON.parse(confirm.body)), ["acknowledgedDisclosure"]);
+    assert.deepEqual(Object.keys(JSON.parse(confirm.body).acknowledgedDisclosure).sort(), ["digest", "kind", "version"]);
+    assert.equal(JSON.parse(confirm.body).acknowledgedDisclosure.kind, "primary_transfer_outgoing");
     assert.ok(posted.indexOf(begin) < posted.indexOf(confirm), "step-up before confirm");
     assert.equal(posted.filter(entry => entry.url.endsWith("/confirm")).length, 1, "one confirm per step-up, never a resend");
     await owner.accessibility(); await owner.narrow();

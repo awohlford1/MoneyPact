@@ -24,7 +24,9 @@
  *   * Every unusable-link and unusable-ceremony class is the one uniform 404
  *     envelope and is reported as one outcome, `unusable`.
  *   * A confirm request names only the live transfer id read from the view and
- *     carries no reference, ledger or digest field; every confirm answer's
+ *     the disclosure claim (PK8-F03: the kind, version and digest of the
+ *     approved text the view served, as `accept` sends the recipient's); it
+ *     carries no assurance reference and no ledger. Every confirm answer's
  *     `freshAssurance` disposition and `next` hint are surfaced so a view can
  *     say "step up again" and never resend a confirm expecting a replay.
  */
@@ -68,6 +70,12 @@ export interface WireTransfer {
   recipientAcceptedAt: string | null; primaryConfirmedAt: string | null; committedAt: string | null;
   recipientDisclosureKind: string; recipientDisclosureVersion: number; outgoingDisclosureKind: string; outgoingDisclosureVersion: number;
 }
+/** `GET .../primary-transfers/{id}` (PK8-F03): the projection and each party's approved text at the captured kind, version and digest (null once the registry moved). */
+export interface WireTransferDisclosures { recipient: ConsentDisclosure | null; outgoing: ConsentDisclosure | null }
+export interface WireTransferView { transfer: WireTransfer; disclosures: WireTransferDisclosures }
+/** The claim accept and confirm carry: exactly the registry identity of the text the person read, never a text or an assurance value. */
+export interface TransferDisclosureClaim { kind: string; version: number; digest: string }
+export const claimOf = (disclosure: ConsentDisclosure): TransferDisclosureClaim => ({ kind: disclosure.kind, version: disclosure.version, digest: disclosure.digest });
 export type FreshAssuranceDisposition = "consumed" | "unspent";
 export interface WireTransferAnswer {
   outcome: string; messageCode: string; transfer: WireTransfer; receipt?: unknown;
@@ -188,14 +196,15 @@ export interface InvitationsClient {
   beginSignIn(): Promise<string>;
   // Primary transfer (PR 368) and the step-up (PR 355).
   proposeTransfer(spaceId: string, recipientMembershipId: string): Promise<WireTransferAnswer>;
-  viewTransfer(spaceId: string, transferId: string, signal?: AbortSignal): Promise<WireTransfer>;
-  acceptTransfer(spaceId: string, transferId: string): Promise<WireTransferAnswer>;
+  viewTransfer(spaceId: string, transferId: string, signal?: AbortSignal): Promise<WireTransferView>;
+  /** `TR-73-41` with the recipient disclosure's claim; a claim that is not the captured one is thrown as 409 `stale_disclosure` (nothing written). */
+  acceptTransfer(spaceId: string, transferId: string, acknowledgedDisclosure: TransferDisclosureClaim): Promise<WireTransferAnswer>;
   declineTransfer(spaceId: string, transferId: string): Promise<WireTransferAnswer>;
   withdrawTransfer(spaceId: string, transferId: string): Promise<WireTransferAnswer>;
   /** Binds a step-up to `29.transfer_primary_ownership` and the space; the answer is the provider navigation. */
   beginStepUp(spaceId: string): Promise<string>;
-  /** Confirms exactly the transfer id given -- the caller reads it from the view immediately before. */
-  confirmTransfer(spaceId: string, transferId: string): Promise<ConfirmTransferOutcome>;
+  /** Confirms exactly the transfer id given -- the caller reads it from the view immediately before -- with the outgoing disclosure's claim. */
+  confirmTransfer(spaceId: string, transferId: string, acknowledgedDisclosure: TransferDisclosureClaim): Promise<ConfirmTransferOutcome>;
   // Notices (PK8-F01): the caller's own rows, newest first, and the set-once read stamp.
   listNotices(signal?: AbortSignal): Promise<readonly WireNotice[]>;
   markNoticeRead(noticeId: string): Promise<WireNotice>;
@@ -246,8 +255,8 @@ export function createInvitationsClient(base = "/v1", fetcher: typeof fetch = fe
   }
   const transferAnswer = (json: Record<string, unknown>) => json as unknown as WireTransferAnswer;
   /** Committed non-2xx transfer answers (denials, closures) carry the workflow vocabulary; they are thrown with their body. */
-  async function transferMutation(path: string): Promise<WireTransferAnswer> {
-    const answer = await send(path, "POST", {}, { csrf: true });
+  async function transferMutation(path: string, body: unknown = {}): Promise<WireTransferAnswer> {
+    const answer = await send(path, "POST", body, { csrf: true });
     if (answer.status >= 200 && answer.status < 300) return transferAnswer(answer.json);
     throw failure(answer);
   }
@@ -318,14 +327,14 @@ export function createInvitationsClient(base = "/v1", fetcher: typeof fetch = fe
       if (answer.status >= 200 && answer.status < 300) return transferAnswer(answer.json);
       throw failure(answer);
     },
-    viewTransfer: async (spaceId, transferId, signal) => (await request<{ transfer: WireTransfer }>(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}`, "GET", undefined, signal)).transfer,
-    acceptTransfer: (spaceId, transferId) => transferMutation(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/accept`),
+    viewTransfer: (spaceId, transferId, signal) => request<WireTransferView>(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}`, "GET", undefined, signal),
+    acceptTransfer: (spaceId, transferId, acknowledgedDisclosure) => transferMutation(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/accept`, { acknowledgedDisclosure }),
     declineTransfer: (spaceId, transferId) => transferMutation(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/decline`),
     withdrawTransfer: (spaceId, transferId) => transferMutation(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/withdraw`),
     beginStepUp: async (spaceId) => (await request<{ navigateTo: string }>("/identity/step-up/begin", "POST", { action: TRANSFER_ACTION, budgetSpaceId: spaceId, postResultDestinationId: "budgets" })).navigateTo,
-    async confirmTransfer(spaceId, transferId) {
-      // The body is empty on purpose: the reference, the ledger and every digest are the store's, never the client's (SEC-PK7A-F2).
-      const answer = await send(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/confirm`, "POST", {}, { csrf: true });
+    async confirmTransfer(spaceId, transferId, acknowledgedDisclosure) {
+      // The body carries the disclosure claim and nothing else: the assurance reference and the ledger are the store's, never the client's (SEC-PK7A-F2).
+      const answer = await send(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/confirm`, "POST", { acknowledgedDisclosure }, { csrf: true });
       const body = answer.json;
       const transfer = body.transfer as WireTransfer | undefined;
       if (answer.status === 200 && body.outcome === "committed" && transfer) return { outcome: "committed", transfer };

@@ -3,8 +3,8 @@ import { test } from "node:test";
 
 import {
   acceptPrimaryTransfer, confirmPrimaryTransfer, declinePrimaryTransfer, parseProposeTransferRequest,
-  parseTransferRequest, proposePrimaryTransfer, readMembershipResourceLeaves, viewPrimaryTransfer,
-  withdrawPrimaryTransfer,
+  parseTransferDisclosureClaim, parseTransferRequest, proposePrimaryTransfer, readMembershipResourceLeaves,
+  viewPrimaryTransfer, withdrawPrimaryTransfer,
 } from "./application.ts";
 import { PrimaryTransferError, isPrimaryTransferError } from "./records.ts";
 import {
@@ -396,4 +396,71 @@ void test("PK7A-03: the membership resource leaves PK-7B assembles are tenant-sc
   // rather than reaching across the tenant boundary (`SEC-PK4-R2`).
   assert.equal(await readMembershipResourceLeaves(world.deps, "00000000-0000-4000-8000-000000000042", RECIPIENT_MEMBERSHIP), null);
   assert.equal(await readMembershipResourceLeaves(world.deps, SPACE, "00000000-0000-4000-8000-000000000043"), null);
+});
+
+// ---------------------------------------------------------------------------
+// PK8-F03: the disclosure binding of the two legs and the view's texts.
+// ---------------------------------------------------------------------------
+
+void test("PK8-F03: parseTransferDisclosureClaim yields a well-formed claim or null and reads nothing else", () => {
+  const digest = "a".repeat(64);
+  assert.deepEqual(parseTransferDisclosureClaim({ acknowledgedDisclosure: { kind: "primary_transfer_recipient", version: 1, digest, extra: true } }), { kind: "primary_transfer_recipient", version: 1, digest });
+  for (const body of [undefined, null, "x", {}, { acknowledgedDisclosure: null }, { acknowledgedDisclosure: "x" }, { acknowledgedDisclosure: { kind: "", version: 1, digest } },
+    { acknowledgedDisclosure: { kind: "k", version: 0, digest } }, { acknowledgedDisclosure: { kind: "k", version: 1.5, digest } }, { acknowledgedDisclosure: { kind: "k", version: "1", digest } },
+    { acknowledgedDisclosure: { kind: "k", version: 1, digest: "A".repeat(64) } }, { acknowledgedDisclosure: { kind: "k", version: 1 } }]) {
+    assert.equal(parseTransferDisclosureClaim(body), null, JSON.stringify(body));
+  }
+});
+
+void test("PK8-F03: the view carries each party's approved text at the captured values, and null once the registry no longer carries exactly that", async () => {
+  const world = testWorld();
+  const transferId = await propose(world);
+  const view = await viewPrimaryTransfer(world.deps, world.recipient("29.view_primary_transfer"), parseTransferRequest(transferId));
+  assert.equal(view.outcome, "view");
+  if (view.outcome !== "view") throw new Error("unreachable");
+  assert.equal(view.disclosures.recipient?.kind, "primary_transfer_recipient");
+  assert.equal(view.disclosures.recipient?.text.heading, "Becoming the Primary Owner");
+  assert.equal(view.disclosures.outgoing?.kind, "primary_transfer_outgoing");
+  assert.ok(!("recipientDisclosureDigest" in view.transfer), "the projection still carries no digest");
+  // A registry entry that moved past the captured version, and a kind the registry no longer has.
+  const record = (await world.repository.readTransfer(SPACE, transferId))!;
+  world.repository.transfers.set(transferId, { ...record, recipientDisclosureVersion: 2, outgoingDisclosureKind: "gone" });
+  const moved = await viewPrimaryTransfer(world.deps, world.recipient("29.view_primary_transfer"), parseTransferRequest(transferId));
+  if (moved.outcome !== "view") throw new Error("unreachable");
+  assert.deepEqual(moved.disclosures, { recipient: null, outgoing: null });
+});
+
+void test("PK8-F03: a null or differing claim throws stale_disclosure before any write on accept and confirm; a matching claim records the leg; an absent key binds nothing", async () => {
+  const world = testWorld();
+  const transferId = await propose(world);
+  const recipientClaim = { kind: "primary_transfer_recipient", version: 1, digest: "a".repeat(64) };
+  const outgoingClaim = { kind: "primary_transfer_outgoing", version: 1, digest: "b".repeat(64) };
+  const snapshot = () => JSON.stringify([[...world.repository.transfers.values()], world.repository.audit.length, world.repository.notices.length]);
+  const before = snapshot();
+  for (const claim of [null, outgoingClaim, { ...recipientClaim, version: 2 }, { ...recipientClaim, digest: "c".repeat(64) }, { ...recipientClaim, kind: "other" }]) {
+    await assert.rejects(
+      acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: claim }),
+      (error: unknown) => isPrimaryTransferError(error) && error.code === "stale_disclosure",
+      JSON.stringify(claim),
+    );
+  }
+  const primary = { ...world.primary("29.transfer_primary_ownership"), freshAssuranceRef: "fa-1" };
+  for (const claim of [null, recipientClaim, { ...outgoingClaim, version: 2 }]) {
+    await assert.rejects(
+      confirmPrimaryTransfer(world.deps, primary, { transferId, acknowledgedDisclosure: claim }),
+      (error: unknown) => isPrimaryTransferError(error) && error.code === "stale_disclosure",
+      JSON.stringify(claim),
+    );
+  }
+  assert.equal(snapshot(), before, "nothing written by a stale claim");
+  const accepted = await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: recipientClaim });
+  assert.equal(accepted.outcome, "recipient_accepted");
+  // The recipient's exact retry is recovered whatever it carries (R-03, R-06).
+  const retry = await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: null });
+  assert.equal(retry.outcome, "recipient_accepted");
+  // The key absent: an in-process caller that binds nothing (the persistence proofs); the route never sends this shape.
+  const second = testWorld();
+  const other = await propose(second);
+  const unbound = await acceptPrimaryTransfer(second.deps, second.recipient("29.accept_primary_transfer"), { transferId: other });
+  assert.equal(unbound.outcome, "recipient_accepted");
 });
