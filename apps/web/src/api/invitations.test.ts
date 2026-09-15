@@ -232,10 +232,14 @@ test("PK8-02 over the mock: invite, resolve with the cookie, exhaust a link term
   assert.ok(stamped.readAt);
   assert.deepEqual(await owner.api.markNoticeRead(waiting!.noticeId), stamped, "set-once: a repeat answers the stamped row");
   await assert.rejects(invitee.api.listMembers(spaceId), (error: unknown) => error instanceof InvitationApiError && error.denied, "not a member before the confirm");
+  // EXEC-PK8-RULINGS-001 item (a) / PK8-F05: the inviter's list projects awaiting_confirmation, not pending.
+  const awaiting = (await owner.api.listInvitations(spaceId)).find(row => row.invitationId === resent.invitationId);
+  assert.equal(awaiting?.state, "awaiting_confirmation");
 
   // The owner confirms; the receipt replays on the same key; both see the members list.
   const receipt = await owner.api.confirmAcceptance(spaceId, resent.invitationId, "confirm-1");
   assert.equal(receipt.role, "collaborator");
+  assert.equal(receipt.projection.state, "accepted", "confirm keeps its own projection");
   assert.deepEqual(await owner.api.confirmAcceptance(spaceId, resent.invitationId, "confirm-1"), receipt);
   await assert.rejects(owner.api.confirmAcceptance(spaceId, resent.invitationId, "confirm-2"), (error: unknown) => error instanceof InvitationApiError && error.code === "invitation_not_current");
   // The test clock is frozen, so both rows share a joinedAt and the tie is broken by membership id: compare the set of roles.

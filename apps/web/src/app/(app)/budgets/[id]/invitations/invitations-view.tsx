@@ -82,6 +82,7 @@ function InvitationRow({ id, invitation, changed }: { id: string; invitation: Wi
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState("");
   const pending = invitation.state === "pending";
+  const awaitingConfirmation = invitation.state === "awaiting_confirmation";
   const act = async (name: string, work: () => Promise<string>) => {
     setBusy(name); setError("");
     try { changed(await work()); }
@@ -97,12 +98,14 @@ function InvitationRow({ id, invitation, changed }: { id: string; invitation: Wi
       <div><dt className="font-semibold">Proposed role</dt><dd>{roleLabel(invitation.proposedRole)}</dd></div>
       <div><dt className="font-semibold">State</dt><dd>{INVITATION_STATE_LABELS[invitation.state] ?? invitation.state}</dd></div>
       <div><dt className="font-semibold">Sent</dt><dd>{formatInstant(invitation.issuedAt)}</dd></div>
-      <div><dt className="font-semibold">{pending ? "Expires" : "Inactive since"}</dt><dd>{formatInstant(invitation.inactiveAt)}</dd></div>
+      <div><dt className="font-semibold">{pending || awaitingConfirmation ? "Expires" : "Inactive since"}</dt><dd>{formatInstant(invitation.inactiveAt)}</dd></div>
     </dl>
     {pending && <div className="flex flex-wrap gap-3">
       <Button variant="secondary" loading={busy === "resend"} disabled={Boolean(busy)} onClick={() => void act("resend", async () => { await api.replaceInvitation(id, invitation.invitationId, "resend"); return `Invitation to ${label} sent again. The earlier link no longer works.`; })}>Resend to {invitation.destinationMasked}</Button>
       <Button variant="secondary" loading={busy === "replace"} disabled={Boolean(busy)} onClick={() => void act("replace", async () => { await api.replaceInvitation(id, invitation.invitationId, "replace"); return `Invitation to ${label} replaced with a new one.`; })}>Replace invitation to {invitation.destinationMasked}</Button>
       <Button variant="danger" loading={busy === "cancel"} disabled={Boolean(busy)} onClick={() => void act("cancel", async () => { await api.cancelInvitation(id, invitation.invitationId); return `Invitation to ${label} cancelled.`; })}>Cancel invitation to {invitation.destinationMasked}</Button>
+    </div>}
+    {awaitingConfirmation && <div className="flex flex-wrap gap-3">
       <Button loading={busy === "confirm"} disabled={Boolean(busy)} onClick={() => void act("confirm", async () => { const receipt = await api.confirmAcceptance(id, invitation.invitationId, crypto.randomUUID()); return `Acceptance confirmed: the person joined as ${roleLabel(receipt.role)}.`; })}>Confirm acceptance from {invitation.destinationMasked}</Button>
       <Button variant="danger" loading={busy === "reject"} disabled={Boolean(busy)} onClick={() => void act("reject", async () => { await api.rejectAcceptance(id, invitation.invitationId); return `Acceptance from ${label} rejected. Nothing was shared.`; })}>Reject acceptance from {invitation.destinationMasked}</Button>
     </div>}

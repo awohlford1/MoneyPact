@@ -211,7 +211,7 @@ export async function handleMockInvitationRequest(directory: MockDirectory, sess
       if (claim?.kind !== current.kind || claim.version !== current.version) return json({ error: "stale_disclosure" }, 409);
       if (activeMembership(directory, loaded.invitation.budgetSpaceId, subject)) { loaded.invitation.state = "cancelled"; loaded.invitation.projection = "cancelled"; loaded.invitation.codeDisposition = "invalidated"; loaded.ceremony.state = "invalidated"; return json(UNIFORM, 404); }
       const confirmationId = randomUUID();
-      loaded.invitation.state = "awaiting_confirmation"; loaded.invitation.acceptedBySubjectId = subject; loaded.invitation.confirmationId = confirmationId; loaded.invitation.codeDisposition = "consumed";
+      loaded.invitation.state = "awaiting_confirmation"; loaded.invitation.projection = "awaiting_confirmation"; loaded.invitation.acceptedBySubjectId = subject; loaded.invitation.confirmationId = confirmationId; loaded.invitation.codeDisposition = "consumed";
       loaded.ceremony.state = "consumed";
       notice(directory, loaded.invitation.createdBySubjectId, loaded.invitation.budgetSpaceId, "MSG-73-050", at());
       notice(directory, subject, null, "MSG-73-051", at());

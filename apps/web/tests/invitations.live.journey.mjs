@@ -202,7 +202,7 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
     await owner.clickText("Mark as read"); await owner.page.waitForSelector('[data-testid="notice-row"][data-read="read"]');
     await owner.page.reload(); await owner.page.waitForSelector('[data-testid="notice-row"][data-read="read"]');
     assert.ok(!(await owner.text()).includes("You joined a budget space"), "the invitee's rows are not the owner's");
-    await owner.page.goto(`${origin}/budgets/${budgetId}/invitations`); await owner.waitText("Sent, awaiting a response");
+    await owner.page.goto(`${origin}/budgets/${budgetId}/invitations`); await owner.waitText("Acceptance awaiting your confirmation");
     await owner.clickText("Confirm acceptance from i***@example.com");
     await owner.waitText("Acceptance confirmed: the person joined as Collaborator.");
     await owner.waitText("Accepted and confirmed");

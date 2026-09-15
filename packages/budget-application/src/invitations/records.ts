@@ -104,7 +104,7 @@ export const ACTIVE_INVITATION_STATES: readonly InvitationState[] = ["created", 
 /** The dispatched states a code and a ceremony may be used against (`SS4.3` rule 5). */
 export const CODE_CAPABLE_STATES: readonly InvitationState[] = ["pending"];
 
-export const PROJECTION_STATES = ["pending", "accepted", "replaced", "cancelled", "no_longer_active"] as const;
+export const PROJECTION_STATES = ["pending", "awaiting_confirmation", "accepted", "replaced", "cancelled", "no_longer_active"] as const;
 export type InvitationProjectionState = (typeof PROJECTION_STATES)[number];
 
 export const PRIVATE_TERMINAL_CAUSES = [

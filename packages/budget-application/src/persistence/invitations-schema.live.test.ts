@@ -400,6 +400,39 @@ void test("PROTO-INVITATIONS-PK2 live PostgreSQL: the widening holds, the invita
     assert.equal(reopened.code, "23514");
     assert.match(reopened.message, /accepted to awaiting_confirmation is not an edge/u);
 
+    // =================================================================
+    // (d2) EXEC-PK8-RULINGS-001 item (a) / PK8-F05: the widened
+    //     projection_state CHECK admits awaiting_confirmation and still
+    //     refuses anything outside its six-value vocabulary.
+    // =================================================================
+    const awaitingInvitationId = randomUUID();
+    const awaitingToken = `token-${awaitingInvitationId}`;
+    const admittedProjection = await refusalOf(admin, async (q) => {
+      await q(
+        `INSERT INTO budget_space_invitation ${invitationColumns}
+         VALUES ($1,$2,'real',$3,$4,'24',1,'email',$5,$6,'a***@example.com','collaborator','full',
+                 'invitation_collaborator',1,'digest','p1','pdigest','awaiting_confirmation',now(),$7,$7,'awaiting_confirmation')`,
+        [awaitingInvitationId, spaceId, ownerMembership, ownerSubject, awaitingToken, Buffer.from("ciphertext"), expiresAt],
+      );
+    });
+    assert.equal(admittedProjection, null, "the widened CHECK must admit projection_state = awaiting_confirmation");
+    const storedProjection = await admin.query(
+      "SELECT projection_state FROM budget_space_invitation WHERE invitation_id = $1",
+      [awaitingInvitationId],
+    );
+    assert.equal(storedProjection.rows[0]?.projection_state, "awaiting_confirmation");
+
+    const rejectedProjectionId = randomUUID();
+    const rejectedProjection = await refusalOf(admin, async (q) => {
+      await q(
+        `INSERT INTO budget_space_invitation ${invitationColumns}
+         VALUES ($1,$2,'real',$3,$4,'24',1,'email',$5,$6,'a***@example.com','collaborator','full',
+                 'invitation_collaborator',1,'digest','p1','pdigest','pending',now(),$7,$7,'not_a_real_projection_state')`,
+        [rejectedProjectionId, spaceId, ownerMembership, ownerSubject, `token-${rejectedProjectionId}`, Buffer.from("ciphertext"), expiresAt],
+      );
+    });
+    assert.equal(rejectedProjection?.code, "23514", "the widened CHECK must still refuse an unknown projection_state");
+
     // A transition without a version bump is refused too: IC-73-011 is what
     // makes a concurrent writer lose rather than overwrite.
     const unversioned = await refusalOf(admin, async (q) => {
