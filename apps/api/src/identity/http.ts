@@ -43,6 +43,7 @@ import type { IdentityCeremony } from "./ceremony.ts";
 import { LOCAL_ISSUER_PATH } from "./config.ts";
 import { isLocalScenario } from "./local-issuer.ts";
 import type { LocalIssuer } from "./local-issuer.ts";
+import { observedOrigin, requestPath } from "./callback-context.ts";
 
 export interface IdentityRuntime {
   readonly ceremony: IdentityCeremony;
@@ -74,27 +75,12 @@ function rawQuery(request: FastifyRequest): string | undefined {
   return index === -1 ? undefined : request.url.slice(index + 1);
 }
 
-const LOOPBACK: readonly string[] = ["127.0.0.1", "::1", "::ffff:127.0.0.1"];
-
 /**
- * The origin the browser addressed. The application origin proxies `/v1` to
- * this process (the Next development server's rewrite; CBD-190 section 8 keeps
- * the ceremony origin distinct), and that proxy replaces the Host header with
- * its destination while carrying the browser's host in `X-Forwarded-Host`.
- * PROTO-ACTIVATION-001: the forwarded host and protocol are honoured only when
- * the TCP peer is the loopback interface -- the only place the local proxy can
- * live -- so the CBD-190 callback context check sees the origin the browser
- * navigated to. `trustProxy` stays off for everything else; a hosted deployment
- * needs its own reviewed proxy trust (reported as a finding).
+ * PROTO-HARDENING-001 (GUARD-STAGES-F03): origin derivation moved verbatim to
+ * `./callback-context.ts`, which `sessions/runtime.ts` now imports too instead
+ * of replicating it. See that module for why the proxy headers are honoured
+ * only from a loopback peer.
  */
-function observedOrigin(request: FastifyRequest): string {
-  const forwardedHost = header(request, "x-forwarded-host");
-  if (forwardedHost && LOOPBACK.includes(request.ip) && /^[a-z0-9.-]+(?::\d{1,5})?$/iu.test(forwardedHost)) {
-    const forwardedProto = header(request, "x-forwarded-proto");
-    return `${forwardedProto === "https" ? "https" : "http"}://${forwardedHost}`;
-  }
-  return `${request.protocol}://${request.host}`;
-}
 
 function wantsNavigation(request: FastifyRequest): boolean {
   const mode = header(request, "sec-fetch-mode");
@@ -139,7 +125,7 @@ export function identityHttp(runtime: IdentityRuntime | undefined): IdentityHttp
     @PreAuthenticationSurface({ deniedNavigation: () => runtime ? `${runtime.ceremony.config.applicationOrigin}${runtime.ceremony.config.resultPath}?outcome=invalid_or_expired` : undefined })
     async callback(@Req() request: FastifyRequest, @Res() reply: FastifyReply): Promise<void> {
       if (!runtime) { await reply.code(503).send({ error: "identity_unavailable" }); return; }
-      const result = await runtime.ceremony.complete({ rawQuery: rawQuery(request), method: request.method, observedOrigin: observedOrigin(request), path: request.url.split("?")[0] ?? request.url, receiptTime: new Date() });
+      const result = await runtime.ceremony.complete({ rawQuery: rawQuery(request), method: request.method, observedOrigin: observedOrigin(request), path: requestPath(request.url), receiptTime: new Date() });
       if (result.kind === "success") for (const cookie of result.setCookie) reply.header("set-cookie", cookie);
       await reply.code(303).header("location", result.navigateTo).send();
     }

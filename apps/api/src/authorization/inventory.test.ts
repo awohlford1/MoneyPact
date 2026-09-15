@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createServer } from "node:net";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,7 +68,36 @@ it("limits lifecycle test launchers to release fixtures and a signal-only proces
     assert.equal(readFileSync(join(src, "authorization/process-fixture.ts"), "utf8").replaceAll("\r\n", "\n"), expected);
   }
 });
-it("real API and worker processes start on the released policy p3 and refuse an empty history", () => {
+/**
+ * A loopback port nothing else on the machine holds (PK2-F03, PK3-F01, P4-F3).
+ *
+ * The API refuses API_PORT=0 (config.ts bounds it at 1..65535), so the port
+ * cannot simply be delegated to the kernel through the spawned process. It is
+ * delegated here instead: bind 127.0.0.1:0, read what the kernel chose, and
+ * release it immediately before the spawn. A hard-coded 3001 made this test
+ * fail for an unrelated local listener on three separate branches; the
+ * remaining window between close and listen is a few milliseconds against an
+ * ephemeral port the kernel has just handed out, rather than a fixed port a
+ * developer's own API sits on all day.
+ */
+async function freeLoopbackPort(): Promise<number> {
+  const server = createServer();
+  try {
+    const port = await new Promise<number>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => {
+        const address = server.address();
+        if (address === null || typeof address === "string") { reject(new Error("no ephemeral port")); return; }
+        resolve(address.port);
+      });
+    });
+    return port;
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+it("real API and worker processes start on the released policy p3 and refuse an empty history", async () => {
   // The two real processes are spawned under tsx while the rest of the workspace
   // suites run in parallel; 15 s was not enough on a loaded machine and the
   // test flaked for three separate agents. The processes exit on their own
@@ -77,11 +107,13 @@ it("real API and worker processes start on the released policy p3 and refuse an 
   // the process fixture and the unit tests above.
   const root = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
   for (const app of ["api", "worker"]) {
+    const apiPort = await freeLoopbackPort();
     const result = spawnSync(process.execPath, ["--import=tsx", "src/main.ts"], {
       cwd: join(root, "apps", app), timeout: 60_000, encoding: "utf8", killSignal: "SIGTERM",
-      env: { NODE_ENV: "test", LOG_LEVEL: "info", SERVICE_VERSION: "released-policy-test", API_PORT: "3001", COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local", COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: Buffer.alloc(32, 7).toString("base64"), COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1" },
+      env: { NODE_ENV: "test", LOG_LEVEL: "info", SERVICE_VERSION: "released-policy-test", API_PORT: String(apiPort), COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local", COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: Buffer.alloc(32, 7).toString("base64"), COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1" },
     });
     assert.equal(result.error?.name === "Error" && (result.error as NodeJS.ErrnoException).code !== "ETIMEDOUT" ? result.error : undefined, undefined, app);
+    assert.equal(result.stdout.includes("(EADDRINUSE)"), false, `${app} bound the port it was given (${apiPort})`);
     assert.equal(result.stdout.includes('"operation":"startup"'), true, `${app} startup line`);
     assert.equal(result.stdout.includes('policy_version_unsupported'), false, app);
   }

@@ -98,11 +98,11 @@ function calculationOf(value: unknown): ProrationRecord | null {
 }
 
 export function categoryFromRow(row: BudgetCategoryRow): CategoryRecord {
-  return { categoryId: row.category_id, budgetSpaceId: row.budget_space_id, label: row.label, position: row.position, archivedAt: row.archived_at, createdAt: row.created_at, updatedAt: row.updated_at };
+  return { categoryId: row.category_id, budgetSpaceId: row.budget_space_id, label: row.label, position: row.position, archivedAt: row.archived_at, createdAt: row.created_at, updatedAt: row.updated_at, version: row.version };
 }
 
 export function categoryToRow(record: CategoryRecord): BudgetCategoryRow {
-  return { category_id: record.categoryId, budget_space_id: record.budgetSpaceId, label: record.label, position: record.position, archived_at: record.archivedAt, created_at: record.createdAt, updated_at: record.updatedAt };
+  return { category_id: record.categoryId, budget_space_id: record.budgetSpaceId, label: record.label, position: record.position, archived_at: record.archivedAt, created_at: record.createdAt, updated_at: record.updatedAt, version: record.version };
 }
 
 export function baseTargetFromRow(row: BudgetCategoryBaseTargetRow): BaseTargetRecord {
@@ -163,7 +163,7 @@ export function dataAccessTargetsRepository(statements: TargetsStatements): Targ
     listCategories: (budgetSpaceId) => guarded(async () => (await statements.listCategories(budgetSpaceId)).map(categoryFromRow)),
     insertCategory: (record) => guarded(() => statements.insertCategory(categoryToRow(record))),
     updateCategory: (record) => guarded(async () => (await statements.updateCategory(record.budgetSpaceId, record.categoryId, {
-      label: record.label, position: record.position, archived_at: record.archivedAt, updated_at: record.updatedAt,
+      label: record.label, position: record.position, archived_at: record.archivedAt, updated_at: record.updatedAt, version: record.version,
     })) === 1),
     listBaseTargets: (budgetSpaceId, cadence) => guarded(async () => (await statements.listBaseTargets(budgetSpaceId, cadence)).map(baseTargetFromRow)),
     insertBaseTarget: (record) => guarded(() => {

@@ -94,6 +94,13 @@ export interface CategoryRecord {
   readonly archivedAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
+  /**
+   * PROTO-HARDENING-001 (F-INCB-03): the category row's own monotonic version.
+   * 1 on creation, advanced by one on every edit. This is what CBD-236 SS8.6.1
+   * `resource.version` carries for the CBD-211 category target; it is not a
+   * policy version, a disclosure version or an authorization version.
+   */
+  readonly version: number;
 }
 
 export interface BaseTargetRecord {

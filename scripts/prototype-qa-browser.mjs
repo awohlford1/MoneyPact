@@ -100,7 +100,27 @@ function startApi() {
   const api = spawn(process.execPath, ["--import=tsx", "src/main.ts"], { cwd: join(root, "apps/api"), env: apiEnvironment, stdio: ["ignore", "pipe", "pipe"] });
   let output = ""; for (const stream of [api.stdout, api.stderr]) stream.on("data", (chunk) => { output = (output + chunk).slice(-8000); });
   const exited = new Promise((resolve) => api.once("exit", resolve));
-  return { api, output: () => output, ready: () => waitFor(async () => api.exitCode === null && (await fetch(`${CEREMONY_ORIGIN}/health`)).status === 200, `API ready (${output})`), stop: async () => { if (api.exitCode === null) { api.kill(); await exited; } } };
+  /**
+   * Readiness is "the identity routes answer", not "the process is alive and
+   * /health is 200" (F-BFIX-03 item 2).
+   *
+   * After the restart before the CBD-190-AC06 cases, all four identity-outcome
+   * cases failed once with `POST /v1/identity/begin returned 404 Cannot POST`:
+   * the listener was already accepting and /health already answered 200 while
+   * the identity module was not yet mounted, so the harness proceeded into a
+   * window where the route genuinely did not exist. Waiting for the route
+   * itself closes that window: 404 means not mounted yet, and any other status
+   * (403 for the missing origin headers on this bare probe, or 200) means the
+   * module is in place. The probe deliberately sends no origin or CSRF header,
+   * so it can never begin a real ceremony.
+   */
+  const routesReady = async () => {
+    if (api.exitCode !== null) return false;
+    if ((await fetch(`${CEREMONY_ORIGIN}/health`)).status !== 200) return false;
+    const probe = await fetch(`${CEREMONY_ORIGIN}/v1/identity/begin`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    return probe.status !== 404;
+  };
+  return { api, output: () => output, ready: () => waitFor(routesReady, `API ready with identity routes mounted (${output})`), stop: async () => { if (api.exitCode === null) { api.kill(); await exited; } } };
 }
 
 async function main() {

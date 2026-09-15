@@ -20,8 +20,18 @@ void test("PROTO persisted proposal confirmation followed by current space detai
   const admin = createMigrationConnection(); const api = createApiConnection();
   try {
     const context = testAuthContext({ subjectId: randomUUID(), accountId: randomUUID(), profileId: randomUUID() });
-    await admin.query("INSERT INTO account_subject (account_subject_id) VALUES ($1)", [context.subjectId]);
-    await admin.query("INSERT INTO financial_profile (profile_id, account_subject_id, profile_state) VALUES ($1,$2,'active')", [context.profileId, context.subjectId]);
+    // PROTO-HARDENING-001 (PK2-F02, CL-F02): CBD190-PROFILE-ATOMIC-001's deferred
+    // constraint trigger asserts at COMMIT that a subject holds exactly one active
+    // financial_profile. Two pool queries are two transactions, so the subject
+    // committed alone and the invariant refused it. One connection, one
+    // transaction, both rows. Fixture repair only; no assertion changed.
+    const seed = await admin.connect();
+    try {
+      await seed.query("BEGIN");
+      await seed.query("INSERT INTO account_subject (account_subject_id) VALUES ($1)", [context.subjectId]);
+      await seed.query("INSERT INTO financial_profile (profile_id, account_subject_id, profile_state) VALUES ($1,$2,'active')", [context.profileId, context.subjectId]);
+      await seed.query("COMMIT");
+    } catch (error) { await seed.query("ROLLBACK"); throw error; } finally { seed.release(); }
     const client = bindClient(api, true);
     const clock = new FakeClock("2026-09-15T12:00:00.000Z");
     const proposals = new DurableProposalStore(client, randomUUID, () => clock.now().toISOString());
@@ -40,7 +50,15 @@ void test("PROTO persisted proposal confirmation followed by current space detai
     const detail = await readBudgetSpaceDetail(client, confirmed.budgetSpaceId, context.subjectId, confirmed.primaryOwnerMembershipId, clock);
     assert.ok(detail); assert.equal(detail.space.name, "Round trip");
     assert.equal(detail.scheduleVersion.scheduleVersionId, confirmed.currentScheduleVersionId);
-    assert.deepEqual([detail.activePeriod, ...detail.nextPeriods], issued.response.preview.periods);
+    // PROTO-HARDENING-001: `activePeriod` is a StoredPeriod and carries
+    // periodId, scheduleVersionId and status on top of the preview shape (see
+    // budget-space-reader.ts), so the calendar is compared on the preview
+    // fields and the stored identity is asserted separately. Fixture repair
+    // only; the suite still proves that what was previewed is what was stored.
+    const { periodId, scheduleVersionId, status, ...activeCalendar } = detail.activePeriod;
+    assert.equal(scheduleVersionId, confirmed.currentScheduleVersionId);
+    assert.equal(status, "active"); assert.ok(periodId);
+    assert.deepEqual([activeCalendar, ...detail.nextPeriods], issued.response.preview.periods);
     assert.equal(await readBudgetSpaceDetail(client, confirmed.budgetSpaceId, randomUUID(), confirmed.primaryOwnerMembershipId, clock), null);
   } finally { await api.end(); await admin.end(); }
 });
