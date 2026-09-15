@@ -2,10 +2,15 @@
  * PROTO-ACTIVATION-001 (ACT-02): the p2 subject-scoped cells through the real
  * `FactAssembler` and `AuthorizationBoundary`, not a hand-built PolicyInput.
  *
- * Positive: every section 8.5.1 cell allows for the owning subject when the
- * assembler stamps `environment.environmentId` from its runtime configuration
- * and (for a subject-target cell) copies the row's owner and environment from
- * the datastore. Negative: every subjectNegativeFixtures(CURRENT_POLICY_VERSION) family still denies. A
+ * Positive: every subject cell of the released policy -- the section 8.5.1 p2
+ * cells and, since p5 (PK-6, `P5-F4`, `HO-236-11`), the three invitee cells
+ * `invitation.attach`, `invitation.read_ceremony` and `invitation.accept` --
+ * allows for the owning subject when the assembler stamps
+ * `environment.environmentId` from its runtime configuration and (for a
+ * subject-target cell) copies the row's owner and environment from the
+ * datastore. The positives iterate `subjectCells(CURRENT_POLICY_VERSION)`, so
+ * a released version that adds a subject cell without a fact reader behind it
+ * fails here rather than silently denying `input_invalid` in production. Negative: every subjectNegativeFixtures(CURRENT_POLICY_VERSION) family still denies. A
  * family the assembler can express (row inequality, inactive subject, wrong
  * shape, wrong adapter, service authority) is driven through the boundary and
  * must deny inertly -- no allow audit, no effect. A family that only a forged
@@ -16,9 +21,9 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { CURRENT_POLICY_VERSION, decide, SUBJECT_CELLS } from "@cobudget/contracts/authorization";
-// The p2 fixture catalog is not re-exported by the package index (packages/contracts/src/authorization is read-only for this packet).
-import { subjectFixture, subjectNegativeFixtures } from "../../../../packages/contracts/src/authorization/fixtures/index.ts";
+import { CURRENT_POLICY_VERSION, decide } from "@cobudget/contracts/authorization";
+// The fixture catalog is not re-exported by the package index (packages/contracts/src/authorization is read-only for this packet).
+import { subjectCells, subjectFixture, subjectNegativeFixtures } from "../../../../packages/contracts/src/authorization/fixtures/index.ts";
 import type { ApiSubjectScopedUserPolicyInput, PolicyInput } from "@cobudget/contracts/authorization";
 import { AuthorizationDenied } from "./boundary.js";
 import { FactAssembler, FactFailure, absentFactSource } from "./facts.js";
@@ -26,8 +31,15 @@ import { Harness } from "./test-support.js";
 
 const BOUNDARY_FAMILIES = new Set(["service_authority", "inactive_subject", "inactive_profile", "wrong_target_shape", "wrong_target_type", "space_bound_shape", "worker_adapter"]);
 
-describe("p2 subject-scoped cells through the real fact assembler", () => {
-  for (const cell of SUBJECT_CELLS) {
+const MUTATE_SUBJECT_CELLS = ["proposal.create", "proposal.regenerate", "invitation.attach", "invitation.accept"];
+
+describe("subject-scoped cells of the released policy through the real fact assembler", () => {
+  it("the released version carries the three p5 invitee cells (PK-6 widening, P5-F4)", () => {
+    const actions = subjectCells(CURRENT_POLICY_VERSION).map((cell) => cell.action);
+    for (const action of ["invitation.attach", "invitation.read_ceremony", "invitation.accept"]) assert.ok(actions.includes(action), action);
+    assert.ok(actions.length >= 8, "the five p2 cells plus the three invitee cells");
+  });
+  for (const cell of subjectCells(CURRENT_POLICY_VERSION)) {
     it(`allows the owning subject on ${cell.action} and records the allow`, async () => {
       const h = new Harness(subjectFixture(cell.action, CURRENT_POLICY_VERSION));
       // The Harness store knows only bootstrap obligations; production's ApiTransactionStore discharges bind_cache_key (RC-05).
@@ -77,7 +89,7 @@ describe("p2 subject-scoped cells through the real fact assembler", () => {
   });
 
   it("denies a stale session version at commit for the mutate cells", async () => {
-    for (const action of ["proposal.create", "proposal.regenerate"]) {
+    for (const action of MUTATE_SUBJECT_CELLS) {
       const h = new Harness(subjectFixture(action, CURRENT_POLICY_VERSION));
       const context = await h.boundary.authorize(h.lookup());
       (h.input as ApiSubjectScopedUserPolicyInput).subject.sessionVersion = 99;

@@ -47,5 +47,25 @@
     "expiresAt": null,
     "revoked": false,
     "decisionRecord": ".agent-state/decisions/CBD266-IDENTITY-RECORDS-001.r2.agent-record.json; docs/cbd-266-rate-limit-parameter-registry-contract.md section 4.7.3"
+  },
+  {
+    "approvalId": "CBD266-INVITATION-RECORDS-001",
+    "actorId": "atlassian:5cffa74b92e6c70c53499977",
+    "candidateDigests": [
+      "567b77161ac6eafa97ade6e9b64623dfe411c13f3bd8b68b4d25337608185a29",
+      "fa9b0882951befc5047c361ad6a9a96957d5ebe0c0e712a42025e4b9fe95272a",
+      "b4c2af0589e14463344265d337cfb977b416f19b414da9ccc8ecd72487adb160",
+      "387ca2b01ae5c8dcc109cc48f032cc4dee7bba4fbda56dd81df0cc863490407e",
+      "95efa2fc50c28c289007a69e9ee51edbfe1d0709e66b8af45bf8ccd1c6bd23b9",
+      "9c06cf7c7a42d72b5e9e426371af926a277384e297bb548edb72bb1bac585594"
+    ],
+    "conditions": [
+      "prototype-only",
+      "revisit before any hosted environment"
+    ],
+    "decidedAt": "2026-09-15T02:31:00Z",
+    "expiresAt": null,
+    "revoked": false,
+    "decisionRecord": ".agent-state/decisions/CBD266-INVITATION-RECORDS-001.r1.agent-record.json (revision 2 pins these digests); .agent-state/decisions/INVITATIONS-DESIGN-001.r1.agent-record.json item 12; docs/cbd-234-invitations-consent-design-proposal.md section 12"
   }
 ]

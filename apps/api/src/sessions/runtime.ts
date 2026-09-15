@@ -26,6 +26,17 @@
  * Nothing here reads `process.env`; the data-access client is created
  * lazily on first statement so composition (and the surface inventory
  * discovery) never opens a database connection by itself.
+ *
+ * PK-6 (INVITATIONS-DESIGN-001; CBD-234 design sections 5, 12, 13) joins the
+ * invitation surface on the local path: the owner, ceremony and invitee
+ * routes (`invitations/http.ts`), the simulated local delivery surface
+ * (`local/http.ts`, built only here and refused for any other adapter), the
+ * invitation transaction store dispatched for the twelve invitation actions,
+ * the ceremony fact reader (`budget-facts.ts`, the p5 subject cells), and the
+ * pre-counter ceremony gate wrapped around the rate limits
+ * (`invitations/surface-gate.ts`). The one role pool `invitationRuntime` holds
+ * for the closed pre-authentication locator statements is created lazily
+ * for the same reason the client is.
  */
 import { HttpException } from "@nestjs/common";
 import { createApiClient } from "@cobudget/data-access";
@@ -39,7 +50,16 @@ import { unavailableApiAuthorization } from "../authorization/http.js";
 import type { ApiAuthorizationOptions } from "../authorization/http.js";
 import { ApiRateLimits } from "../rate-limit/http.js";
 import type { ApiSurfaceGate } from "../rate-limit/http.js";
+import { resolveApiFieldEncryptionProvider } from "../config.js";
 import type { ApiConfig } from "../config.js";
+import type { Pool } from "../../../../packages/data-access/src/driver.ts";
+import type { KeyProvider } from "../../../../packages/data-access/src/encryption/provider.ts";
+import { createApiConnection } from "../../../../packages/data-access/src/connection.ts";
+import { loadConsentDisclosureRegistry } from "../budget-creation/consent-registry.ts";
+import { INVITATION_ACTION_SET, InvitationsAuthorizationStore, dataAccessInvitationsDependencies, invitationsHttp } from "../invitations/http.ts";
+import { invitationRuntime } from "../invitations/persistence.ts";
+import { invitationSurfaceGate } from "../invitations/surface-gate.ts";
+import { localDeliveriesHttp } from "../local/http.ts";
 import { ChallengeStore } from "../identity/challenge.ts";
 import { IdentityCeremony } from "../identity/ceremony.ts";
 import type { IdentityEvidence, IdentityEvidenceSink } from "../identity/ceremony.ts";
@@ -55,7 +75,7 @@ import type { MappingHooks } from "../identity/mapping.ts";
 import type { ReliabilitySink } from "../telemetry.js";
 import { composeBudgetApi } from "../budget-creation/composition.ts";
 import { InProcessRestrictedAuditStore } from "./audit.ts";
-import { budgetFactReader } from "./budget-facts.ts";
+import { budgetFactReader, ceremonyFactReader } from "./budget-facts.ts";
 import { DispatchingTransactionStore } from "./dispatch.ts";
 import { createApiFactSource } from "./fact-source.ts";
 import type { FactReader } from "./fact-source.ts";
@@ -75,6 +95,10 @@ const PROTOTYPE_AUDIT_GOVERNANCE = Object.freeze({
 
 export interface RuntimeOverrides {
   readonly client?: DataAccessClient | undefined;
+  /** PK-6: the role pool the closed pre-authentication locator statements read; a test supplies its own scratch pool. */
+  readonly locator?: Pick<Pool, "query"> | undefined;
+  /** PK-6: the CBD-246 field-encryption provider the invitation outbox and digests use; resolved from the config when absent. */
+  readonly keys?: KeyProvider | undefined;
   readonly rateLimit?: ApiSurfaceGate | undefined;
   readonly now?: (() => Date) | undefined;
   readonly evidence?: IdentityEvidenceSink | undefined;
@@ -119,6 +143,20 @@ export function lazyDataAccessClient(factory: () => DataAccessClient): DataAcces
     profileUpdate: (query) => { const c = client(); if (!c.profileUpdate) throw new Error("profile statements unavailable"); return c.profileUpdate(query); },
     profileDelete: (query) => { const c = client(); if (!c.profileDelete) throw new Error("profile statements unavailable"); return c.profileDelete(query); },
   };
+}
+
+/**
+ * PK-6: the one `Pick<Pool, "query">` the PK-5 persistence composition needs for
+ * its three closed cross-space locator statements, created on first use so that
+ * composition never opens a connection. `apps/api` never calls it: the only
+ * readers are `listLiveInvitationCodes`, `locateInvitationCeremony` and
+ * `locateInvitationByCode` in `packages/data-access` and
+ * `packages/budget-application` (see `invitations/persistence.ts` and
+ * `SEC-PK5-R03` for the data-access follow-up that removes this exception).
+ */
+export function lazyLocatorQueryable(factory: () => Pool): Pick<Pool, "query"> {
+  let pool: Pool | undefined;
+  return { get query(): Pool["query"] { const instance = (pool ??= factory()); return instance.query.bind(instance); } };
 }
 
 function stringOrUndefined(value: string | number | undefined): string | undefined {
@@ -185,14 +223,30 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
   const sessions = buildSessionFactSourceAdapter(session, identityConfig.environmentId, client, overrides.revocationFence ?? true);
   const audit = new InProcessRestrictedAuditStore();
   const budget = composeBudgetApi({ client, environmentId: identityConfig.environmentId, sessions, pepper: session.pepper, now });
+  // PK-6: the invitation surface. The registry is verified at startup by `composeBudgetApi` above; the invitation
+  // composition asks it for both invitation kinds and fails closed if either is missing.
+  const invitations = invitationRuntime({
+    locator: overrides.locator ?? lazyLocatorQueryable(() => createApiConnection()),
+    keys: overrides.keys ?? resolveApiFieldEncryptionProvider(config),
+    disclosures: loadConsentDisclosureRegistry(), now,
+  });
+  const invitationRoutes = invitationsHttp(dataAccessInvitationsDependencies({
+    client, within: invitations.within, environmentId: identityConfig.environmentId, applicationOrigin: identityConfig.applicationOrigin, now,
+  }));
+  const invitationStore = new InvitationsAuthorizationStore(client);
+  const localDeliveries = localDeliveriesHttp({ adapterKind: identityConfig.adapterKind, within: invitations.within, now });
   const budgetFacts = budgetFactReader(identityConfig.environmentId);
+  const ceremonyFacts = ceremonyFactReader(identityConfig.environmentId, invitations.locateCeremony);
   const extend: FactReader = async (source, lookup, scoped) => {
-    const facts = { ...(await budgetFacts(source, lookup, scoped) ?? {}), ...(await overrides.extendFacts?.(source, lookup, scoped) ?? {}) };
+    const facts = { ...(await budgetFacts(source, lookup, scoped) ?? {}), ...(await ceremonyFacts(source, lookup, scoped) ?? {}), ...(await overrides.extendFacts?.(source, lookup, scoped) ?? {}) };
     return Object.keys(facts).length ? facts : null;
   };
   const boundary = new AuthorizationBoundary(
     new FactAssembler("api", budget.facts(createApiFactSource({ sessions, client, extend })), now, 5_000, budget.candidates, { environmentId: identityConfig.environmentId }),
-    new DispatchingTransactionStore(new ApiTransactionStore(client, audit, { beforeCommit: overrides.beforeCommit }), audit, budget.stores),
+    new DispatchingTransactionStore(new ApiTransactionStore(client, audit, { beforeCommit: overrides.beforeCommit }), audit, [
+      ...budget.stores,
+      { actions: INVITATION_ACTION_SET, store: invitationStore, observe: (outcomes) => invitationStore.observe(outcomes) },
+    ]),
     new RestrictedAudit(audit, PROTOTYPE_AUDIT_GOVERNANCE),
     failure,
   );
@@ -290,9 +344,10 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
     return {};
   };
   const authorization: Wiring = {
-    modules: [identity.module, ...budget.modules],
+    modules: [identity.module, ...budget.modules, invitationRoutes.module, localDeliveries.module],
     boundary,
-    rateLimit: overrides.rateLimit ?? new ApiRateLimits("cbd266-prototype-v1", undefined, undefined, undefined, ceremonyContext),
+    // PK-6: the ceremony gate denies a verify-channel or decline that names no resolvable ceremony before any counter is touched.
+    rateLimit: overrides.rateLimit ?? invitationSurfaceGate(new ApiRateLimits("cbd266-prototype-v1", undefined, undefined, undefined, ceremonyContext), invitations.locateCeremony),
     // The rate-limit preHandler already denied any unregistered or unapproved surface before canActivate runs (CBD-266 section 8.1); this flag is that gate's duplicate notion (CBD266-COMPLETION-001 follow-up).
     surfaceApproved: async () => true,
     sessionLocator: (request) => readSessionCookieValue(typeof request.headers.cookie === "string" ? request.headers.cookie : undefined),

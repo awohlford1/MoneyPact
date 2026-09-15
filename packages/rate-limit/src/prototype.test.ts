@@ -9,8 +9,10 @@ import { seal, validateRegistry } from "./registry.ts";
 
 const evidence = JSON.parse(readFileSync(PROTOTYPE_APPROVALS_PATH, "utf8"));
 // Five prototype sets plus rlp-266-identity-session-v1 and rlp-266-identity-ceremony-v1, projected next to
-// rlp-266-bootstrap-v1 on a disjoint stage set (CBD266-IDENTITY-RECORDS-001, CBD266-SURFACE-STAGES-001).
-const APPROVED_RECORDS = 7;
+// rlp-266-bootstrap-v1 on a disjoint stage set (CBD266-IDENTITY-RECORDS-001, CBD266-SURFACE-STAGES-001), plus the six
+// invitation records of CBD266-INVITATION-RECORDS-001 (PK-6: the ceremony set on surf-266-invitation-accept and the
+// projected create, resend, cancel, inspect and local-delivery records).
+const APPROVED_RECORDS = 13;
 it("projects all exact decision digests and the authorized actor", () => {
   const registry = loadPrototypeRegistry();
   assert.equal(registry.approved.size, APPROVED_RECORDS);
