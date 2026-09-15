@@ -125,12 +125,19 @@ export interface PermissionLostInvitation {
  * `@cobudget/budget-application/invitations` over the same transaction
  * client. Returns the identifiers cancelled, which is what `TR-73-43`'s
  * "exactly one `AE-73-06` per invitation" count is asserted against.
+ *
+ * `invitationIds` is the set the `invalidate` discharge captured (`R-05`):
+ * the canceller acts on those and no other, so the ledger's capture is what
+ * the commit acts on for this obligation exactly as for the other three. The
+ * implementation still re-reads each row under the space, creator and
+ * permission it was captured for and skips one that is no longer active.
  */
 export interface PermissionLostInvitationCanceller {
   (input: {
     readonly budgetSpaceId: string;
     readonly createdByMembershipId: string;
     readonly requiredPermission: "26";
+    readonly invitationIds: readonly string[];
     readonly correlationId: string;
   }): Promise<readonly string[]>;
 }

@@ -284,8 +284,9 @@ export function primaryTransferObligations(deps: PrimaryTransferDependencies): P
    * still-active invitation the former Primary created under permission 26,
    * which design SS10.3 step 6 cancels through the PK-5 system path.
    *
-   * This discharge captures that set and refuses when the proposer is no
-   * longer the space's Primary -- there is then nothing coherent to
+   * This discharge captures that set -- the commit hands exactly these
+   * identifiers to the canceller (`R-05`) -- and refuses when the proposer is
+   * no longer the space's Primary: there is then nothing coherent to
    * invalidate and the workflow is stale.
    */
   async function dischargeInvalidate(ledger: MutableLedger): Promise<boolean> {

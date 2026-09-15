@@ -407,6 +407,34 @@ void test("PK7A-01: a concurrent writer that moved a version makes the commit lo
   assert.equal((await world.repository.readSpace(SPACE))?.primaryOwnershipVersion, 1);
 });
 
+void test("R-05: the commit cancels exactly the invitations the invalidate discharge captured", async () => {
+  const world = testWorld();
+  const transferId = await propose(world);
+  await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId });
+  await confirmLegOnly(world, transferId);
+  const obligations = primaryTransferObligations(world.deps);
+  const ledger = obligations.begin({
+    budgetSpaceId: SPACE, transferId, decision: world.primary("29.transfer_primary_ownership").decision,
+    freshAssuranceRef: ASSURANCE_REFERENCE, correlationId: world.primary("29.transfer_primary_ownership").correlationId,
+  });
+  assert.equal(await obligations.dischargeAll(ledger), true);
+  assert.deepEqual(ledger.capture?.openWork.map((row) => row.invitationId), ["12121212-1212-4212-8212-121212121212"]);
+
+  // A row that appears after the capture is not the capture's. On the real
+  // database the serializable snapshot makes the two sets identical; the
+  // double has no snapshot, which is what lets this prove the selection.
+  world.repository.seedInvitation({
+    invitationId: "13131313-1313-4313-8313-131313131313", budgetSpaceId: SPACE,
+    createdByMembershipId: PRIMARY_MEMBERSHIP, requiredPermission: "26", state: "pending",
+  });
+  const receipt = await commitPrimaryTransfer(world.deps, world.primary("29.transfer_primary_ownership"), ledger);
+  assert.equal(receipt.transferId, transferId);
+  assert.deepEqual(world.cancelled, ["12121212-1212-4212-8212-121212121212"]);
+  assert.equal(world.repository.invitations.get("13131313-1313-4313-8313-131313131313")?.state, "pending");
+  const committedEvent = world.repository.audit.find((row) => row.eventSubtype === "transfer_committed");
+  assert.equal(committedEvent?.payload.cancelledInvitationCount, 1);
+});
+
 void test("PK7A-01: the role swap keeps one active primary owner at every statement", async () => {
   const world = testWorld();
   const transferId = await propose(world);

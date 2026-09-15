@@ -285,10 +285,13 @@ export async function commitPrimaryTransfer(
   await boundary("after-consents");
 
   // --- 6: the former Primary's permission-26 invitations, through PK-5. ---
+  // Exactly the rows `invalidate` captured (`R-05`); the canceller re-reads
+  // each under the same space, creator and permission.
   const cancelled = await cancelInvitations({
     budgetSpaceId: transfer.budgetSpaceId,
     createdByMembershipId: proposer.membershipId,
     requiredPermission: LOST_PERMISSION,
+    invitationIds: capture.openWork.map((row) => row.invitationId),
     correlationId: actor.correlationId,
   });
   await boundary("after-invitations");

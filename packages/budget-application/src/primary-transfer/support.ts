@@ -131,14 +131,20 @@ export function testWorld(options: {
     ids: { uuid: () => ids.uuid() },
     disclosures: testDisclosures(),
     cancelPermissionLostInvitations: async (input) => {
+      // Exactly what the store's canceller does: re-list under the captured
+      // scope, act only on the captured identifiers (`R-05`).
+      const captured = new Set(input.invitationIds);
       const open = await repository.listPermissionInvitations(
         input.budgetSpaceId, input.createdByMembershipId, input.requiredPermission,
       );
+      const done: string[] = [];
       for (const row of open) {
+        if (!captured.has(row.invitationId)) continue;
         repository.invitations.set(row.invitationId, { ...row, state: "cancelled" });
         cancelled.push(row.invitationId);
+        done.push(row.invitationId);
       }
-      return open.map((row) => row.invitationId);
+      return done;
     },
   };
 

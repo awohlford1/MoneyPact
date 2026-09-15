@@ -92,16 +92,23 @@ export function primaryTransferPersistence(options: PrimaryTransferPersistenceOp
  * cancellation whose real cause is another member's permission loss is not a
  * fact the invitee's surface may distinguish from an ordinary expiry (CBD-73
  * SS14 placement rule 5).
+ *
+ * It acts on the identifiers the `invalidate` discharge captured and on no
+ * other (`R-05`): the re-list under the captured space, creator and
+ * permission is the scope check, and the captured set is the selection. An
+ * identifier that is no longer listed or no longer active is skipped.
  */
 export function permissionLostCanceller(
   invitations: InvitationDependencies, transfers: PrimaryTransferRepository,
 ): PermissionLostInvitationCanceller {
   return async (input) => {
+    const captured = new Set(input.invitationIds);
     const open = await transfers.listPermissionInvitations(
       input.budgetSpaceId, input.createdByMembershipId, input.requiredPermission,
     );
     const cancelled: string[] = [];
     for (const row of open) {
+      if (!captured.has(row.invitationId)) continue;
       if (!(ACTIVE_INVITATION_STATES as readonly string[]).includes(row.state)) continue;
       const record = await invitations.repository.readInvitation(row.budgetSpaceId, row.invitationId);
       if (!record) continue;
