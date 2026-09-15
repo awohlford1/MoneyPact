@@ -643,6 +643,20 @@ void test("PROTO-INVITATIONS-PK5 live PostgreSQL: the acceptance transaction, th
       ]);
       const fulfilled = attempts.filter((outcome) => outcome.status === "fulfilled");
       assert.equal(fulfilled.length, 1, "exactly one confirm commits");
+
+      // R-07: name what the loser actually receives. Both transactions pass
+      // every check and reach the membership insert, so the second most often
+      // blocks on budget_space_membership_one_active_per_subject and receives
+      // 23505 -> `conflict` rather than the `stale_version` the design names;
+      // a serialization failure (`retryable_conflict`) is the other admitted
+      // answer. PK-6 must treat all three the same way: re-read and replay
+      // with the client's own idempotency key.
+      const loser = attempts.find((outcome) => outcome.status === "rejected") as PromiseRejectedResult;
+      const loserCode = isInvitationError(loser.reason) ? loser.reason.code : String(loser.reason);
+      assert.ok(
+        ["conflict", "retryable_conflict", "stale_version"].includes(loserCode),
+        `the loser's code is one of conflict, retryable_conflict or stale_version; got ${loserCode}`,
+      );
       assert.equal(await countRows("budget_space_membership", "account_subject_id", raceInvitee.subject), 1);
       assert.equal(await countRows("budget_space_consent", "account_subject_id", raceInvitee.subject), 1);
       const committed = (fulfilled[0] as PromiseFulfilledResult<AcceptanceReceipt>).value;
