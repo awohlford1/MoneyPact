@@ -37,6 +37,8 @@ const SUBJECT = "33333333-3333-4333-8333-333333333333";
 const CONSENT = "88888888-8888-4888-8888-888888888888";
 
 const owner = () => ({ membership_id: MEMBERSHIP, role: "primary_owner", status: "active", authorization_version: 1 });
+/** The space's own row as the M1 schema stores it; `primary_ownership_version` is `NOT NULL DEFAULT 1` (CBD-236 v0.13, POV-E05). */
+const spaceRow = (overrides: Record<string, unknown> = {}) => ({ budget_space_id: SPACE, lifecycle: "live", lifecycle_version: 1, primary_owner_membership_id: MEMBERSHIP, primary_ownership_version: 1, ...overrides });
 const consentRow = (overrides: Record<string, unknown> = {}) => ({
   consent_id: CONSENT, disclosure_version: 1, state: "current", recorded_at: "2026-09-14T12:00:00.000Z", ...overrides,
 });
@@ -70,7 +72,7 @@ describe("through the real fact assembler and the released policy", () => {
     const client = {
       tenantSelect: async (query: { table: string; budgetSpaceId: string; conditions?: { column: string; value: unknown }[] }) => {
         assert.equal(query.budgetSpaceId, SPACE);
-        if (query.table === "budget_space") return { rows: [{ budget_space_id: SPACE, lifecycle: "live", lifecycle_version: 1, primary_owner_membership_id: MEMBERSHIP }] };
+        if (query.table === "budget_space") return { rows: [spaceRow()] };
         if (query.table === "budget_space_membership") {
           // The reader must ask for the acting subject's own row: (space, membership id, account subject).
           assert.deepEqual(query.conditions?.map((c) => c.column), ["membership_id", "account_subject_id"]);
@@ -155,6 +157,90 @@ describe("the interim derivation is deleted, not disabled", () => {
  * not own -- which is what makes a foreign target an inert `input_invalid`
  * denial rather than a query the handler runs.
  */
+/**
+ * CBD-236 v0.13 (EXEC-POV-C200F01-001; docs/cbd-236-primary-ownership-version-amendment-proposal.md POV-E05, POV-N08):
+ * `spaceFacts` emits `space.primaryOwnershipVersion` from `budget_space.primary_ownership_version`, read in the same
+ * statement as `primary_owner_membership_id`; the leaf is required by the contract, so a row without an integer value
+ * denies `input_invalid` through the real assembler, and the captured record names the column rather than the
+ * membership's `authorization_version`.
+ */
+describe("POV-N08: spaceFacts emits space.primaryOwnershipVersion from the budget_space row", () => {
+  /** The datastore reader alone, over a `budget_space` row with the given column value; records the columns it selected. */
+  function spaceReader(row: Record<string, unknown> | undefined) {
+    const selected: string[] = [];
+    const client = {
+      tenantSelect: async (query: { table: string; budgetSpaceId: string; columns?: readonly string[] }) => {
+        assert.equal(query.budgetSpaceId, SPACE);
+        if (query.table === "budget_space") { selected.push(...(query.columns ?? [])); return { rows: row ? [row] : [] }; }
+        if (query.table === "budget_space_membership") return { rows: [owner()] };
+        if (query.table === "budget_space_consent") return { rows: [consentRow()] };
+        return { rows: [] };
+      },
+    } as unknown as DataAccessClient;
+    const read = () => budgetFactReader("development")("datastore", {
+      credential: "opaque", identity: { "subject.accountSubjectId": SUBJECT },
+      operation: { action: "2a.edit_target", purpose: "user_delegated", mode: "user_delegated", fieldSet: "default", resourceType: "plan", resourceId: SPACE, actingSpaceId: SPACE, actingMembershipId: MEMBERSHIP },
+    }, client);
+    return { read, selected };
+  }
+
+  it("answers the column's own value, selected in the same statement as primary_owner_membership_id", async () => {
+    const reader = spaceReader(spaceRow({ primary_ownership_version: 3 }));
+    const facts = await reader.read();
+    assert.equal(facts?.["space.primaryOwnershipVersion"], 3);
+    assert.equal(facts?.["space.primaryOwnerMembershipId"], MEMBERSHIP);
+    assert.ok(reader.selected.includes("primary_ownership_version") && reader.selected.includes("primary_owner_membership_id"), "one statement carries both columns");
+    assert.equal(reader.selected.length, new Set(reader.selected).size, "the space row is read once");
+    // A decimal string from the driver is the same integer; a bigint-shaped string is not silently coerced beyond the safe range.
+    assert.equal((await spaceReader(spaceRow({ primary_ownership_version: "7" })).read())?.["space.primaryOwnershipVersion"], 7);
+  });
+
+  it("a non-integer column value yields no leaf at all, never a fabricated one", async () => {
+    for (const value of [null, undefined, "three", 1.5, {}, true]) {
+      const facts = await spaceReader(spaceRow({ primary_ownership_version: value })).read();
+      assert.equal(facts?.["space.primaryOwnershipVersion"], undefined, JSON.stringify(value));
+      assert.equal(facts?.["space.primaryOwnerMembershipId"], MEMBERSHIP, "the rest of the row is still answered");
+    }
+  });
+
+  /** The real assembler and the released policy over a `budget_space` row whose ownership version is `version`. */
+  function assembler(version: unknown, membership: Record<string, unknown> = owner()) {
+    const client = {
+      tenantSelect: async (query: { table: string; budgetSpaceId: string }) => {
+        assert.equal(query.budgetSpaceId, SPACE);
+        if (query.table === "budget_space") return { rows: [spaceRow({ primary_ownership_version: version })] };
+        if (query.table === "budget_space_membership") return { rows: [membership] };
+        if (query.table === "budget_space_consent") return { rows: [consentRow()] };
+        return { rows: [] };
+      },
+      platformSelect: async (query: { table: string }) => ({ rows: query.table === "account_subject" ? [{ account_subject_id: SUBJECT, lifecycle_state: "active", lifecycle_version: 1 }] : [] }),
+      profileSelect: async () => ({ rows: [{ profile_id: "77777777-7777-4777-8777-777777777777", account_subject_id: SUBJECT, profile_state: "active", version: 1 }] }),
+    } as unknown as DataAccessClient;
+    const sessions = { read: async () => ({ "subject.accountSubjectId": SUBJECT, "subject.sessionRef": "session-ref-1", "subject.sessionVersion": 1 }) };
+    const source = createApiFactSource({ sessions, client, extend: budgetFactReader("development") });
+    return new FactAssembler("api", source, () => new Date(), 5_000, undefined, { environmentId: "development" });
+  }
+  const mutation = { credential: "opaque", operation: { action: "2a.edit_target", purpose: "user_delegated" as const, mode: "user_delegated" as const, fieldSet: "default" as const, resourceType: "plan" as const, resourceId: SPACE, actingSpaceId: SPACE, actingMembershipId: MEMBERSHIP } };
+
+  it("the captured record names the column, independent of the membership's authorization_version", async () => {
+    const input = await assembler(3, { ...owner(), authorization_version: 5 }).assemble(mutation);
+    assert.equal(input.space?.primaryOwnershipVersion, 3);
+    assert.equal(input.provenance["space.primaryOwnershipVersion"], "datastore");
+    const decision = decide(input);
+    assert.equal(decision.outcome, "allow");
+    const captured = decision.capturedVersions as Record<string, unknown>;
+    assert.equal(captured.primaryOwnershipVersion, 3, "the column");
+    assert.equal(captured.authorizationVersion, 5, "the membership row");
+  });
+
+  it("a row without an integer ownership version denies every ordinary cell input_invalid before any handler", async () => {
+    // A negative integer passes the reader's integer projection and is refused by the assembler's own version-leaf rule.
+    for (const value of [null, "three", 1.5, -1]) {
+      await assert.rejects(assembler(value).assemble(mutation), (error: unknown) => error instanceof FactFailure && error.reason === "input_invalid", JSON.stringify(value));
+    }
+  });
+});
+
 describe("row-level resource facts for the increment-B route targets", () => {
   const ACCOUNT = "77777777-7777-4777-8777-777777777771";
   const TRANSACTION = "66666666-6666-4666-8666-666666666661";
@@ -176,7 +262,7 @@ describe("row-level resource facts for the increment-B route targets", () => {
       tenantSelect: async (query: { table: string; budgetSpaceId: string; columns?: readonly string[] }) => {
         assert.equal(query.budgetSpaceId, SPACE, "every row read is tenant-scoped on the acting space");
         (selected[query.table] ??= []).push(...(query.columns ?? []));
-        if (query.table === "budget_space") return { rows: [{ budget_space_id: SPACE, lifecycle: "live", lifecycle_version: 1, primary_owner_membership_id: MEMBERSHIP }] };
+        if (query.table === "budget_space") return { rows: [spaceRow()] };
         if (query.table === "budget_space_membership") return { rows: [owner()] };
         if (query.table === "budget_space_consent") return { rows: [consentRow()] };
         return { rows: present ? rows[query.table] ?? [] : [] };
@@ -314,7 +400,7 @@ describe("PK-6: the ceremony fact reader and the invitation row facts", () => {
     const client = {
       tenantSelect: async (query: { table: string; budgetSpaceId: string; conditions?: { column: string; value: unknown }[] }) => {
         assert.equal(query.budgetSpaceId, SPACE);
-        if (query.table === "budget_space") return { rows: [{ budget_space_id: SPACE, lifecycle: "live", lifecycle_version: 1, primary_owner_membership_id: MEMBERSHIP }] };
+        if (query.table === "budget_space") return { rows: [spaceRow()] };
         if (query.table === "budget_space_membership") return { rows: [owner()] };
         if (query.table === "budget_space_consent") return { rows: [consentRow()] };
         if (query.table === "budget_space_invitation") return { rows: (query.conditions ?? []).some((c) => c.column === "invitation_id" && c.value === INVITATION) ? [{ budget_space_id: SPACE, state: "awaiting_confirmation", state_version: 4 }] : [] };
@@ -346,7 +432,7 @@ describe("PK-7B: the membership target of the transfer cells", () => {
   const client = {
     tenantSelect: async (query: { table: string; budgetSpaceId: string }) => {
       assert.equal(query.budgetSpaceId, SPACE);
-      if (query.table === "budget_space") return { rows: [{ budget_space_id: SPACE, lifecycle: "live", lifecycle_version: 1, primary_owner_membership_id: MEMBERSHIP }] };
+      if (query.table === "budget_space") return { rows: [spaceRow()] };
       if (query.table === "budget_space_membership") return { rows: [owner()] };
       if (query.table === "budget_space_consent") return { rows: [consentRow()] };
       return { rows: [] };

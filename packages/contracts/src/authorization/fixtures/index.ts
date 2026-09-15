@@ -19,7 +19,7 @@ export function ordinaryFixture(action: string, role: Role = "primary_owner", ve
     subject: { accountSubjectId: "subject-1", sessionRef: "session-ref-1", sessionVersion: 1, subjectState: "active", subjectVersion: 1 },
     assurance: { level: "fresh", boundAction: action, boundSpaceId: "space-1", expiresAt: later },
     profile: { profileId: "profile-1", profileState: "active", profileVersion: 1 },
-    space: { spaceId: "space-1", lifecycle: "live", lifecycleVersion: 1, primaryOwnerMembershipId: "membership-1" },
+    space: { spaceId: "space-1", lifecycle: "live", lifecycleVersion: 1, primaryOwnerMembershipId: "membership-1", primaryOwnershipVersion: 1 },
     membership: { membershipId: "membership-1", role, status: "active", authorizationVersion: 1 },
     consent: { consentId: "consent-1", disclosureVersion: 1, state: "current" },
     resource: {
@@ -46,7 +46,7 @@ export function bootstrapFixture(version: RegisteredPolicyVersion = CURRENT_POLI
 
 export function serviceFixture(version: RegisteredPolicyVersion = CURRENT_POLICY_VERSION): WorkerServicePolicyInput {
   const input = {
-    space: { spaceId: "space-1", lifecycle: "live", lifecycleVersion: 1, primaryOwnerMembershipId: "membership-1" },
+    space: { spaceId: "space-1", lifecycle: "live", lifecycleVersion: 1, primaryOwnerMembershipId: "membership-1", primaryOwnershipVersion: 1 },
     resource: { type: "period_state", id: "period-1", owningSpaceId: "space-1", version: 1, lifecycle: "active" },
     request: { action: "service.SA-92-002.generate_period_state", purpose: "SA-92-002", fieldSet: "default" }, versions: { policyVersion: version },
     authority: { mode: "service", servicePurpose: "SA-92-002", serviceIdentity: "workload-1", workloadIdentityVersion: 1, servicePolicyVersion: 1, sourceVersion: 1 },
@@ -173,7 +173,7 @@ export const NEGATIVE_FIXTURES = Object.freeze([
 export type SubjectNegativeFamily = "another_subject" | "wrong_environment" | "stale_session_version" | "service_authority" | "inactive_subject" | "inactive_profile" | "wrong_target_shape" | "wrong_target_type" | "space_bound_shape" | "worker_adapter" | "forbidden_section_empty" | "forbidden_section_populated";
 /** SEC-P2-F5: sections the subject-scoped variant forbids, each injected both as an empty object and as a populated row. */
 export const FORBIDDEN_SUBJECT_SECTIONS = Object.freeze({
-  space: { spaceId: "space-1", lifecycle: "live", lifecycleVersion: 1, primaryOwnerMembershipId: "membership-1" },
+  space: { spaceId: "space-1", lifecycle: "live", lifecycleVersion: 1, primaryOwnerMembershipId: "membership-1", primaryOwnershipVersion: 1 },
   membership: { membershipId: "membership-1", role: "primary_owner", status: "active", authorizationVersion: 1 },
   consent: { consentId: "consent-1", disclosureVersion: 1, state: "current" },
   bootstrap: { candidateSpaceId: "candidate-space-1", candidatePrimaryMembershipId: "candidate-membership-1", spaceState: "absent", primaryMembershipState: "absent" },
@@ -224,7 +224,10 @@ export const P2_NEGATIVE_FIXTURES: readonly SubjectNegativeFixture[] = subjectNe
  * authorization, primary ownership, consent disclosure), service authority, an inactive subject, membership, or consent
  * (superseded and ended), the subject-scoped shape, and a missing target. Every entry is evaluated under `version` and must deny
  * inertly with the stated reason (PC-236-018). `AccountNegative*` are the p3/p4 names, kept for the package consumers. */
-export type SpaceBoundNegativeFamily = "other_role" | "other_space" | "wrong_target_type" | "inactive_lifecycle" | "stale_version" | "stale_authorization_version" | "stale_primary_ownership_version" | "stale_consent_version" | "service_authority" | "inactive_subject" | "inactive_membership" | "consent_not_current" | "consent_superseded" | "subject_scoped_shape" | "missing_target";
+export type SpaceBoundNegativeFamily = "other_role" | "other_space" | "wrong_target_type" | "inactive_lifecycle" | "stale_version" | "stale_authorization_version" | "stale_primary_ownership_version" | "stale_consent_version" | "service_authority" | "inactive_subject" | "inactive_membership" | "consent_not_current" | "consent_superseded" | "subject_scoped_shape" | "missing_target"
+  /** POV-N01..POV-N04 (docs/cbd-236-primary-ownership-version-amendment-proposal.md section 5; CBD-236 v0.13 section 9.7): the
+   * `space.primaryOwnershipVersion` leaf is captured from the column, required, datastore-only and a positive integer. */
+  | "stale_primary_ownership_column" | "missing_primary_ownership_version" | "client_asserted_primary_ownership_version" | "malformed_primary_ownership_version";
 export type AccountNegativeFamily = SpaceBoundNegativeFamily;
 export interface SpaceBoundNegativeFixture { readonly id: string; readonly action: string; readonly role: Role; readonly family: SpaceBoundNegativeFamily; readonly input: unknown; readonly reason: string }
 export type AccountNegativeFixture = SpaceBoundNegativeFixture;
@@ -254,7 +257,30 @@ function spaceBoundNegatives(action: string, role: Role, version: RegisteredPoli
     entry("consent_superseded", stamp({ ...positive, consent: { ...positive.consent, state: "superseded" } }), "consent_not_current"),
     entry("subject_scoped_shape", stamp({ ...subjectFixture("membership.list_own", version), request: { action, purpose: "user_delegated", fieldSet: "default" } }), "input_invalid"),
     entry("missing_target", { ...positive, resource: undefined }, "input_invalid"),
+    // POV-N01: the column moved (budget_space.primary_ownership_version 1 -> 2) and nothing else did; the precheck capture is
+    // otherwise exact. Allows against an evaluator that aliases membership.authorizationVersion under the key (PK6-F01), so
+    // it is the discriminating fixture for the capture line.
+    entry("stale_primary_ownership_column", stamp({ ...positive, space: { ...positive.space, primaryOwnershipVersion: 2 }, versions: { policyVersion: version, capturedAtPrecheck: precheck.capturedVersions } }), "stale_version"),
+    // POV-N02: the leaf is required; provenance restamped from the remaining leaves (the key deleted from both).
+    entry("missing_primary_ownership_version", withoutPrimaryOwnershipVersion(positive), "input_invalid"),
+    // POV-N03: the leaf is datastore-only; a request-sourced stamp is malformed (NC-236-06 for this leaf, cell by cell).
+    entry("client_asserted_primary_ownership_version", { ...positive, provenance: { ...positive.provenance, "space.primaryOwnershipVersion": "request_locator" } }, "input_invalid"),
+    // POV-N04: a string, a negative and a fraction are not a version; provenance intact so only the shape rule denies.
+    ...([["string", "2"], ["negative", -1], ["fraction", 1.5]] as const).map(([suffix, value]) =>
+      entry("malformed_primary_ownership_version", stamp({ ...positive, space: { ...positive.space, primaryOwnershipVersion: value } }), "input_invalid", suffix)),
   ];
+}
+/** The positive with `space.primaryOwnershipVersion` removed from the leaves and from the provenance map alike. */
+function withoutPrimaryOwnershipVersion(positive: ApiOrdinaryUserPolicyInput): unknown {
+  const { primaryOwnershipVersion: _leaf, ...space } = positive.space;
+  const { "space.primaryOwnershipVersion": _stamp, ...provenance } = positive.provenance;
+  return { ...positive, space, provenance };
+}
+/** POV-N05 (a positive, not a negative): `membership.authorizationVersion` 1 and `space.primaryOwnershipVersion` 7 with no
+ * precheck capture. The decision must allow and capture the two keys independently; false against the retired alias. */
+export function independentCaptureFixture(action: string, role: Role = "primary_owner", version: RegisteredPolicyVersion = CURRENT_POLICY_VERSION): ApiOrdinaryUserPolicyInput {
+  const positive = ordinaryFixture(action, role, version);
+  return stamp({ ...positive, space: { ...positive.space, primaryOwnershipVersion: 7 }, membership: { ...positive.membership, authorizationVersion: 1 } });
 }
 export function spaceBoundNegativeFixtures(version: RegisteredPolicyVersion, cells: readonly { action: string; role: Role }[]): readonly SpaceBoundNegativeFixture[] {
   return Object.freeze(cells.flatMap((cell) => spaceBoundNegatives(cell.action, cell.role, version)));

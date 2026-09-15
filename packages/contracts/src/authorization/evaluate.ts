@@ -76,7 +76,7 @@ export function expectedProvenance(input: PolicyInput): FactProvenance {
       add(result, "datastore", "resource.owningSpaceId", "resource.version", "resource.lifecycle", "resource.owningSubjectId", "resource.environmentId");
     }
   } else {
-    add(result, "datastore", "space.spaceId", "space.lifecycle", "space.lifecycleVersion", "space.primaryOwnerMembershipId");
+    add(result, "datastore", "space.spaceId", "space.lifecycle", "space.lifecycleVersion", "space.primaryOwnerMembershipId", "space.primaryOwnershipVersion");
     add(result, "envelope_locator", "resource.type", "resource.id");
     if (!worker) { result["resource.type"] = "route_metadata"; result["resource.id"] = "request_locator"; }
     add(result, "datastore", "resource.owningSpaceId", "resource.version", "resource.lifecycle");
@@ -143,7 +143,7 @@ function capturedVersions(input: PolicyInput, policy: RegisteredPolicy): Capture
   const userCommon = {
     subjectVersion: input.subject.subjectVersion, profileVersion: input.profile.profileVersion,
     authorizationVersion: input.membership.authorizationVersion, consentDisclosureVersion: input.consent.disclosureVersion,
-    spaceLifecycleVersion: input.space.lifecycleVersion, primaryOwnershipVersion: input.membership.authorizationVersion,
+    spaceLifecycleVersion: input.space.lifecycleVersion, primaryOwnershipVersion: input.space.primaryOwnershipVersion,
     targetVersion: input.resource.version, ...common,
   };
   return isWorkerUser(input)
@@ -190,7 +190,7 @@ function shapeValid(input: PolicyInput): boolean {
       && typeof input.authority.serviceIdentity === "string" && input.authority.serviceIdentity.length > 0
       && [input.authority.workloadIdentityVersion, input.authority.servicePolicyVersion, input.authority.sourceVersion,
         input.serviceSource.scheduleConfigurationVersion, input.serviceSource.ruleReferenceDataVersion,
-        input.space.lifecycleVersion, input.resource.version].every(isPositiveInteger)
+        input.space.lifecycleVersion, input.space.primaryOwnershipVersion, input.resource.version].every(isPositiveInteger)
       && ["current", "superseded", "disabled"].includes(input.serviceSource.sourceState)
       && ["live", "archived", "deletion_pending", "purged"].includes(input.space.lifecycle);
   }
@@ -218,7 +218,7 @@ function shapeValid(input: PolicyInput): boolean {
     && ["active", "pending", "revoked", "expired", "inactive"].includes(input.membership.status)
     && ["current", "superseded", "ended"].includes(input.consent.state)
     && ["live", "archived", "deletion_pending", "purged"].includes(input.space.lifecycle)
-    && [input.membership.authorizationVersion, input.consent.disclosureVersion, input.space.lifecycleVersion, input.resource.version].every(isPositiveInteger)
+    && [input.membership.authorizationVersion, input.consent.disclosureVersion, input.space.lifecycleVersion, input.space.primaryOwnershipVersion, input.resource.version].every(isPositiveInteger)
     && (isWorkerUser(input) ? isPositiveInteger(input.subject.delegationVersion) : isPositiveInteger((input as ApiOrdinaryUserPolicyInput).subject.sessionVersion));
 }
 
