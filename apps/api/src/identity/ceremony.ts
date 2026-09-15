@@ -685,11 +685,20 @@ export class IdentityCeremony {
       return this.#stepUpOutcome("invalid_or_expired", known?.challengeId);
     }
     const known = this.#d.challenges.find(envelope.state);
-    if (!known || known.ceremony !== "step_up") {
+    if (!known) {
       this.#evidence("callback_unknown_state", undefined, "invalid_or_expired");
       return this.#stepUpOutcome("invalid_or_expired", undefined);
     }
-    if (!callbackContextMatches(context, known, this.#d.config.environmentId)) {
+    // SEC-PK4-F2 (CBD-190 section 7): the shared context check runs for *any*
+    // known challenge before the ceremony kind is required, so the two
+    // callbacks are symmetric -- a sign-in challenge delivered here terminates
+    // with `callback_wrong_context` exactly as a step-up challenge delivered to
+    // the sign-in callback does, instead of being answered as an unknown state
+    // and left pending for its own callback afterwards. A known challenge of
+    // another kind whose context does match (the one-redirect-URI provider
+    // shape) terminates on the same rule: this entry point completes step-ups
+    // and nothing else.
+    if (!callbackContextMatches(context, known, this.#d.config.environmentId) || known.ceremony !== "step_up") {
       this.#d.challenges.terminate(known.challengeId);
       this.#evidence("callback_wrong_context", known.challengeId, "invalid_or_expired");
       return this.#stepUpOutcome("invalid_or_expired", known.challengeId);

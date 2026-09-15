@@ -208,6 +208,31 @@ describe("PK4-03: the step_up ceremony reuses the sign-in ceremony and issues no
     }
   });
 
+  it("SEC-PK4-F2: a sign-in challenge delivered to the step-up callback is terminated and cannot complete afterwards", async () => {
+    // The mirror of the case above, which CBD-190 section 7 makes symmetric: a
+    // known challenge in the wrong context terminates, whichever callback it
+    // arrives at. Before the fix this delivery was answered as an unknown
+    // state and left the sign-in challenge pending, so it still completed at
+    // its own callback afterwards.
+    const harness = buildHarness({ scheduler: null });
+    const { callbackUrl } = await harness.callbackFor("subject-a");
+    const url = new URL(callbackUrl);
+    const before = rows(harness, "account_session");
+    const wrongCallback = await harness.ceremony.completeStepUp({
+      rawQuery: url.search.slice(1), method: "GET", observedOrigin: url.origin, path: IDENTITY_STEP_UP_CALLBACK_PATH, receiptTime: new Date(),
+    });
+    assert.equal(wrongCallback.kind, "outcome", JSON.stringify(wrongCallback));
+    if (wrongCallback.kind !== "outcome") throw new Error("unreachable");
+    assert.equal(wrongCallback.outcome, "invalid_or_expired");
+    assert.ok(harness.runtime.evidence.some((event) => event.class === "callback_wrong_context"), "terminated with callback_wrong_context, as CBD-190 section 7 states");
+    assert.equal(rows(harness, "account_session_fresh_assurance"), 0, "a sign-in answer never produces a grant");
+    assert.equal(rows(harness, "account_session"), before, "and no session either");
+    // Terminated: the genuine sign-in callback no longer completes it.
+    const afterwards = await harness.deliver(callbackUrl);
+    assert.equal(afterwards.kind, "outcome", JSON.stringify(afterwards));
+    assert.equal(rows(harness, "account_session"), before, "no session was issued after the wrong-callback delivery");
+  });
+
   it("a malformed envelope, an unknown state and a provider error all answer with a closed outcome and no grant", async () => {
     const context = await signedIn();
     const { callbackUrl } = await stepUpCallbackUrl(context);
