@@ -51,6 +51,10 @@ export interface ProfileRow {
   readonly profileId: string;
   readonly profileState: "active" | "deleted";
   readonly version: number;
+  /** CBD-236 p6 (`profile.set_display_name`, `P6-E06`): the same `financial_profile.display_name` column
+   * `packages/data-access/src/financial-profile.ts#readDisplayIdentity` reads elsewhere, added to the ceremony
+   * view's own read rather than a second statement. `null` when unset (proposal section 2 `P6-E06`). */
+  readonly displayName: string | null;
 }
 
 export interface HandoffRow {
@@ -149,7 +153,10 @@ export async function setSubjectLifecycle(client: DataAccessClient, accountSubje
 export async function listProfiles(client: DataAccessClient, accountSubjectId: string): Promise<ProfileRow[]> {
   if (!client.profileSelect) throw new Error("profile statements unavailable on this client");
   const result = await client.profileSelect({ table: "financial_profile", accountSubjectId });
-  return (result.rows as Row[]).map((row) => ({ profileId: String(row.profile_id), profileState: row.profile_state as ProfileRow["profileState"], version: Number(row.version) }));
+  return (result.rows as Row[]).map((row) => ({
+    profileId: String(row.profile_id), profileState: row.profile_state as ProfileRow["profileState"], version: Number(row.version),
+    displayName: row.display_name === null || row.display_name === undefined ? null : String(row.display_name),
+  }));
 }
 
 /** §5.2 step 3: candidate subject, exactly one active profile through the CBD-212 subject-scoped seam, then the binding -- all on the caller's transaction client. */

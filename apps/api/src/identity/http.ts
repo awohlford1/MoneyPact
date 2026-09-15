@@ -180,7 +180,8 @@ export function identityHttp(runtime: IdentityRuntime | undefined): IdentityHttp
       if (!view) throw new RouteFailure(401, "not_authenticated");
       // C9 (Manager ruling): the raw CSRF bootstrap value travels only in this same-origin JSON
       // response body, held in browser memory -- never a cookie, URL or log field (CBD-191 §5.1).
-      return { accountSubjectId: view.accountSubjectId, profileId: view.profileId, identityBindingId: view.identityBindingId, sessionRef: view.sessionRef, sessionVersion: view.sessionVersion, environmentId: view.environmentId, assurance: view.assurance, csrfValue: view.csrfValue };
+      // CBD-236 p6 P6-D03/P6-E06: displayName is additive to this projection (null when unset).
+      return { accountSubjectId: view.accountSubjectId, profileId: view.profileId, identityBindingId: view.identityBindingId, sessionRef: view.sessionRef, sessionVersion: view.sessionVersion, environmentId: view.environmentId, assurance: view.assurance, displayName: view.displayName, csrfValue: view.csrfValue };
     }
 
     /**
