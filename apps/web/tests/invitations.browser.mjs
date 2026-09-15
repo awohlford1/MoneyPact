@@ -175,7 +175,11 @@ export async function pk8Journey(t, { browser, origin, errors }) {
     await owner.waitText("Before you confirm this transfer of primary ownership");
     assert.equal(await owner.enabled("Continue to the identity check"), false, "the outgoing consequences must be acknowledged first");
     await owner.accessibility(); await owner.narrow();
-    await invitee.page.goto(transferUrl); await invitee.waitText("Before you accept primary ownership");
+    // PK8-F04: the recipient reaches the status view from the notice through the space's live read, never a handed id.
+    await invitee.page.goto(`${origin}/notices`); await invitee.waitText("You have been proposed as the next Primary Owner of a budget space.");
+    await invitee.clickText("Open the transfer"); await invitee.waitText("You are proposed as the next Primary Owner"); await invitee.accessibility();
+    await invitee.clickText("Open the transfer"); await invitee.page.waitForFunction(url => location.href === url, {}, transferUrl);
+    await invitee.waitText("Before you accept primary ownership");
     await invitee.waitText("A MoneyPact member (you)");
     assert.equal(await invitee.enabled("Accept primary ownership"), false);
     await invitee.accessibility(); await invitee.narrow();
@@ -207,7 +211,10 @@ export async function pk8Journey(t, { browser, origin, errors }) {
     await owner.waitText("Committed");
     const confirm = posted.find(entry => entry.url.endsWith("/confirm"));
     assert.ok(confirm.url.endsWith(`/${transferUrl.split("/").at(-1)}/confirm`), "the live transfer id from the view");
-    assert.deepEqual(JSON.parse(confirm.body), {}, "no reference, ledger or digest field");
+    // PK8-F03: the body is the claim of the outgoing disclosure the page showed, and nothing else: no reference, no ledger.
+    assert.deepEqual(Object.keys(JSON.parse(confirm.body)), ["acknowledgedDisclosure"]);
+    assert.deepEqual(Object.keys(JSON.parse(confirm.body).acknowledgedDisclosure).sort(), ["digest", "kind", "version"]);
+    assert.equal(JSON.parse(confirm.body).acknowledgedDisclosure.kind, "primary_transfer_outgoing");
     assert.ok(posted.indexOf(begin) < posted.indexOf(confirm), "step-up before confirm");
     assert.equal(posted.filter(entry => entry.url.endsWith("/confirm")).length, 1, "one confirm per step-up, never a resend");
     await owner.accessibility(); await owner.narrow();

@@ -24,7 +24,9 @@
  *   * Every unusable-link and unusable-ceremony class is the one uniform 404
  *     envelope and is reported as one outcome, `unusable`.
  *   * A confirm request names only the live transfer id read from the view and
- *     carries no reference, ledger or digest field; every confirm answer's
+ *     the disclosure claim (PK8-F03: the kind, version and digest of the
+ *     approved text the view served, as `accept` sends the recipient's); it
+ *     carries no assurance reference and no ledger. Every confirm answer's
  *     `freshAssurance` disposition and `next` hint are surfaced so a view can
  *     say "step up again" and never resend a confirm expecting a replay.
  */
@@ -68,13 +70,19 @@ export interface WireTransfer {
   recipientAcceptedAt: string | null; primaryConfirmedAt: string | null; committedAt: string | null;
   recipientDisclosureKind: string; recipientDisclosureVersion: number; outgoingDisclosureKind: string; outgoingDisclosureVersion: number;
 }
+/** `GET .../primary-transfers/{id}` (PK8-F03): the projection and each party's approved text at the captured kind, version and digest (null once the registry moved). */
+export interface WireTransferDisclosures { recipient: ConsentDisclosure | null; outgoing: ConsentDisclosure | null }
+export interface WireTransferView { transfer: WireTransfer; disclosures: WireTransferDisclosures }
+/** The claim accept and confirm carry: exactly the registry identity of the text the person read, never a text or an assurance value. */
+export interface TransferDisclosureClaim { kind: string; version: number; digest: string }
+export const claimOf = (disclosure: ConsentDisclosure): TransferDisclosureClaim => ({ kind: disclosure.kind, version: disclosure.version, digest: disclosure.digest });
 export type FreshAssuranceDisposition = "consumed" | "unspent";
 export interface WireTransferAnswer {
   outcome: string; messageCode: string; transfer: WireTransfer; receipt?: unknown;
   freshAssurance?: FreshAssuranceDisposition; next?: string;
 }
 
-/** `account_lifecycle_notice` rows (design section 13) as the in-app list would read them. See NOTICES_ROUTE below. */
+/** `GET /v1/notices`: the caller's own `account_lifecycle_notice` rows (design section 13), newest first; `POST /v1/notices/{id}/read` answers one. */
 export interface WireNotice { noticeId: string; budgetSpaceId: string | null; messageCode: string; createdAt: string; readAt: string | null }
 export interface WireNoticeList { notices: readonly WireNotice[] }
 
@@ -155,14 +163,10 @@ export const TRANSFER_STATE_LABELS: Readonly<Record<TransferState, string>> = Ob
   declined: "Declined by the recipient", withdrawn: "Withdrawn by the Primary Owner", expired: "Expired", invalidated: "Closed because something changed",
 });
 
-/**
- * The in-app notices route this client reads. The API on `main` publishes no
- * route over `account_lifecycle_notice` (design section 13 names the rows and
- * leaves the list to PK-8); this is the shape the page renders once one exists
- * and the mock serves it under the same path. A 404 from the real API is
- * rendered as "not available yet", never as an empty list.
- */
+/** The subject-self notices routes (PK8-F01): the caller's own rows and nothing else, on the `profile.read` cell. */
 export const NOTICES_ROUTE = "/notices";
+/** The `MSG-73-*` codes that name a Primary-ownership transfer: the notice's space link opens the transfer, not the dashboard. */
+export const TRANSFER_MESSAGE_CODES: ReadonlySet<string> = new Set(["MSG-73-027", "MSG-73-040", "MSG-73-041", "MSG-73-042", "MSG-73-043", "MSG-73-044", "MSG-73-045"]);
 
 // ---------------------------------------------------------------------------
 // The client.
@@ -192,16 +196,20 @@ export interface InvitationsClient {
   beginSignIn(): Promise<string>;
   // Primary transfer (PR 368) and the step-up (PR 355).
   proposeTransfer(spaceId: string, recipientMembershipId: string): Promise<WireTransferAnswer>;
-  viewTransfer(spaceId: string, transferId: string, signal?: AbortSignal): Promise<WireTransfer>;
-  acceptTransfer(spaceId: string, transferId: string): Promise<WireTransferAnswer>;
+  viewTransfer(spaceId: string, transferId: string, signal?: AbortSignal): Promise<WireTransferView>;
+  /** PK8-F04: the space's one live transfer for its two parties; null when there is none or the caller is neither party (the one 404). */
+  liveTransfer(spaceId: string, signal?: AbortSignal): Promise<WireTransferView | null>;
+  /** `TR-73-41` with the recipient disclosure's claim; a claim that is not the captured one is thrown as 409 `stale_disclosure` (nothing written). */
+  acceptTransfer(spaceId: string, transferId: string, acknowledgedDisclosure: TransferDisclosureClaim): Promise<WireTransferAnswer>;
   declineTransfer(spaceId: string, transferId: string): Promise<WireTransferAnswer>;
   withdrawTransfer(spaceId: string, transferId: string): Promise<WireTransferAnswer>;
   /** Binds a step-up to `29.transfer_primary_ownership` and the space; the answer is the provider navigation. */
   beginStepUp(spaceId: string): Promise<string>;
-  /** Confirms exactly the transfer id given -- the caller reads it from the view immediately before. */
-  confirmTransfer(spaceId: string, transferId: string): Promise<ConfirmTransferOutcome>;
-  // Notices.
-  listNotices(signal?: AbortSignal): Promise<readonly WireNotice[] | "unavailable">;
+  /** Confirms exactly the transfer id given -- the caller reads it from the view immediately before -- with the outgoing disclosure's claim. */
+  confirmTransfer(spaceId: string, transferId: string, acknowledgedDisclosure: TransferDisclosureClaim): Promise<ConfirmTransferOutcome>;
+  // Notices (PK8-F01): the caller's own rows, newest first, and the set-once read stamp.
+  listNotices(signal?: AbortSignal): Promise<readonly WireNotice[]>;
+  markNoticeRead(noticeId: string): Promise<WireNotice>;
   clear(): void;
 }
 
@@ -249,8 +257,8 @@ export function createInvitationsClient(base = "/v1", fetcher: typeof fetch = fe
   }
   const transferAnswer = (json: Record<string, unknown>) => json as unknown as WireTransferAnswer;
   /** Committed non-2xx transfer answers (denials, closures) carry the workflow vocabulary; they are thrown with their body. */
-  async function transferMutation(path: string): Promise<WireTransferAnswer> {
-    const answer = await send(path, "POST", {}, { csrf: true });
+  async function transferMutation(path: string, body: unknown = {}): Promise<WireTransferAnswer> {
+    const answer = await send(path, "POST", body, { csrf: true });
     if (answer.status >= 200 && answer.status < 300) return transferAnswer(answer.json);
     throw failure(answer);
   }
@@ -321,14 +329,20 @@ export function createInvitationsClient(base = "/v1", fetcher: typeof fetch = fe
       if (answer.status >= 200 && answer.status < 300) return transferAnswer(answer.json);
       throw failure(answer);
     },
-    viewTransfer: async (spaceId, transferId, signal) => (await request<{ transfer: WireTransfer }>(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}`, "GET", undefined, signal)).transfer,
-    acceptTransfer: (spaceId, transferId) => transferMutation(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/accept`),
+    viewTransfer: (spaceId, transferId, signal) => request<WireTransferView>(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}`, "GET", undefined, signal),
+    async liveTransfer(spaceId, signal) {
+      const answer = await send(`${space(spaceId)}/primary-transfers/live`, "GET", undefined, { csrf: false, signal });
+      if (answer.status === 404 && answer.json.error === "transfer_not_found") return null;
+      if (answer.status !== 200) throw failure(answer);
+      return answer.json as unknown as WireTransferView;
+    },
+    acceptTransfer: (spaceId, transferId, acknowledgedDisclosure) => transferMutation(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/accept`, { acknowledgedDisclosure }),
     declineTransfer: (spaceId, transferId) => transferMutation(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/decline`),
     withdrawTransfer: (spaceId, transferId) => transferMutation(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/withdraw`),
     beginStepUp: async (spaceId) => (await request<{ navigateTo: string }>("/identity/step-up/begin", "POST", { action: TRANSFER_ACTION, budgetSpaceId: spaceId, postResultDestinationId: "budgets" })).navigateTo,
-    async confirmTransfer(spaceId, transferId) {
-      // The body is empty on purpose: the reference, the ledger and every digest are the store's, never the client's (SEC-PK7A-F2).
-      const answer = await send(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/confirm`, "POST", {}, { csrf: true });
+    async confirmTransfer(spaceId, transferId, acknowledgedDisclosure) {
+      // The body carries the disclosure claim and nothing else: the assurance reference and the ledger are the store's, never the client's (SEC-PK7A-F2).
+      const answer = await send(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/confirm`, "POST", { acknowledgedDisclosure }, { csrf: true });
       const body = answer.json;
       const transfer = body.transfer as WireTransfer | undefined;
       if (answer.status === 200 && body.outcome === "committed" && transfer) return { outcome: "committed", transfer };
@@ -340,12 +354,8 @@ export function createInvitationsClient(base = "/v1", fetcher: typeof fetch = fe
       return { outcome: "refused", error: String(body.error ?? "request_failed"), status: answer.status };
     },
 
-    async listNotices(signal) {
-      const answer = await send(NOTICES_ROUTE, "GET", undefined, { csrf: false, signal });
-      if (answer.status === 404) return "unavailable";
-      if (answer.status !== 200) throw failure(answer);
-      return (answer.json as unknown as WireNoticeList).notices ?? [];
-    },
+    listNotices: async (signal) => (await request<WireNoticeList>(NOTICES_ROUTE, "GET", undefined, signal)).notices ?? [],
+    markNoticeRead: async (noticeId) => (await request<{ notice: WireNotice }>(`${NOTICES_ROUTE}/${encodeURIComponent(noticeId)}/read`, "POST", {})).notice,
     clear() { csrf = undefined; },
   };
 }
