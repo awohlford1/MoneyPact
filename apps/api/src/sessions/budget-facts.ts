@@ -216,13 +216,16 @@ async function spaceFacts(client: DataAccessClient, lookup: FactLookup, subjectI
   const spaceId = operation.actingSpaceId;
   if (typeof spaceId !== "string" || !UUID.test(spaceId)) return null;
   const facts: Record<string, unknown> = {};
-  const spaces = await client.tenantSelect({ table: "budget_space", budgetSpaceId: spaceId, columns: ["budget_space_id", "lifecycle", "lifecycle_version", "primary_owner_membership_id"] });
+  const spaces = await client.tenantSelect({ table: "budget_space", budgetSpaceId: spaceId, columns: ["budget_space_id", "lifecycle", "lifecycle_version", "primary_owner_membership_id", "primary_ownership_version"] });
   const space = spaces.rows[0] as Record<string, unknown> | undefined;
   if (space) {
     facts["space.spaceId"] = space.budget_space_id;
     facts["space.lifecycle"] = space.lifecycle;
     facts["space.lifecycleVersion"] = integer(space.lifecycle_version);
     facts["space.primaryOwnerMembershipId"] = space.primary_owner_membership_id;
+    // CBD-236 v0.13 (POV-E05): the ownership version is read from the same row, in the same statement and transaction, as the
+    // membership identifier it versions; a non-integer column value yields no leaf, and the assembler denies input_invalid.
+    facts["space.primaryOwnershipVersion"] = integer(space.primary_ownership_version);
     if (operation.resourceType && SPACE_RESOURCE_TYPES.has(operation.resourceType)) {
       if (operation.resourceId === spaceId) {
         facts["resource.owningSpaceId"] = space.budget_space_id;

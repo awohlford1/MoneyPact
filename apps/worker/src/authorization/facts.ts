@@ -47,7 +47,7 @@ export class FactFailure extends Error {
 const paths = (value: string): string[] => value.trim().split(/\s+/);
 const datastore = paths(`
   subject.subjectState subject.subjectVersion profile.profileId profile.profileState profile.profileVersion
-  space.spaceId space.lifecycle space.lifecycleVersion space.primaryOwnerMembershipId
+  space.spaceId space.lifecycle space.lifecycleVersion space.primaryOwnerMembershipId space.primaryOwnershipVersion
   membership.membershipId membership.role membership.status membership.authorizationVersion
   membership.viewerProfile.type membership.viewerProfile.groupIds membership.viewerProfile.version
   consent.consentId consent.disclosureVersion consent.state resource.owningSpaceId resource.version
