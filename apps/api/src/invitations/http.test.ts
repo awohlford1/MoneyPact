@@ -538,9 +538,13 @@ describe("PK-6 invitation routes through the real Fastify instance", () => {
       const listed = await call("GET", "/v1/local/invitation-deliveries");
       assert.equal(listed.statusCode, 200, listed.body);
       assert.equal(listed.json().fidelityLabel, "simulated");
-      const item = (listed.json().deliveries as { invitationId: string; code: string; channelChallenge: string; fidelityLabel: string }[]).find((row) => row.invitationId === invitationId);
+      const item = (listed.json().deliveries as Record<string, unknown>[]).find((row) => row.invitationId === invitationId);
       assert.ok(item);
       assert.equal(item.code, delivery.bearer); assert.equal(item.channelChallenge, delivery.challenge); assert.equal(item.fidelityLabel, "simulated");
+      // SEC-PK6-R8 condition 3: the raw address never leaves the adapter through this surface; only the owner-visible mask does.
+      assert.deepEqual(Object.keys(item).sort(), ["channelChallenge", "code", "custodyDeadline", "destinationMasked", "fidelityLabel", "invitationId"]);
+      assert.equal(item.destinationMasked, "i***@example.com");
+      assert.ok(!listed.body.includes("invitee@example.com") && !listed.body.includes("Invitee@Example.com"), "the raw destination is not in the body");
     } finally { await app.close(); }
     assert.throws(() => localDeliveriesHttp({ adapterKind: "unavailable", within: () => { throw new Error("unreachable"); }, now: () => new Date() }), /local delivery surface refused/);
     assert.throws(() => localDeliveriesHttp({ adapterKind: "cognito", within: () => { throw new Error("unreachable"); }, now: () => new Date() }), /local delivery surface refused/);

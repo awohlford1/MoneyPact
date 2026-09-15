@@ -27,13 +27,19 @@
  * Custody: the on-request sweep tombstones every row past its custody deadline
  * before the list is read (`DR-73-02`; there is no scheduler), so a delivery is
  * never rendered after the invitation it belongs to could still be used.
+ *
+ * `SEC-PK6-R8` condition 3: the projection carries the code and the channel
+ * challenge, which is what the link holder needs, and the destination only in
+ * the owner-visible masked form of CBD-72 SS5.7 (`destinationMasked`), which
+ * the inviter's own projection already shows. The raw address never leaves
+ * the adapter through this surface, prototype or not.
  */
 import { Controller, Get, Module } from "@nestjs/common";
 import type { DynamicModule } from "@nestjs/common";
 import type { DataAccessClient } from "@cobudget/data-access";
 import { Authorize, Authorization } from "../authorization/http.js";
 import type { EffectContext } from "../authorization/boundary.js";
-import { DELIVERY_FIDELITY_LABEL } from "../../../../packages/budget-application/src/invitations/index.ts";
+import { DELIVERY_FIDELITY_LABEL, maskEmailDestination } from "../../../../packages/budget-application/src/invitations/index.ts";
 import type { InvitationScope } from "../invitations/persistence.ts";
 
 export interface LocalDeliveriesDependencies {
@@ -67,7 +73,7 @@ export function localDeliveriesHttp(dependencies: LocalDeliveriesDependencies): 
       return {
         fidelityLabel: DELIVERY_FIDELITY_LABEL,
         deliveries: deliveries.map((item) => ({
-          invitationId: item.invitationId, fidelityLabel: item.fidelityLabel, destination: item.destination,
+          invitationId: item.invitationId, fidelityLabel: item.fidelityLabel, destinationMasked: maskEmailDestination(item.destination),
           code: item.bearer, channelChallenge: item.challenge, custodyDeadline: item.custodyDeadline,
         })),
       };

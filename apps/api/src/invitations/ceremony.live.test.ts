@@ -157,9 +157,11 @@ describe("PK6-01 live: the whole invitation ceremony over HTTP on real PostgreSQ
         const deliveries = await h.inject("GET", "/v1/local/invitation-deliveries");
         assert.equal(deliveries.statusCode, 200, deliveries.body);
         assert.equal(deliveries.json().fidelityLabel, "simulated");
-        const item = (deliveries.json().deliveries as { invitationId: string; code: string; channelChallenge: string; destination: string }[]).find((row) => row.invitationId === invitationId);
+        const item = (deliveries.json().deliveries as { invitationId: string; code: string; channelChallenge: string; destinationMasked: string }[]).find((row) => row.invitationId === invitationId);
         assert.ok(item, "the delivery for the new invitation");
-        assert.equal(item.destination, "invitee@example.com");
+        // SEC-PK6-R8 condition 3: the decrypted address is masked on this surface; the raw one never leaves the adapter.
+        assert.equal(item.destinationMasked, "i***@example.com");
+        assert.ok(!deliveries.body.includes("invitee@example.com"), "the raw destination is not in the body");
         assert.match(item.channelChallenge, /^\d{6}$/u);
         code = item.code; challenge = item.channelChallenge;
       });
