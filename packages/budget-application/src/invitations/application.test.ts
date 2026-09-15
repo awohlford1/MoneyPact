@@ -13,7 +13,7 @@ import { test } from "node:test";
 import {
   acceptInvitation, attachAccount, cancelInvitation, createInvitation, declineInvitation,
   expireOnObservation, parseCreateInvitationRequest, readConfirmationPrompt, readDisclosure,
-  replaceInvitation, resolveCode, verifyChannel,
+  replaceInvitation, resolveCode, verifyChannel, UNIFORM_UNUSABLE,
 } from "./application.ts";
 import { confirmAcceptance } from "./acceptance.ts";
 import { MAX_CHANNEL_ATTEMPTS, NEUTRAL_DISPLAY_LABEL, UNIFORM_LINK_MESSAGE_CODE, isInvitationError } from "./records.ts";
@@ -272,7 +272,7 @@ void test("SEC-PK5-F01: a wrong channel guess is a returned outcome, so the atte
 
 void test("the channel challenge is bounded, and exhausting it kills the ceremony for good", async () => {
   const world = testWorld();
-  const { ceremonyRequest } = await ceremony(world, "resolve");
+  const { ceremonyRequest, invitationId, delivery } = await ceremony(world, "resolve");
   for (let attempt = 1; attempt < MAX_CHANNEL_ATTEMPTS; attempt += 1) {
     const answer = await verifyChannel(world.deps, { ...ceremonyRequest, channelCode: "000000" });
     assert.deepEqual(answer, { outcome: "retry", attemptsRemaining: MAX_CHANNEL_ATTEMPTS - attempt }, `attempt ${attempt}`);
@@ -285,12 +285,27 @@ void test("the channel challenge is bounded, and exhausting it kills the ceremon
   assert.equal(ceremonyRow?.channelProofState, "exhausted");
   assert.equal(ceremonyRow?.channelAttempts, MAX_CHANNEL_ATTEMPTS);
 
-  // The bound holds afterwards, and the correct code no longer proves.
-  assert.deepEqual(
-    await verifyChannel(world.deps, { ...ceremonyRequest, channelCode: "000000" }),
-    { outcome: "exhausted", attemptsRemaining: 0 }, "an exhausted ceremony stays exhausted",
+  // SEC-PK6-F2: exhaustion is terminal for the bearer. The ceremony is
+  // invalidated with the code, so the correct code no longer proves and
+  // takes no further attempt ...
+  assert.equal(ceremonyRow?.state, "invalidated");
+  assert.equal(ceremonyRow?.isCurrent, false);
+  await assert.rejects(
+    verifyChannel(world.deps, { ...ceremonyRequest, channelCode: "000000" }),
+    (error: unknown) => isInvitationError(error, "ceremony_unusable"), "an exhausted ceremony stays unusable",
   );
   assert.equal(world.repository.ceremonies.get(ceremonyRequest.ceremonyId)?.channelAttempts, MAX_CHANNEL_ATTEMPTS, "and takes no further attempt");
+  // ... and the code died with it (its outbox row tombstoned): a re-resolve cannot open a fresh ceremony bound to the same digits.
+  const code = world.repository.codes.get(invitationId);
+  assert.equal(code?.disposition, "invalidated");
+  assert.equal(code?.dispositionReasonClass, "channel_attempts_exhausted");
+  assert.throws(() => world.delivery(invitationId), /no simulated delivery/);
+  assert.deepEqual(
+    await resolveCode(world.deps, { presentedCode: delivery.bearer, environment: ENVIRONMENT, correlationId: "c-exhausted" }),
+    UNIFORM_UNUSABLE, "the exhausted code no longer resolves",
+  );
+  assert.equal(world.repository.securityEvents.at(-1)?.outcomeClass, "terminal_record");
+  assert.equal([...world.repository.ceremonies.values()].filter((c) => c.invitationId === invitationId && c.isCurrent).length, 0, "no fresh ceremony was opened");
 });
 
 void test("SEC-PK5-F01: an already-member attach cancels the record privately and answers the uniform outcome as a value", async () => {

@@ -323,10 +323,10 @@ describe("PK-6 invitation routes through the real Fastify instance", () => {
     } finally { await app.close(); }
   });
 
-  it("PK6-02 (PK5FIX-F01): a wrong channel guess COMMITS its attempt increment and its AE-73-09 row; exhaustion is permanent", async () => {
+  it("PK6-02 (PK5FIX-F01, SEC-PK6-F2): a wrong channel guess COMMITS its attempt increment and its AE-73-09 row; exhaustion is permanent and terminal for the bearer", async () => {
     const { app, world, call, ceremony, ceremonyHeaders } = await application();
     try {
-      const { ceremonyId, secret, delivery } = await ceremony("resolve");
+      const { invitationId, ceremonyId, secret, delivery } = await ceremony("resolve");
       const auditsBefore = world.repository.audits.filter((row) => row.eventCode === "AE-73-09").length;
       const wrong = await call("POST", `/v1/invitations/${ceremonyId}/verify-channel`, { channelCode: "000000" === delivery.challenge ? "000001" : "000000" }, ceremonyHeaders(secret));
       assert.equal(wrong.statusCode, 400, wrong.body);
@@ -340,8 +340,20 @@ describe("PK-6 invitation routes through the real Fastify instance", () => {
       const last = await call("POST", `/v1/invitations/${ceremonyId}/verify-channel`, { channelCode: "999999" }, ceremonyHeaders(secret));
       assert.deepEqual(last.json(), { error: "channel_attempts_exhausted", attemptsRemaining: 0 });
       assert.equal(world.repository.ceremonies.get(ceremonyId)?.channelProofState, "exhausted");
+      // SEC-PK6-F2: exhaustion is terminal for the bearer. The exhausting guess COMMITTED the code's
+      // invalidation with the ceremony's, so the correct code answers the uniform envelope on this
+      // ceremony, and a re-resolve of the same link cannot open a fresh ceremony bound to the same digits.
+      assert.equal(world.repository.ceremonies.get(ceremonyId)?.state, "invalidated");
+      assert.equal(world.repository.codes.get(invitationId)?.disposition, "invalidated");
+      assert.equal(world.repository.codes.get(invitationId)?.dispositionReasonClass, "channel_attempts_exhausted");
       const correct = await call("POST", `/v1/invitations/${ceremonyId}/verify-channel`, { channelCode: delivery.challenge }, ceremonyHeaders(secret));
-      assert.deepEqual(correct.json(), { error: "channel_attempts_exhausted", attemptsRemaining: 0 }, "the correct code no longer proves an exhausted ceremony");
+      assert.equal(correct.statusCode, 404);
+      assert.deepEqual(correct.json(), { error: "invitation_unusable", messageCode: "MSG-73-003" }, "the correct code no longer proves an exhausted ceremony");
+      const reresolved = await call("POST", "/v1/invitations/resolve", { code: delivery.bearer }, ceremonyHeaders(undefined));
+      assert.equal(reresolved.statusCode, 404);
+      assert.deepEqual(reresolved.json(), { error: "invitation_unusable", messageCode: "MSG-73-003" }, "the exhausted link no longer resolves");
+      assert.equal(world.repository.securityEvents.at(-1)?.outcomeClass, "terminal_record");
+      assert.equal(world.repository.invitations.get(invitationId)?.state, "pending", "the inviter's record is untouched: the recovery is a resend");
     } finally { await app.close(); }
   });
 
