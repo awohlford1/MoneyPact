@@ -4,12 +4,16 @@
  * (CBD-196, CBD-200, CBD-209, CBD-211; PROTO-INCREMENT-B-001).
  *
  * Everything shown here is the API's own figure. Nothing is computed in the
- * browser: `spent` is the magnitude of the API's signed
- * `settledActualMinorUnits`, `remaining` is its `remainingAfterSettledMinorUnits`,
- * and an overspent cell is the one whose remaining is negative -- the client
- * formats and labels, it does not arithmetic. Every refusal a form shows is the
- * server's canonical code mapped to the field it names (`fieldErrorFor`), so no
- * rule is restated here that the API could disagree with.
+ * browser: each category shows the API's four values under the API's own names
+ * (settled actual, pending provisional impact, remaining after settled,
+ * remaining after pending; CBD-211-AC01), each as a magnitude with its sign
+ * spelled out as a word -- money spent, a refund, over by -- so an itemized
+ * list reconciles to its total by inspection (AC03) and a category nothing was
+ * recorded against reads differently from one whose spending and refunds
+ * cancel out (AC04). The client formats and labels, it does not arithmetic.
+ * Every refusal a form shows is the server's canonical code mapped to the
+ * field it names (`fieldErrorFor`), so no rule is restated here that the API
+ * could disagree with.
  *
  * **Read cost.** Every request this section makes counts against the CBD-266
  * authenticated-read surface, which admits 60 a minute per actor for the whole
@@ -28,7 +32,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import NextLink from "next/link";
 import { ApiError, fieldErrorFor } from "../../../api/client";
-import type { Account, BudgetDetail, CategoryDetail, Category, ExpenseDraft, Progress } from "../../../api/client";
+import type { Account, AmountDirection, BudgetDetail, CategoryDetail, Category, ExpenseDraft, Progress, ProgressCell } from "../../../api/client";
 import { useSession } from "../../../session/SessionProvider";
 import { Alert } from "../../../components/Alert";
 import { Button } from "../../../components/Button";
@@ -231,18 +235,55 @@ function ExpenseSection({ id, loaded, reload, announce }: { id: string; loaded: 
   </section>;
 }
 
+/**
+ * The four values of one cell as sentences, one per value, each carrying the
+ * API's name for it and a word for its sign (CBD-211-AC01, AC03, AC04). Prototype
+ * copy: the exact strings remain OI-73-004-class. The same sentences serve the
+ * dashboard row and the detail header, so the two can never disagree in wording.
+ */
+export function progressSentences(cell: ProgressCell, currencyCode: string): { target: string; settled: string; pending: string; remainingAfterSettled: string; remainingAfterPending: string } {
+  const money = (magnitude: string) => `${magnitude} ${currencyCode}`;
+  const settledWords: Record<AmountDirection, string> = { spend: " spent", refund: " net refund", zero: "" };
+  const settledZero: Record<ProgressCell["settledActivity"], string> = {
+    none: ", no activity",
+    "net-zero": ", nets to zero (spending and refunds cancel out)",
+    active: "", unknown: "",
+  };
+  const pendingWords: Record<AmountDirection, string> = { spend: " of spending", refund: " of refunds", zero: ", none" };
+  const remaining = (magnitude: string, over: boolean) => (over ? `over by ${money(magnitude)}` : money(magnitude));
+  return {
+    target: `Target ${money(cell.target)}`,
+    settled: `Settled actual: ${money(cell.spent)}${cell.settledDirection === "zero" ? settledZero[cell.settledActivity] : settledWords[cell.settledDirection]}`,
+    pending: `Pending provisional impact: ${money(cell.pendingImpact)}${pendingWords[cell.pendingDirection]}`,
+    remainingAfterSettled: `Remaining after settled: ${remaining(cell.remaining, cell.over)}`,
+    remainingAfterPending: `Remaining after pending: ${remaining(cell.remainingAfterPending, cell.overAfterPending)}`,
+  };
+}
+/** One itemized amount with its sign as a word: "8.00 USD spent", "2.00 USD refund", "0.00 USD". */
+export function itemAmount(amount: string, direction: AmountDirection, currencyCode: string): string {
+  const word: Record<AmountDirection, string> = { spend: " spent", refund: " refund", zero: "" };
+  return `${amount} ${currencyCode}${word[direction]}`;
+}
+
 function ProgressSection({ id, loaded }: { id: string; loaded: Loaded }) {
+  const currency = loaded.progress.currencyCode;
   return <section aria-labelledby="progress-heading" className="space-y-4">
     <h3 id="progress-heading" className="text-xl font-semibold">Spent and remaining this period</h3>
     {loaded.progress.cells.length === 0
       ? <Alert>No categories yet. Add a category to the plan to see spending against it.</Alert>
-      : <ul className="space-y-3" aria-label="Spending by category">{loaded.progress.cells.map(cell => <li key={cell.categoryId} className="space-y-1 rounded-lg border border-border p-4" data-testid="progress-row">
-        <h4 className="break-words font-semibold">
-          <NextLink className="text-interactive underline" href={`/budgets/${encodeURIComponent(id)}/categories/${encodeURIComponent(cell.categoryId)}`}>{cell.label}</NextLink>
-        </h4>
-        <p data-testid={`spent-${cell.categoryId}`}>Spent {cell.spent} {loaded.progress.currencyCode} of {cell.target} {loaded.progress.currencyCode}</p>
-        <p data-testid={`remaining-${cell.categoryId}`}>{cell.over ? `Over by ${cell.remaining} ${loaded.progress.currencyCode}` : `Remaining ${cell.remaining} ${loaded.progress.currencyCode}`}</p>
-      </li>)}</ul>}
+      : <ul className="space-y-3" aria-label="Spending by category">{loaded.progress.cells.map(cell => {
+        const words = progressSentences(cell, currency);
+        return <li key={cell.categoryId} className="space-y-1 rounded-lg border border-border p-4" data-testid="progress-row">
+          <h4 className="break-words font-semibold">
+            <NextLink className="text-interactive underline" href={`/budgets/${encodeURIComponent(id)}/categories/${encodeURIComponent(cell.categoryId)}`}>{cell.label}</NextLink>
+          </h4>
+          <p data-testid={`target-${cell.categoryId}`}>{words.target}</p>
+          <p data-testid={`settled-${cell.categoryId}`}>{words.settled}</p>
+          <p data-testid={`pending-${cell.categoryId}`}>{words.pending}</p>
+          <p data-testid={`remaining-settled-${cell.categoryId}`}>{words.remainingAfterSettled}</p>
+          <p data-testid={`remaining-pending-${cell.categoryId}`}>{words.remainingAfterPending}</p>
+        </li>;
+      })}</ul>}
   </section>;
 }
 
@@ -323,11 +364,7 @@ export function CategoryDetailView({ id, categoryId }: { id: string; categoryId:
     <h1 className="break-words font-display text-3xl font-semibold">{detail.label}</h1>
     <NextLink className="text-interactive underline" href={`/budgets/${encodeURIComponent(id)}`}>Back to the budget</NextLink>
     <p aria-live="polite" role="status" className="text-on-surface-muted" data-testid="detail-status">{status}</p>
-    {cell && <dl className="grid gap-3 rounded-lg border border-border p-5 sm:grid-cols-3">
-      <div><dt className="font-semibold">Target</dt><dd>{cell.target} {detail.currencyCode}</dd></div>
-      <div><dt className="font-semibold">Spent</dt><dd data-testid="detail-spent">{cell.spent} {detail.currencyCode}</dd></div>
-      <div><dt className="font-semibold">{cell.over ? "Over by" : "Remaining"}</dt><dd data-testid="detail-remaining">{cell.remaining} {detail.currencyCode}</dd></div>
-    </dl>}
+    {cell && <DetailFigures cell={cell} currencyCode={detail.currencyCode} />}
     <section aria-labelledby="items-heading" className="space-y-4">
       <h2 id="items-heading" className="text-2xl font-semibold">Transactions in this category</h2>
       {detail.items.length === 0
@@ -336,7 +373,7 @@ export function CategoryDetailView({ id, categoryId }: { id: string; categoryId:
           const account = accounts.find(entry => entry.id === item.accountId);
           return <li key={item.transactionId} className="space-y-2 rounded-lg border border-border p-4" data-testid="detail-item">
             <h3 className="break-words font-semibold">{item.description ?? "No description"}</h3>
-            <p>{item.budgetDate} · {item.amount} {detail.currencyCode} · {account?.label ?? item.accountId}</p>
+            <p>{item.budgetDate} · {itemAmount(item.amount, item.direction, detail.currencyCode)} · {account?.label ?? item.accountId}</p>
             {item.allocationCount !== 1
               // A share of a split expense. The form below rewrites the whole transaction with one
               // allocation, which would silently discard every other category's share, so this page
@@ -374,4 +411,22 @@ export function CategoryDetailView({ id, categoryId }: { id: string; categoryId:
         })}</ul>}
     </section>
   </section>;
+}
+
+/**
+ * The same four sentences the dashboard row speaks, as a description list, so
+ * the total a person activated reads here exactly as it did there (CBD-211-AC03).
+ * Each term is the API's name; each description is the magnitude with its sign
+ * as a word; the item list below carries the same words per row.
+ */
+function DetailFigures({ cell, currencyCode }: { cell: ProgressCell; currencyCode: string }) {
+  const words = progressSentences(cell, currencyCode);
+  const after = (sentence: string, term: string) => sentence.slice(`${term}: `.length);
+  return <dl className="grid gap-3 rounded-lg border border-border p-5 sm:grid-cols-2" data-testid="detail-figures">
+    <div><dt className="font-semibold">Target</dt><dd data-testid="detail-target">{words.target.slice("Target ".length)}</dd></div>
+    <div><dt className="font-semibold">Settled actual</dt><dd data-testid="detail-settled">{after(words.settled, "Settled actual")}</dd></div>
+    <div><dt className="font-semibold">Pending provisional impact</dt><dd data-testid="detail-pending">{after(words.pending, "Pending provisional impact")}</dd></div>
+    <div><dt className="font-semibold">Remaining after settled</dt><dd data-testid="detail-remaining-settled">{after(words.remainingAfterSettled, "Remaining after settled")}</dd></div>
+    <div><dt className="font-semibold">Remaining after pending</dt><dd data-testid="detail-remaining-pending">{after(words.remainingAfterPending, "Remaining after pending")}</dd></div>
+  </dl>;
 }

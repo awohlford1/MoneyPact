@@ -62,11 +62,29 @@ export interface Account {
 }
 export interface AccountDraft { label: string; accountType: string; currencyCode: string; openingBalance: string }
 /**
- * One category's figure for the period. `spent` is the positive magnitude of the
- * API's signed `settledActualMinorUnits`: the API is signed end to end (an expense
- * is negative), and a person reads "spent 12.50", not "spent -12.50". `remaining`
- * is the API's `remainingAfterSettledMinorUnits` unchanged; when it is negative the
- * cell is `over` and the magnitude is what the view labels as overspent.
+ * Which way a signed API amount points, in words (CBD-211-AC03/AC04). The API is
+ * signed end to end: an expense is negative, a refund or income positive. A person
+ * reads "12.50 spent" or "2.00 refund", never "-12.50", so every amount below is a
+ * positive magnitude paired with its direction, and the view spells the direction
+ * out. `zero` is a sum of exactly nothing.
+ */
+export type AmountDirection = "spend" | "refund" | "zero";
+/**
+ * One category's four figures for the period (CBD-211-AC01), each the API's own
+ * value under the API's own name: settled actual, pending provisional impact,
+ * remaining after settled and remaining after pending. Nothing is computed here
+ * beyond taking a magnitude and remembering the sign it came with.
+ *
+ * `spent`, `remaining` and `over` are the settled pair as earlier callers read them
+ * (`spent` the magnitude of the settled actual, `remaining` the magnitude of
+ * remaining after settled, `over` its sign); `settledDirection` says whether
+ * `spent` is money spent or a net refund, which those three cannot.
+ *
+ * `settledActivity` separates a category nothing was recorded against from one
+ * whose spending and refunds cancel out (CBD-211-AC04): the API reports the
+ * settled record identities behind each sum, so "no activity" is a count of zero
+ * records and "nets to zero" a count of one or more with a sum of zero. A response
+ * that omits the identities is `unknown`, and the view then claims neither.
  */
 export interface ProgressCell {
   categoryId: string;
@@ -75,6 +93,14 @@ export interface ProgressCell {
   spent: string;
   remaining: string;
   over: boolean;
+  settledDirection: AmountDirection;
+  settledActivity: "none" | "net-zero" | "active" | "unknown";
+  /** The magnitude of `pendingProvisionalImpactMinorUnits` and which way it points; `zero` when nothing is pending. */
+  pendingImpact: string;
+  pendingDirection: AmountDirection;
+  /** The magnitude of `remainingAfterPendingMinorUnits`; `overAfterPending` is its sign. */
+  remainingAfterPending: string;
+  overAfterPending: boolean;
 }
 export interface Progress {
   budgetSpaceId: string;
@@ -88,8 +114,9 @@ export interface DetailItem {
   accountId: string;
   budgetDate: string;
   description: string | null;
-  /** The positive magnitude of this allocation, for the same reason `spent` is. */
+  /** The positive magnitude of this allocation, for the same reason `spent` is; `direction` is the sign it came with. */
   amount: string;
+  direction: AmountDirection;
   /**
    * How many categories the whole transaction is split across, as the API
    * counts them. One means this page sees the whole expense and may edit it in
@@ -183,12 +210,22 @@ export interface WireTransactionMutation {
 export interface WireProgress {
   budgetSpaceId: string; periodId: string; currencyCode: string; minorUnitPrecision: number;
   labels: Readonly<Record<string, string>>; calculationVersion: string;
-  cells: readonly { categoryId: string; targetMinorUnits: number; settledActualMinorUnits: number; remainingAfterSettledMinorUnits: number }[];
+  cells: readonly WireProgressCell[];
+}
+/**
+ * One cell as budget-domain computes it and the route passes it through: the four
+ * named values (CBD-211-AC01) and the identities of the records behind the two sums.
+ */
+export interface WireProgressCell {
+  categoryId: string; targetMinorUnits: number;
+  settledActualMinorUnits: number; pendingProvisionalImpactMinorUnits: number;
+  remainingAfterSettledMinorUnits: number; remainingAfterPendingMinorUnits: number;
+  settledRecordIds?: readonly string[]; pendingRecordIds?: readonly string[];
 }
 /** GET /v1/budget-spaces/{id}/periods/{periodId}/progress/{categoryId} (CBD-211). */
 export interface WireCategoryDetail {
   budgetSpaceId: string; periodId: string; categoryId: string; label: string | null; currencyCode: string; minorUnitPrecision: number;
-  cell: WireProgress["cells"][number] | null;
+  cell: WireProgressCell | null;
   items: readonly { transactionId: string; accountId: string; budgetDate: string; description: string | null; amountMinorUnits: number; allocationCount: number }[];
 }
 
@@ -304,14 +341,31 @@ export function toAccount(wire: WireAccount): Account {
     archived: wire.archivedAt !== null, version: wire.version,
   };
 }
-/** The signed API figure becomes a magnitude for "spent" and stays signed for "remaining". */
-export function toProgressCell(cell: WireProgress["cells"][number], label: string, precision: number): ProgressCell {
+/** A signed minor-unit amount as the direction the view names: negative is spending, positive a refund. */
+export function directionOf(amountMinorUnits: number): AmountDirection {
+  return amountMinorUnits < 0 ? "spend" : amountMinorUnits > 0 ? "refund" : "zero";
+}
+/**
+ * Every signed API figure becomes a magnitude plus its direction; nothing is
+ * merged and nothing is clamped, so an overspent cell is "over" by the magnitude
+ * of its negative remaining and a net refund is a refund, not money spent.
+ */
+export function toProgressCell(cell: WireProgressCell, label: string, precision: number): ProgressCell {
+  const settledRecords = Array.isArray(cell.settledRecordIds) ? cell.settledRecordIds.length : null;
+  const pending = cell.pendingProvisionalImpactMinorUnits ?? 0;
+  const remainingAfterPending = cell.remainingAfterPendingMinorUnits ?? cell.remainingAfterSettledMinorUnits + pending;
   return {
     categoryId: cell.categoryId, label,
     target: formatMinorUnits(cell.targetMinorUnits, precision),
     spent: formatMinorUnits(Math.abs(cell.settledActualMinorUnits), precision),
     remaining: formatMinorUnits(Math.abs(cell.remainingAfterSettledMinorUnits), precision),
     over: cell.remainingAfterSettledMinorUnits < 0,
+    settledDirection: directionOf(cell.settledActualMinorUnits),
+    settledActivity: cell.settledActualMinorUnits !== 0 ? "active" : settledRecords === null ? "unknown" : settledRecords === 0 ? "none" : "net-zero",
+    pendingImpact: formatMinorUnits(Math.abs(pending), precision),
+    pendingDirection: directionOf(pending),
+    remainingAfterPending: formatMinorUnits(Math.abs(remainingAfterPending), precision),
+    overAfterPending: remainingAfterPending < 0,
   };
 }
 export function toProgress(wire: WireProgress): Progress {
@@ -330,6 +384,7 @@ export function toCategoryDetail(wire: WireCategoryDetail): CategoryDetail {
     items: wire.items.map(item => ({
       transactionId: item.transactionId, accountId: item.accountId, budgetDate: item.budgetDate, description: item.description,
       amount: formatMinorUnits(Math.abs(item.amountMinorUnits), wire.minorUnitPrecision),
+      direction: directionOf(item.amountMinorUnits),
       // A count the server did not state, or stated as something other than a positive whole number,
       // is carried as null so the view withholds the in-place edit rather than assuming a single
       // allocation and silently discarding the rest of a split (F-REVB-01).
