@@ -58,6 +58,8 @@ export const REQUIRED_WORKFLOW_COMMANDS = [
   "python3 scripts/check-jira-freshness.py --offline",
   "python3 scripts/check-an92-criteria.py --offline",
   "python3 scripts/audit-cbd-73.py",
+  "python3 scripts/audit-cbd-232.py",
+  "python3 scripts/audit-cbd-233.py",
   "python3 scripts/audit-cbd-74.py",
   "python3 scripts/audit-cbd-75.py",
   "python3 scripts/audit-cbd-76.py",
