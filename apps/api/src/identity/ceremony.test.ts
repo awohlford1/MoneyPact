@@ -422,7 +422,10 @@ describe("CBD-190-AC02 custody through the whole ceremony (CT-190-013 sink inspe
 describe("identity view and logout", () => {
   it("returns the resolved subject, profile and binding identifiers for a live session and nothing after logout", async () => {
     const h = buildHarness();
-    const signedIn = success(await h.signIn("subject-a"));
+    // CBD-190 identity amendments proposal §2: subject-b carries no local-issuer name claim, so this
+    // view/logout test stays independent of the first-sign-in display-name write (covered separately
+    // in first-sign-in-name.test.ts).
+    const signedIn = success(await h.signIn("subject-b"));
     const cookie = cookieValueFrom(signedIn.setCookie, SESSION_COOKIE_NAME)!;
     const view = await h.ceremony.view(cookie);
     assert.ok(view);
@@ -432,7 +435,7 @@ describe("identity view and logout", () => {
     assert.ok(view.csrfValue, "C9: the raw CSRF bootstrap value is recoverable in-process before logout");
     assert.equal(view.sessionVersion, 1, "CBD-191 section 5.1: the per-session version is a permitted client hint");
     assert.deepEqual(Object.keys(view).sort(), ["accountSubjectId", "assurance", "csrfValue", "displayName", "environmentId", "identityBindingId", "profileId", "sessionRef", "sessionVersion"]);
-    assert.equal(view.displayName, null, "P6-F01: unset until profile.set_display_name writes it");
+    assert.equal(view.displayName, null, "P6-F01: unset until profile.set_display_name writes it (subject-b carries no name claim, CBD-190 §2)");
     const csrf = await h.ceremony.csrfDigestFor(cookie);
     assert.ok(csrf);
     const deletion = await h.ceremony.logout(csrf.sessionRef);

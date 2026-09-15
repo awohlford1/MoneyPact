@@ -168,7 +168,10 @@ describe("PROTO-WIRE-01/02 identity routes through the real Fastify instance", (
     const { app, runtime } = await createComposedApiApplication(localConfig(), () => undefined, testHistory, { client: createFakeIdentityClient(db), rateLimit: syntheticGate });
     const b = await browser(app);
     try {
-      await signIn(b);
+      // CBD-190 identity amendments proposal §2: subject-b carries no local-issuer name claim, so this
+      // route-focused test stays independent of the first-sign-in display-name write (covered
+      // separately in first-sign-in-name.test.ts).
+      await signIn(b, "subject-b");
       const me = await b.inject("GET", "/v1/identity/me");
       assert.equal(me.statusCode, 200, me.body);
       const { csrfValue } = me.json<{ csrfValue: string; displayName: unknown }>();

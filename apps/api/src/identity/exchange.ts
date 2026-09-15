@@ -231,7 +231,7 @@ export async function runBoundedExchange(input: ExchangeInput): Promise<Exchange
     mark("id_token_validated");
 
     // Step 3: the only values that ever leave this execution.
-    const canonical: ValidatedIdentityClaims = { issuer: validation.claims.issuer, providerSubject: validation.claims.providerSubject, authTime: validation.claims.authTime, issuedAt: validation.claims.issuedAt };
+    const canonical: ValidatedIdentityClaims = { issuer: validation.claims.issuer, providerSubject: validation.claims.providerSubject, authTime: validation.claims.authTime, issuedAt: validation.claims.issuedAt, name: validation.claims.name };
     mark("canonical_fields_extracted");
 
     if (!refreshToken) return rejected("revocation_missing_token");

@@ -34,6 +34,13 @@ export interface VerifiedIdentityResultV1 {
   readonly identityEventId: string;
   readonly previousAccountSubjectId: string | undefined;
   readonly previousSessionRef: string | undefined;
+  /**
+   * CBD-190 identity amendments proposal §2.1: the bounded OIDC `name` claim
+   * (or the local adapter's chooser-supplied fallback -- the same field,
+   * §2.3), consumed only by the mapping's first-use branch below. Not an
+   * identity key; never used for resolution.
+   */
+  readonly name: string | undefined;
 }
 
 export type MappingResult =
@@ -120,7 +127,10 @@ async function attempt(client: DataAccessClient, input: MappingInput, attemptNum
     let created = false;
     if (!binding) {
       // Step 3: candidate subject + exactly one active profile + binding, same transaction.
-      const inserted = await insertSubjectWithProfileAndBinding(scoped, { environmentId: result.environmentId, issuer: result.issuer, providerSubject: result.providerSubject, now });
+      // Proposal §2.3: the display-name write fires only here, the brand-new-subject branch --
+      // never in the existing-binding `else` below -- so a later sign-in or account switch can
+      // never overwrite a subject-set value (C190-N04/N05).
+      const inserted = await insertSubjectWithProfileAndBinding(scoped, { environmentId: result.environmentId, issuer: result.issuer, providerSubject: result.providerSubject, now, displayName: result.name });
       accountSubjectId = inserted.accountSubjectId;
       identityBindingId = inserted.identityBindingId;
       created = true;

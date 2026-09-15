@@ -73,8 +73,31 @@ export const NEGATIVE_TOKEN_SCENARIOS = Object.freeze([
   "use-not-id",
   "no-refresh",
 ] as const);
-export type LocalScenario = (typeof HUMAN_SCENARIOS)[number] | (typeof NEGATIVE_TOKEN_SCENARIOS)[number];
-const ALL_SCENARIOS: readonly string[] = [...HUMAN_SCENARIOS, ...NEGATIVE_TOKEN_SCENARIOS];
+/**
+ * CBD-190 identity amendments proposal §2.2/§2.3: scenario fixtures that
+ * still produce a valid token (unlike `NEGATIVE_TOKEN_SCENARIOS`) but vary
+ * the `name` claim, so the local adapter can prove the present-claim
+ * (`subject-a`), absent-claim (`subject-b` and every other scenario carry
+ * none, the same "no chooser value" shape the production/Cognito adapter
+ * has), and 0/81-code-point-boundary branches through the same mapping code
+ * the production adapter would run. `subject-a-second-name` reuses
+ * `subject-a`'s immutable `sub` with a different valid name, for the
+ * never-overwrite negative (`C190-N04`/`C190-N05`).
+ */
+export const NAME_BOUND_SCENARIOS = Object.freeze(["subject-a-second-name", "name-blank", "name-oversized"] as const);
+export type LocalScenario = (typeof HUMAN_SCENARIOS)[number] | (typeof NEGATIVE_TOKEN_SCENARIOS)[number] | (typeof NAME_BOUND_SCENARIOS)[number];
+const ALL_SCENARIOS: readonly string[] = [...HUMAN_SCENARIOS, ...NEGATIVE_TOKEN_SCENARIOS, ...NAME_BOUND_SCENARIOS];
+
+/** The synthetic "chooser's already-selected fixture value", present only for scenarios that exercise the name claim's present/boundary branches. */
+function nameForScenario(scenario: LocalScenario): string | undefined {
+  switch (scenario) {
+    case "subject-a": return "  Ada A. Local  ";
+    case "subject-a-second-name": return "Blair Q. Later";
+    case "name-blank": return "   ";
+    case "name-oversized": return "N".repeat(81);
+    default: return undefined;
+  }
+}
 
 export function isLocalScenario(value: unknown): value is LocalScenario {
   return typeof value === "string" && ALL_SCENARIOS.includes(value);
@@ -310,6 +333,8 @@ export class LocalIssuer implements ProviderTransport {
       email_verified: true,
       "cognito:username": "synthetic-user",
     };
+    const name = nameForScenario(scenario);
+    if (name !== undefined) payload.name = name;
     if (scenario === "missing-sub") delete payload.sub;
     const header: Record<string, unknown> = { alg: "RS256", kid: key.kid, typ: "JWT" };
     if (scenario === "unknown-kid") header.kid = randomUUID();
