@@ -214,7 +214,9 @@ export async function handleMockInvitationRequest(directory: MockDirectory, sess
       loaded.invitation.state = "awaiting_confirmation"; loaded.invitation.projection = "awaiting_confirmation"; loaded.invitation.acceptedBySubjectId = subject; loaded.invitation.confirmationId = confirmationId; loaded.invitation.codeDisposition = "consumed";
       loaded.ceremony.state = "consumed";
       notice(directory, loaded.invitation.createdBySubjectId, loaded.invitation.budgetSpaceId, "MSG-73-050", at());
-      notice(directory, subject, null, "MSG-73-051", at());
+      // GAPS-F05: the real API writes no durable notice row for the invitee at accept -- MSG-73-051 is the
+      // ceremony page's own immediate message, never a stored notice. The invitee's durable row is MSG-73-015,
+      // written at the owner's confirm (below).
       return json({ confirmationId, state: "awaiting_confirmation", confirmationExpiresAt: loaded.invitation.inactiveAt });
     }
     return json(UNIFORM, 404);

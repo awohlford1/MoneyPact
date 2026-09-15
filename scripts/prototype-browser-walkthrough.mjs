@@ -359,7 +359,7 @@ async function main() {
     await page.goto(`${ORIGIN}/budgets/${budgetId}/members`); await owner.rows(2);
     const roles = await page.$$eval('[data-testid="member-row"] dd', (nodes) => nodes.map((node) => node.textContent));
     expect(roles.includes("Co-owner") && roles.includes("Primary Owner"), `the roles swapped: ${roles.join(", ")}`);
-    log("Primary Owner steps up and confirms (TR-73-42, TR-73-43)", "POST /v1/identity/step-up/begin bound to 29.transfer_primary_ownership and the space, the hosted chooser, GET /v1/identity/step-up/callback back to /budgets and the return marker; POST .../confirm with an empty body on the live transferId read from the view: committed, freshAssurance consumed; the members list now shows the former Primary Owner as Co-owner and the recipient as Primary Owner");
+    log("Primary Owner steps up and confirms (TR-73-42, TR-73-43)", "POST /v1/identity/step-up/begin bound to 29.transfer_primary_ownership and the space, the hosted chooser, GET /v1/identity/step-up/callback back to /budgets and the return marker; POST .../confirm with the acknowledgedDisclosure claim on the live transferId read from the view: committed, freshAssurance consumed; the members list now shows the former Primary Owner as Co-owner and the recipient as Primary Owner");
     await page.screenshot({ path: join(shots, "walkthrough-20-transfer-committed.png") });
     await inviteeContext.close();
 
