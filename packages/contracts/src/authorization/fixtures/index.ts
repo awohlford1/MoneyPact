@@ -3,7 +3,7 @@ import { decide, decideUnderRegisteredVersion, expectedProvenance } from "../eva
 import { CURRENT_POLICY_VERSION, POLICY_VERSIONS } from "../policy/registry.ts";
 import type { RegisteredPolicyVersion } from "../policy/registry.ts";
 import { SUBJECT_ACTION_DEFINITIONS, SUBJECT_CELLS } from "../policy/v2.ts";
-import { P3_USER_CELLS } from "../policy/v3.ts";
+import { ACCOUNT_PERMISSION, PROGRESS_DETAIL_ACTION } from "../policy/v3.ts";
 
 const now = "2026-09-12T12:00:00.000Z";
 const later = "2026-09-12T12:10:00.000Z";
@@ -74,9 +74,11 @@ export function subjectFixture(action: string, version: RegisteredPolicyVersion 
   return stamp(input);
 }
 
+/** One positive fixture per space-bound user cell, in the cell's own role (PC-236-019: the identifier names the actor role).
+ * Through p3 every such cell is a Primary Owner cell; p4 adds Co-owner and Collaborator cells (section 8.7). */
 function userCatalog(version: RegisteredPolicyVersion) {
   return POLICY_VERSIONS[version].userCells.filter((cell) => cell.action !== "space.create" && cell.permission !== "subject")
-    .map((cell) => ({ id: `${version}.user.${cell.action}.primary_owner.api`, input: ordinaryFixture(cell.action, "primary_owner", version), expected: cell.notation === "Deny" || cell.notation === "Not applicable" ? "deny" : "allow" }));
+    .map((cell) => ({ id: `${version}.user.${cell.action}.${cell.role}.api`, input: ordinaryFixture(cell.action, cell.role as Role, version), expected: cell.notation === "Deny" || cell.notation === "Not applicable" ? "deny" : "allow" }));
 }
 export const P1_FIXTURES = Object.freeze([
   { id: "p1.user.bootstrap.primary_owner.api", input: bootstrapFixture("p1"), expected: "allow" },
@@ -95,6 +97,13 @@ export const P3_FIXTURES = Object.freeze([
   ...userCatalog("p3"),
   ...SUBJECT_CELLS.map((cell) => ({ id: `p3.subject.${cell.action}.acting_subject.api`, input: subjectFixture(cell.action, "p3"), expected: "allow" })),
   { id: "p3.service.service.SA-92-002.generate_period_state.SA-92-002.worker", input: serviceFixture("p3"), expected: "allow" },
+]);
+/** p4 = the p3 catalog re-pinned to p4 (every carried cell) plus the section 8.7.1 Co-owner and Collaborator cells through `userCatalog`. */
+export const P4_FIXTURES = Object.freeze([
+  { id: "p4.user.bootstrap.primary_owner.api", input: bootstrapFixture("p4"), expected: "allow" },
+  ...userCatalog("p4"),
+  ...SUBJECT_CELLS.map((cell) => ({ id: `p4.subject.${cell.action}.acting_subject.api`, input: subjectFixture(cell.action, "p4"), expected: "allow" })),
+  { id: "p4.service.service.SA-92-002.generate_period_state.SA-92-002.worker", input: serviceFixture("p4"), expected: "allow" },
 ]);
 
 export const NEGATIVE_FAMILIES = Object.freeze([
@@ -178,22 +187,27 @@ export function subjectNegativeFixtures(version: RegisteredPolicyVersion): reado
 }
 export const P2_NEGATIVE_FIXTURES: readonly SubjectNegativeFixture[] = subjectNegativeFixtures("p2");
 
-/** Section 9.5: the discriminating negative per p3 manual-account cell. The cells are ordinary space-bound Primary Owner
- * cells, so the families are the section 9.3 ones stated cell by cell: every other role, another space, a wrong target
- * type, an inactive space lifecycle, a stale captured version, service authority, an inactive subject, membership, or
- * consent, the subject-scoped shape, and a missing target. Every entry is evaluated under `version` and must deny inertly
- * with the stated reason (PC-236-018). */
+/** Sections 9.5 and 9.6: the discriminating negative per manual-account cell (p3 Primary Owner cells; p4 adds the Co-owner and
+ * Collaborator cells). The cells are ordinary space-bound cells, so the families are the section 9.3 ones stated cell by cell:
+ * every role without a cell for the action in `version`, another space, a wrong target type, an inactive space lifecycle, a
+ * stale captured version, service authority, an inactive subject, membership, or consent, the subject-scoped shape, and a
+ * missing target. Every entry is evaluated under `version` and must deny inertly with the stated reason (PC-236-018). */
 export type AccountNegativeFamily = "other_role" | "other_space" | "wrong_target_type" | "inactive_lifecycle" | "stale_version" | "service_authority" | "inactive_subject" | "inactive_membership" | "consent_not_current" | "subject_scoped_shape" | "missing_target";
-export interface AccountNegativeFixture { readonly id: string; readonly action: string; readonly family: AccountNegativeFamily; readonly input: unknown; readonly reason: string }
-function accountNegatives(action: string, version: RegisteredPolicyVersion): AccountNegativeFixture[] {
-  const positive = ordinaryFixture(action, "primary_owner", version);
+export interface AccountNegativeFixture { readonly id: string; readonly action: string; readonly role: Role; readonly family: AccountNegativeFamily; readonly input: unknown; readonly reason: string }
+export const ROLES: readonly Role[] = Object.freeze(["primary_owner", "co_owner", "collaborator", "viewer", "accountability_partner"]);
+/** The roles that hold no cell for `action` in `version`; each denies `role_not_permitted` by absence (section 8.2). */
+export function rolesWithoutCell(action: string, version: RegisteredPolicyVersion): readonly Role[] {
+  return ROLES.filter((role) => !POLICY_VERSIONS[version].userCells.some((cell) => cell.action === action && cell.role === role));
+}
+function accountNegatives(action: string, role: Role, version: RegisteredPolicyVersion): AccountNegativeFixture[] {
+  const positive = ordinaryFixture(action, role, version);
   const precheck = decideUnderRegisteredVersion(version, positive);
-  if (!precheck.capturedVersions) throw new Error(`positive p3 fixture ${action} did not capture versions`);
+  if (!precheck.capturedVersions) throw new Error(`positive ${version} fixture ${action} for ${role} did not capture versions`);
   const read = precheck.effectClass === "read";
   const entry = (family: AccountNegativeFamily, input: unknown, reason: string, suffix?: string): AccountNegativeFixture =>
-    ({ id: `${version}.user.${action}.${family}${suffix === undefined ? "" : `.${suffix}`}`, action, family, input, reason });
+    ({ id: `${version}.user.${action}.${role}.${family}${suffix === undefined ? "" : `.${suffix}`}`, action, role, family, input, reason });
   return [
-    ...(["co_owner", "collaborator", "viewer", "accountability_partner"] as const).map((role) => entry("other_role", ordinaryFixture(action, role, version), "role_not_permitted", role)),
+    ...rolesWithoutCell(action, version).map((other) => entry("other_role", ordinaryFixture(action, other, version), "role_not_permitted", other)),
     entry("other_space", stamp({ ...positive, resource: { ...positive.resource, owningSpaceId: "other-space" } }), "scope_mismatch"),
     entry("wrong_target_type", stamp({ ...positive, resource: { ...positive.resource, type: "report" } }), "scope_mismatch"),
     // Archival ends every financial mutation (CBD-72 section 6.5); a read survives archival, so a purged space blocks it.
@@ -207,7 +221,15 @@ function accountNegatives(action: string, version: RegisteredPolicyVersion): Acc
     entry("missing_target", { ...positive, resource: undefined }, "input_invalid"),
   ];
 }
+/** Every manual-account cell (the four `manual_account` operations and the row-14 detail read) that `version` carries, in
+ * the cell's own role: p3 yields the five Primary Owner cells; p4 yields those five plus the eight section 8.7.1 cells. */
+export function accountCells(version: RegisteredPolicyVersion): readonly { action: string; role: Role }[] {
+  return POLICY_VERSIONS[version].userCells
+    .filter((cell) => cell.permission === ACCOUNT_PERMISSION || cell.action === PROGRESS_DETAIL_ACTION)
+    .map((cell) => ({ action: cell.action, role: cell.role as Role }));
+}
 export function accountNegativeFixtures(version: RegisteredPolicyVersion): readonly AccountNegativeFixture[] {
-  return Object.freeze(P3_USER_CELLS.flatMap((cell) => accountNegatives(cell.action, version)));
+  return Object.freeze(accountCells(version).flatMap((cell) => accountNegatives(cell.action, cell.role, version)));
 }
 export const P3_NEGATIVE_FIXTURES: readonly AccountNegativeFixture[] = accountNegativeFixtures("p3");
+export const P4_NEGATIVE_FIXTURES: readonly AccountNegativeFixture[] = accountNegativeFixtures("p4");
