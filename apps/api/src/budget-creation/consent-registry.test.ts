@@ -82,6 +82,18 @@ describe("the registry as it stands", () => {
       assert.match(disclosure.text.acknowledgement, /budget space/u);
     }
   });
+  // TCF-02 (GAPS-F03 follow-up): `at(kind, version)` answers the same entry
+  // as `current` for the one version every real kind carries today, and
+  // `null` -- never a throw -- for a version this file does not have.
+  it("at(kind, version) answers the loader's only version and null past it", () => {
+    const source = loadConsentDisclosureRegistry(here);
+    for (const kind of [PRIMARY_OWNER_SELF_DISCLOSURE, ...INVITATION_DISCLOSURE_KINDS]) {
+      assert.deepEqual(source.at?.(kind, 1), source.current(kind));
+      assert.equal(source.at?.(kind, 2), null);
+      assert.equal(source.at?.(kind, 999), null);
+    }
+    assert.equal(source.at?.("not_a_registered_kind", 1), null);
+  });
 });
 
 /**
@@ -234,5 +246,46 @@ describe("deliberate violations the API startup guard must fail", () => {
     content.version = 2;
     rows[0]!.digest = digestOf(content);
     assert.throws(build(rows, contents), /version_not_dense/u);
+  });
+});
+
+/**
+ * TCF-02 (GAPS-F03 follow-up): `at(kind, version)` reads the loader's own
+ * history rather than only the currently approved version. The real registry
+ * has never carried two versions of one kind, so this exercises the append
+ * from an in-memory two-version registry, the same way the malformed-input
+ * cases above build one without a checkout on disk.
+ */
+describe("TCF-02: at(kind, version) once a kind has moved past a captured version", () => {
+  function content(kind: string, version: number, heading: string): { kind: string; version: number; heading: string; items: { id: string; text: string }[]; acknowledgement: string } {
+    return { kind, version, heading, items: [{ id: "1", text: "Body." }], acknowledgement: "I agree." };
+  }
+
+  it("still answers an older version's own text once a newer one is current, and null once a version was never carried", () => {
+    const kind = "primary_owner_self";
+    const v1 = content(kind, 1, "Version one");
+    const v2 = content(kind, 2, "Version two");
+    const rows = [
+      { kind, version: 1, digest: digestOf(v1), text_ref: "v1.json" },
+      { kind, version: 2, digest: digestOf(v2), text_ref: "v2.json" },
+    ];
+    const source = buildConsentDisclosureSource(rows, { "v1.json": v1, "v2.json": v2 }, [kind]);
+
+    // current() moved to the highest version, as it always has.
+    assert.equal(source.current(kind).version, 2);
+    assert.equal(source.current(kind).text.heading, "Version two");
+
+    // at() still serves the captured (now superseded) version's own text and digest.
+    const at1 = source.at?.(kind, 1);
+    assert.equal(at1?.version, 1);
+    assert.equal(at1?.digest, digestOf(v1));
+    assert.equal(at1?.text.heading, "Version one");
+
+    // at() on the current version agrees with current().
+    assert.deepEqual(source.at?.(kind, 2), source.current(kind));
+
+    // Moved-and-removed: a version this loader's file never carried is null, never a throw.
+    assert.equal(source.at?.(kind, 3), null);
+    assert.equal(source.at?.("not_a_registered_kind", 1), null);
   });
 });

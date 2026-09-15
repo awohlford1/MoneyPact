@@ -8,7 +8,8 @@ import {
 } from "./application.ts";
 import { PrimaryTransferError, isPrimaryTransferError } from "./records.ts";
 import {
-  OTHER_SUBJECT, PRIMARY_MEMBERSHIP, PRIMARY_SUBJECT, RECIPIENT_MEMBERSHIP, RECIPIENT_SUBJECT, SPACE, actorWithoutCell, testWorld,
+  OTHER_SUBJECT, OUTGOING_DISCLOSURE_CLAIM, PRIMARY_MEMBERSHIP, PRIMARY_SUBJECT, RECIPIENT_DISCLOSURE_CLAIM,
+  RECIPIENT_MEMBERSHIP, RECIPIENT_SUBJECT, SPACE, actorWithoutCell, testDisclosures, testWorld,
 } from "./support.ts";
 
 /** Propose, and return the transfer id. Fails loudly rather than returning a denial the caller has to unwrap. */
@@ -119,20 +120,20 @@ void test("PK7A-02 SEC-PK5-F02: a route that did not decide against the cell is 
   const world = testWorld();
   const transferId = await propose(world);
   const bare = actorWithoutCell(world.recipient("29.accept_primary_transfer"));
-  const result = await acceptPrimaryTransfer(world.deps, bare, { transferId });
+  const result = await acceptPrimaryTransfer(world.deps, bare, { transferId, acknowledgedDisclosure: RECIPIENT_DISCLOSURE_CLAIM });
   assert.equal(result.outcome, "denied");
   if (result.outcome !== "denied") throw new Error("unreachable");
   assert.equal(result.reasonClass, "permission_mismatch");
   // And a cell decided for a different action is equally not this one.
   const wrongCell = { ...world.recipient("29.accept_primary_transfer"), actionCode: "29.view_primary_transfer" as const };
-  const crossed = await acceptPrimaryTransfer(world.deps, wrongCell, { transferId });
+  const crossed = await acceptPrimaryTransfer(world.deps, wrongCell, { transferId, acknowledgedDisclosure: RECIPIENT_DISCLOSURE_CLAIM });
   assert.equal(crossed.outcome, "denied");
 });
 
 void test("PK7A-02 TR-73-41: the recipient accepts and the workflow waits for the Primary", async () => {
   const world = testWorld();
   const transferId = await propose(world);
-  const result = await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId });
+  const result = await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: RECIPIENT_DISCLOSURE_CLAIM });
   assert.equal(result.outcome, "recipient_accepted");
   if (result.outcome !== "recipient_accepted") throw new Error("unreachable");
   assert.equal(result.messageCode, "MSG-73-025");
@@ -146,7 +147,7 @@ void test("PK7A-02 TR-73-41: the recipient accepts and the workflow waits for th
   // R-06: the recipient's exact retry answers the prior conditional result
   // -- the current state and MSG-73-025 -- and writes nothing.
   const auditsBefore = world.repository.audit.length;
-  const again = await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId });
+  const again = await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: RECIPIENT_DISCLOSURE_CLAIM });
   assert.equal(again.outcome, "recipient_accepted");
   if (again.outcome !== "recipient_accepted") throw new Error("unreachable");
   assert.equal(again.messageCode, "MSG-73-025");
@@ -158,7 +159,7 @@ void test("PK7A-02 TR-73-41: the recipient accepts and the workflow waits for th
 void test("PK7A-02 TR-73-42: the Primary confirms first and the workflow waits for the recipient", async () => {
   const world = testWorld();
   const transferId = await propose(world);
-  const result = await confirmPrimaryTransfer(world.deps, world.primary("29.transfer_primary_ownership"), { transferId });
+  const result = await confirmPrimaryTransfer(world.deps, world.primary("29.transfer_primary_ownership"), { transferId, acknowledgedDisclosure: OUTGOING_DISCLOSURE_CLAIM });
   assert.equal(result.outcome, "primary_confirmed");
   if (result.outcome !== "primary_confirmed") throw new Error("unreachable");
   assert.equal(result.messageCode, "MSG-73-041");
@@ -173,10 +174,10 @@ void test("PK7A-02 TR-73-42: the Primary confirms first and the workflow waits f
 void test("R-06: the Primary's repeated confirm answers the prior result without writing", async () => {
   const world = testWorld();
   const transferId = await propose(world);
-  const first = await confirmPrimaryTransfer(world.deps, world.primary("29.transfer_primary_ownership"), { transferId });
+  const first = await confirmPrimaryTransfer(world.deps, world.primary("29.transfer_primary_ownership"), { transferId, acknowledgedDisclosure: OUTGOING_DISCLOSURE_CLAIM });
   assert.equal(first.outcome, "primary_confirmed");
   const auditsBefore = world.repository.audit.length;
-  const again = await confirmPrimaryTransfer(world.deps, world.primary("29.transfer_primary_ownership"), { transferId });
+  const again = await confirmPrimaryTransfer(world.deps, world.primary("29.transfer_primary_ownership"), { transferId, acknowledgedDisclosure: OUTGOING_DISCLOSURE_CLAIM });
   assert.equal(again.outcome, "primary_confirmed");
   if (again.outcome !== "primary_confirmed") throw new Error("unreachable");
   assert.equal(again.messageCode, "MSG-73-041");
@@ -185,15 +186,15 @@ void test("R-06: the Primary's repeated confirm answers the prior result without
   // A stale decision on the retry is still refused first: recovery never
   // outranks the version check.
   const stale = world.primary("29.transfer_primary_ownership");
-  const staleResult = await confirmPrimaryTransfer(world.deps, { ...stale, decision: { ...stale.decision, authorizationVersion: 9 } }, { transferId });
+  const staleResult = await confirmPrimaryTransfer(world.deps, { ...stale, decision: { ...stale.decision, authorizationVersion: 9 } }, { transferId, acknowledgedDisclosure: OUTGOING_DISCLOSURE_CLAIM });
   assert.equal(staleResult.outcome, "denied");
 });
 
 void test("R-03: a committed workflow answers its receipt to either party's retry without writing, and denies the rest", async () => {
   const world = testWorld();
   const transferId = await propose(world);
-  await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId });
-  const committed = await confirmPrimaryTransfer(world.deps, world.primary("29.transfer_primary_ownership"), { transferId });
+  await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: RECIPIENT_DISCLOSURE_CLAIM });
+  const committed = await confirmPrimaryTransfer(world.deps, world.primary("29.transfer_primary_ownership"), { transferId, acknowledgedDisclosure: OUTGOING_DISCLOSURE_CLAIM });
   assert.equal(committed.outcome, "committed");
   if (committed.outcome !== "committed") throw new Error("unreachable");
   const auditsBefore = world.repository.audit.length;
@@ -202,12 +203,12 @@ void test("R-03: a committed workflow answers its receipt to either party's retr
   // Both parties recover the same receipt. Their decision versions are the
   // pre-commit ones, which is what a lost-response retry carries; a committed
   // workflow is answered after the party check and before the version check.
-  const confirmAgain = await confirmPrimaryTransfer(world.deps, world.primary("29.transfer_primary_ownership"), { transferId });
+  const confirmAgain = await confirmPrimaryTransfer(world.deps, world.primary("29.transfer_primary_ownership"), { transferId, acknowledgedDisclosure: OUTGOING_DISCLOSURE_CLAIM });
   assert.equal(confirmAgain.outcome, "committed");
   if (confirmAgain.outcome !== "committed") throw new Error("unreachable");
   assert.deepEqual(confirmAgain.receipt, committed.receipt);
   assert.equal(confirmAgain.messageCode, "MSG-73-042");
-  const acceptAgain = await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId });
+  const acceptAgain = await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: RECIPIENT_DISCLOSURE_CLAIM });
   assert.equal(acceptAgain.outcome, "committed");
   if (acceptAgain.outcome !== "committed") throw new Error("unreachable");
   assert.deepEqual(acceptAgain.receipt, committed.receipt);
@@ -217,7 +218,7 @@ void test("R-03: a committed workflow answers its receipt to either party's retr
 
   // A non-party gets the denial, not the receipt.
   const stranger = { ...world.recipient("29.accept_primary_transfer"), subjectId: OTHER_SUBJECT };
-  assert.equal((await acceptPrimaryTransfer(world.deps, stranger, { transferId })).outcome, "denied");
+  assert.equal((await acceptPrimaryTransfer(world.deps, stranger, { transferId, acknowledgedDisclosure: RECIPIENT_DISCLOSURE_CLAIM })).outcome, "denied");
   // Withdraw and decline on a committed workflow stay the uniform no-op.
   assert.equal((await withdrawPrimaryTransfer(world.deps, world.primary("29.withdraw_primary_transfer"), { transferId })).outcome, "denied");
   assert.equal((await declinePrimaryTransfer(world.deps, world.recipient("29.decline_primary_transfer"), { transferId })).outcome, "denied");
@@ -229,7 +230,7 @@ void test("PK7A-03: a confirm with no fresh-assurance reference denies and recor
   const transferId = await propose(world);
   const { freshAssuranceRef, ...withoutAssurance } = world.primary("29.transfer_primary_ownership");
   void freshAssuranceRef;
-  const result = await confirmPrimaryTransfer(world.deps, withoutAssurance, { transferId });
+  const result = await confirmPrimaryTransfer(world.deps, withoutAssurance, { transferId, acknowledgedDisclosure: OUTGOING_DISCLOSURE_CLAIM });
   assert.equal(result.outcome, "denied");
   if (result.outcome !== "denied") throw new Error("unreachable");
   assert.equal(result.reasonClass, "assurance_required");
@@ -277,14 +278,14 @@ void test("PK7A-02: the wrong party is refused on every actor path", async () =>
   const transferId = await propose(world);
   // The Primary cannot accept or decline on the recipient's behalf.
   const asPrimary = { ...world.primary("29.accept_primary_transfer") };
-  assert.equal((await acceptPrimaryTransfer(world.deps, asPrimary, { transferId })).outcome, "denied");
+  assert.equal((await acceptPrimaryTransfer(world.deps, asPrimary, { transferId, acknowledgedDisclosure: RECIPIENT_DISCLOSURE_CLAIM })).outcome, "denied");
   const declineAsPrimary = { ...world.primary("29.decline_primary_transfer") };
   assert.equal((await declinePrimaryTransfer(world.deps, declineAsPrimary, { transferId })).outcome, "denied");
   // The recipient cannot confirm or withdraw.
   const confirmAsRecipient = {
     ...world.recipient("29.transfer_primary_ownership"), freshAssuranceRef: "fresh-assurance:x",
   };
-  assert.equal((await confirmPrimaryTransfer(world.deps, confirmAsRecipient, { transferId })).outcome, "denied");
+  assert.equal((await confirmPrimaryTransfer(world.deps, confirmAsRecipient, { transferId, acknowledgedDisclosure: OUTGOING_DISCLOSURE_CLAIM })).outcome, "denied");
   const withdrawAsRecipient = { ...world.recipient("29.withdraw_primary_transfer") };
   assert.equal((await withdrawPrimaryTransfer(world.deps, withdrawAsRecipient, { transferId })).outcome, "denied");
   assert.equal((await world.repository.readTransfer(SPACE, transferId))?.state, "proposed");
@@ -294,7 +295,7 @@ void test("PK7A-01 TR-73-46: expiry closes the workflow at the next command, wit
   const world = testWorld();
   const transferId = await propose(world);
   world.clock.advanceSeconds(8 * 24 * 60 * 60);
-  const result = await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId });
+  const result = await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: RECIPIENT_DISCLOSURE_CLAIM });
   assert.equal(result.outcome, "expired");
   if (result.outcome !== "expired") throw new Error("unreachable");
   assert.equal(result.messageCode, "MSG-73-045");
@@ -329,7 +330,7 @@ void test("PK7A-02 TR-73-46: a version that moved after the proposal invalidates
     const world = testWorld();
     const transferId = await propose(world);
     drift(world);
-    const result = await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId });
+    const result = await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: RECIPIENT_DISCLOSURE_CLAIM });
     assert.equal(result.outcome, "invalidated", label);
     if (result.outcome !== "invalidated") throw new Error("unreachable");
     // MSG-73-027, never the denial message: this closure is a mutation.
@@ -430,7 +431,42 @@ void test("PK8-F03: the view carries each party's approved text at the captured 
   assert.deepEqual(moved.disclosures, { recipient: null, outgoing: null });
 });
 
-void test("PK8-F03: a null or differing claim throws stale_disclosure before any write on accept and confirm; a matching claim records the leg; an absent key binds nothing", async () => {
+void test("TCF-02 (GAPS-F03 follow-up): the view still shows the captured version's text once the registry has a newer current one, and null once that version is gone", async () => {
+  const world = testWorld();
+  const transferId = await propose(world);
+  const captured = (await world.repository.readTransfer(SPACE, transferId))!;
+  assert.equal(captured.recipientDisclosureVersion, 1, "the captured version, before the registry moves");
+
+  // The registry moves on: version 2 is now current, but at(kind, 1) still
+  // answers the version this workflow captured -- an override for the new
+  // current entry, plus the old one kept in `extra` so the source's history
+  // still has it (an override alone would replace it, not add to it).
+  const capturedRecipientEntry = testDisclosures().current("primary_transfer_recipient");
+  const movedRecipientEntry = { kind: "primary_transfer_recipient", version: 2, digest: "z".repeat(64), text: { heading: "New recipient text", items: [{ id: "1", text: "New." }], acknowledgement: "I agree." } };
+  const stillAvailable = testDisclosures({ primary_transfer_recipient: movedRecipientEntry }, [capturedRecipientEntry]);
+  assert.equal(stillAvailable.current("primary_transfer_recipient").version, 2, "current genuinely moved on");
+  const worldWithMovedRegistry = { ...world.deps, disclosures: stillAvailable };
+  const view = await viewPrimaryTransfer(worldWithMovedRegistry, world.recipient("29.view_primary_transfer"), parseTransferRequest(transferId));
+  if (view.outcome !== "view") throw new Error("unreachable");
+  // The recipient's captured version 1 text still shows -- what the party actually read.
+  assert.equal(view.disclosures.recipient?.version, 1);
+  assert.equal(view.disclosures.recipient?.text.heading, "Becoming the Primary Owner");
+  // The outgoing kind is untouched by the move and still shows its own captured text.
+  assert.equal(view.disclosures.outgoing?.version, 1);
+  assert.equal(view.disclosures.outgoing?.text.heading, "Handing over");
+
+  // Moved *and* removed: a source whose history no longer carries the
+  // captured version answers null, exactly as an unregistered kind does --
+  // fail-closed, never a throw.
+  const removed = testDisclosures({
+    primary_transfer_recipient: { kind: "primary_transfer_recipient", version: 2, digest: "z".repeat(64), text: { heading: "New recipient text", items: [{ id: "1", text: "New." }], acknowledgement: "I agree." } },
+  });
+  const gone = await viewPrimaryTransfer({ ...world.deps, disclosures: removed }, world.recipient("29.view_primary_transfer"), parseTransferRequest(transferId));
+  if (gone.outcome !== "view") throw new Error("unreachable");
+  assert.equal(gone.disclosures.recipient, null);
+});
+
+void test("PK8-F03/TCF-01: a null, differing or absent claim throws stale_disclosure before any write on accept and confirm; only a matching claim records the leg", async () => {
   const world = testWorld();
   const transferId = await propose(world);
   const recipientClaim = { kind: "primary_transfer_recipient", version: 1, digest: "a".repeat(64) };
@@ -458,9 +494,14 @@ void test("PK8-F03: a null or differing claim throws stale_disclosure before any
   // The recipient's exact retry is recovered whatever it carries (R-03, R-06).
   const retry = await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId, acknowledgedDisclosure: null });
   assert.equal(retry.outcome, "recipient_accepted");
-  // The key absent: an in-process caller that binds nothing (the persistence proofs); the route never sends this shape.
+  // TCF-01 (GAPS-F02 follow-up): the key absent is refused exactly like
+  // `null` -- every in-process caller must now pass a claim, and there is no
+  // longer an "unbound" leg the persistence proofs could rely on.
   const second = testWorld();
   const other = await propose(second);
-  const unbound = await acceptPrimaryTransfer(second.deps, second.recipient("29.accept_primary_transfer"), { transferId: other });
-  assert.equal(unbound.outcome, "recipient_accepted");
+  await assert.rejects(
+    acceptPrimaryTransfer(second.deps, second.recipient("29.accept_primary_transfer"), { transferId: other } as unknown as Parameters<typeof acceptPrimaryTransfer>[2]),
+    (error: unknown) => isPrimaryTransferError(error) && error.code === "stale_disclosure",
+  );
+  assert.equal((await second.repository.readTransfer(SPACE, other))?.recipientAcceptedAt, null);
 });

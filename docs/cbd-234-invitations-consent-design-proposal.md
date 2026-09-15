@@ -3,13 +3,13 @@
 | Field | Value |
 | --- | --- |
 | Status | **Proposed — architecture proposal for an Executive decision; nothing in this document is approved, no migration, policy cell, registry entry, or route exists because of it, and no CBD-73 gate closes because of it. The decision items are in §17** |
-| Document version | 0.1.1 |
+| Document version | 0.1.2 |
 | Proposal identifiers | `IV-001` through `IV-031`; open questions `OQ-IV-001` through `OQ-IV-006`; packets `PK-1` through `PK-9` |
 | Owner | Alexander Wohlford |
 | Jira, as read on September 15, 2026 | Epic [CBD-8](https://awohlford.atlassian.net/browse/CBD-8); story [CBD-41](https://awohlford.atlassian.net/browse/CBD-41) with subtasks [CBD-274](https://awohlford.atlassian.net/browse/CBD-274), [CBD-275](https://awohlford.atlassian.net/browse/CBD-275), [CBD-276](https://awohlford.atlassian.net/browse/CBD-276); [CBD-280](https://awohlford.atlassian.net/browse/CBD-280) under CBD-42; [CBD-287](https://awohlford.atlassian.net/browse/CBD-287) under CBD-43; specification source [CBD-73](https://awohlford.atlassian.net/browse/CBD-73). The packet named [CBD-234](https://awohlford.atlassian.net/browse/CBD-234) and [CBD-235](https://awohlford.atlassian.net/browse/CBD-235); see §1.2 |
 | Binding constraint | `PROTO-CONSENT-LANDING-SEC-001-RESULT` finding `SEC-F02` (and `SEC-F04`): the deferred activation-atomicity trigger in `packages/migrations/migrations/20260914T170000Z__create_budget_space_consent.sql` |
 | Governing consent semantics | `CBD236-CONSENT-SEMANTICS-001` (Executive, September 14, 2026), items 1–6; `docs/cbd-236-consent-facts-proposal.md` v0.1 §4, §5, §10, `OQ-CF-001`–`OQ-CF-005` |
-| Governing lifecycle | `docs/cbd-73-invitation-consent-lifecycle-specification.md` v1.0.4 — §3 invariants, §4 states and `TR-73-*`, §5 and §5.1, §6 rules 1–6, §7.2, §12 transfer, §13 `DR-73-*`, §14 `AE-73-*`, §15 `OI-73-*` |
+| Governing lifecycle | `docs/cbd-73-invitation-consent-lifecycle-specification.md` v1.0.7 — §3 invariants, §4 states and `TR-73-*`, §5 and §5.1, §6 rules 1–6, §7.2, §12 transfer, §13 `DR-73-*`, §14 `AE-73-*`, §15 `OI-73-*` |
 | Governing permission model | `docs/cbd-72-collaboration-permission-model.md` v0.1.54 — §2, §4.3 rows 24–29, §6.1–§6.3, §8 |
 | Governing authorization contract | `docs/cbd-236-authorization-policy-contract.md` (v0.9 by its revision history; the header cell still says 0.8, `OQ-IV-006`) — §4.4, §6.1, §8.1, §8.2, §8.5, §8.6, §9.4, §9.5, §12, `HO-236-07` |
 | Governing rate-limit contract | `docs/cbd-266-rate-limit-parameter-registry-contract.md` v0.5 — §3, §4.7, §4.7.4, §5, §6 |
@@ -558,5 +558,6 @@ Each item is numbered, states the choice, and carries a recommendation. Nothing 
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.1.2 | September 15, 2026 | `SCHFU-F04`: the "Governing lifecycle" row's CBD-73 pin updated from v1.0.4 to its current v1.0.7. No cell, digest, or design decision changed. |
 | 0.1.1 | September 15, 2026 | Documentation corrections approved under `EXEC-FOLLOWUPS-003`: §11.5 negative family for a present-but-misbound or expired fresh assurance corrected from `assurance_required` to `assurance_insufficient`, matching contract §5.2 and `evaluate.ts` (`P5-F3`); the consumed-contract row updated to `docs/cbd-190-identity-ceremony-and-mapping-contract.md` v0.4 and `docs/cbd-191-session-and-revocation-contract.md` v0.3 (`AMEND-F11`). No cell, digest, or design decision changed. |
 | 0.1 | September 15, 2026 | Initial proposal: scope cut, invitation record and states, ceremony over HTTP with the simulated delivery adapter and the no-account identity path, disclosure kinds, widening migration and new tables, the acceptance transaction, display identity, Primary transfer as a consent-bearing change with the fresh-assurance prerequisite, `p4` cells, rate-limit registrations, audit and notices, packets, traceability, decision items |
