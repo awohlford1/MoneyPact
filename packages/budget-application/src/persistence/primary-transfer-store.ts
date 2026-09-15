@@ -38,7 +38,8 @@ import { cancelRecord } from "../invitations/application.ts";
 import type { InvitationDependencies } from "../invitations/application.ts";
 import type { OwnerContext } from "../invitations/ports.ts";
 import { ACTIVE_INVITATION_STATES } from "../invitations/records.ts";
-import { dataAccessPrimaryTransferRepository } from "../primary-transfer/data-access-adapter.ts";
+import { dataAccessPrimaryTransferRepository, translateStatementFailure } from "../primary-transfer/data-access-adapter.ts";
+import { PrimaryTransferError } from "../primary-transfer/records.ts";
 import { primaryTransferObligations } from "../primary-transfer/obligations.ts";
 import type { PrimaryTransferObligations } from "../primary-transfer/obligations.ts";
 import type {
@@ -128,6 +129,31 @@ export function permissionLostCanceller(
     }
     return cancelled;
   };
+}
+
+/**
+ * One `SERIALIZABLE` transaction whose COMMIT-time failure speaks this
+ * module's vocabulary (`R-04`).
+ *
+ * The adapter's `guarded()` translates a failure raised by a *statement*;
+ * under `SERIALIZABLE` PostgreSQL can also raise `40001` at COMMIT, which
+ * `client.transaction` rethrows as the driver's error with `sqlState`
+ * `40001` and no statement to guard. This wrapper opens the transaction and
+ * translates that one the same way, so a caller sees `retryable_conflict`
+ * whichever point the serialization failure surfaced at. PK-7B's route
+ * composes its transaction inside the boundary rather than here, so it must
+ * map `sqlState` `40001`/`40P01` from the seam to the same retryable outcome
+ * -- or run its handler through this.
+ */
+export async function runPrimaryTransferTransaction<T>(
+  client: DataAccessClient, work: (scoped: DataAccessClient) => Promise<T>,
+): Promise<T> {
+  try {
+    return await client.transaction({ isolation: "serializable" }, work);
+  } catch (error) {
+    if (error instanceof PrimaryTransferError) throw error;
+    return translateStatementFailure(error);
+  }
 }
 
 /**
