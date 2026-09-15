@@ -8,7 +8,7 @@ import {
 } from "./application.ts";
 import { PrimaryTransferError, isPrimaryTransferError } from "./records.ts";
 import {
-  PRIMARY_MEMBERSHIP, RECIPIENT_MEMBERSHIP, RECIPIENT_SUBJECT, SPACE, actorWithoutCell, testWorld,
+  OTHER_SUBJECT, PRIMARY_MEMBERSHIP, RECIPIENT_MEMBERSHIP, RECIPIENT_SUBJECT, SPACE, actorWithoutCell, testWorld,
 } from "./support.ts";
 
 /** Propose, and return the transfer id. Fails loudly rather than returning a denial the caller has to unwrap. */
@@ -138,9 +138,16 @@ void test("PK7A-02 TR-73-41: the recipient accepts and the workflow waits for th
   // No role changed and no consent row moved: acceptance is evidence, not authority.
   assert.equal((await world.repository.readMembership(SPACE, RECIPIENT_MEMBERSHIP))?.role, "collaborator");
   assert.equal((await world.repository.readCurrentConsent(SPACE, RECIPIENT_MEMBERSHIP))?.role, "collaborator");
-  // A second accept is not idempotent success: the leg is already recorded.
+  // R-06: the recipient's exact retry answers the prior conditional result
+  // -- the current state and MSG-73-025 -- and writes nothing.
+  const auditsBefore = world.repository.audit.length;
   const again = await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId });
-  assert.equal(again.outcome, "denied");
+  assert.equal(again.outcome, "recipient_accepted");
+  if (again.outcome !== "recipient_accepted") throw new Error("unreachable");
+  assert.equal(again.messageCode, "MSG-73-025");
+  assert.equal(again.transfer.transferId, transferId);
+  assert.equal((await world.repository.readTransfer(SPACE, transferId))?.stateVersion, 2);
+  assert.equal(world.repository.audit.length, auditsBefore);
 });
 
 void test("PK7A-02 TR-73-42: the Primary confirms first and the workflow waits for the recipient", async () => {
@@ -156,6 +163,60 @@ void test("PK7A-02 TR-73-42: the Primary confirms first and the workflow waits f
   // never read by this module.
   assert.equal(record?.primaryAssuranceRef, world.primary("29.transfer_primary_ownership").freshAssuranceRef);
   assert.equal((await world.repository.readMembership(SPACE, PRIMARY_MEMBERSHIP))?.role, "primary_owner");
+});
+
+void test("R-06: the Primary's repeated confirm answers the prior result without writing", async () => {
+  const world = testWorld();
+  const transferId = await propose(world);
+  const first = await confirmPrimaryTransfer(world.deps, world.primary("29.transfer_primary_ownership"), { transferId });
+  assert.equal(first.outcome, "primary_confirmed");
+  const auditsBefore = world.repository.audit.length;
+  const again = await confirmPrimaryTransfer(world.deps, world.primary("29.transfer_primary_ownership"), { transferId });
+  assert.equal(again.outcome, "primary_confirmed");
+  if (again.outcome !== "primary_confirmed") throw new Error("unreachable");
+  assert.equal(again.messageCode, "MSG-73-041");
+  assert.equal((await world.repository.readTransfer(SPACE, transferId))?.stateVersion, 2);
+  assert.equal(world.repository.audit.length, auditsBefore);
+  // A stale decision on the retry is still refused first: recovery never
+  // outranks the version check.
+  const stale = world.primary("29.transfer_primary_ownership");
+  const staleResult = await confirmPrimaryTransfer(world.deps, { ...stale, decision: { ...stale.decision, authorizationVersion: 9 } }, { transferId });
+  assert.equal(staleResult.outcome, "denied");
+});
+
+void test("R-03: a committed workflow answers its receipt to either party's retry without writing, and denies the rest", async () => {
+  const world = testWorld();
+  const transferId = await propose(world);
+  await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId });
+  const committed = await confirmPrimaryTransfer(world.deps, world.primary("29.transfer_primary_ownership"), { transferId });
+  assert.equal(committed.outcome, "committed");
+  if (committed.outcome !== "committed") throw new Error("unreachable");
+  const auditsBefore = world.repository.audit.length;
+  const noticesBefore = world.repository.notices.length;
+
+  // Both parties recover the same receipt. Their decision versions are the
+  // pre-commit ones, which is what a lost-response retry carries; a committed
+  // workflow is answered after the party check and before the version check.
+  const confirmAgain = await confirmPrimaryTransfer(world.deps, world.primary("29.transfer_primary_ownership"), { transferId });
+  assert.equal(confirmAgain.outcome, "committed");
+  if (confirmAgain.outcome !== "committed") throw new Error("unreachable");
+  assert.deepEqual(confirmAgain.receipt, committed.receipt);
+  assert.equal(confirmAgain.messageCode, "MSG-73-042");
+  const acceptAgain = await acceptPrimaryTransfer(world.deps, world.recipient("29.accept_primary_transfer"), { transferId });
+  assert.equal(acceptAgain.outcome, "committed");
+  if (acceptAgain.outcome !== "committed") throw new Error("unreachable");
+  assert.deepEqual(acceptAgain.receipt, committed.receipt);
+  assert.equal(world.repository.audit.length, auditsBefore);
+  assert.equal(world.repository.notices.length, noticesBefore);
+  assert.equal((await world.repository.readSpace(SPACE))?.primaryOwnershipVersion, 2);
+
+  // A non-party gets the denial, not the receipt.
+  const stranger = { ...world.recipient("29.accept_primary_transfer"), subjectId: OTHER_SUBJECT };
+  assert.equal((await acceptPrimaryTransfer(world.deps, stranger, { transferId })).outcome, "denied");
+  // Withdraw and decline on a committed workflow stay the uniform no-op.
+  assert.equal((await withdrawPrimaryTransfer(world.deps, world.primary("29.withdraw_primary_transfer"), { transferId })).outcome, "denied");
+  assert.equal((await declinePrimaryTransfer(world.deps, world.recipient("29.decline_primary_transfer"), { transferId })).outcome, "denied");
+  assert.equal((await world.repository.readTransfer(SPACE, transferId))?.state, "committed");
 });
 
 void test("PK7A-03: a confirm with no fresh-assurance reference denies and records nothing", async () => {

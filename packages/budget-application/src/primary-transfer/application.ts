@@ -250,12 +250,27 @@ interface LoadedWorkflow {
  * first, then the three captured versions. Returns the closure or the denial
  * when either applies, so every command's happy path starts from a workflow
  * that is live, unexpired and version-current.
+ *
+ * `answerCommitted` (`R-03`): the two leg commands ask for a committed
+ * workflow back rather than a denial, so that a retried accept or confirm
+ * whose first response was lost can recover the receipt (`IC-73-015`
+ * "recoverably idempotent"). A committed workflow is returned with both
+ * memberships and **without** the liveness checks -- its versions moved when
+ * it committed, which is not staleness -- and the caller answers it after
+ * its own party check. Every other terminal state denies, on every command.
  */
 async function loadLive(
   deps: PrimaryTransferDependencies, actor: ActorContext, transferId: string,
+  options: { readonly answerCommitted?: boolean } = {},
 ): Promise<LoadedWorkflow | TransferClosed | TransferDenied> {
   const record = await deps.repository.readTransfer(actor.budgetSpaceId, transferId);
   if (!record) throw new PrimaryTransferError("transfer_not_found", "transferId");
+  if (record.state === "committed" && options.answerCommitted === true) {
+    const proposer = await deps.repository.readMembership(record.budgetSpaceId, record.proposerMembershipId);
+    const recipient = await deps.repository.readMembership(record.budgetSpaceId, record.recipientMembershipId);
+    if (!proposer || !recipient) return deny(deps, actor, "authorization_denied", record.transferId);
+    return { record, proposer, recipient };
+  }
   if (record.state === "committed" || record.state === "declined" || record.state === "withdrawn"
     || record.state === "expired" || record.state === "invalidated") {
     return deny(deps, actor, "transfer_not_current", record.transferId);
@@ -455,27 +470,57 @@ async function recordLeg(
 }
 
 /**
+ * The answer to a party's exact retry (`R-03`, `R-06`; CBD-73 `TR-73-41`,
+ * `IC-73-015`): a committed workflow answers the receipt the row already is,
+ * and a leg the party already recorded answers the prior conditional result
+ * -- the current state and the leg's own message code. Neither writes: a
+ * retry whose first response was lost is recovered, not denied and audited
+ * as a second attempt.
+ */
+function committedAnswer(record: PrimaryTransferRecord): TransferCommitted {
+  return {
+    outcome: "committed",
+    messageCode: TRANSFER_MESSAGE_CODES.committed,
+    transfer: transferView(record),
+    receipt: transferReceiptOf(record),
+  };
+}
+
+function repeatedLegAnswer(record: PrimaryTransferRecord, leg: "recipient" | "primary"): TransferLegRecorded {
+  const state = record.state as TransferLegRecorded["outcome"];
+  return {
+    outcome: state,
+    messageCode: leg === "recipient" ? TRANSFER_MESSAGE_CODES.recipientAccepted : TRANSFER_MESSAGE_CODES.primaryConfirmed,
+    transfer: transferView(record),
+  };
+}
+
+/**
  * `TR-73-41`. The recipient accepts. If the Primary has already confirmed,
  * this completes the pair and `TR-73-43` runs in this request; the four
  * obligation discharges are run here through `dischargeAll`, because the
  * accept cell is not protected and PK-7B's boundary therefore discharges
  * nothing for it. The assurance reference the commit binds to is the one the
  * Primary's own confirm already stored on the row.
+ *
+ * A committed workflow answers its receipt and the recipient's own repeated
+ * leg answers the prior result, both without writing (`R-03`, `R-06`).
  */
 export async function acceptPrimaryTransfer(
   deps: PrimaryTransferDependencies, actor: ActorContext, request: TransferRequest,
   options: CommitOptions = {},
 ): Promise<AcceptResult> {
   if (!decidedCell(actor, "29.accept_primary_transfer")) return deny(deps, actor, "permission_mismatch", request.transferId);
-  const loaded = await loadLive(deps, actor, request.transferId);
+  const loaded = await loadLive(deps, actor, request.transferId, { answerCommitted: true });
   if (isOutcome(loaded)) return loaded;
   if (loaded.recipient.membershipId !== actor.membershipId || loaded.recipient.accountSubjectId !== actor.subjectId) {
     return deny(deps, actor, "authorization_denied", request.transferId);
   }
+  if (loaded.record.state === "committed") return committedAnswer(loaded.record);
   if (loaded.recipient.authorizationVersion !== actor.decision.authorizationVersion) {
     return deny(deps, actor, "stale_version", request.transferId);
   }
-  if (loaded.record.recipientAcceptedAt !== null) return deny(deps, actor, "transfer_not_current", request.transferId);
+  if (loaded.record.recipientAcceptedAt !== null) return repeatedLegAnswer(loaded.record, "recipient");
 
   // The assurance reference the commit binds to is the one the Primary's own
   // confirm stored on the row; the accept path never carries one of its own.
@@ -509,6 +554,9 @@ export async function acceptPrimaryTransfer(
  * advances `stateVersion` past the boundary's capture, so the commit
  * discharges a fresh ledger on the same input after the leg and acts on that
  * (`R-01`, `SEC-PK7A-F1`).
+ *
+ * A committed workflow answers its receipt and the Primary's own repeated
+ * leg answers the prior result, both without writing (`R-03`, `R-06`).
  */
 export async function confirmPrimaryTransfer(
   deps: PrimaryTransferDependencies, actor: ActorContext, request: TransferRequest,
@@ -519,15 +567,16 @@ export async function confirmPrimaryTransfer(
   if (typeof assuranceRef !== "string" || assuranceRef.length === 0) {
     return deny(deps, actor, "assurance_required", request.transferId);
   }
-  const loaded = await loadLive(deps, actor, request.transferId);
+  const loaded = await loadLive(deps, actor, request.transferId, { answerCommitted: true });
   if (isOutcome(loaded)) return loaded;
   if (loaded.proposer.membershipId !== actor.membershipId || loaded.proposer.accountSubjectId !== actor.subjectId) {
     return deny(deps, actor, "authorization_denied", request.transferId);
   }
+  if (loaded.record.state === "committed") return committedAnswer(loaded.record);
   if (loaded.proposer.authorizationVersion !== actor.decision.authorizationVersion) {
     return deny(deps, actor, "stale_version", request.transferId);
   }
-  if (loaded.record.primaryConfirmedAt !== null) return deny(deps, actor, "transfer_not_current", request.transferId);
+  if (loaded.record.primaryConfirmedAt !== null) return repeatedLegAnswer(loaded.record, "primary");
 
   // The pre-leg proof. The boundary's ledger is it when one is supplied;
   // otherwise, when this leg completes the pair, the four discharge here

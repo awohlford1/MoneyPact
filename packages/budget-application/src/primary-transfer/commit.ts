@@ -139,9 +139,11 @@ export async function commitPrimaryTransfer(
   if (!transfer) throw new PrimaryTransferError("transfer_not_found", "transferId");
   // The direct-ledger replay: a caller that re-runs the commit with the ledger
   // its first run completed (a retried transaction, say) gets the receipt the
-  // row already is, and writes nothing. The commands never reach this line,
-  // because a fresh ledger cannot discharge on a committed workflow; it serves
-  // `commitPrimaryTransfer`'s own callers only.
+  // row already is, and writes nothing. The commands never reach this line:
+  // `acceptPrimaryTransfer` and `confirmPrimaryTransfer` answer a committed
+  // workflow themselves before any discharge (`R-03`), and a fresh ledger
+  // cannot discharge on one. It serves `commitPrimaryTransfer`'s own callers
+  // only, and is kept for them deliberately.
   if (transfer.state === "committed") return transferReceiptOf(transfer);
   if (transfer.state !== "ready") throw new PrimaryTransferError("transfer_not_current", "state");
   if (transfer.stateVersion !== capture.transfer.stateVersion) throw new PrimaryTransferError("stale_version", "transfer.stateVersion");
