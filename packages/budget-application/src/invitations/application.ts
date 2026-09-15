@@ -43,7 +43,7 @@ import {
   generateChannelChallenge, maskEmailDestination,
 } from "./secrets.ts";
 import type { KeyedDigest } from "./secrets.ts";
-import { assertCeremonyEdge, assertInvitationEdge, isTerminalInvitationState } from "./transitions.ts";
+import { assertCeremonyEdge, assertConfirmationEdge, assertInvitationEdge, isTerminalInvitationState } from "./transitions.ts";
 import type {
   ChannelChallengeReader, Clock, IdGenerator, InviteeContext, InvitationLocator, InvitationRepository, OwnerContext,
 } from "./ports.ts";
@@ -1205,11 +1205,24 @@ export function displayLabel(identity: DisplayIdentity | null): string {
   return typeof name === "string" && name.trim().length > 0 ? name : NEUTRAL_DISPLAY_LABEL;
 }
 
-/** The one `requested`, unexpired confirmation of a record, or the canonical failure. */
+/**
+ * The one `requested`, unexpired confirmation of a record, or the canonical
+ * failure.
+ *
+ * `R-04`: an expired request is **materialized** before it is denied, the way
+ * `expireOnObservation` materializes an expired invitation. Without it the
+ * `requested -> expired` edge the confirmation machine draws was never
+ * executed by anything and a dead request stayed `requested` for ever.
+ */
 export async function currentConfirmation(deps: InvitationDependencies, invitation: InvitationRecord): Promise<ConfirmationRecord> {
   const rows = await deps.repository.listConfirmations(invitation.budgetSpaceId, invitation.invitationId);
   const requested = rows.filter((row) => row.state === "requested");
-  const live = requested.find((row) => isBefore(deps.clock.now(), row.expiresAt));
-  if (!live) throw new InvitationError("confirmation_not_current", "confirmationId");
-  return live;
+  const now = deps.clock.now();
+  const live = requested.find((row) => isBefore(now, row.expiresAt));
+  if (live) return live;
+  for (const row of requested) {
+    assertConfirmationEdge(row.state, "expired");
+    await deps.repository.updateConfirmation(invitation.budgetSpaceId, row.confirmationId, { state: "expired" });
+  }
+  throw new InvitationError("confirmation_not_current", "confirmationId");
 }

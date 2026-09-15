@@ -172,6 +172,46 @@ void test("PK5-01/PK5-02: every denial before step 7 writes nothing", async () =
   }
 });
 
+void test("R-04: an expired confirmation and an expired invitation are materialized before the confirm is denied", async () => {
+  // The confirmation lifetime (3 days) ends before the invitation's (7), so
+  // this denies on the confirmation and moves it to `expired`.
+  const confirmation = testWorld();
+  const first = await awaitingConfirmation(confirmation);
+  confirmation.clock.advanceSeconds(4 * 24 * 60 * 60);
+  await assert.rejects(
+    confirmAcceptance(confirmation.deps, confirmation.owner, { invitationId: first.invitationId, confirmationIdempotencyKey: "k" }),
+    (error: unknown) => isInvitationError(error, "confirmation_not_current"),
+  );
+  assert.equal(
+    [...confirmation.repository.confirmations.values()][0]?.state, "expired",
+    "the requested -> expired edge is executed, not merely compared",
+  );
+
+  // Past the invitation's own deadline, TR-73-07 materializes first.
+  const invitation = testWorld();
+  const second = await awaitingConfirmation(invitation);
+  invitation.clock.advanceSeconds(8 * 24 * 60 * 60);
+  await assert.rejects(
+    confirmAcceptance(invitation.deps, invitation.owner, { invitationId: second.invitationId, confirmationIdempotencyKey: "k" }),
+    (error: unknown) => isInvitationError(error, "invitation_not_current"),
+  );
+  const record = invitation.repository.invitations.get(second.invitationId);
+  assert.equal(record?.state, "expired");
+  assert.equal(record?.projectionState, "no_longer_active");
+  assert.equal(invitation.repository.audits.filter((row) => row.eventCode === "AE-73-07").length, 1);
+  assert.equal(invitation.repository.memberships.length, 1, "only the owner's; nothing was committed");
+
+  // And reject materializes it too.
+  const rejected = testWorld();
+  const third = await awaitingConfirmation(rejected);
+  rejected.clock.advanceSeconds(8 * 24 * 60 * 60);
+  await assert.rejects(
+    rejectAcceptance(rejected.deps, rejected.owner, { invitationId: third.invitationId }),
+    (error: unknown) => isInvitationError(error, "invitation_not_current"),
+  );
+  assert.equal(rejected.repository.invitations.get(third.invitationId)?.state, "expired");
+});
+
 void test("PK5-03 replay: the same key returns the stored receipt; a different key on an accepted record is refused", async () => {
   const world = testWorld();
   const { invitationId } = await awaitingConfirmation(world);

@@ -29,7 +29,7 @@
  */
 import { createHash } from "node:crypto";
 
-import { auditEvent, assertCurrentDisclosure, currentConfirmation, cancelRecord } from "./application.ts";
+import { auditEvent, assertCurrentDisclosure, currentConfirmation, cancelRecord, expireOnObservation } from "./application.ts";
 import type { InvitationDependencies } from "./application.ts";
 import {
   ACTIVE_INVITATION_STATES, InvitationError, invitationProjection,
@@ -104,26 +104,26 @@ export async function confirmAcceptance(
   const boundary = options.boundary ?? (() => undefined);
 
   // --- 2 (first half): load the record. ------------------------------------
-  const invitation = await repository.readInvitation(owner.budgetSpaceId, request.invitationId);
-  if (!invitation) throw new InvitationError("invitation_not_found", "invitationId");
+  const found = await repository.readInvitation(owner.budgetSpaceId, request.invitationId);
+  if (!found) throw new InvitationError("invitation_not_found", "invitationId");
 
   // --- 1: the idempotency receipt. -----------------------------------------
   // Read before anything else, and before the state check, so that the second
   // of two concurrent confirms -- which arrives to find the record already
   // `accepted` -- is handed the stored answer rather than a conflict
   // (CBD-275-AC03, CBD-234-AC07 pattern).
-  if (invitation.commitIdempotencyKey !== null) {
-    if (invitation.commitIdempotencyKey !== request.confirmationIdempotencyKey) {
+  if (found.commitIdempotencyKey !== null) {
+    if (found.commitIdempotencyKey !== request.confirmationIdempotencyKey) {
       throw new InvitationError("invitation_not_current", "state");
     }
-    const stored = invitation.committedResponse as StoredReceipt | null;
+    const stored = found.committedResponse as StoredReceipt | null;
     if (!stored || !stored.receipt) throw new InvitationError("conflict", "committedResponse");
     const replayDigest = commitRequestDigest({
-      invitationId: invitation.invitationId, confirmationId: stored.receipt.confirmationId,
+      invitationId: found.invitationId, confirmationId: stored.receipt.confirmationId,
       ceremonyId: stored.ceremonyId, acceptorSubjectId: stored.acceptorSubjectId,
       actingSubjectId: owner.subjectId, idempotencyKey: request.confirmationIdempotencyKey,
     });
-    if (replayDigest !== invitation.commitRequestDigest) {
+    if (replayDigest !== found.commitRequestDigest) {
       // The field path is deliberately not passed here: the secret scanner's
       // generic-api-key rule reads "<code>", "<field>" as a name assigned a
       // long identifier (PK2FIX-F04). The code alone is the contract.
@@ -133,6 +133,12 @@ export async function confirmAcceptance(
   }
 
   // --- 2 (second half): the preconditions of the three live rows. ----------
+  // `R-04`: a confirm that observes `now() >= expires_at` on an active record
+  // materializes `TR-73-07` first, exactly as `requireOwnedInvitation` does
+  // for every other owner command, instead of denying against a record the
+  // database still calls `awaiting_confirmation`. It runs after the receipt
+  // lookup, so a replay is still answered from the stored response.
+  const invitation = await expireOnObservation(deps, found, owner.correlationId);
   const now = deps.clock.now();
   if (invitation.state !== "awaiting_confirmation") throw new InvitationError("invitation_not_current", "state");
   if (Date.parse(now) >= Date.parse(invitation.expiresAt)) throw new InvitationError("invitation_not_current", "expiresAt");
@@ -348,8 +354,10 @@ export async function rejectAcceptance(
   deps: InvitationDependencies, owner: OwnerContext, request: { readonly invitationId: string },
 ): Promise<InvitationProjection> {
   const repository = deps.repository;
-  const invitation = await repository.readInvitation(owner.budgetSpaceId, request.invitationId);
-  if (!invitation) throw new InvitationError("invitation_not_found", "invitationId");
+  const found = await repository.readInvitation(owner.budgetSpaceId, request.invitationId);
+  if (!found) throw new InvitationError("invitation_not_found", "invitationId");
+  // `R-04`: the same materialization on the reject path.
+  const invitation = await expireOnObservation(deps, found, owner.correlationId);
   if (invitation.state !== "awaiting_confirmation") throw new InvitationError("invitation_not_current", "state");
 
   const confirmation = await currentConfirmation(deps, invitation);
