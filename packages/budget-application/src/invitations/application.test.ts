@@ -45,7 +45,8 @@ async function ceremony(world: TestWorld, upTo: "resolve" | "verify" | "attach" 
   assert.equal(resolved.outcome, "resolved");
   if (resolved.outcome !== "resolved") throw new Error("unreachable");
   const ceremonyRequest = {
-    ceremonyId: resolved.ceremonyId, ceremonySecret: resolved.ceremonySecret, correlationId: world.owner.correlationId,
+    ceremonyId: resolved.ceremonyId, ceremonySecret: resolved.ceremonySecret,
+    environment: ENVIRONMENT, correlationId: world.owner.correlationId,
   };
   if (upTo === "resolve") return { invitationId, delivery, resolved, ceremonyRequest };
   await verifyChannel(world.deps, { ...ceremonyRequest, channelCode: delivery.challenge });
@@ -358,6 +359,31 @@ void test("a ceremony from another environment is unreadable", async () => {
     attachAccount(world.deps, { ...world.invitee, environment: "other" }, ceremonyRequest),
     (error: unknown) => isInvitationError(error, "ceremony_unusable"),
   );
+});
+
+void test("SEC-PK5-F03: the two unauthenticated commands bind the environment too", async () => {
+  // verify-channel and decline carry no session, so the server's environment
+  // key travels with the request as it does on resolve. Both answer the
+  // uniform outcome for a ceremony belonging to another environment.
+  const verify = testWorld();
+  const verifyCeremony = await ceremony(verify, "resolve");
+  await assert.rejects(
+    verifyChannel(verify.deps, {
+      ...verifyCeremony.ceremonyRequest, environment: "other", channelCode: verifyCeremony.delivery.challenge,
+    }),
+    (error: unknown) => isInvitationError(error, "ceremony_unusable"),
+  );
+  const untouched = verify.repository.ceremonies.get(verifyCeremony.ceremonyRequest.ceremonyId);
+  assert.equal(untouched?.channelProofState, "challenged", "a foreign environment proves nothing");
+  assert.equal(untouched?.channelAttempts, 0, "and takes no attempt");
+
+  const decline = testWorld();
+  const declineCeremony = await ceremony(decline, "verify");
+  await assert.rejects(
+    declineInvitation(decline.deps, { ...declineCeremony.ceremonyRequest, environment: "other" }),
+    (error: unknown) => isInvitationError(error, "ceremony_unusable"),
+  );
+  assert.equal(decline.repository.invitations.get(declineCeremony.invitationId)?.state, "pending", "nothing was declined");
 });
 
 void test("a wrong ceremony cookie is the same answer as a missing ceremony", async () => {

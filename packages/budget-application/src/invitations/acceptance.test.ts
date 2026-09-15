@@ -33,7 +33,10 @@ async function awaitingConfirmation(world: TestWorld, destination = "invitee@exa
   const delivery = world.delivery(invitationId);
   const resolved = await resolveCode(world.deps, { presentedCode: delivery.bearer, environment: ENVIRONMENT, correlationId: world.owner.correlationId });
   if (resolved.outcome !== "resolved") throw new Error("unreachable");
-  const ceremonyRequest = { ceremonyId: resolved.ceremonyId, ceremonySecret: resolved.ceremonySecret, correlationId: world.owner.correlationId };
+  const ceremonyRequest = {
+    ceremonyId: resolved.ceremonyId, ceremonySecret: resolved.ceremonySecret,
+    environment: ENVIRONMENT, correlationId: world.owner.correlationId,
+  };
   await verifyChannel(world.deps, { ...ceremonyRequest, channelCode: delivery.challenge });
   await attachAccount(world.deps, world.invitee, ceremonyRequest);
   await acceptInvitation(world.deps, world.invitee, {

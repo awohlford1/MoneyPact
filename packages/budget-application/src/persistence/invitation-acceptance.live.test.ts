@@ -233,7 +233,10 @@ void test("PROTO-INVITATIONS-PK5 live PostgreSQL: the acceptance transaction, th
         resolveCode(deps, { presentedCode: rendered.bearer, environment: ENVIRONMENT, correlationId: randomUUID() }));
       assert.equal(resolved.outcome, "resolved");
       if (resolved.outcome !== "resolved") throw new Error("unreachable");
-      const ceremonyRequest = { ceremonyId: resolved.ceremonyId, ceremonySecret: resolved.ceremonySecret, correlationId: randomUUID() };
+      const ceremonyRequest = {
+        ceremonyId: resolved.ceremonyId, ceremonySecret: resolved.ceremonySecret,
+        environment: ENVIRONMENT, correlationId: randomUUID(),
+      };
       await transaction(async (deps) => verifyChannel(deps, { ...ceremonyRequest, channelCode: rendered.challenge }));
       const invitee = { subjectId: subject.subject, sessionRowId: randomUUID(), environment: ENVIRONMENT, correlationId: randomUUID() };
       await transaction(async (deps) => attachAccount(deps, invitee, ceremonyRequest));
@@ -317,7 +320,8 @@ void test("PROTO-INVITATIONS-PK5 live PostgreSQL: the acceptance transaction, th
         resolveCode(deps, { presentedCode: boundDelivery.bearer, environment: ENVIRONMENT, correlationId: randomUUID() }));
       if (opened.outcome !== "resolved") throw new Error("unreachable");
       const boundRequest = {
-        ceremonyId: opened.ceremonyId, ceremonySecret: opened.ceremonySecret, correlationId: randomUUID(),
+        ceremonyId: opened.ceremonyId, ceremonySecret: opened.ceremonySecret,
+        environment: ENVIRONMENT, correlationId: randomUUID(),
       };
       const wrong = boundDelivery.challenge === "000000" ? "111111" : "000000";
 
@@ -503,7 +507,10 @@ void test("PROTO-INVITATIONS-PK5 live PostgreSQL: the acceptance transaction, th
       const resolved = await transaction(async (deps) =>
         resolveCode(deps, { presentedCode: rendered.bearer, environment: ENVIRONMENT, correlationId: randomUUID() }));
       if (resolved.outcome !== "resolved") throw new Error("unreachable");
-      const ceremonyRequest = { ceremonyId: resolved.ceremonyId, ceremonySecret: resolved.ceremonySecret, correlationId: randomUUID() };
+      const ceremonyRequest = {
+        ceremonyId: resolved.ceremonyId, ceremonySecret: resolved.ceremonySecret,
+        environment: ENVIRONMENT, correlationId: randomUUID(),
+      };
       await transaction(async (deps) => verifyChannel(deps, { ...ceremonyRequest, channelCode: rendered.challenge }));
       const inviteeContext = { subjectId: staleInvitee.subject, sessionRowId: randomUUID(), environment: ENVIRONMENT, correlationId: randomUUID() };
       await transaction(async (deps) => attachAccount(deps, inviteeContext, ceremonyRequest));

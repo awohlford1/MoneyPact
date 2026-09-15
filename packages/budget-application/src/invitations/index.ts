@@ -49,15 +49,16 @@ export type {
   AcceptInvitationRequest, AttachResult, AttachSuccess, AuditInput, CeremonyRequest, ConfirmAcceptanceRequest,
   ConfirmationPrompt, CreateInvitationRequest, CreateInvitationResult, DestinationEncryptor, DisclosureView,
   InvitationDependencies, InvitationLifetimes, ResolveCodeRequest, ResolveCodeResult,
-  ResolveCodeSuccess, UniformUnusable, VerifyChannelRequest, VerifyChannelResult,
+  ResolveCodeSuccess, UnauthenticatedCeremonyRequest, UniformUnusable, VerifyChannelRequest,
+  VerifyChannelResult,
 } from "./application.ts";
 export {
   DEFAULT_LIFETIMES, UNIFORM_UNUSABLE, acceptInvitation, assertCurrentDisclosure, attachAccount,
   auditEvent, cancelInvitation, cancelRecord, createInvitation, currentConfirmation, declineInvitation,
   displayLabel, expireOnObservation, parseAcceptInvitationRequest, parseCeremonyRequest,
   parseConfirmAcceptanceRequest, parseCreateInvitationRequest, parseResolveCodeRequest,
-  parseVerifyChannelRequest, readConfirmationPrompt, readDisclosure, replaceInvitation, resolveCode,
-  verifyChannel,
+  parseUnauthenticatedCeremonyRequest, parseVerifyChannelRequest, readConfirmationPrompt,
+  readDisclosure, replaceInvitation, resolveCode, verifyChannel,
 } from "./application.ts";
 
 export type { AcceptanceBoundary, AcceptanceOptions, AcceptanceReceipt } from "./acceptance.ts";

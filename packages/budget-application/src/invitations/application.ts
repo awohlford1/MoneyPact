@@ -185,12 +185,32 @@ export function parseCeremonyRequest(ceremonyId: unknown, ceremonySecret: unknow
   return { ceremonyId: ceremonyId.trim(), ceremonySecret: ceremonySecret.trim(), correlationId };
 }
 
-export interface VerifyChannelRequest extends CeremonyRequest {
+/**
+ * A ceremony-addressed command taken **without a session**: verify-channel and
+ * decline. `attachAccount`, the disclosure read and accept all carry an
+ * `InviteeContext` whose `environment` binds the ceremony; these two carry
+ * none, so the server's environment key travels with the request the way it
+ * does on `resolveCode` (`SEC-PK5-F03`). It is a server-side value, never a
+ * body field.
+ */
+export interface UnauthenticatedCeremonyRequest extends CeremonyRequest {
+  readonly environment: string;
+}
+
+export function parseUnauthenticatedCeremonyRequest(
+  ceremonyId: unknown, ceremonySecret: unknown, environment: string, correlationId: string,
+): UnauthenticatedCeremonyRequest {
+  return { ...parseCeremonyRequest(ceremonyId, ceremonySecret, correlationId), environment };
+}
+
+export interface VerifyChannelRequest extends UnauthenticatedCeremonyRequest {
   readonly channelCode: string;
 }
 
-export function parseVerifyChannelRequest(ceremonyId: unknown, ceremonySecret: unknown, body: unknown, correlationId: string): VerifyChannelRequest {
-  const base = parseCeremonyRequest(ceremonyId, ceremonySecret, correlationId);
+export function parseVerifyChannelRequest(
+  ceremonyId: unknown, ceremonySecret: unknown, body: unknown, environment: string, correlationId: string,
+): VerifyChannelRequest {
+  const base = parseUnauthenticatedCeremonyRequest(ceremonyId, ceremonySecret, environment, correlationId);
   const record = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
   const code = record.channelCode;
   return { ...base, channelCode: typeof code === "string" ? code.trim() : "" };
@@ -790,13 +810,13 @@ interface LoadedCeremony {
 }
 
 /**
- * Load a live, current ceremony whose cookie secret matches, or throw the
- * uniform outcome. Unknown, foreign, expired, invalidated, consumed and
+ * Load a live, current ceremony whose cookie secret matches and whose
+ * environment is this server's, or throw the uniform outcome. Unknown, foreign, expired, invalidated, consumed and
  * declined ceremonies are one answer; so is a ceremony whose invitation has
  * left `pending` or `awaiting_confirmation`.
  */
 async function loadCeremony(
-  deps: InvitationDependencies, request: CeremonyRequest, environment: string | null,
+  deps: InvitationDependencies, request: CeremonyRequest, environment: string,
   allowedStates: readonly CeremonyRecord["state"][],
 ): Promise<LoadedCeremony> {
   const location = await deps.locator.locateByCeremony(request.ceremonyId);
@@ -806,7 +826,7 @@ async function loadCeremony(
 
   const expected = await ceremonySecretDigest(deps.digest, ceremony.ceremonyId, request.ceremonySecret);
   if (!digestsEqual(expected, ceremony.ceremonySecretDigest)) throw new InvitationError("ceremony_unusable");
-  if (environment !== null && ceremony.environment !== environment) throw new InvitationError("ceremony_unusable");
+  if (ceremony.environment !== environment) throw new InvitationError("ceremony_unusable");
   if (!ceremony.isCurrent || !allowedStates.includes(ceremony.state)) throw new InvitationError("ceremony_unusable");
   if (!isBefore(deps.clock.now(), ceremony.expiresAt)) throw new InvitationError("ceremony_unusable");
 
@@ -839,7 +859,7 @@ export interface VerifyChannelResult {
  * `ceremony_unusable` class, which by definition has written nothing.
  */
 export async function verifyChannel(deps: InvitationDependencies, request: VerifyChannelRequest): Promise<VerifyChannelResult> {
-  const { ceremony, invitation } = await loadCeremony(deps, request, null, ["open"]);
+  const { ceremony, invitation } = await loadCeremony(deps, request, request.environment, ["open"]);
   if (ceremony.channelProofState === "proved") return { outcome: "proved", attemptsRemaining: MAX_CHANNEL_ATTEMPTS - ceremony.channelAttempts };
   if (ceremony.channelProofState === "exhausted") return { outcome: "exhausted", attemptsRemaining: 0 };
   if (ceremony.channelChallengeDigest === null) throw new InvitationError("ceremony_unusable");
@@ -874,8 +894,8 @@ export async function verifyChannel(deps: InvitationDependencies, request: Verif
  * inviter's projection stays `pending` until `TR-73-07`, so a decline is not
  * distinguishable from an unattended invitation (CBD-73 SS8.1).
  */
-export async function declineInvitation(deps: InvitationDependencies, request: CeremonyRequest): Promise<UniformUnusable> {
-  const { ceremony, invitation } = await loadCeremony(deps, request, null, ["open"]);
+export async function declineInvitation(deps: InvitationDependencies, request: UnauthenticatedCeremonyRequest): Promise<UniformUnusable> {
+  const { ceremony, invitation } = await loadCeremony(deps, request, request.environment, ["open"]);
   if (ceremony.channelProofState !== "proved") throw new InvitationError("channel_proof_required");
   assertInvitationEdge(invitation.state, "declined");
 
