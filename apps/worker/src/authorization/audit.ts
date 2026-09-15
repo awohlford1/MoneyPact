@@ -1,6 +1,6 @@
 import type { EnforcementEvidence, EnforcementOutcome } from "../../../../packages/rate-limit/src/index.ts";
 import { randomUUID } from "node:crypto";
-import { CURRENT_POLICY_VERSION, POLICY_VERSIONS, policyAuditEvent, sha256 } from "@cobudget/contracts/authorization";
+import { CURRENT_POLICY_VERSION, INPUT_SCHEMA_VERSION, POLICY_VERSIONS, policyAuditEvent, sha256 } from "@cobudget/contracts/authorization";
 import type { PolicyAuditEvent, PolicyDecision, PolicyInput } from "@cobudget/contracts/authorization";
 
 export interface AuditGovernance {
@@ -44,7 +44,7 @@ export class RestrictedAudit {
       const event = policyAuditEvent({
         eventId: randomUUID(), occurredAt: new Date().toISOString(), decisionId: decision.decisionId,
         outcome: decision.outcome, reasonClass: decision.reasonClass, policyVersion: decision.policyVersion,
-        policyDigest: decision.policyDigest, inputSchemaVersion: 1,
+        policyDigest: decision.policyDigest, inputSchemaVersion: INPUT_SCHEMA_VERSION,
         actionCode: knownAction ? input?.request.action : "unregistered", effectClass: decision.effectClass,
         authorityMode: input?.authority.mode === "service" ? "service" : "user_delegated",
         ...(decision.outcome === "allow" ? { capturedVersions: decision.capturedVersions, cellRef: JSON.stringify(decision.cellRef) } : {}),

@@ -12,7 +12,7 @@
  * first attempts under one key a 23505 for the second, which the caller maps
  * to a conflict.
  */
-import { instantText, textValue } from "./budget-category.ts";
+import { instantText, integerValue, textValue } from "./budget-category.ts";
 import type { TenantStatementClient } from "./budget-category.ts";
 
 export const MANUAL_TRANSACTION_IDEMPOTENCY_TABLE = "manual_transaction_idempotency";
@@ -31,6 +31,8 @@ export interface ManualTransactionIdempotencyRow {
   readonly request_digest: string;
   readonly transaction_version_id: string;
   readonly committed_response: unknown;
+  /** SEC-C200-F1: the acting membership's authorization_version at write time (migration 20260915T160000Z). */
+  readonly authorization_version: number;
   readonly created_at: string;
 }
 
@@ -57,6 +59,7 @@ function toRow(value: unknown): ManualTransactionIdempotencyRow {
     request_digest: textValue(row.request_digest),
     transaction_version_id: textValue(row.transaction_version_id),
     committed_response: row.committed_response,
+    authorization_version: integerValue(row.authorization_version),
     created_at: instantText(row.created_at),
   };
 }

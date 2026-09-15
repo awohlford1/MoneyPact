@@ -157,6 +157,7 @@ export function idempotencyFromRow(row: ManualTransactionIdempotencyRow): Idempo
     requestDigest: row.request_digest,
     transactionVersionId: row.transaction_version_id,
     committedResponse: response as TransactionMutation,
+    authorizationVersion: row.authorization_version,
     createdAt: row.created_at,
   };
 }
@@ -170,6 +171,7 @@ export function idempotencyToRow(record: IdempotencyRecord): Omit<ManualTransact
     request_digest: record.requestDigest,
     transaction_version_id: record.transactionVersionId,
     committed_response: record.committedResponse,
+    authorization_version: record.authorizationVersion,
     created_at: record.createdAt,
   };
 }

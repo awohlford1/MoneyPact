@@ -10,7 +10,10 @@ type UnknownRecord = Record<string, unknown>;
 const audit: Obligation = { kind: "audit", eventClass: "policy_decision" };
 
 function isRecord(value: unknown): value is UnknownRecord { return value !== null && typeof value === "object" && !Array.isArray(value); }
-function isPositiveInteger(value: unknown): value is number { return Number.isSafeInteger(value) && (value as number) >= 0; }
+/** SEC-POV-F1: every version leaf's own column carries `CHECK (... >= 1)` (every `_version` column in the
+ * migrated schema), so 0 is never a legitimate value -- datastore provenance already makes the leaf
+ * unspoofable, and this closes the last daylight between the shape rule and the column's own invariant. */
+function isPositiveInteger(value: unknown): value is number { return Number.isSafeInteger(value) && (value as number) >= 1; }
 function validTimestamp(value: unknown): value is string { return typeof value === "string" && Number.isFinite(Date.parse(value)); }
 function nonEmpty(value: unknown): value is string { return typeof value === "string" && value.length > 0; }
 function isService(input: PolicyInput): input is WorkerServicePolicyInput { return input.authority.mode === "service"; }

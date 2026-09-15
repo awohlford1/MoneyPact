@@ -143,7 +143,7 @@ void test("CBD-200-AC04/AC05 live PostgreSQL: concurrent supersession, the named
     const created = await client.transaction({ isolation: "serializable" }, async (tx) => {
       const deps = depsFor(tx);
       const result = await createManualTransaction(deps, budgetSpaceId, subjectId, write(-1_250));
-      await deps.repository.recordIdempotency({ ...scope, requestDigest: digest, transactionVersionId: result.current.version.transactionVersionId, committedResponse: result, createdAt: NOW });
+      await deps.repository.recordIdempotency({ ...scope, requestDigest: digest, transactionVersionId: result.current.version.transactionVersionId, committedResponse: result, authorizationVersion: 1, createdAt: NOW });
       return result;
     });
     const transactionId = created.current.version.transactionId;
@@ -160,7 +160,7 @@ void test("CBD-200-AC04/AC05 live PostgreSQL: concurrent supersession, the named
       client.transaction({ isolation: "serializable" }, async (tx) => {
         const deps = depsFor(tx);
         const result = await createManualTransaction(deps, budgetSpaceId, subjectId, write(-1_250));
-        await deps.repository.recordIdempotency({ ...scope, requestDigest: digest, transactionVersionId: result.current.version.transactionVersionId, committedResponse: result, createdAt: NOW });
+        await deps.repository.recordIdempotency({ ...scope, requestDigest: digest, transactionVersionId: result.current.version.transactionVersionId, committedResponse: result, authorizationVersion: 1, createdAt: NOW });
       }),
       (error: unknown) => error instanceof TransactionError && error.code === "conflict",
     );
@@ -168,7 +168,7 @@ void test("CBD-200-AC04/AC05 live PostgreSQL: concurrent supersession, the named
     // A row naming a version that never commits does not commit either (deferred reference).
     await assert.rejects(
       client.transaction({ isolation: "serializable" }, async (tx) => {
-        await depsFor(tx).repository.recordIdempotency({ ...scope, idempotencyKey: "orphan-" + randomUUID(), requestDigest: digest, transactionVersionId: randomUUID(), committedResponse: created, createdAt: NOW });
+        await depsFor(tx).repository.recordIdempotency({ ...scope, idempotencyKey: "orphan-" + randomUUID(), requestDigest: digest, transactionVersionId: randomUUID(), committedResponse: created, authorizationVersion: 1, createdAt: NOW });
       }),
       (error: unknown) => error instanceof StatementFailedError && error.operation === "commit" && error.sqlState === "23503",
     );
