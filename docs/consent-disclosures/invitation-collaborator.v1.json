@@ -1,0 +1,36 @@
+{
+  "kind": "invitation_collaborator",
+  "version": 1,
+  "heading": "Before you join this budget space",
+  "items": [
+    {
+      "id": "space",
+      "text": "This invitation names the budget space you are being invited to and the display name of the member who invited you."
+    },
+    {
+      "id": "role",
+      "text": "You are being invited as a Collaborator: an equal financial contributor and a full participant in planning for this budget space. A Collaborator may create and edit plans, targets, categories, manual accounts and manual transactions, and may read every shared financial record here. A Collaborator may not administer members, invitations, ownership, shared settings, another person's bank connection, or the lifecycle of this budget space."
+    },
+    {
+      "id": "scope",
+      "text": "What you will see once you join: the approved full shared financial scope of this budget space. No actual financial data is shown to you before you accept."
+    },
+    {
+      "id": "two_way",
+      "text": "What others will see about you: existing members will see your display name, your role, and the activity attributed to you in this budget space. Your personal settings, your personal alert state, and your memberships in other budget spaces stay private to you. Before anything is shared with you, the member who invited you sees your display name and confirms your acceptance."
+    },
+    {
+      "id": "exits",
+      "text": "Leaving and removal: you may leave this budget space at any time, and nobody's agreement is needed. The Primary Owner or a Co-owner may remove you from it. Nothing here can remove the Primary Owner or change that role. Records you contribute stay in this budget space, attributed to you."
+    },
+    {
+      "id": "consequences",
+      "text": "Accepting activates your Collaborator role immediately once the member who invited you confirms your acceptance. Accepting creates no payment, financial, legal, or bank-account authority, and it moves no money."
+    },
+    {
+      "id": "choice",
+      "text": "Accepting or declining is your explicit choice, and neither is selected for you. Declining ends only this invitation. The record kept of this step is evidence of the action you took here; nothing agrees on your behalf."
+    }
+  ],
+  "acknowledgement": "I have read the items above and I agree to join this budget space as a Collaborator."
+}
