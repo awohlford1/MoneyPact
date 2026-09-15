@@ -106,6 +106,32 @@ test("SEC-PK8-F1: a return path is followed only when it stays on this origin; b
   assert.equal(sameOriginPath("/a/../b", origin), "/b", "the resolved pathname is what is followed");
 });
 
+test("R-01 over the mock: a withdrawn transfer after beginStepUp leaves the session assurance unspent when the page's liveness guard is applied", async () => {
+  const now = Date.parse("2026-09-15T12:00:00Z");
+  const directory = createMockDirectory();
+  const owner = browser(directory, () => now); const member = browser(directory, () => now + 1);
+  await owner.api.beginSignIn(); await member.api.beginSignIn();
+  const spaceId = "11111111-1111-4111-8111-111111111111";
+  directory.memberships.push(
+    { membershipId: "22222222-2222-4222-8222-222222222222", budgetSpaceId: spaceId, accountSubjectId: owner.subject()!, role: "primary_owner", status: "active", joinedAt: "2026-09-15T11:00:00Z", authorizationVersion: 1 } as never,
+    { membershipId: "33333333-3333-4333-8333-333333333333", budgetSpaceId: spaceId, accountSubjectId: member.subject()!, role: "collaborator", status: "active", joinedAt: "2026-09-15T11:30:00Z", authorizationVersion: 1 } as never,
+  );
+  const proposed = await owner.api.proposeTransfer(spaceId, "33333333-3333-4333-8333-333333333333");
+  const transferId = proposed.transfer.transferId;
+  assert.equal((await owner.api.withdrawTransfer(spaceId, transferId)).outcome, "withdrawn");
+  await owner.api.beginStepUp(spaceId);
+  assert.equal((await owner.api.session())!.assurance, "fresh");
+  // The page's rule (transfer-view.tsx confirm): read the view first and confirm only a live workflow.
+  const current = await owner.api.viewTransfer(spaceId, transferId);
+  const live = ["proposed", "recipient_accepted", "primary_confirmed", "ready"].includes(current.state);
+  assert.equal(live, false);
+  if (live) await owner.api.confirmTransfer(spaceId, current.transferId);
+  assert.equal((await owner.api.session())!.assurance, "fresh", "no confirm was sent, so the grant is unspent");
+  // For contrast, the unguarded path: the mock's boundary answers the uniform denial with the grant returned (no live workflow).
+  assert.deepEqual(await owner.api.confirmTransfer(spaceId, transferId), { outcome: "denied" });
+  assert.equal((await owner.api.session())!.assurance, "fresh");
+});
+
 test("every message code the routes and notices carry has a sentence", () => {
   for (const code of ["MSG-73-003", "MSG-73-011", "MSG-73-015", "MSG-73-016", "MSG-73-017", "MSG-73-019", "MSG-73-040", "MSG-73-041", "MSG-73-042", "MSG-73-043", "MSG-73-044", "MSG-73-045", "MSG-73-046", "MSG-73-050", "MSG-73-051", "MSG-73-052"]) assert.ok(MESSAGE_SENTENCES[code], code);
   assert.ok(sentenceFor("MSG-73-999").length > 0, "an unknown code still reads as a sentence, never as a code");

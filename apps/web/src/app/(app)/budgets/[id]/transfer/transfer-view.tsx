@@ -119,6 +119,13 @@ export function TransferView({ id, transferId, resume }: { id: string; transferI
     try {
       // The live transfer id, read from the view immediately before the confirm: a stale or remembered id costs a step-up.
       const current = await api.viewTransfer(id, transferId);
+      // R-01: a confirm that reaches the module consumes the grant whatever it answers (PR 368 finding 2), so a transfer
+      // the read shows as no longer live is not confirmed at all; the grant stays unspent for the next attempt.
+      if (!LIVE.includes(current.state)) {
+        setNotice({ tone: "danger", title: "Not confirmed", text: `${sentenceFor(current.state === "withdrawn" ? "MSG-73-044" : current.state === "declined" ? "MSG-73-043" : current.state === "expired" ? "MSG-73-045" : current.state === "committed" ? "MSG-73-042" : "MSG-73-027")} Your identity check was not used.` });
+        read.refresh();
+        return;
+      }
       const outcome: ConfirmTransferOutcome = await api.confirmTransfer(id, current.transferId);
       setStepUpDone(false);
       if (outcome.outcome === "committed") setNotice({ tone: "neutral", title: "Transfer committed", text: "The recipient is now the Primary Owner of this budget space and you are a Co-owner. Any Co-owner invitation you had sent was cancelled." });
