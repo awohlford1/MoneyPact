@@ -30,11 +30,15 @@
  * outcome and map it to a status afterwards; they roll back only on a thrown
  * `PrimaryTransferError`, which by the module's own rule has written nothing
  * (or, for a completing leg whose post-leg re-discharge refused, must not
- * stay). `conflict` and `retryable_conflict` are one class on the wire and
- * the store re-runs the whole effect before answering (`R-07`, `R-04`): a
- * serialization failure PostgreSQL raises at COMMIT reaches the store as the
- * driver's `sqlState` `40001`/`40P01`, with no statement to guard, and is
- * retried exactly like the module's own `retryable_conflict`.
+ * stay). `conflict` and `retryable_conflict` are one class on the wire
+ * (`R-07`, `R-04`): the store re-runs the whole effect on `retryable_conflict`
+ * before answering -- a serialization failure PostgreSQL raises at COMMIT
+ * reaches the store as the driver's `sqlState` `40001`/`40P01`, with no
+ * statement to guard, and is retried exactly like the module's own -- while
+ * a module `conflict` (a unique violation another writer won, such as the
+ * one-live-workflow-per-space index) is answered as the same class without a
+ * re-run, because a re-run could not succeed and the client's own retry is
+ * answered with the state that won (`R-02`).
  *
  * **The protected confirm** (section 10.4; `SEC-PK4-R2`; `SEC-PK7A-F1`, `F2`,
  * `F3`, `F6`; `R-01`). `29.transfer_primary_ownership` carries
