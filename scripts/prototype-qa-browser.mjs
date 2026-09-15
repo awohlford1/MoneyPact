@@ -688,8 +688,10 @@ async function main() {
       await page.reload(); await waitText("Spent 8.00 USD of 100.00 USD");
       return `inexact split refused with nothing recorded (${refusalAccessibility}); the exact split moves Food to spent 8.00 remaining 92.00 and Housing to spent 4.50 remaining 195.50, identical after reload; ${await accessibility()}`;
     });
-    await criterion("CBD-211-AC01", "positive (browser): the category row opens the itemized detail, which agrees with the aggregate; editing and removing the expense from there returns both figures to the target", async () => {
-      await ensureDashboard(); await roomFor(2);
+    await criterion("CBD-211-AC01", "positive (browser): the category row opens the itemized detail, which agrees with the aggregate; a share of a split expense offers no in-place edit and says why (F-REVB-01), a single-category expense edits in place, and removing both returns the figures to the target", async () => {
+      // Four mutations now (record, edit, remove, remove) and roughly twenty reads: two detail
+      // loads, two dashboard loads and the four direct API reads this case makes itself.
+      await ensureDashboard(); await roomFor(5); await roomForReads(20);
       await waitText("Spent 8.00 USD of 100.00 USD");
       await clickText("Food");
       await waitText("Transactions in this category");
@@ -698,21 +700,53 @@ async function main() {
       const detailAccessibility = await accessibility();
       expect((await page.title()).includes("Category detail"), `title ${await page.title()}`);
 
+      // F-REVB-01: this row is the Food SHARE of a 12.50 expense split 8.00/4.50. The in-place
+      // edit rewrites the whole transaction with one allocation, so offering it here would take
+      // 4.50 away from Housing with nothing said. The page withholds it and states why.
+      const controls = async () => page.$$eval("button", (nodes) => nodes.map((node) => node.textContent.trim()));
+      await waitText("This expense is split across 2 categories");
+      expect(!(await controls()).includes("Edit this expense"), "a share of a split expense still offers the in-place edit");
+      expect((await controls()).includes("Remove this whole expense"), `removal is missing: ${JSON.stringify(await controls())}`);
+      const period = (await apiJson(`/v1/budget-spaces/${budgetId}`)).body.activePeriod;
+      const shares = (await apiJson(`/v1/budget-spaces/${budgetId}/periods/${period.periodId}/progress/${expenseCategoryId}`)).body;
+      expect(shares.items.length === 1 && shares.items[0].allocationCount === 2, `the API does not report the split: ${JSON.stringify(shares.items)}`);
+
+      // A single-category expense is the whole expense, so it does edit in place.
+      await clickText("Back to the budget"); await waitText("Accounts and spending");
+      // The section's heading renders before its read resolves, so wait for the form itself before
+      // querying its inputs; "Accounts and spending" alone is not the form being there.
+      await waitText("Record an expense"); await page.waitForSelector('input[id^="allocation-"]');
+      const allocationIds = await page.$$eval('input[id^="allocation-"]', (nodes) => nodes.map((node) => `[id="${node.id}"]`));
+      await fillById('[id="expense-date"]', period.start);
+      await fillById('[id="expense-amount"]', "3.00");
+      await fillById('[id="expense-description"]', "Milk");
+      await fillById(allocationIds[0], "3.00");
+      await clickText("Record expense"); await waitText("Expense recorded.");
+      await waitText("Spent 11.00 USD of 100.00 USD");
+
+      await clickText("Food"); await waitText("Transactions in this category");
+      await waitText("Milk");
       await clickText("Edit this expense");
       const amountId = await page.$eval('input[id^="edit-amount-"]', (node) => `[id="${node.id}"]`);
       await fillById(amountId, "20.00");
       await clickText("Save expense"); await waitText("Expense updated.");
       await waitText("20.00 USD · Everyday");
+      // The split share is untouched by that edit: still present, still 8.00. This is the
+      // regression F-REVB-01 named, observed against the real API.
+      await waitText("8.00 USD · Everyday");
+      const afterEdit = (await apiJson(`/v1/budget-spaces/${budgetId}/periods/${period.periodId}/progress`)).body;
+      const housing = afterEdit.cells.find((cell) => cell.categoryId !== expenseCategoryId);
+      expect(housing.settledActualMinorUnits === -450, `editing one expense moved another category: ${JSON.stringify(housing)}`);
 
       await clickText("Remove this expense"); await waitText("Expense removed.");
+      await clickText("Remove this whole expense"); await waitText("Expense removed.");
       await waitText("Nothing has been recorded against this category for the active period.");
       await clickText("Back to the budget"); await waitText("Accounts and spending");
       await waitText("Spent 0.00 USD of 100.00 USD");
       await waitText("Remaining 100.00 USD");
-      const period = (await apiJson(`/v1/budget-spaces/${budgetId}`)).body.activePeriod;
       const detail = (await apiJson(`/v1/budget-spaces/${budgetId}/periods/${period.periodId}/progress/${expenseCategoryId}`)).body;
       expect(detail.items.length === 0 && detail.cell.settledActualMinorUnits === 0, `a removed expense still itemizes: ${JSON.stringify(detail)}`);
-      return `detail 200 with one item agreeing with the aggregate (${detailAccessibility}); edit then removal return spent to 0.00 and remaining to the target in both the aggregate and the detail; ${await accessibility()}`;
+      return `detail 200 with one item agreeing with the aggregate (${detailAccessibility}); the split share reports allocationCount 2, offers no in-place edit and states why; a single-category expense edits in place and leaves Housing at -450; removing both returns spent to 0.00 and remaining to the target in both the aggregate and the detail; ${await accessibility()}`;
     });
 
     // ------------------------------------------------- cross-subject (CBD-242-AC08)
