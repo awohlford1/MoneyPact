@@ -129,11 +129,19 @@ export function createServerMock(now = Date.now): MockWire {
     return value.versions.filter(version => version.supersededAt === null && version.removedAt === null && version.budgetDate >= period.start && version.budgetDate <= period.end);
   }
   function cellFor(value: MockSpace, periodId: string, categoryId: string, targetMinorUnits: number): WireProgress["cells"][number] {
-    const settledActualMinorUnits = settledVersions(value, periodId)
-      .flatMap(version => version.allocations.filter(allocation => allocation.categoryId === categoryId))
-      .reduce((total, allocation) => total + allocation.amountMinorUnits, 0);
-    // Signed, unclamped, exactly as budget-domain computes it: an overspent cell reports a negative remaining.
-    return { categoryId, targetMinorUnits, settledActualMinorUnits, remainingAfterSettledMinorUnits: targetMinorUnits + settledActualMinorUnits };
+    const settled = settledVersions(value, periodId)
+      .flatMap(version => version.allocations.filter(allocation => allocation.categoryId === categoryId).map(allocation => ({ recordId: `${version.transactionId}:${categoryId}`, amountMinorUnits: allocation.amountMinorUnits })));
+    const settledActualMinorUnits = settled.reduce((total, allocation) => total + allocation.amountMinorUnits, 0);
+    // Signed, unclamped, exactly as budget-domain computes it: an overspent cell reports a negative
+    // remaining. Every manual record is settled (CBD-107), so the pending impact is zero and remaining
+    // after pending equals remaining after settled; the record identities behind each sum travel with
+    // the cell so the web can tell "no activity" from "nets to zero" (CBD-211-AC04).
+    const remainingAfterSettledMinorUnits = targetMinorUnits + settledActualMinorUnits;
+    return {
+      categoryId, targetMinorUnits, settledActualMinorUnits, pendingProvisionalImpactMinorUnits: 0,
+      remainingAfterSettledMinorUnits, remainingAfterPendingMinorUnits: remainingAfterSettledMinorUnits,
+      settledRecordIds: settled.map(record => record.recordId).sort(), pendingRecordIds: [],
+    };
   }
   /** The manual-expense write rules, in the same order and with the same canonical codes the API uses. */
   function parseWrite(value: MockSpace, body: unknown): Omit<MockVersion, "transactionId" | "revision" | "removedAt" | "supersededAt"> {

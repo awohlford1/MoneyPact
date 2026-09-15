@@ -87,6 +87,12 @@ async function main() {
     page.on("request", (request) => { const url = new URL(request.url()); if (url.pathname.startsWith("/v1/")) requests.push(`${request.method()} ${url.pathname}`); });
     const text = () => page.$eval("main", (node) => node.textContent ?? "");
     const waitText = (value) => page.waitForFunction((value) => document.querySelector("main")?.textContent?.includes(value), {}, value);
+    /** One progress row by its category label, every snippet present (CBD-211: the four values are per row, so "0.00 USD, no activity" alone names no category). */
+    const waitRow = (label, ...snippets) => page.waitForFunction((label, snippets) => {
+      const row = [...document.querySelectorAll('[data-testid="progress-row"]')].find((node) => node.querySelector("h4")?.textContent?.trim() === label);
+      const content = row?.textContent?.replace(/\s+/gu, " ") ?? "";
+      return snippets.every((snippet) => content.includes(snippet));
+    }, {}, label, snippets);
     const clickText = async (label) => {
       for (const handle of await page.$$("button, a")) if ((await handle.evaluate((node) => node.textContent?.trim())) === label) { await handle.scrollIntoView(); await handle.click(); return; }
       throw new Error(`Missing control: ${label}`);
@@ -188,20 +194,23 @@ async function main() {
 
     await recordExpense("8.00", "4.50");
     await waitText("Expense recorded.");
-    await waitText("Spent 8.00 USD of 400.00 USD");
-    await waitText("Remaining 392.00 USD");
-    await waitText("Spent 4.50 USD of 1500.00 USD");
-    await waitText("Remaining 1495.50 USD");
-    log("Record expense 12.50 split 8.00 Groceries / 4.50 Rent", "POST .../transactions 201; GET .../progress: Groceries spent 8.00 remaining 392.00, Rent spent 4.50 remaining 1495.50");
+    // CBD-211-AC01: each row shows the API's four values under the API's names, each a magnitude with its sign as a word.
+    await waitRow("Groceries", "Target 400.00 USD", "Settled actual: 8.00 USD spent", "Pending provisional impact: 0.00 USD, none", "Remaining after settled: 392.00 USD", "Remaining after pending: 392.00 USD");
+    await waitRow("Rent", "Target 1500.00 USD", "Settled actual: 4.50 USD spent", "Pending provisional impact: 0.00 USD, none", "Remaining after settled: 1495.50 USD", "Remaining after pending: 1495.50 USD");
+    log("Record expense 12.50 split 8.00 Groceries / 4.50 Rent", "POST .../transactions 201; GET .../progress: Groceries settled actual 8.00 spent, pending 0.00 none, remaining after settled 392.00, remaining after pending 392.00; Rent 4.50 spent, 1495.50 remaining after settled and after pending");
     await page.screenshot({ path: join(shots, "walkthrough-8-progress.png") });
 
-    await page.reload(); await waitText("Spent 8.00 USD of 400.00 USD");
+    await page.reload(); await waitRow("Groceries", "Settled actual: 8.00 USD spent");
     log("Reload after recording", "the same figures: they are the server's, not the browser's");
 
     await clickText("Groceries"); await waitText("Transactions in this category");
     await waitText("Corner shop");
-    await waitText("8.00 USD · Everyday");
-    log("Open the Groceries detail", "GET .../progress/{categoryId} 200: one itemized transaction of 8.00 USD agreeing with the aggregate");
+    await waitText("8.00 USD spent · Everyday");
+    // CBD-211-AC03: the detail header speaks the same four values as the row, and each item carries its sign as a word.
+    const figure = async (name) => page.$eval(`[data-testid="detail-${name}"]`, (node) => node.textContent?.trim());
+    expect((await figure("settled")) === "8.00 USD spent" && (await figure("pending")) === "0.00 USD, none" && (await figure("remaining-settled")) === "392.00 USD" && (await figure("remaining-pending")) === "392.00 USD",
+      `the detail header disagrees with the row: settled "${await figure("settled")}", pending "${await figure("pending")}", remaining after settled "${await figure("remaining-settled")}", remaining after pending "${await figure("remaining-pending")}"`);
+    log("Open the Groceries detail", "GET .../progress/{categoryId} 200: one itemized transaction of 8.00 USD spent agreeing with the header (settled actual 8.00 USD spent, pending 0.00 USD none, remaining after settled and after pending 392.00 USD)");
     await page.screenshot({ path: join(shots, "walkthrough-9-detail.png") });
 
     // F-REVB-01 (PR #340): this row is the Groceries SHARE of a 12.50 expense split 8.00/4.50.
@@ -211,7 +220,7 @@ async function main() {
     const controls = async () => page.$$eval("button", (nodes) => nodes.map((node) => node.textContent?.trim()));
     const splitShareIntact = async (when) => {
       const body = await text();
-      expect(body.includes("Corner shop") && body.includes("8.00 USD · Everyday"), `the split share moved ${when}`);
+      expect(body.includes("Corner shop") && body.includes("8.00 USD spent · Everyday"), `the split share moved ${when}`);
     };
     await waitText("This expense is split across 2 categories, so it cannot be changed from this page");
     expect(!(await controls()).includes("Edit this expense"), "a share of a split expense still offers the in-place edit");
@@ -230,8 +239,8 @@ async function main() {
     await fill("#expense-description", "Milk");
     await fill(singleIds[0], "3.00");
     await clickText("Record expense"); await waitText("Expense recorded.");
-    await waitText("Spent 11.00 USD of 400.00 USD");
-    await waitText("Spent 4.50 USD of 1500.00 USD");
+    await waitRow("Groceries", "Settled actual: 11.00 USD spent", "Remaining after settled: 389.00 USD");
+    await waitRow("Rent", "Settled actual: 4.50 USD spent");
     log("Record a single-category expense Milk 3.00 Groceries", "POST .../transactions 201 with one allocation; Groceries spent 8.00 + 3.00 = 11.00, Rent untouched at 4.50");
 
     await clickText("Groceries"); await waitText("Transactions in this category");
@@ -241,25 +250,24 @@ async function main() {
     const amountId = await page.$eval('input[id^="edit-amount-"]', (node) => `#${node.id}`);
     await fill(amountId, "20.00");
     await clickText("Save expense"); await waitText("Expense updated.");
-    await waitText("20.00 USD · Everyday");
+    await waitText("20.00 USD spent · Everyday");
     await splitShareIntact("when the single-category expense was edited");
     log("Edit Milk in place to 20.00", "PATCH .../transactions 200 revision 2; the split share is still Corner shop 8.00 USD, so editing one expense moved no other category");
     await page.screenshot({ path: join(shots, "walkthrough-11-single-edit.png") });
 
     await clickText("Remove this expense"); await waitText("Expense removed.");
-    // The detail states its own spent figure; "Spent N of M" is the dashboard's wording, not this page's.
-    await page.waitForFunction(() => document.querySelector('[data-testid="detail-spent"]')?.textContent?.trim() === "8.00 USD");
+    // The detail states its own settled actual, in the same words as the dashboard row.
+    await page.waitForFunction(() => document.querySelector('[data-testid="detail-settled"]')?.textContent?.trim() === "8.00 USD spent");
     await splitShareIntact("when the single-category expense was removed");
     log("Remove Milk", "POST .../remove 201 tombstone; the detail falls back to the split share alone and Groceries returns to 8.00");
 
     await clickText("Remove this whole expense"); await waitText("Expense removed.");
     await waitText("Nothing has been recorded against this category for the active period.");
     await clickText("Back to the budget"); await waitText("Accounts and spending");
-    await waitText("Spent 0.00 USD of 400.00 USD");
-    await waitText("Remaining 400.00 USD");
-    await waitText("Spent 0.00 USD of 1500.00 USD");
-    await waitText("Remaining 1500.00 USD");
-    log("Remove the whole split expense", "POST .../remove 201 tombstone on the split transaction; both shares go with it, so spent returns to 0.00 and remaining to the target for Groceries and Rent alike, in the aggregate and the detail");
+    // CBD-211-AC04: a category with nothing recorded against it says so in words (a removed expense leaves no record behind).
+    await waitRow("Groceries", "Settled actual: 0.00 USD, no activity", "Remaining after settled: 400.00 USD", "Remaining after pending: 400.00 USD");
+    await waitRow("Rent", "Settled actual: 0.00 USD, no activity", "Remaining after settled: 1500.00 USD", "Remaining after pending: 1500.00 USD");
+    log("Remove the whole split expense", "POST .../remove 201 tombstone on the split transaction; both shares go with it, so the settled actual returns to 0.00 USD, no activity, and remaining after settled and after pending to the target for Groceries and Rent alike, in the aggregate and the detail");
     await page.screenshot({ path: join(shots, "walkthrough-12-removed.png") });
 
     await clickText("Sign out"); await page.waitForFunction(() => location.pathname === "/");

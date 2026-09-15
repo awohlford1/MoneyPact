@@ -218,7 +218,7 @@ async function main() {
     await record(1_000, [{ categoryId: category["Net zero"], amountMinorUnits: 1_000 }], "refund");
     const aggregate = await apiJson(`/v1/budget-spaces/${budgetId}/periods/${periodId}/progress`); expect(aggregate.status === 200, `progress ${aggregate.status}`);
     const cellOf = (label) => aggregate.body.cells.find((c) => c.categoryId === category[label]);
-    console.log(`budget ${budgetId}; API cells: ${JSON.stringify(aggregate.body.cells.map((c) => [aggregate.body.labels[c.categoryId], c.settledActualMinorUnits, c.remainingAfterSettledMinorUnits]))}`);
+    console.log(`budget ${budgetId}; API cells [label, settled, pending, remaining after settled, remaining after pending, settled records]: ${JSON.stringify(aggregate.body.cells.map((c) => [aggregate.body.labels[c.categoryId], c.settledActualMinorUnits, c.pendingProvisionalImpactMinorUnits, c.remainingAfterSettledMinorUnits, c.remainingAfterPendingMinorUnits, c.settledRecordIds?.length]))}`);
 
     // -------------------------------------------------------------- helpers over the dashboard
     /** The dev server occasionally answers a route with its 404 page while compiling (F-BFIX-03); a second navigation resolves it. */
@@ -262,17 +262,28 @@ async function main() {
       expect(groceries, `no Groceries row: ${JSON.stringify(rows.map((r) => r.label))}`);
       const cell = cellOf("Groceries");
       const axe = await accessibility();
+      // The same row as a screen reader speaks it (one entry per paragraph) and as the 400 px view shows it.
+      const spoken = await spokenRows();
+      const start = spoken.findIndex((entry) => entry === "heading:Groceries"); const end = spoken.findIndex((entry, index) => index > start && entry.startsWith("heading:"));
+      const spokenGroceries = start === -1 ? "" : spoken.slice(start, end === -1 ? undefined : end).filter((entry) => entry.startsWith("paragraph:")).join(" | ");
+      await page.setViewport({ width: 400, height: 800 }); await openDashboard();
+      const compact = (await rowRepresentations()).find((r) => r.label === "Groceries")?.text ?? "";
+      await page.setViewport({ width: 1280, height: 900 });
       // What the row shows and what the API says for the same cell.
-      const observed = `row text "${groceries.text}"; API cell settled ${cell.settledActualMinorUnits}, pending ${cell.pendingProvisionalImpactMinorUnits}, remaining after settled ${cell.remainingAfterSettledMinorUnits}, remaining after pending ${cell.remainingAfterPendingMinorUnits}; tooltips ${JSON.stringify(groceries.tooltips)}; aria-labels ${JSON.stringify(groceries.ariaLabels)}; ${axe}`;
-      const has = (pattern) => pattern.test(groceries.text);
-      const labelled = {
-        "settled actual": has(/settled/iu) && has(new RegExp(money(cell.settledActualMinorUnits).replace(".", "\\."), "u")),
-        "pending provisional impact": has(/pending|provisional/iu),
-        "remaining after settled": has(/remaining after settled/iu),
-        "remaining after pending": has(/remaining after pending/iu),
+      const observed = `row text "${groceries.text}"; spoken "${spokenGroceries}"; compact (400 px) "${compact}"; API cell settled ${cell.settledActualMinorUnits}, pending ${cell.pendingProvisionalImpactMinorUnits}, remaining after settled ${cell.remainingAfterSettledMinorUnits}, remaining after pending ${cell.remainingAfterPendingMinorUnits}; tooltips ${JSON.stringify(groceries.tooltips)}; aria-labels ${JSON.stringify(groceries.ariaLabels)}; ${axe}`;
+      // Each of the four values must be labelled with the API's name and carry the API's magnitude, in every representation.
+      const value = (minor) => new RegExp(money(minor).replace(".", "\\."), "u");
+      const expected = {
+        "settled actual": [/Settled actual: /u, value(cell.settledActualMinorUnits)],
+        "pending provisional impact": [/Pending provisional impact: /u, value(cell.pendingProvisionalImpactMinorUnits)],
+        "remaining after settled": [/Remaining after settled: /u, value(cell.remainingAfterSettledMinorUnits)],
+        "remaining after pending": [/Remaining after pending: /u, value(cell.remainingAfterPendingMinorUnits)],
       };
-      const missing = Object.entries(labelled).filter(([, present]) => !present).map(([name]) => name);
-      expect(missing.length === 0, `the row labels ${4 - missing.length} of the four values; missing: ${missing.join(", ")}. The row shows "Spent ${money(cell.settledActualMinorUnits)} of ${money(cell.targetMinorUnits)}" and "Remaining ${money(cell.remainingAfterSettledMinorUnits)}": the magnitude of the settled actual under the label "Spent" (not "settled") and remaining after settled under "Remaining"; no pending value and no remaining-after-pending value is represented anywhere on the row. ${observed}`);
+      const missing = [];
+      for (const [mode, text] of [["text", groceries.text], ["spoken", spokenGroceries], ["compact", compact]]) {
+        for (const [name, patterns] of Object.entries(expected)) if (!patterns.every((pattern) => pattern.test(text))) missing.push(`${mode}: ${name}`);
+      }
+      expect(missing.length === 0, `not every one of the four values is labelled with the API's name and magnitude in every representation; missing: ${missing.join(", ")}. ${observed}`);
       return observed;
     });
 
@@ -287,8 +298,8 @@ async function main() {
       const compactShot = join(shots, "qa-cbd211-compact.png"); await page.screenshot({ path: compactShot, fullPage: true });
       await page.setViewport({ width: 1280, height: 900 });
       const numbers = (text) => [...text.matchAll(/(?:^|[^\d.])(\d+\.\d{2}) USD/gu)].map((m) => m[1]);
-      // Every number on every row, in every representation, sits behind one of the row's labels.
-      const labelledNumber = /(Spent|of|Remaining|Over by) \d+\.\d{2} USD/gu;
+      // Every number on every row, in every representation, sits behind one of the row's labels (the API's four names, the target, or "over by" inside a remaining value).
+      const labelledNumber = /(Target|Settled actual:|Pending provisional impact:|Remaining after settled:|Remaining after pending:|over by) \d+\.\d{2} USD/gu;
       const isLabelled = (text) => new RegExp(labelledNumber.source, "u").test(text);
       const unlabeled = [];
       for (const [mode, rows] of [["wide", wide], ["compact", compact]]) {
@@ -302,8 +313,8 @@ async function main() {
       for (const entry of spoken) { const all = numbers(entry); const labelled = (entry.match(labelledNumber) ?? []).length; if (all.length !== labelled) unlabeled.push(`spoken ${entry} (${all.length} numbers, ${labelled} labelled)`); }
       expect(unlabeled.length === 0, `an unlabeled number was found: ${unlabeled.join("; ")}`);
       const tooltipCount = wide.reduce((n, r) => n + r.tooltips.length, 0) + compact.reduce((n, r) => n + r.tooltips.length, 0);
-      const observed = `wide rows ${wide.length}, compact rows ${compact.length} (screenshot ${compactShot}), spoken entries with an amount ${spoken.length} (e.g. ${JSON.stringify(spoken.slice(0, 2))}), tooltips ${tooltipCount}, aria-labels ${wide.reduce((n, r) => n + r.ariaLabels.length, 0)}; every amount in every representation is labelled Spent / of / Remaining / Over by; Groceries wide "${wide.find((r) => r.label === "Groceries")?.text}" compact "${compact.find((r) => r.label === "Groceries")?.text}"`;
-      // The merge the criterion forbids cannot be produced: no pending record can exist in the prototype (manual_transaction CHECK settlement_state = 'settled'), and the web reads only settledActualMinorUnits and remainingAfterSettledMinorUnits (apps/web/src/api/client.ts), so with a pending value it would omit it rather than merge it (inferred from code, not observed).
+      const observed = `wide rows ${wide.length}, compact rows ${compact.length} (screenshot ${compactShot}), spoken entries with an amount ${spoken.length} (e.g. ${JSON.stringify(spoken.slice(0, 5))}), tooltips ${tooltipCount}, aria-labels ${wide.reduce((n, r) => n + r.ariaLabels.length, 0)}; every amount in every representation is labelled Target / Settled actual / Pending provisional impact / Remaining after settled / Remaining after pending (over by); Groceries wide "${wide.find((r) => r.label === "Groceries")?.text}" compact "${compact.find((r) => r.label === "Groceries")?.text}"`;
+      // The merge the criterion forbids cannot be produced: no pending record can exist in the prototype (manual_transaction CHECK settlement_state = 'settled'). The web maps pendingProvisionalImpactMinorUnits and remainingAfterPendingMinorUnits to their own labelled sentences (apps/web/src/api/client.ts toProgressCell, spending.tsx progressSentences) and never adds them to the settled pair, so with a pending value it would show it separately rather than merge it (inferred from code and apps/web/tests/progress-presentation.test.ts, not observed in the browser).
       blocked(`no pending record can exist, so a merge cannot be observed; with pending = 0 on every cell: ${observed}`);
     });
 
@@ -315,23 +326,26 @@ async function main() {
       await waitText("Transactions in this category");
       await page.waitForSelector('[data-testid="detail-item"]');
       const axe = await accessibility();
-      const spent = await page.$eval('[data-testid="detail-spent"]', (n) => n.textContent.trim());
-      const remaining = await page.$eval('[data-testid="detail-remaining"]', (n) => n.textContent.trim());
+      const figure = (name) => page.$eval(`[data-testid="detail-${name}"]`, (n) => n.textContent.trim());
+      const header = { settled: await figure("settled"), pending: await figure("pending"), remainingAfterSettled: await figure("remaining-settled"), remainingAfterPending: await figure("remaining-pending") };
       const items = await page.$$eval('[data-testid="detail-item"]', (nodes) => nodes.map((n) => ({ title: n.querySelector("h3")?.textContent.trim(), line: n.querySelector("p")?.textContent.replace(/\s+/gu, " ").trim() })));
       const cell = cellOf("Groceries");
       const detail = await apiJson(`/v1/budget-spaces/${budgetId}/periods/${periodId}/progress/${category.Groceries}`); expect(detail.status === 200, `detail ${detail.status}`);
       const apiSum = detail.body.items.reduce((t, i) => t + i.amountMinorUnits, 0);
-      const observed = `dashboard "${rowText}"; detail header Spent "${spent}" Remaining "${remaining}"; items ${JSON.stringify(items)}; API items ${JSON.stringify(detail.body.items.map((i) => [i.description, i.amountMinorUnits]))} signed sum ${apiSum} == API cell ${cell.settledActualMinorUnits}; ${axe}`;
-      expect(spent === money(cell.settledActualMinorUnits), `the detail's spent figure is not the cell's: ${observed}`);
+      const observed = `dashboard "${rowText}"; detail header ${JSON.stringify(header)}; items ${JSON.stringify(items)}; API items ${JSON.stringify(detail.body.items.map((i) => [i.description, i.amountMinorUnits]))} signed sum ${apiSum} == API cell ${cell.settledActualMinorUnits}; ${axe}`;
+      // The header speaks the same four values as the row, in the row's words.
+      const word = (minor) => (minor < 0 ? `${money(minor)} spent` : minor > 0 ? `${money(minor)} net refund` : money(minor));
+      expect(header.settled.startsWith(word(cell.settledActualMinorUnits)), `the detail's settled actual is not the cell's (${word(cell.settledActualMinorUnits)}): ${observed}`);
+      expect(header.remainingAfterSettled === (cell.remainingAfterSettledMinorUnits < 0 ? `over by ${money(cell.remainingAfterSettledMinorUnits)}` : money(cell.remainingAfterSettledMinorUnits)), `the detail's remaining after settled is not the cell's: ${observed}`);
+      expect(rowText.includes(`Settled actual: ${header.settled}`) && rowText.includes(`Remaining after settled: ${header.remainingAfterSettled}`), `the header and the dashboard row disagree in words: ${observed}`);
       expect(items.length === detail.body.items.length, `item count: ${observed}`);
-      // The signed sum of what the page shows must equal the value the person activated. The page shows each
-      // item's amount; a signed sum requires the sign to be visible (a refund must not read like a spend).
-      const shownAmounts = items.map((i) => { const m = /(-?\+?)(\d+\.\d{2}) USD/u.exec(i.line); return m ? Number(`${m[1]}${m[2]}`) : Number.NaN; });
-      const signedFromPage = items.map((i, index) => { const api = detail.body.items.find((a) => (a.description ?? "No description") === i.title); return api && api.amountMinorUnits > 0 && !/refund|credit|\+/iu.test(i.line) ? Number.NaN : shownAmounts[index] * (api && api.amountMinorUnits < 0 ? -1 : 1); });
+      // The signed sum of what the page shows must equal the value the person activated, read from the page's own
+      // words: "N USD spent" is money out, "N USD refund" money back. A refund must not read like a spend.
       const refundRow = items.find((i) => i.title === "Refund for spoiled milk");
-      expect(refundRow && /\+|refund|credit|income|returned/iu.test(refundRow.line.replace(/Refund for spoiled milk/u, "")), `the refund item shows the same shape as a spend ("${refundRow?.line}"), so the sign is not visible and the itemized rows cannot be summed to the total: shown magnitudes ${JSON.stringify(shownAmounts)} sum ${shownAmounts.reduce((a, b) => a + b, 0).toFixed(2)} against Spent ${spent}. ${observed}`);
+      expect(refundRow && /refund|credit|income|returned/iu.test(refundRow.line.replace(/Refund for spoiled milk/u, "")), `the refund item shows the same shape as a spend ("${refundRow?.line}"), so the sign is not visible and the itemized rows cannot be summed to the total. ${observed}`);
+      const signedFromPage = items.map((i) => { const m = /(\d+\.\d{2}) USD( spent| refund)?/u.exec(i.line); if (!m) return Number.NaN; const cents = Math.round(Number(m[1]) * 100); return m[2] === " spent" ? -cents : m[2] === " refund" ? cents : cents === 0 ? 0 : Number.NaN; });
       const sum = signedFromPage.reduce((a, b) => a + b, 0);
-      expect(!Number.isNaN(sum) && Math.abs(sum) === Math.abs(cell.settledActualMinorUnits) / 100, `signed sum ${sum} != ${spent}: ${observed}`);
+      expect(!Number.isNaN(sum) && sum === cell.settledActualMinorUnits, `the signed sum read from the page (${sum} minor units, from ${JSON.stringify(signedFromPage)}) is not the settled actual ${cell.settledActualMinorUnits}: ${observed}`);
       return observed;
     });
 
@@ -345,14 +359,17 @@ async function main() {
       const observed = Object.entries(states).map(([k, v]) => `${k}: "${v}"`).join("; ");
       const problems = [];
       // Negative remaining: named with a word, not only a colour.
-      if (!/Over by 50\.00 USD/u.test(states.over)) problems.push(`negative remaining is not named: "${states.over}"`);
-      if (!/Remaining 0\.00 USD/u.test(states.zero)) problems.push(`zero remaining: "${states.zero}"`);
-      if (!/Remaining 75\.00 USD/u.test(states.positive)) problems.push(`positive remaining: "${states.positive}"`);
-      // Negative net actual (a net refund of 20.00): the row must not read as 20.00 spent.
-      if (/Spent 20\.00 USD/u.test(states.refund)) problems.push(`negative net actual (API settled +2000, a net refund) reads as "${states.refund}" - a net refund presented as money spent`);
-      // No activity must be distinguishable from activity that nets to zero.
+      if (!/Remaining after settled: over by 50\.00 USD/u.test(states.over)) problems.push(`negative remaining is not named: "${states.over}"`);
+      if (!/Remaining after settled: 0\.00 USD/u.test(states.zero)) problems.push(`zero remaining: "${states.zero}"`);
+      if (!/Remaining after settled: 75\.00 USD/u.test(states.positive)) problems.push(`positive remaining: "${states.positive}"`);
+      // Negative net actual (a net refund of 20.00): the row must say refund and must not read as 20.00 spent.
+      if (/20\.00 USD spent/u.test(states.refund) || !/Settled actual: 20\.00 USD net refund/u.test(states.refund)) problems.push(`negative net actual (API settled +2000, a net refund) reads as "${states.refund}" - not named as a net refund`);
+      if (!/Remaining after settled: 120\.00 USD/u.test(states.refund)) problems.push(`the net refund's remaining after settled: "${states.refund}"`);
+      // No activity must be distinguishable from activity that nets to zero, in words.
       const idleCore = states.idle.replace(/^Idle/u, ""); const netZeroCore = states.netZero.replace(/^Net zero/u, "");
       if (idleCore === netZeroCore) problems.push(`no-activity and net-zero activity are indistinguishable: "${states.idle}" vs "${states.netZero}"`);
+      if (!/Settled actual: 0\.00 USD, no activity/u.test(states.idle)) problems.push(`no activity is not named: "${states.idle}"`);
+      if (!/Settled actual: 0\.00 USD, nets to zero/u.test(states.netZero)) problems.push(`net-zero activity is not named: "${states.netZero}"`);
       // Colour: the over row's paragraphs use the same colours as a positive row (no colour-only signal to miss) or, if they differ, the word "Over" carries the state anyway.
       const overColors = rows.find((r) => r.label === "Over")?.colors; const positiveColors = rows.find((r) => r.label === "Positive")?.colors;
       const colourNote = JSON.stringify(overColors) === JSON.stringify(positiveColors) ? "over and positive rows use identical text colours (the word carries the state)" : `over ${JSON.stringify(overColors)} vs positive ${JSON.stringify(positiveColors)} (the word "Over by" is present regardless)`;

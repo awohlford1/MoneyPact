@@ -196,21 +196,31 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
 
     await expense("8.00", "4.50");
     await waitText("Expense recorded.");
-    await waitText("Spent 8.00 USD of 450.00 USD");
-    await waitText("Remaining 442.00 USD");
-    await waitText("Spent 4.50 USD of 200.00 USD");
-    await waitText("Remaining 195.50 USD");
+    // CBD-211-AC01: each row carries the API's four values under the API's names, each a
+    // magnitude with its sign as a word; nothing is merged into one unlabelled number.
+    const row = async label => page.$$eval('[data-testid="progress-row"]', (rows, label) => rows.find(node => node.querySelector("h4")?.textContent.trim() === label)?.textContent.replace(/\s+/gu, " ").trim(), label);
+    const waitRow = async (label, ...snippets) => {
+      try { await page.waitForFunction((label, snippets) => { const node = [...document.querySelectorAll('[data-testid="progress-row"]')].find(row => row.querySelector("h4")?.textContent.trim() === label); const text = node?.textContent.replace(/\s+/gu, " ") ?? ""; return snippets.every(snippet => text.includes(snippet)); }, {}, label, snippets); }
+      catch { await page.screenshot({ path: `${root}/.next/journey-failure.png`, fullPage: true }); assert.fail(`Expected the ${label} row to read ${JSON.stringify(snippets)}; it reads "${await row(label)}"; route ${new URL(page.url()).pathname}`); }
+    };
+    await waitRow("Groceries", "Target 450.00 USD", "Settled actual: 8.00 USD spent", "Pending provisional impact: 0.00 USD, none", "Remaining after settled: 442.00 USD", "Remaining after pending: 442.00 USD");
+    await waitRow("Transport", "Target 200.00 USD", "Settled actual: 4.50 USD spent", "Pending provisional impact: 0.00 USD, none", "Remaining after settled: 195.50 USD", "Remaining after pending: 195.50 USD");
     await accessibility();
 
     // The figures survive a reload, because they are the server's and not the browser's.
-    await page.reload(); await waitText("Spent 8.00 USD of 450.00 USD");
+    await page.reload(); await waitRow("Groceries", "Settled actual: 8.00 USD spent");
 
     const controls = async () => page.$$eval("button", nodes => nodes.map(node => node.textContent.trim()));
 
     await clickText("Groceries"); await waitText("Transactions in this category");
     assert.ok((await page.title()).includes("Category detail"));
     await waitText("Corner shop");
-    await waitText("8.00 USD · Everyday");
+    // CBD-211-AC03: the item carries its sign as a word and the header speaks the same four values as the row.
+    await waitText("8.00 USD spent · Everyday");
+    assert.equal(await page.$eval('[data-testid="detail-settled"]', node => node.textContent.trim()), "8.00 USD spent");
+    assert.equal(await page.$eval('[data-testid="detail-pending"]', node => node.textContent.trim()), "0.00 USD, none");
+    assert.equal(await page.$eval('[data-testid="detail-remaining-settled"]', node => node.textContent.trim()), "442.00 USD");
+    assert.equal(await page.$eval('[data-testid="detail-remaining-pending"]', node => node.textContent.trim()), "442.00 USD");
 
     // BFIX-01 (F-REVB-01): this row is the Groceries SHARE of a 12.50 expense split 8.00/4.50.
     // The in-place edit rewrites the whole transaction with one allocation, so offering it here
@@ -228,7 +238,7 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     await fill("#expense-description", "Milk");
     await fill(allocationIds[0], "3.00");
     await clickText("Record expense"); await waitText("Expense recorded.");
-    await waitText("Spent 11.00 USD of 450.00 USD");
+    await waitRow("Groceries", "Settled actual: 11.00 USD spent", "Remaining after settled: 439.00 USD");
 
     await clickText("Groceries"); await waitText("Transactions in this category");
     await waitText("Milk");
@@ -236,9 +246,9 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     const amountId = await page.$eval('input[id^="edit-amount-"]', node => `#${node.id}`);
     await fill(amountId, "20.00");
     await clickText("Save expense"); await waitText("Expense updated.");
-    await waitText("20.00 USD · Everyday");
+    await waitText("20.00 USD spent · Everyday");
     // The split share is untouched by that edit: it is still there, and still 8.00.
-    await waitText("8.00 USD · Everyday");
+    await waitText("8.00 USD spent · Everyday");
     await accessibility();
 
     await clickText("Remove this expense"); await waitText("Expense removed.");
@@ -247,8 +257,8 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     await accessibility();
 
     await clickText("Back to the budget"); await waitText("Accounts and spending");
-    await waitText("Spent 0.00 USD of 450.00 USD");
-    await waitText("Remaining 450.00 USD");
+    // CBD-211-AC04: a category with nothing recorded against it says so in words.
+    await waitRow("Groceries", "Settled actual: 0.00 USD, no activity", "Remaining after settled: 450.00 USD", "Remaining after pending: 450.00 USD");
 
     // CBD-196-AC04: archival is lifecycle, and restore brings the account back.
     await clickText("Archive Everyday"); await waitText("Archived Everyday.");
