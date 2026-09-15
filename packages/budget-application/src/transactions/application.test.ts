@@ -357,7 +357,7 @@ describe("CBD-200-AC05 at the application layer: the request digest and the idem
     const created = await createManualTransaction(world.deps, TX_SPACE_A, TX_SUBJECT_1, request());
     const scope = { budgetSpaceId: TX_SPACE_A, membershipId: "membership-1", action: "create" as const, idempotencyKey: "key-1" };
     assert.equal(await world.repository.readIdempotency(scope), null);
-    const record = { ...scope, requestDigest: transactionRequestDigest("create", target, request(), null), transactionVersionId: created.current.version.transactionVersionId, committedResponse: created, createdAt: world.now };
+    const record = { ...scope, requestDigest: transactionRequestDigest("create", target, request(), null), transactionVersionId: created.current.version.transactionVersionId, committedResponse: created, authorizationVersion: 1, createdAt: world.now };
     await world.repository.recordIdempotency(record);
     assert.deepEqual(await world.repository.readIdempotency(scope), record);
     assert.equal(await world.repository.readIdempotency({ ...scope, action: "edit" }), null, "the action is part of the scope");

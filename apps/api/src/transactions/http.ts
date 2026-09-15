@@ -136,8 +136,12 @@ export interface TransactionsHttpDependencies {
   /** Repositories bound to the effect's transaction; production wraps the transaction-scoped `DataAccessClient`. */
   readonly repository: (transaction: unknown) => TransactionsRepository;
   readonly targets: (transaction: unknown) => TargetsRepository;
-  /** The subject's active membership in the space, from trusted storage; null when there is none. */
-  readonly membership: (subject: string, budgetSpaceId: string) => Promise<string | null>;
+  /**
+   * The subject's active membership in the space, from trusted storage; null when there is none.
+   * `authorizationVersion` is read fresh here (outside any transaction, before policy) so the replay
+   * hook can compare a stored key's bound version against the membership's *current* one (SEC-C200-F1).
+   */
+  readonly membership: (subject: string, budgetSpaceId: string) => Promise<{ readonly membershipId: string; readonly authorizationVersion: number } | null>;
   /** The committed idempotency record for one scope, read outside any transaction for the replay hook (CBD-200-AC05). */
   readonly replay: (scope: IdempotencyScope) => Promise<IdempotencyRecord | null>;
   readonly clock: Clock;
@@ -291,7 +295,8 @@ export function transactionsHttp(dependencies: TransactionsHttpDependencies): { 
       const budgetSpaceId = spaceOf(request);
       const targetId = target ? param(request, target.name, target.status, target.error) : null;
       if (targetId === budgetSpaceId) throw new RouteFailure(target!.status, target!.error);
-      const membershipId = await dependencies.membership(subject, budgetSpaceId);
+      const membership = await dependencies.membership(subject, budgetSpaceId);
+      const membershipId = membership?.membershipId ?? null;
       const identity = identityOf(request, idempotent, budgetSpaceId, targetId, membershipId);
       acting.set(request, { subject, budgetSpaceId, targetId, membershipId, identity });
       if (identity !== null) {
@@ -299,6 +304,14 @@ export function transactionsHttp(dependencies: TransactionsHttpDependencies): { 
         if (stored !== null) {
           // The same key with a different command is a client defect, refused before policy with nothing written or evaluated.
           if (stored.requestDigest !== identity.requestDigest) throw new RouteFailure(409, "idempotency_mismatch");
+          // SEC-C200-F1: a role change that keeps the membership active still moves authorization_version
+          // forward (every mutation that changes a role or revokes/removes advances it). A stored response
+          // bound to an older version therefore describes a role the membership no longer holds; refuse it
+          // with the same uniform denial a fresh denied request receives, before the response is ever read
+          // back -- the AuthorizationDenied path below answers `externalDenial()` and discloses nothing.
+          // `membership` is never null here: `identity` is non-null only when `identityOf` was given a
+          // non-null `membershipId`, which came from this same `membership`.
+          if (stored.authorizationVersion < membership!.authorizationVersion) throw new AuthorizationDenied();
           return { kind: "committed", response: stored.committedResponse };
         }
       }
@@ -314,7 +327,7 @@ export function transactionsHttp(dependencies: TransactionsHttpDependencies): { 
       };
     },
   });
-  const within = (request: FastifyRequest, effect: EffectContext): { deps: TransactionsDependencies; plan: TargetsDependencies; budgetSpaceId: string; targetId: string | null; subject: string; identity: Identity | null } => {
+  const within = (request: FastifyRequest, effect: EffectContext): { deps: TransactionsDependencies; plan: TargetsDependencies; budgetSpaceId: string; targetId: string | null; subject: string; identity: Identity | null; authorizationVersion: number | null } => {
     const resolved = acting.get(request); acting.set(request, undefined);
     const subject = effect.input.subject?.accountSubjectId;
     if (!resolved || typeof subject !== "string" || subject !== resolved.subject || effect.input.space?.spaceId !== resolved.budgetSpaceId) throw new AuthorizationDenied();
@@ -324,12 +337,20 @@ export function transactionsHttp(dependencies: TransactionsHttpDependencies): { 
       deps: { repository: dependencies.repository(effect.transaction), clock: dependencies.clock, ids: dependencies.ids },
       plan: { repository: dependencies.targets(effect.transaction), clock: dependencies.clock, ids: dependencies.ids },
       budgetSpaceId: resolved.budgetSpaceId, targetId: resolved.targetId, subject, identity: resolved.identity,
+      // SEC-C200-F1: the version the row is bound to at write time is the boundary's own commit-time
+      // re-proof of the acting membership (`effect.input.membership.authorizationVersion`), the same row
+      // read in the same transaction the effect commits -- never a second, separately-timed lookup.
+      authorizationVersion: effect.input.membership?.authorizationVersion ?? null,
     };
   };
-  /** Records the accepted key in the effect's transaction, bound to the version the command committed (CBD-200-AC05). */
-  const remember = async (deps: TransactionsDependencies, identity: Identity | null, result: TransactionMutation): Promise<TransactionMutation> => {
+  /** Records the accepted key in the effect's transaction, bound to the version the command committed (CBD-200-AC05, SEC-C200-F1). */
+  const remember = async (deps: TransactionsDependencies, identity: Identity | null, authorizationVersion: number | null, result: TransactionMutation): Promise<TransactionMutation> => {
     if (identity === null) return result;
-    await deps.repository.recordIdempotency({ ...identity.scope, requestDigest: identity.requestDigest, transactionVersionId: result.current.version.transactionVersionId, committedResponse: result, createdAt: deps.clock.now() });
+    // The replay hook never issues an identity without a membership, and the effect cannot commit without
+    // proving one either (`within`'s check above), so this is always a number for a row `remember` actually
+    // writes; a null here would mean the effect committed with no membership proof, which must never happen.
+    if (authorizationVersion === null) throw new AuthorizationDenied();
+    await deps.repository.recordIdempotency({ ...identity.scope, requestDigest: identity.requestDigest, transactionVersionId: result.current.version.transactionVersionId, committedResponse: result, authorizationVersion, createdAt: deps.clock.now() });
     return result;
   };
 
@@ -338,19 +359,19 @@ export function transactionsHttp(dependencies: TransactionsHttpDependencies): { 
     @Post("transactions")
     @authorize(TRANSACTION_ACTIONS.add, "transaction", null, "create")
     async create(@Req() request: FastifyRequest, @Authorization() effect: EffectContext): Promise<unknown> {
-      const { deps, budgetSpaceId, subject, identity } = within(request, effect);
-      try { return await remember(deps, identity, await createManualTransaction(deps, budgetSpaceId, subject, parseTransactionWriteRequest(request.body))); }
+      const { deps, budgetSpaceId, subject, identity, authorizationVersion } = within(request, effect);
+      try { return await remember(deps, identity, authorizationVersion, await createManualTransaction(deps, budgetSpaceId, subject, parseTransactionWriteRequest(request.body))); }
       catch (error) { return transactionsFailure(error); }
     }
 
     @Patch("transactions/:transactionId")
     @authorize(TRANSACTION_ACTIONS.edit, "transaction", { name: "transactionId", status: 404, error: "transaction_not_found" }, "edit")
     async edit(@Req() request: FastifyRequest, @Authorization() effect: EffectContext): Promise<unknown> {
-      const { deps, budgetSpaceId, targetId, subject, identity } = within(request, effect);
+      const { deps, budgetSpaceId, targetId, subject, identity, authorizationVersion } = within(request, effect);
       try {
         const command = parseTransactionWriteRequest(request.body);
         const precondition = parseVersionPrecondition(request.body, request.headers["if-match"]);
-        return await remember(deps, identity, await editManualTransaction(deps, budgetSpaceId, targetId!, subject, command, precondition));
+        return await remember(deps, identity, authorizationVersion, await editManualTransaction(deps, budgetSpaceId, targetId!, subject, command, precondition));
       } catch (error) { return transactionsFailure(error); }
     }
 
@@ -358,10 +379,10 @@ export function transactionsHttp(dependencies: TransactionsHttpDependencies): { 
     @Post("transactions/:transactionId/remove")
     @authorize(TRANSACTION_ACTIONS.remove, "transaction", { name: "transactionId", status: 404, error: "transaction_not_found" }, "remove")
     async remove(@Req() request: FastifyRequest, @Authorization() effect: EffectContext): Promise<unknown> {
-      const { deps, budgetSpaceId, targetId, subject, identity } = within(request, effect);
+      const { deps, budgetSpaceId, targetId, subject, identity, authorizationVersion } = within(request, effect);
       try {
         const precondition = parseVersionPrecondition(request.body, request.headers["if-match"]);
-        return await remember(deps, identity, await removeManualTransaction(deps, budgetSpaceId, targetId!, subject, precondition));
+        return await remember(deps, identity, authorizationVersion, await removeManualTransaction(deps, budgetSpaceId, targetId!, subject, precondition));
       } catch (error) { return transactionsFailure(error); }
     }
 
@@ -472,10 +493,11 @@ export function dataAccessTransactionsDependencies(client: DataAccessClient): Tr
       return dataAccessTargetsRepository({ ...budgetCategoryStatements(scoped), ...budgetCategoryBaseTargetStatements(scoped), ...budgetCategoryPeriodTargetStatements(scoped) });
     },
     membership: async (subject, budgetSpaceId) => {
-      const found = await client.tenantSelect({ table: "budget_space_membership", budgetSpaceId, columns: ["membership_id"],
+      const found = await client.tenantSelect({ table: "budget_space_membership", budgetSpaceId, columns: ["membership_id", "authorization_version"],
         conditions: [{ column: "account_subject_id", value: subject }, { column: "status", value: "active" }] });
-      const row = found.rows[0] as { membership_id?: unknown } | undefined;
-      return typeof row?.membership_id === "string" ? row.membership_id : null;
+      const row = found.rows[0] as { membership_id?: unknown; authorization_version?: unknown } | undefined;
+      if (typeof row?.membership_id !== "string" || !Number.isSafeInteger(row.authorization_version)) return null;
+      return { membershipId: row.membership_id, authorizationVersion: row.authorization_version as number };
     },
     clock: { now: () => new Date().toISOString() },
     ids: { uuid: randomUUID },

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expectedProvenance } from "@cobudget/contracts/authorization";
+import { INPUT_SCHEMA_VERSION, expectedProvenance } from "@cobudget/contracts/authorization";
 import type { CapturedVersions, FactSource, PolicyInput, ResourceType } from "@cobudget/contracts/authorization";
 
 export interface Operation {
@@ -81,7 +81,8 @@ function put(record: Record<string, unknown>, path: string, value: unknown): voi
 
 function validLeaf(path: string, value: unknown): boolean {
   if (/(?:Id|Ref)$/.test(path)) return typeof value === "string" && value.length > 0 && value.length <= 256;
-  if (/(?:Version|\.version)$/.test(path)) return Number.isSafeInteger(value) && (value as number) >= 0;
+  // SEC-POV-F1: every version column carries CHECK (... >= 1); 0 is never a legitimate value.
+  if (/(?:Version|\.version)$/.test(path)) return Number.isSafeInteger(value) && (value as number) >= 1;
   return value !== undefined && value !== null;
 }
 
@@ -144,7 +145,7 @@ export class FactAssembler {
     const request: Record<string, unknown> = { action: operation.action, fieldSet: operation.fieldSet };
     const input: Record<string, unknown> = {
       request, authority: {}, versions: { policyVersion: "p6", ...(captured ? { capturedAtPrecheck: structuredClone(captured) } : {}) },
-      evaluation: { adapter: this.#adapter, inputSchemaVersion: 1, evaluatedAt: this.#clock().toISOString() },
+      evaluation: { adapter: this.#adapter, inputSchemaVersion: INPUT_SCHEMA_VERSION, evaluatedAt: this.#clock().toISOString() },
     };
     const selected = [first, "datastore", ...(this.#adapter === "api" ? ["idp_evidence"] : []), ...(operation.mode === "service" ? ["server_policy_store"] : [])] as FactSource[];
     const provenance: Record<string, FactSource> = {};

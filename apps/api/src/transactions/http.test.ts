@@ -69,7 +69,10 @@ async function application() {
   h.store.transaction = async <T>(work: (tx: unknown) => Promise<T>): Promise<T> => {
     try { return await transaction(work); } catch (error) { if (error instanceof RouteFailure) return error as T; throw error; }
   };
-  const memberships: Record<string, string | undefined> = { [`${MEMBER}:${SPACE_A}`]: "membership-1", [`${MEMBER}:${SPACE_B}`]: "membership-1" };
+  const memberships: Record<string, { membershipId: string; authorizationVersion: number } | undefined> = {
+    [`${MEMBER}:${SPACE_A}`]: { membershipId: "membership-1", authorizationVersion: 1 },
+    [`${MEMBER}:${SPACE_B}`]: { membershipId: "membership-1", authorizationVersion: 1 },
+  };
   let repositoryCalls = 0;
   const dependencies: TransactionsHttpDependencies = {
     repository: () => { repositoryCalls++; return ledger; },

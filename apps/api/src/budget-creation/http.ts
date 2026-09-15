@@ -3,6 +3,7 @@ import { Controller, Module, Post, Req } from "@nestjs/common";
 import type { DynamicModule } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import type { DataAccessClient } from "@cobudget/data-access";
+import { INPUT_SCHEMA_VERSION } from "@cobudget/contracts/authorization";
 import { Authorize, Authorization } from "../authorization/http.js";
 import type { EffectContext } from "../authorization/boundary.js";
 import type { FactSourceAdapter, ProposalCandidateProvider } from "../authorization/facts.js";
@@ -68,7 +69,7 @@ export function budgetCreationHttp(dependencies: CreationHttpDependencies): { mo
         authorize: async (_client, proposal) => {
           if (proposal.candidateBudgetSpaceId !== effect.input.bootstrap?.candidateSpaceId
             || proposal.candidatePrimaryMembershipId !== effect.input.bootstrap.candidatePrimaryMembershipId) throw new ConfirmationError("confirmation_stale");
-          return { policyVersion: effect.decision.policyVersion, policyDigest: effect.decision.policyDigest, inputSchemaVersion: 1, authorizationVersion: 1 };
+          return { policyVersion: effect.decision.policyVersion, policyDigest: effect.decision.policyDigest, inputSchemaVersion: INPUT_SCHEMA_VERSION, authorizationVersion: 1 };
         },
         // The boundary appends the restricted allow event after postcondition checks,
         // still using this same client, and aborts on audit failure.

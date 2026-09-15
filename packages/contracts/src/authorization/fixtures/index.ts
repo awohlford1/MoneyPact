@@ -1,3 +1,4 @@
+import { INPUT_SCHEMA_VERSION } from "../input.ts";
 import type { ApiBootstrapUserPolicyInput, ApiOrdinaryUserPolicyInput, ApiSubjectScopedUserPolicyInput, PolicyInput, Role, WorkerServicePolicyInput } from "../input.ts";
 import { decide, decideUnderRegisteredVersion, expectedProvenance } from "../evaluate.ts";
 import { CURRENT_POLICY_VERSION, POLICY_VERSIONS } from "../policy/registry.ts";
@@ -28,7 +29,7 @@ export function ordinaryFixture(action: string, role: Role = "primary_owner", ve
       ...(definition.resourceType === "comment" || definition.resourceType === "interaction" ? { authorSubjectId: "subject-1" } : {}),
     },
     request: { action, purpose: "user_delegated", fieldSet: "default" }, versions: { policyVersion: version },
-    authority: { mode: "user_delegated" }, evaluation: { adapter: "api", evaluatedAt: now, inputSchemaVersion: 1 }, provenance: {},
+    authority: { mode: "user_delegated" }, evaluation: { adapter: "api", evaluatedAt: now, inputSchemaVersion: INPUT_SCHEMA_VERSION }, provenance: {},
   } as const satisfies ApiOrdinaryUserPolicyInput;
   return stamp(input);
 }
@@ -39,7 +40,7 @@ export function bootstrapFixture(version: RegisteredPolicyVersion = CURRENT_POLI
     assurance: { level: "session" }, profile: { profileId: "profile-1", profileState: "active", profileVersion: 1 },
     bootstrap: { candidateSpaceId: "candidate-space-1", candidatePrimaryMembershipId: "candidate-membership-1", spaceState: "absent", primaryMembershipState: "absent" },
     request: { action: "space.create", purpose: "user_delegated", fieldSet: "default" }, versions: { policyVersion: version },
-    authority: { mode: "user_delegated" }, evaluation: { adapter: "api", evaluatedAt: now, inputSchemaVersion: 1 }, provenance: {},
+    authority: { mode: "user_delegated" }, evaluation: { adapter: "api", evaluatedAt: now, inputSchemaVersion: INPUT_SCHEMA_VERSION }, provenance: {},
   } as const satisfies ApiBootstrapUserPolicyInput;
   return stamp(input);
 }
@@ -51,7 +52,7 @@ export function serviceFixture(version: RegisteredPolicyVersion = CURRENT_POLICY
     request: { action: "service.SA-92-002.generate_period_state", purpose: "SA-92-002", fieldSet: "default" }, versions: { policyVersion: version },
     authority: { mode: "service", servicePurpose: "SA-92-002", serviceIdentity: "workload-1", workloadIdentityVersion: 1, servicePolicyVersion: 1, sourceVersion: 1 },
     serviceSource: { scheduleConfigurationVersion: 1, ruleReferenceDataVersion: 1, sourceState: "current" },
-    evaluation: { adapter: "worker", evaluatedAt: now, inputSchemaVersion: 1 }, provenance: {},
+    evaluation: { adapter: "worker", evaluatedAt: now, inputSchemaVersion: INPUT_SCHEMA_VERSION }, provenance: {},
   } as const satisfies WorkerServicePolicyInput;
   return stamp(input);
 }
@@ -81,7 +82,7 @@ export function subjectFixture(action: string, version: RegisteredPolicyVersion 
       resource: { type: target.type, id: target.id, owningSpaceId: "none", version: 1, lifecycle: target.lifecycle, owningSubjectId: "subject-1", environmentId: SUBJECT_ENVIRONMENT },
     }),
     request: { action, purpose: "user_delegated", fieldSet: "default" }, versions: { policyVersion: version },
-    authority: { mode: "user_delegated" }, evaluation: { adapter: "api", evaluatedAt: now, inputSchemaVersion: 1 }, provenance: {},
+    authority: { mode: "user_delegated" }, evaluation: { adapter: "api", evaluatedAt: now, inputSchemaVersion: INPUT_SCHEMA_VERSION }, provenance: {},
   } as const satisfies ApiSubjectScopedUserPolicyInput;
   return stamp(input);
 }
@@ -274,8 +275,9 @@ function spaceBoundNegatives(action: string, role: Role, version: RegisteredPoli
     entry("missing_primary_ownership_version", withoutPrimaryOwnershipVersion(positive), "input_invalid"),
     // POV-N03: the leaf is datastore-only; a request-sourced stamp is malformed (NC-236-06 for this leaf, cell by cell).
     entry("client_asserted_primary_ownership_version", { ...positive, provenance: { ...positive.provenance, "space.primaryOwnershipVersion": "request_locator" } }, "input_invalid"),
-    // POV-N04: a string, a negative and a fraction are not a version; provenance intact so only the shape rule denies.
-    ...([["string", "2"], ["negative", -1], ["fraction", 1.5]] as const).map(([suffix, value]) =>
+    // POV-N04: a string, a negative, a fraction and zero are not a version; provenance intact so only the shape rule
+    // denies. SEC-POV-F1 (PROTO-API-HARDENING-003): the column's own CHECK is >= 1, so 0 is malformed like -1.
+    ...([["string", "2"], ["negative", -1], ["fraction", 1.5], ["zero", 0]] as const).map(([suffix, value]) =>
       entry("malformed_primary_ownership_version", stamp({ ...positive, space: { ...positive.space, primaryOwnershipVersion: value } }), "input_invalid", suffix)),
   ];
 }
