@@ -159,7 +159,6 @@ export interface PrimaryTransferRepository {
 
   // --- memberships and the space ---------------------------------------------
   readonly readMembership: (budgetSpaceId: string, membershipId: string) => Promise<TransferMembershipRecord | null>;
-  readonly listMemberships: (budgetSpaceId: string, accountSubjectId?: string) => Promise<readonly TransferMembershipRecord[]>;
   /**
    * `role` and `authorization_version` together, predicated on the version
    * read. False is a lost race. The M1 trigger independently requires the
@@ -181,7 +180,6 @@ export interface PrimaryTransferRepository {
 
   // --- consent ----------------------------------------------------------------
   readonly readCurrentConsent: (budgetSpaceId: string, membershipId: string) => Promise<TransferConsentRecord | null>;
-  readonly readConsent: (budgetSpaceId: string, consentId: string) => Promise<TransferConsentRecord | null>;
   readonly supersedeConsent: (budgetSpaceId: string, consentId: string, patch: ConsentSupersedePatch) => Promise<boolean>;
   readonly insertConsent: (record: TransferConsentInsert) => Promise<void>;
 
@@ -284,7 +282,6 @@ export interface PrimaryTransferStatements {
   ) => Promise<number>;
 
   readonly readMembership: (budgetSpaceId: string, membershipId: string) => Promise<TransferMembershipRow | null>;
-  readonly listMemberships: (budgetSpaceId: string, accountSubjectId?: string) => Promise<readonly TransferMembershipRow[]>;
   readonly updateMembershipRole: (
     budgetSpaceId: string, membershipId: string, expectedAuthorizationVersion: number, role: string,
   ) => Promise<number>;
@@ -295,7 +292,6 @@ export interface PrimaryTransferStatements {
   ) => Promise<number>;
 
   readonly readCurrentConsent: (budgetSpaceId: string, membershipId: string) => Promise<TransferConsentRow | null>;
-  readonly readConsent: (budgetSpaceId: string, consentId: string) => Promise<TransferConsentRow | null>;
   readonly supersedeConsent: (
     budgetSpaceId: string, consentId: string, set: Readonly<Record<string, unknown>>,
   ) => Promise<number>;

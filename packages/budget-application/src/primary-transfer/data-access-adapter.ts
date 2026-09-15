@@ -207,10 +207,6 @@ export function dataAccessPrimaryTransferRepository(statements: PrimaryTransferS
       const row = await statements.readMembership(budgetSpaceId, membershipId);
       return row === null ? null : toMembership(row);
     }),
-    listMemberships: (budgetSpaceId, accountSubjectId) => guarded(async () => {
-      const rows = await statements.listMemberships(budgetSpaceId, accountSubjectId);
-      return rows.map(toMembership);
-    }),
     updateMembershipRole: (budgetSpaceId, membershipId, expectedAuthorizationVersion, role) => guarded(async () =>
       (await statements.updateMembershipRole(budgetSpaceId, membershipId, expectedAuthorizationVersion, role)) > 0),
 
@@ -223,10 +219,6 @@ export function dataAccessPrimaryTransferRepository(statements: PrimaryTransferS
 
     readCurrentConsent: (budgetSpaceId, membershipId) => guarded(async () => {
       const row = await statements.readCurrentConsent(budgetSpaceId, membershipId);
-      return row === null ? null : toConsent(row);
-    }),
-    readConsent: (budgetSpaceId, consentId) => guarded(async () => {
-      const row = await statements.readConsent(budgetSpaceId, consentId);
       return row === null ? null : toConsent(row);
     }),
     supersedeConsent: (budgetSpaceId, consentId, patch: ConsentSupersedePatch) => guarded(async () =>

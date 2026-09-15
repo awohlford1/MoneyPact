@@ -98,10 +98,10 @@ export class InMemoryPrimaryTransferRepository implements PrimaryTransferReposit
     return record ? { ...record } : null;
   }
 
-  async listMemberships(budgetSpaceId: string, accountSubjectId?: string): Promise<readonly TransferMembershipRecord[]> {
+  /** Test support only: not on the repository port (`SEC-PK7A-F8`). */
+  async listMemberships(budgetSpaceId: string): Promise<readonly TransferMembershipRecord[]> {
     return [...this.memberships.values()]
       .filter((row) => row.budgetSpaceId === budgetSpaceId)
-      .filter((row) => accountSubjectId === undefined || row.accountSubjectId === accountSubjectId)
       .map((row) => ({ ...row }));
   }
 
@@ -161,6 +161,7 @@ export class InMemoryPrimaryTransferRepository implements PrimaryTransferReposit
     return null;
   }
 
+  /** Test support only: not on the repository port (`SEC-PK7A-F8`). */
   async readConsent(budgetSpaceId: string, consentId: string): Promise<TransferConsentRecord | null> {
     const row = this.consents.get(consentId);
     return row && row.budgetSpaceId === budgetSpaceId ? { ...row } : null;

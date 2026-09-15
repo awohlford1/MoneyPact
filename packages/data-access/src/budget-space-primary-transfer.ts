@@ -238,16 +238,6 @@ export async function readTransferMembership(
   return row === undefined ? null : toMembershipRow(row);
 }
 
-export async function listTransferMemberships(
-  client: TenantStatementClient, budgetSpaceId: string, accountSubjectId?: string,
-): Promise<readonly TransferMembershipRow[]> {
-  const result = await client.tenantSelect({
-    table: BUDGET_SPACE_MEMBERSHIP_TABLE, budgetSpaceId, columns: TRANSFER_MEMBERSHIP_COLUMNS,
-    ...(accountSubjectId === undefined ? {} : { conditions: [{ column: "account_subject_id", value: accountSubjectId }] }),
-  });
-  return result.rows.map(toMembershipRow);
-}
-
 /**
  * The role swap of design SS10.3 step 4, one membership at a time.
  *
@@ -381,17 +371,6 @@ export async function readCurrentTransferConsent(
   return row === undefined ? null : toConsentRow(row);
 }
 
-export async function readTransferConsent(
-  client: TenantStatementClient, budgetSpaceId: string, consentId: string,
-): Promise<TransferConsentRow | null> {
-  const result = await client.tenantSelect({
-    table: BUDGET_SPACE_CONSENT_TABLE, budgetSpaceId, columns: TRANSFER_CONSENT_COLUMNS,
-    conditions: [{ column: "consent_id", value: consentId }],
-  });
-  const row = result.rows[0];
-  return row === undefined ? null : toConsentRow(row);
-}
-
 /**
  * Design SS10.3 step 3. Predicated on `state = 'current'`, so a row another
  * transaction already superseded leaves this update matching nothing and the
@@ -477,7 +456,6 @@ export function budgetSpacePrimaryTransferStatements(client: PrimaryTransferStat
       updatePrimaryTransfer(client, budgetSpaceId, transferId, expectedStateVersion, set),
 
     readMembership: (budgetSpaceId: string, membershipId: string) => readTransferMembership(client, budgetSpaceId, membershipId),
-    listMemberships: (budgetSpaceId: string, accountSubjectId?: string) => listTransferMemberships(client, budgetSpaceId, accountSubjectId),
     updateMembershipRole: (budgetSpaceId: string, membershipId: string, expectedAuthorizationVersion: number, role: string) =>
       updateTransferMembershipRole(client, budgetSpaceId, membershipId, expectedAuthorizationVersion, role),
 
@@ -486,7 +464,6 @@ export function budgetSpacePrimaryTransferStatements(client: PrimaryTransferStat
       movePrimaryOwnership(client, budgetSpaceId, recipientMembershipId, expectedPrimaryOwnershipVersion),
 
     readCurrentConsent: (budgetSpaceId: string, membershipId: string) => readCurrentTransferConsent(client, budgetSpaceId, membershipId),
-    readConsent: (budgetSpaceId: string, consentId: string) => readTransferConsent(client, budgetSpaceId, consentId),
     supersedeConsent: (budgetSpaceId: string, consentId: string, set: Readonly<Record<string, unknown>>) =>
       supersedeTransferConsent(client, budgetSpaceId, consentId, set),
     insertConsent: (budgetSpaceId: string, values: Readonly<Record<string, unknown>>) =>
