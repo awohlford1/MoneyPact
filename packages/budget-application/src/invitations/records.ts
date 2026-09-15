@@ -202,6 +202,8 @@ export interface InvitationRecord {
 export interface InvitationCodeRecord {
   readonly invitationId: string;
   readonly budgetSpaceId: string;
+  /** `PK5-F02`: the opaque lookup handle issued as the first half of the bearer; null only on rows issued before it existed. */
+  readonly codeSelector: string | null;
   readonly verifierDigest: string;
   readonly issuedAt: string;
   readonly expiresAt: string;

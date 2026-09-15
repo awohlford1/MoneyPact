@@ -21,7 +21,7 @@ import type { DataAccessClient } from "@cobudget/data-access";
 import type { Pool } from "../../../data-access/src/driver.ts";
 import type { KeyProvider } from "../../../data-access/src/encryption/provider.ts";
 import {
-  budgetSpaceInvitationStatements, listLiveInvitationCodes, locateInvitationCeremony,
+  budgetSpaceInvitationStatements, listLegacyInvitationCodes, locateInvitationCeremony, locateInvitationCodeBySelector,
   readInvitationDestinationCiphertext,
 } from "../../../data-access/src/budget-space-invitation.ts";
 import { budgetSpaceInvitationCodeStatements } from "../../../data-access/src/budget-space-invitation-code.ts";
@@ -90,7 +90,8 @@ export function invitationPersistence(options: InvitationPersistenceOptions, dig
     insertOutbox: outboxWriter(client, keys),
     readOutbox: outboxProjectionReader(client),
     tombstoneOutbox: outboxTombstoner(client),
-    listLiveCodes: () => listLiveInvitationCodes(locatorQueryable),
+    locateCodeBySelector: (codeSelector: string) => locateInvitationCodeBySelector(locatorQueryable, codeSelector),
+    listLegacyCodes: () => listLegacyInvitationCodes(locatorQueryable),
     locateCeremony: (ceremonyId: string) => locateInvitationCeremony(locatorQueryable, ceremonyId),
   };
 

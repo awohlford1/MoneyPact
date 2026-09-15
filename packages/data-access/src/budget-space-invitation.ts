@@ -25,15 +25,16 @@
  * update matching no row, which the application reads as a lost race rather
  * than as success.
  *
- * `locateInvitationCeremony` and `listLiveInvitationCodes` are the two closed
- * statements that answer "which budget space does this opaque value belong
- * to". They exist because `POST /v1/invitations/resolve` and every
- * ceremony-addressed route are pre-authentication surfaces that hold no
- * budget-space identifier, and the tables they read are budget-space scoped.
- * Each is a fixed statement with no caller-supplied predicate beyond one
- * bound parameter, in the shape of `readOwnBudgetMemberships` in
- * `budget-memberships.ts`, and each answers location only: no state, no
- * expiry, no role, and never the address or a raw value.
+ * `locateInvitationCeremony`, `locateInvitationCodeBySelector` and
+ * `listLegacyInvitationCodes` are the three closed statements that answer
+ * "which budget space does this opaque value belong to". They exist because
+ * `POST /v1/invitations/resolve` and every ceremony-addressed route are
+ * pre-authentication surfaces that hold no budget-space identifier, and the
+ * tables they read are budget-space scoped. Each is a fixed statement with
+ * no caller-supplied predicate beyond one bound parameter, in the shape of
+ * `readOwnBudgetMemberships` in `budget-memberships.ts`, and each answers
+ * location only: no state, no expiry, no role, and never the address or a
+ * raw value.
  */
 import { instantText, integerValue, nullableInstantText, textValue } from "./budget-category.ts";
 import type { TenantStatementClient } from "./budget-category.ts";
@@ -236,11 +237,54 @@ export interface LiveCodeBindingRow {
   readonly invitationVersion: number;
   readonly destinationToken: string;
   readonly verifierDigest: string;
+  readonly codeSelector: string | null;
+}
+
+const CODE_BINDING_SELECT =
+  "SELECT c.budget_space_id, c.invitation_id, i.invitation_version, i.destination_token, c.verifier_digest, c.code_selector "
+  + "FROM budget_space_invitation_code c "
+  + "JOIN budget_space_invitation i ON i.invitation_id = c.invitation_id "
+  + "WHERE i.kind = 'real'";
+
+function toBindingRow(value: unknown): LiveCodeBindingRow {
+  const row = value as Record<string, unknown>;
+  return {
+    budgetSpaceId: textValue(row.budget_space_id),
+    invitationId: textValue(row.invitation_id),
+    invitationVersion: integerValue(row.invitation_version),
+    destinationToken: textValue(row.destination_token),
+    verifierDigest: textValue(row.verifier_digest),
+    codeSelector: row.code_selector === null || row.code_selector === undefined ? null : textValue(row.code_selector),
+  };
 }
 
 /**
- * Every real invitation's code row, with the binding material the verifier is
- * computed from. Never a raw value, never an address, never a state.
+ * `PK5-F02`: the one code row carrying a selector, with the binding material
+ * the verifier is computed from. The selector is the only customer-supplied
+ * predicate on the table and it is an opaque random handle that proves
+ * nothing: the caller still recomputes the bound verifier over the secret
+ * half and compares in constant time. Never a raw value, never an address,
+ * never a state -- `R-02`'s reasoning applies unchanged, so a consumed,
+ * invalidated or expired row is still located and classified by the
+ * transaction's own re-read.
+ */
+export async function locateInvitationCodeBySelector(
+  pool: Pick<Pool, "query">, codeSelector: string,
+): Promise<LiveCodeBindingRow | null> {
+  if (typeof codeSelector !== "string" || codeSelector.length === 0) return null;
+  try {
+    const result = await pool.query(`${CODE_BINDING_SELECT} AND c.code_selector = $1`, [codeSelector]);
+    const row = result.rows[0];
+    return row === undefined ? null : toBindingRow(row);
+  } catch (error) {
+    throw wrapDriverError("budget_space_invitation_code", "select", error);
+  }
+}
+
+/**
+ * The code rows issued before `code_selector` existed, the only set the
+ * presented-code scan still runs over. Empty once every pre-selector row has
+ * been consumed, invalidated or expired out of relevance.
  *
  * `R-02`: the predicates this once carried (`disposition = 'active'`,
  * `expires_at > now()`, `state = 'pending'`) made a consumed, invalidated or
@@ -252,25 +296,10 @@ export interface LiveCodeBindingRow {
  * costs a longer scan and nothing else. The scan runs to completion in the
  * caller either way, so timing still does not depend on match position.
  */
-export async function listLiveInvitationCodes(pool: Pick<Pool, "query">): Promise<readonly LiveCodeBindingRow[]> {
+export async function listLegacyInvitationCodes(pool: Pick<Pool, "query">): Promise<readonly LiveCodeBindingRow[]> {
   try {
-    const result = await pool.query(
-      "SELECT c.budget_space_id, c.invitation_id, i.invitation_version, i.destination_token, c.verifier_digest "
-        + "FROM budget_space_invitation_code c "
-        + "JOIN budget_space_invitation i ON i.invitation_id = c.invitation_id "
-        + "WHERE i.kind = 'real'",
-      [],
-    );
-    return result.rows.map((value) => {
-      const row = value as Record<string, unknown>;
-      return {
-        budgetSpaceId: textValue(row.budget_space_id),
-        invitationId: textValue(row.invitation_id),
-        invitationVersion: integerValue(row.invitation_version),
-        destinationToken: textValue(row.destination_token),
-        verifierDigest: textValue(row.verifier_digest),
-      };
-    });
+    const result = await pool.query(`${CODE_BINDING_SELECT} AND c.code_selector IS NULL`, []);
+    return result.rows.map(toBindingRow);
   } catch (error) {
     throw wrapDriverError("budget_space_invitation_code", "select", error);
   }

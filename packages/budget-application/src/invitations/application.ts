@@ -39,7 +39,7 @@ import type {
 } from "./records.ts";
 import {
   abuseFingerprint, canonicalizeEmailDestination, ceremonySecretDigest, channelChallengeDigest,
-  codeVerifierDigest, destinationToken, digestsEqual, generateBearer, generateCeremonySecret,
+  codeVerifierDigest, composeBearer, destinationToken, digestsEqual, generateBearer, generateCeremonySecret, generateCodeSelector,
   generateChannelChallenge, maskEmailDestination,
 } from "./secrets.ts";
 import type { KeyedDigest } from "./secrets.ts";
@@ -523,21 +523,25 @@ async function insertInvitationRecord(
 }
 
 /**
- * `TR-73-02`, in the same transaction as the create. One raw bearer is
- * generated, only its bound verifier is stored, and the raw bearer and the
- * six-digit channel challenge exist afterwards only inside the
+ * `TR-73-02`, in the same transaction as the create. One raw secret and one
+ * opaque selector are generated; the selector and the secret's bound
+ * verifier are stored, and the presented bearer `<selector>.<secret>` and
+ * the six-digit channel challenge exist afterwards only inside the
  * envelope-encrypted outbox row that the simulated local adapter reads
- * (SS5.3).
+ * (SS5.3). The selector encodes nothing and proves nothing (`PK5-F02`): it
+ * is the lookup handle the locator uses instead of a scan.
  */
 async function dispatchInvitation(
   deps: InvitationDependencies, owner: OwnerContext, record: InvitationRecord, destination: string,
 ): Promise<void> {
   const now = deps.clock.now();
-  const bearer = generateBearer();
+  const codeSelector = generateCodeSelector();
+  const secret = generateBearer();
+  const bearer = composeBearer(codeSelector, secret);
   const challenge = generateChannelChallenge();
   const verifier = await codeVerifierDigest(deps.digest, {
     invitationId: record.invitationId, invitationVersion: record.invitationVersion, destinationToken: record.destinationToken,
-  }, bearer);
+  }, secret);
 
   // `R-05`: asserted before the first write, which is this module's stated
   // rule. The edge is constant so it cannot fail today, but the code and
@@ -545,7 +549,7 @@ async function dispatchInvitation(
   assertInvitationEdge("created", "pending");
 
   await deps.repository.insertCode({
-    invitationId: record.invitationId, budgetSpaceId: record.budgetSpaceId, verifierDigest: verifier,
+    invitationId: record.invitationId, budgetSpaceId: record.budgetSpaceId, codeSelector, verifierDigest: verifier,
     issuedAt: now, expiresAt: record.expiresAt, disposition: "active",
     dispositionReasonClass: null, dispositionAt: null, abuseFingerprint: null,
   });
@@ -804,8 +808,9 @@ function earliest(a: string, b: string): string {
  * Locate the record a presented raw bearer belongs to. The stored verifier is
  * bound to `(invitationId, invitationVersion, destinationToken)`, so the
  * locator cannot recompute it from the raw value alone; it is handed the raw
- * value and computes candidate digests on the server side of the seam. The
- * data-access adapter implements this with one closed statement.
+ * value, looks the row up by the selector half and computes the candidate
+ * digest over the secret half on the server side of the seam (`PK5-F02`).
+ * The data-access adapter implements this with closed statements.
  */
 async function locateByPresentedCode(deps: InvitationDependencies, presented: string) {
   return deps.locator.locateByPresentedCode(presented);

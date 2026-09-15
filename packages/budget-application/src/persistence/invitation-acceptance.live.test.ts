@@ -52,7 +52,7 @@ import type { InvitationDependencies } from "../invitations/application.ts";
 import { confirmAcceptance } from "../invitations/acceptance.ts";
 import type { AcceptanceReceipt } from "../invitations/acceptance.ts";
 import { assertInvitationEdge } from "../invitations/transitions.ts";
-import { createKeyedDigest } from "../invitations/secrets.ts";
+import { codeVerifierDigest, createKeyedDigest, generateCodeSelector, splitPresentedCode } from "../invitations/secrets.ts";
 import { MAX_CHANNEL_ATTEMPTS, isInvitationError } from "../invitations/records.ts";
 import type { OwnerContext } from "../invitations/ports.ts";
 import { invitationPersistence } from "./invitation-store.ts";
@@ -699,6 +699,126 @@ void test("PROTO-INVITATIONS-PK5 live PostgreSQL: the acceptance transaction, th
         ((await api.query("SELECT accepted_membership_id FROM budget_space_invitation WHERE invitation_id = $1", [race.invitationId])).rows[0] as { accepted_membership_id: string }).accepted_membership_id,
         committed.membershipId,
       );
+    }
+
+    // =================================================================
+    // (f) PK5-F02 / PK5-F03: the selector. The delivered bearer is
+    //     `<selector>.<secret>`, the row carries the selector and never the
+    //     secret, the locator answers by selector and proves by verifier, a
+    //     pre-selector row is still answered by the scan, and the selector
+    //     is write-once.
+    // =================================================================
+    {
+      const selectorSpace = await newSpace();
+      const selectorId = await transaction(async (deps) =>
+        (await createInvitation(deps, ownerContext(selectorSpace), createRequest(`selector-${randomUUID().slice(0, 8)}@example.com`))).projection.invitationId);
+      const selectorDelivery = await delivery(selectorId);
+      const parts = splitPresentedCode(selectorDelivery.bearer);
+      assert.ok(parts, "the delivered bearer is selector-shaped");
+      const codeRow = (await api.query(
+        "SELECT code_selector, verifier_digest FROM budget_space_invitation_code WHERE invitation_id = $1", [selectorId],
+      )).rows[0] as { code_selector: string | null; verifier_digest: string };
+      assert.equal(codeRow.code_selector, parts.selector, "the row carries the selector");
+      assert.ok(!codeRow.verifier_digest.includes(parts.secret), "the row never carries the secret");
+
+      // Known selector, wrong secret; unknown selector, real secret; the
+      // pre-selector shape of a secret that was only ever issued with a
+      // selector. All three are the one uniform answer, and none touches the
+      // code: the real bearer resolves afterwards.
+      const selectorUniform = [
+        `${parts.selector}.${randomUUID().replaceAll("-", "")}${randomUUID().replaceAll("-", "")}`,
+        `${generateCodeSelector()}.${parts.secret}`,
+        parts.secret,
+      ];
+      for (const presented of selectorUniform) {
+        assert.equal(
+          JSON.stringify(await transaction(async (deps) => resolveCode(deps, { presentedCode: presented, environment: ENVIRONMENT, correlationId: randomUUID() }))),
+          JSON.stringify({ outcome: "unusable", messageCode: "MSG-73-003" }),
+          presented === parts.secret ? "the bare secret" : presented.slice(0, 8),
+        );
+      }
+      assert.equal(
+        (await transaction(async (deps) => resolveCode(deps, { presentedCode: selectorDelivery.bearer, environment: ENVIRONMENT, correlationId: randomUUID() }))).outcome,
+        "resolved", "the real bearer still resolves after the wrong guesses",
+      );
+
+      // A pre-selector row: the migration leaves code_selector NULL on rows
+      // issued before it existed and the locator answers those by the scan.
+      // Simulated with the table owner, trigger off, because the selector is
+      // write-once for everybody else.
+      const legacySpace = await newSpace();
+      const legacyId = await transaction(async (deps) =>
+        (await createInvitation(deps, ownerContext(legacySpace), createRequest(`legacy-${randomUUID().slice(0, 8)}@example.com`))).projection.invitationId);
+      const legacyBearer = `${randomUUID().replaceAll("-", "")}${randomUUID().replaceAll("-", "")}`;
+      const legacyRow = (await api.query(
+        "SELECT invitation_version, destination_token FROM budget_space_invitation WHERE invitation_id = $1", [legacyId],
+      )).rows[0] as { invitation_version: number; destination_token: string };
+      const legacyVerifier = await codeVerifierDigest(DIGEST, {
+        invitationId: legacyId, invitationVersion: Number(legacyRow.invitation_version), destinationToken: legacyRow.destination_token,
+      }, legacyBearer);
+      {
+        const connection = await admin.connect();
+        try {
+          await connection.query("BEGIN");
+          await connection.query("ALTER TABLE budget_space_invitation_code DISABLE TRIGGER budget_space_invitation_code_forbid_mutation");
+          await connection.query(
+            "UPDATE budget_space_invitation_code SET code_selector = NULL, verifier_digest = $2 WHERE invitation_id = $1",
+            [legacyId, legacyVerifier],
+          );
+          await connection.query("ALTER TABLE budget_space_invitation_code ENABLE TRIGGER budget_space_invitation_code_forbid_mutation");
+          await connection.query("COMMIT");
+        } catch (error) {
+          await connection.query("ROLLBACK").catch(() => undefined);
+          throw error;
+        } finally {
+          connection.release();
+        }
+      }
+      assert.equal(
+        (await transaction(async (deps) => resolveCode(deps, { presentedCode: legacyBearer, environment: ENVIRONMENT, correlationId: randomUUID() }))).outcome,
+        "resolved", "a pre-selector bearer is answered by the scan over the rows without a selector",
+      );
+      assert.equal(
+        (await transaction(async (deps) => resolveCode(deps, { presentedCode: `${generateCodeSelector()}.${legacyBearer}`, environment: ENVIRONMENT, correlationId: randomUUID() }))).outcome,
+        "unusable", "a selector-shaped value never reaches the scan",
+      );
+
+      // Write-once: the application role cannot repoint a selector, and the
+      // partial unique index refuses a second row carrying the same one.
+      {
+        const connection = await api.connect();
+        let repoint: string | undefined;
+        try {
+          await connection.query("BEGIN");
+          await connection.query("UPDATE budget_space_invitation_code SET code_selector = $2 WHERE invitation_id = $1", [selectorId, generateCodeSelector()]);
+          await connection.query("COMMIT");
+        } catch (error) {
+          repoint = (error as { code?: string }).code;
+          await connection.query("ROLLBACK").catch(() => undefined);
+        } finally {
+          connection.release();
+        }
+        assert.equal(repoint, "23514", "code_selector is write-once");
+      }
+      {
+        const duplicateSpace = await newSpace();
+        const duplicateId = await transaction(async (deps) =>
+          (await createInvitation(deps, ownerContext(duplicateSpace), createRequest(`dup-${randomUUID().slice(0, 8)}@example.com`))).projection.invitationId);
+        const connection = await admin.connect();
+        let duplicate: string | undefined;
+        try {
+          await connection.query("BEGIN");
+          await connection.query("ALTER TABLE budget_space_invitation_code DISABLE TRIGGER budget_space_invitation_code_forbid_mutation");
+          await connection.query("UPDATE budget_space_invitation_code SET code_selector = $2 WHERE invitation_id = $1", [duplicateId, parts.selector]);
+          await connection.query("COMMIT");
+        } catch (error) {
+          duplicate = (error as { code?: string }).code;
+          await connection.query("ROLLBACK").catch(() => undefined);
+        } finally {
+          connection.release();
+        }
+        assert.equal(duplicate, "23505", "one row per selector");
+      }
     }
 
     // =================================================================
