@@ -579,6 +579,15 @@ void test("PROTO-INVITATIONS-PK5 live PostgreSQL: the acceptance transaction, th
       uniform.push(JSON.stringify(await transaction(async (deps) =>
         resolveCode(deps, { presentedCode: cancelledDelivery.bearer, environment: ENVIRONMENT, correlationId: randomUUID() }))));
 
+      // R-02: the widened locator finds the dead code, so the restricted
+      // TR-73-14 classes are reachable live and the abuse fingerprint is
+      // stamped on the code row -- while the customer answer stays identical.
+      assert.match(
+        String(((await api.query("SELECT abuse_fingerprint FROM budget_space_invitation_code WHERE invitation_id = $1", [cancelledId]))
+          .rows[0] as { abuse_fingerprint: string | null }).abuse_fingerprint),
+        /^[0-9a-f]{64}$/u, "a located terminal record stamps the keyed fingerprint",
+      );
+
       const [first, ...rest] = uniform;
       for (const answer of rest) assert.equal(answer, first, "every unusable link answers identically");
       assert.equal(first, JSON.stringify({ outcome: "unusable", messageCode: "MSG-73-003" }));

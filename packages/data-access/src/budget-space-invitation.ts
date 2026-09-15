@@ -239,9 +239,18 @@ export interface LiveCodeBindingRow {
 }
 
 /**
- * The live code rows a presented bearer may match, with the binding material
- * the verifier is computed from. Never a raw value, never an address, never a
- * state beyond the two predicates below.
+ * Every real invitation's code row, with the binding material the verifier is
+ * computed from. Never a raw value, never an address, never a state.
+ *
+ * `R-02`: the predicates this once carried (`disposition = 'active'`,
+ * `expires_at > now()`, `state = 'pending'`) made a consumed, invalidated or
+ * timestamp-expired code unlocatable, so `TR-73-14`'s restricted classes
+ * `terminal_record` and `expired_record` and the resolve-time `TR-73-07`
+ * materialization were unreachable in live composition even though the
+ * in-memory locator exercised them. The port answers location only and the
+ * transaction re-reads and re-checks every fact it acts on, so widening it
+ * costs a longer scan and nothing else. The scan runs to completion in the
+ * caller either way, so timing still does not depend on match position.
  */
 export async function listLiveInvitationCodes(pool: Pick<Pool, "query">): Promise<readonly LiveCodeBindingRow[]> {
   try {
@@ -249,7 +258,7 @@ export async function listLiveInvitationCodes(pool: Pick<Pool, "query">): Promis
       "SELECT c.budget_space_id, c.invitation_id, i.invitation_version, i.destination_token, c.verifier_digest "
         + "FROM budget_space_invitation_code c "
         + "JOIN budget_space_invitation i ON i.invitation_id = c.invitation_id "
-        + "WHERE c.disposition = 'active' AND c.expires_at > now() AND i.state = 'pending' AND i.kind = 'real'",
+        + "WHERE i.kind = 'real'",
       [],
     );
     return result.rows.map((value) => {
