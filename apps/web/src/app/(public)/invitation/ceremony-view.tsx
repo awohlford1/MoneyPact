@@ -56,6 +56,10 @@ export function ResolveView() {
     } catch { setState("failed"); }
   }, [api, router]);
   useEffect(() => {
+    // SEC-PK8-F2: a link built wrongly with the code in the query (`?code=`) is not resolved -- the code is fragment-carried
+    // so it never reaches a request line or a log -- but the query is stripped from the address bar and history at once,
+    // so the bearer does not persist there or get re-sent on a reload; the person pastes the code instead.
+    if (new URLSearchParams(window.location.search).has("code")) history.replaceState(null, "", `${window.location.pathname}${window.location.hash}`);
     const fragment = new URLSearchParams(window.location.hash.replace(/^#/u, ""));
     const linked = fragment.get("code");
     if (!linked) return;

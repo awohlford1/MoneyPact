@@ -252,6 +252,14 @@ export async function pk8Journey(t, { browser, origin, errors }) {
     await invitee.page.reload(); await invitee.waitText("Sent, awaiting a response");
   });
 
+  await t.test("SEC-PK8-F2: a query-carried code is not resolved and is stripped from the address bar at once", async () => {
+    await invitee.page.goto(`${origin}/invitation?code=not-a-real-code`);
+    await invitee.waitText("Paste the invitation code");
+    await invitee.page.waitForFunction(() => location.search === "" && location.pathname === "/invitation");
+    assert.equal(await invitee.page.$eval("#invitation-code", node => node.value), "", "nothing is prefilled from the query");
+    await invitee.accessibility();
+  });
+
   await t.test("a ceremony that is no longer usable says 'open your invitation link again'", async () => {
     await invitee.page.goto(`${origin}/invitation/ceremony/00000000-0000-4000-8000-000000000000`);
     // Nothing is remembered for it, so the page asks for the code; the pre-counter gate denies the check as unusable.
