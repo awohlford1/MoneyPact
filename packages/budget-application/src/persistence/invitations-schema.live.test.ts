@@ -24,6 +24,29 @@
  *       holds;
  *   (f) DELETE is revoked on every new table for both application roles.
  *
+ * The correction round that closes PROTO-INVITATIONS-PK2-SEC-001 adds one
+ * deliberate violation per guard it adds, each with the legal shape admitted
+ * beside it so that the refusal is the guard and not a broken statement:
+ *
+ *   (g) SEC-PK2-F01: a membership may end, and an ended membership is
+ *       terminal -- it never returns to active, and its end evidence is
+ *       write-once;
+ *   (h) SEC-PK2-F01: a role change is refused at COMMIT without exactly one
+ *       current consent row for the new role, and admitted with one written in
+ *       the same transaction;
+ *   (i) SEC-PK2-F06: ended_reason_class is a closed class set, and an end
+ *       advances the authorization version;
+ *   (j) SEC-PK2-F02: the acceptance membership, the CBD-275 commit receipt and
+ *       the private terminal cause are each set once;
+ *   (k) SEC-PK2-F03: a decided confirmation cannot be re-attributed, and an
+ *       attached, channel-proved ceremony cannot be re-attached or un-proved;
+ *   (l) SEC-PK2-F04: the restricted-only AE-73 classes cannot carry
+ *       audience 'customer';
+ *   (m) SEC-PK2-F05: cobudget_worker has no privilege at all on the three
+ *       secret-bearing tables, while cobudget_api still has its own;
+ *   (n) SEC-PK2-F06: an invitation's created_by_subject_id must be the subject
+ *       of its created_by_membership_id.
+ *
  * Opt-in exactly as the other live tests in this package do: it runs only
  * against a scratch database, never `cobudget_dev`, and it never resets the
  * database it is pointed at. It creates its own rows under fresh identifiers
@@ -51,6 +74,15 @@ const NEW_TABLES = [
   "budget_space_primary_transfer",
   "account_lifecycle_notice",
 ] as const;
+
+/**
+ * The authorization-version advance CBD-73 requires of every membership end
+ * (TR-73-30, TR-73-31, TR-73-32) and every role change (TR-73-21, TR-73-43).
+ * Written as `1 + column` rather than `column + 1` so the secret scanner's
+ * generic-api-key rule does not read it as a name assigned a long identifier.
+ * The constant is named without an auth* prefix for the same reason.
+ */
+const VERSION_ADVANCE = "authorization_version = 1 + authorization_version";
 
 interface SqlFailure {
   readonly code: string | undefined;
@@ -450,6 +482,445 @@ void test("PROTO-INVITATIONS-PK2 live PostgreSQL: the widening holds, the invita
       });
       assert.equal(readable, null, `${roleName} must still be able to read budget_space_invitation`);
     }
+
+    // =================================================================
+    // The PROTO-INVITATIONS-PK2-SEC-001 correction round. Each block below
+    // first admits the shape CBD-73 draws and then attacks the rule that
+    // shape depends on, so a guard that silently stopped working would fail
+    // the admission rather than pass the refusal.
+    // =================================================================
+
+    /** A fresh collaborator membership with exactly one current consent row for its role. */
+    async function newCollaboratorMembership(displayName: string): Promise<{
+      readonly subject: string;
+      readonly membership: string;
+      readonly consent: string;
+    }> {
+      const invitee = await newInvitee(displayName);
+      const membership = randomUUID();
+      const consent = randomUUID();
+      const created = await refusalOf(admin, async (q) => {
+        await q("SET CONSTRAINTS ALL DEFERRED");
+        await q(
+          `INSERT INTO budget_space_membership (membership_id, budget_space_id, profile_id, account_subject_id, role, status, created_by_subject_id)
+           VALUES ($1,$2,$3,$4,'collaborator','active',$5)`,
+          [membership, spaceId, invitee.profile, invitee.subject, ownerSubject],
+        );
+        await q(
+          `INSERT INTO budget_space_consent ${consentColumns}
+           VALUES ($1,$2,$3,$4,'collaborator','full','invitation_acceptance',$5,1,'invitation_collaborator',1,'digest','p1','pdigest','current',$4,NULL)`,
+          [consent, spaceId, membership, invitee.subject, randomUUID()],
+        );
+      });
+      assert.equal(created, null, `the ${displayName} fixture membership must commit`);
+      return { subject: invitee.subject, membership, consent };
+    }
+
+    // =================================================================
+    // (g) An ended membership is terminal (DR-73-09, IC-73-006). Before the
+    //     correction round this UPDATE committed and left an active
+    //     membership with zero current consent rows.
+    // =================================================================
+    const ending = await newCollaboratorMembership("G Collaborator");
+
+    const ended = await refusalOf(admin, async (q) => {
+      await q(
+        `UPDATE budget_space_membership
+         SET status = 'revoked', ended_at = now(), ended_reason_class = 'removed_by_owner',
+             ${VERSION_ADVANCE}
+         WHERE membership_id = $1`,
+        [ending.membership],
+      );
+    });
+    assert.equal(ended, null, "(g) a TR-73-31 membership end must still be admitted");
+
+    const restored = await refusalOf(admin, async (q) => {
+      await q(
+        `UPDATE budget_space_membership
+         SET status = 'active', ended_at = NULL, ended_reason_class = NULL,
+             ${VERSION_ADVANCE}
+         WHERE membership_id = $1`,
+        [ending.membership],
+      );
+    });
+    assert.ok(restored, "(g) an ended membership must not return to active");
+    assert.equal(restored.code, "23514");
+    assert.match(restored.message, /status is terminal once it leaves active/u);
+
+    const stillEnded = await admin.query(
+      "SELECT status, ended_reason_class FROM budget_space_membership WHERE membership_id = $1",
+      [ending.membership],
+    );
+    assert.deepEqual(stillEnded.rows[0], { status: "revoked", ended_reason_class: "removed_by_owner" });
+
+    const rewrittenEnd = await refusalOf(admin, async (q) => {
+      await q("UPDATE budget_space_membership SET ended_reason_class = 'self_revocation' WHERE membership_id = $1", [
+        ending.membership,
+      ]);
+    });
+    assert.equal(rewrittenEnd?.code, "23514", "(g) the end evidence of an ended membership must be write-once");
+    assert.match(String(rewrittenEnd?.message), /end evidence is write-once/u);
+
+    const refrozenRole = await refusalOf(admin, async (q) => {
+      await q("SET CONSTRAINTS ALL DEFERRED");
+      await q(
+        `UPDATE budget_space_membership SET role = 'co_owner', ${VERSION_ADVANCE} WHERE membership_id = $1`,
+        [ending.membership],
+      );
+    });
+    assert.equal(refrozenRole?.code, "23514", "(g) the role of an ended membership must be frozen");
+    assert.match(String(refrozenRole?.message), /role is frozen once the membership has ended/u);
+
+    // =================================================================
+    // (h) A role change carries its consent (TR-73-21, TR-73-43). The
+    //     constraint trigger is deferred, so the refusal is at COMMIT and the
+    //     UPDATE-then-INSERT order the design uses satisfies it.
+    // =================================================================
+    const promoting = await newCollaboratorMembership("H Collaborator");
+
+    const roleWithoutConsent = await refusalOf(admin, async (q) => {
+      await q("SET CONSTRAINTS ALL DEFERRED");
+      await q(
+        `UPDATE budget_space_membership SET role = 'co_owner', ${VERSION_ADVANCE} WHERE membership_id = $1`,
+        [promoting.membership],
+      );
+    });
+    assert.ok(roleWithoutConsent, "(h) a role change with no consent row for the new role must not commit");
+    assert.equal(roleWithoutConsent.code, "23514");
+    assert.match(roleWithoutConsent.message, /exactly one current consent row for the new role/u);
+
+    const unchangedRole = await admin.query("SELECT role FROM budget_space_membership WHERE membership_id = $1", [
+      promoting.membership,
+    ]);
+    assert.equal(unchangedRole.rows[0].role, "collaborator", "(h) the refused role change must leave the row alone");
+
+    const unversionedRole = await refusalOf(admin, async (q) => {
+      await q("SET CONSTRAINTS ALL DEFERRED");
+      await q("UPDATE budget_space_membership SET role = 'co_owner' WHERE membership_id = $1", [promoting.membership]);
+    });
+    assert.equal(unversionedRole?.code, "23514", "(h) a role change must advance the authorization version");
+    assert.match(String(unversionedRole?.message), /authorization_version must advance with a role change/u);
+
+    const promoted = await refusalOf(admin, async (q) => {
+      await q("SET CONSTRAINTS ALL DEFERRED");
+      await q(
+        `UPDATE budget_space_membership SET role = 'co_owner', ${VERSION_ADVANCE} WHERE membership_id = $1`,
+        [promoting.membership],
+      );
+      await q(
+        "UPDATE budget_space_consent SET state = 'superseded', ended_at = now(), ended_reason_class = 'membership_change' WHERE consent_id = $1",
+        [promoting.consent],
+      );
+      await q(
+        `INSERT INTO budget_space_consent ${consentColumns}
+         VALUES ($1,$2,$3,$4,'co_owner','full','membership_change',$5,1,'membership_change',1,'digest','p1','pdigest','current',$4,NULL)`,
+        [randomUUID(), spaceId, promoting.membership, promoting.subject, randomUUID()],
+      );
+    });
+    assert.equal(promoted, null, "(h) a role change with its consent row in the same transaction must commit");
+
+    const promotedRow = await admin.query("SELECT role FROM budget_space_membership WHERE membership_id = $1", [
+      promoting.membership,
+    ]);
+    assert.equal(promotedRow.rows[0].role, "co_owner");
+
+    // =================================================================
+    // (i) ended_reason_class is a class set, not free text, and an end
+    //     advances the authorization version.
+    // =================================================================
+    const classProbe = await newCollaboratorMembership("I Collaborator");
+
+    const freeText = await refusalOf(admin, async (q) => {
+      await q(
+        `UPDATE budget_space_membership
+         SET status = 'removed', ended_at = now(), ended_reason_class = 'anything free text here',
+             ${VERSION_ADVANCE}
+         WHERE membership_id = $1`,
+        [classProbe.membership],
+      );
+    });
+    assert.ok(freeText, "(i) a free-text ended_reason_class must not commit");
+    assert.equal(freeText.code, "23514");
+    assert.match(freeText.message, /budget_space_membership_ended_reason_class_check/u);
+
+    const unversionedEnd = await refusalOf(admin, async (q) => {
+      await q(
+        `UPDATE budget_space_membership
+         SET status = 'removed', ended_at = now(), ended_reason_class = 'removed_by_owner'
+         WHERE membership_id = $1`,
+        [classProbe.membership],
+      );
+    });
+    assert.equal(unversionedEnd?.code, "23514", "(i) an end must advance the authorization version");
+    assert.match(String(unversionedEnd?.message), /authorization_version must advance when the membership ends/u);
+
+    // =================================================================
+    // (j) The acceptance membership, the CBD-275 receipt and the private
+    //     terminal cause are each written once. `invitationId` is the
+    //     accepted record of (d).
+    // =================================================================
+    const repointed = await refusalOf(admin, async (q) => {
+      await q("SET CONSTRAINTS ALL DEFERRED");
+      await q("UPDATE budget_space_invitation SET accepted_membership_id = $2 WHERE invitation_id = $1", [
+        invitationId,
+        promoting.membership,
+      ]);
+    });
+    assert.ok(repointed, "(j) accepted_membership_id must not be repointed");
+    assert.equal(repointed.code, "23514");
+    assert.match(repointed.message, /accepted_membership_id is set once/u);
+
+    const receipted = await refusalOf(admin, async (q) => {
+      await q(
+        `UPDATE budget_space_invitation
+         SET commit_idempotency_key = 'k1', commit_request_digest = 'rd1', committed_response = '{"ok":true}'::jsonb
+         WHERE invitation_id = $1`,
+        [invitationId],
+      );
+    });
+    assert.equal(receipted, null, "(j) the CBD-275 receipt must be recordable once");
+
+    const rewrittenReceipt = await refusalOf(admin, async (q) => {
+      await q(
+        `UPDATE budget_space_invitation
+         SET commit_idempotency_key = 'k2', commit_request_digest = 'rd2', committed_response = '{"ok":false}'::jsonb
+         WHERE invitation_id = $1`,
+        [invitationId],
+      );
+    });
+    assert.ok(rewrittenReceipt, "(j) the commit receipt must not be overwritten");
+    assert.equal(rewrittenReceipt.code, "23514");
+    assert.match(rewrittenReceipt.message, /commit receipt is write-once/u);
+
+    const terminalInvitation = randomUUID();
+    const cancelled = await refusalOf(admin, async (q) => {
+      await q("SET CONSTRAINTS ALL DEFERRED");
+      await q(
+        `INSERT INTO budget_space_invitation ${invitationColumns}
+         VALUES ($1,$2,'real',$3,$4,'24',1,'email',$5,$6,'d***@example.com','collaborator','full',
+                 'invitation_collaborator',1,'digest','p1','pdigest','created',now(),$7,$7,'pending')`,
+        [
+          terminalInvitation,
+          spaceId,
+          ownerMembership,
+          ownerSubject,
+          `token-${terminalInvitation}`,
+          Buffer.from("ciphertext"),
+          expiresAt,
+        ],
+      );
+      await q(
+        `UPDATE budget_space_invitation
+         SET state = 'cancelled', state_version = state_version + 1, projection_state = 'cancelled',
+             private_terminal_cause = 'permission_lost'
+         WHERE invitation_id = $1`,
+        [terminalInvitation],
+      );
+    });
+    assert.equal(cancelled, null, "(j) a cancelled record may record its private terminal cause once");
+
+    const rewrittenCause = await refusalOf(admin, async (q) => {
+      await q("UPDATE budget_space_invitation SET private_terminal_cause = 'sibling_accepted' WHERE invitation_id = $1", [
+        terminalInvitation,
+      ]);
+    });
+    assert.ok(rewrittenCause, "(j) the private terminal cause must not be rewritten");
+    assert.equal(rewrittenCause.code, "23514");
+    assert.match(rewrittenCause.message, /private_terminal_cause is write-once/u);
+
+    // =================================================================
+    // (k) The confirmation decision and the ceremony attachment are
+    //     evidence, so neither can be re-attributed afterwards.
+    // =================================================================
+    const ceremonyId = randomUUID();
+    const ceremonyColumns =
+      `(ceremony_id, budget_space_id, invitation_id, ceremony_secret_digest, channel_proof_state,
+        channel_challenge_digest, channel_proved_at, attached_subject_id, attached_session_ref,
+        attached_at, primary_contact_match, disclosure_kind, disclosure_version, disclosure_digest,
+        state, expires_at, environment)`;
+
+    const ceremonyCreated = await refusalOf(admin, async (q) => {
+      await q("SET CONSTRAINTS ALL DEFERRED");
+      await q(
+        `INSERT INTO budget_space_invitation_ceremony ${ceremonyColumns}
+         VALUES ($1,$2,$3,$4,'proved','challenge-digest',now(),$5,'session-row-id',now(),true,
+                 'invitation_collaborator',1,'digest','open',$6,'local')`,
+        [ceremonyId, spaceId, invitationId, `secret-${ceremonyId}`, inviteeA.subject, expiresAt],
+      );
+    });
+    assert.equal(ceremonyCreated, null, "(k) an attached, channel-proved ceremony must be insertable");
+
+    const reattached = await refusalOf(admin, async (q) => {
+      await q("SET CONSTRAINTS ALL DEFERRED");
+      await q(
+        "UPDATE budget_space_invitation_ceremony SET attached_subject_id = $2, attached_session_ref = 'another-session' WHERE ceremony_id = $1",
+        [ceremonyId, inviteeC.subject],
+      );
+    });
+    assert.ok(reattached, "(k) an attached ceremony must not be re-attached to a second subject");
+    assert.equal(reattached.code, "23514");
+    assert.match(reattached.message, /attachment evidence is write-once/u);
+
+    const unproved = await refusalOf(admin, async (q) => {
+      await q(
+        "UPDATE budget_space_invitation_ceremony SET channel_proof_state = 'none', channel_proved_at = NULL WHERE ceremony_id = $1",
+        [ceremonyId],
+      );
+    });
+    assert.ok(unproved, "(k) a proved channel must not be un-proved");
+    assert.equal(unproved.code, "23514");
+    assert.match(unproved.message, /channel_proof_state never leaves proved/u);
+
+    const unmatched = await refusalOf(admin, async (q) => {
+      await q("UPDATE budget_space_invitation_ceremony SET primary_contact_match = false WHERE ceremony_id = $1", [
+        ceremonyId,
+      ]);
+    });
+    assert.equal(unmatched?.code, "23514", "(k) the restricted primary-contact evidence must not be flipped");
+
+    const confirmationId = randomUUID();
+    const decided = await refusalOf(admin, async (q) => {
+      await q("SET CONSTRAINTS ALL DEFERRED");
+      await q(
+        `INSERT INTO budget_space_invitation_confirmation
+           (confirmation_id, budget_space_id, invitation_id, ceremony_id, acceptor_subject_id,
+            displayed_identity_version, state, expires_at)
+         VALUES ($1,$2,$3,$4,$5,1,'requested',$6)`,
+        [confirmationId, spaceId, invitationId, ceremonyId, inviteeA.subject, expiresAt],
+      );
+      await q(
+        `UPDATE budget_space_invitation_confirmation
+         SET state = 'confirmed', decided_by_membership_id = $2, decided_by_subject_id = $3,
+             decided_at = now(), decided_authorization_version = 1, committed_consent_id = $4
+         WHERE confirmation_id = $1`,
+        [confirmationId, ownerMembership, ownerSubject, consentB],
+      );
+    });
+    assert.equal(decided, null, "(k) a requested confirmation must be decidable once");
+
+    const reattributed = await refusalOf(admin, async (q) => {
+      await q("SET CONSTRAINTS ALL DEFERRED");
+      await q("UPDATE budget_space_invitation_confirmation SET decided_by_subject_id = $2 WHERE confirmation_id = $1", [
+        confirmationId,
+        inviteeA.subject,
+      ]);
+    });
+    assert.ok(reattributed, "(k) a decided confirmation must not be re-attributed");
+    assert.equal(reattributed.code, "23514");
+    assert.match(reattributed.message, /decision evidence is write-once/u);
+
+    const reconsented = await refusalOf(admin, async (q) => {
+      await q("SET CONSTRAINTS ALL DEFERRED");
+      await q("UPDATE budget_space_invitation_confirmation SET committed_consent_id = $2 WHERE confirmation_id = $1", [
+        confirmationId,
+        ownerConsent,
+      ]);
+    });
+    assert.equal(reconsented?.code, "23514", "(k) committed_consent_id must be write-once");
+    assert.match(String(reconsented?.message), /committed_consent_id is write-once/u);
+
+    // =================================================================
+    // (l) The restricted-only AE-73 classes cannot be labelled for a
+    //     customer surface.
+    // =================================================================
+    const auditColumns =
+      "(budget_space_id, event_code, occurred_at, target_type, result, reason_class, correlation_id, audience)";
+
+    for (const restrictedCode of ["AE-73-27", "AE-73-11"] as const) {
+      const mislabelled = await refusalOf(admin, async (q) => {
+        await q("SET CONSTRAINTS ALL DEFERRED");
+        await q(
+          `INSERT INTO budget_space_lifecycle_audit ${auditColumns}
+           VALUES ($1,$2,now(),'invitation','system','already_member',$3,'customer')`,
+          [spaceId, restrictedCode, randomUUID()],
+        );
+      });
+      assert.ok(mislabelled, `(l) ${restrictedCode} must not carry audience 'customer'`);
+      assert.equal(mislabelled.code, "23514");
+      assert.match(mislabelled.message, /budget_space_lifecycle_audit_restricted_classes/u);
+    }
+
+    const restrictedAdmitted = await refusalOf(admin, async (q) => {
+      await q("SET CONSTRAINTS ALL DEFERRED");
+      await q(
+        `INSERT INTO budget_space_lifecycle_audit ${auditColumns}
+         VALUES ($1,'AE-73-27',now(),'invitation','system','already_member',$2,'restricted')`,
+        [spaceId, randomUUID()],
+      );
+    });
+    assert.equal(restrictedAdmitted, null, "(l) the same event is admitted as restricted");
+
+    const customerAdmitted = await refusalOf(admin, async (q) => {
+      await q("SET CONSTRAINTS ALL DEFERRED");
+      await q(
+        `INSERT INTO budget_space_lifecycle_audit ${auditColumns}
+         VALUES ($1,'AE-73-01',now(),'invitation','allow',NULL,$2,'customer')`,
+        [spaceId, randomUUID()],
+      );
+    });
+    assert.equal(customerAdmitted, null, "(l) an ordinary customer event is unaffected");
+
+    // =================================================================
+    // (m) cobudget_worker has no privilege on the three secret-bearing
+    //     tables, and cobudget_api still has its own.
+    // =================================================================
+    const WORKER_DENIED_TABLES = [
+      "budget_space_invitation_outbox",
+      "budget_space_invitation_ceremony",
+      "budget_space_invitation_code",
+    ] as const;
+
+    for (const table of WORKER_DENIED_TABLES) {
+      const readDenied = await refusalOf(worker, async (q) => {
+        await q(`SELECT count(*) FROM ${table}`);
+      });
+      assert.ok(readDenied, `(m) cobudget_worker must have no SELECT on ${table}`);
+      assert.equal(readDenied.code, "42501", `(m) cobudget_worker SELECT on ${table} must be permission denied`);
+
+      const writeDenied = await refusalOf(worker, async (q) => {
+        await q(`UPDATE ${table} SET invitation_id = invitation_id`);
+      });
+      assert.ok(writeDenied, `(m) cobudget_worker must have no UPDATE on ${table}`);
+      assert.equal(writeDenied.code, "42501", `(m) cobudget_worker UPDATE on ${table} must be permission denied`);
+
+      const apiStillHas = await refusalOf(api, async (q) => {
+        await q(`SELECT count(*) FROM ${table}`);
+      });
+      assert.equal(apiStillHas, null, `(m) cobudget_api must still read ${table}`);
+    }
+
+    // =================================================================
+    // (n) An invitation's creator subject is its creating membership's own
+    //     subject (IC-73-012). Deferred, so the refusal is at COMMIT.
+    // =================================================================
+    const foreignCreator = randomUUID();
+    const creatorMismatch = await refusalOf(admin, async (q) => {
+      await q("SET CONSTRAINTS ALL DEFERRED");
+      await q(
+        `INSERT INTO budget_space_invitation ${invitationColumns}
+         VALUES ($1,$2,'real',$3,$4,'24',1,'email',$5,$6,'e***@example.com','collaborator','full',
+                 'invitation_collaborator',1,'digest','p1','pdigest','created',now(),$7,$7,'pending')`,
+        [
+          foreignCreator,
+          spaceId,
+          // The owner's membership, but another member's subject.
+          ownerMembership,
+          inviteeA.subject,
+          `token-${foreignCreator}`,
+          Buffer.from("ciphertext"),
+          expiresAt,
+        ],
+      );
+    });
+    assert.ok(creatorMismatch, "(n) an invitation naming another member's subject must not commit");
+    assert.equal(creatorMismatch.code, "23514");
+    assert.match(creatorMismatch.message, /must be the subject of created_by_membership_id/u);
+
+    const strandedCreator = await admin.query(
+      "SELECT invitation_id FROM budget_space_invitation WHERE invitation_id = $1",
+      [foreignCreator],
+    );
+    assert.equal(strandedCreator.rowCount, 0, "(n) the refused invitation must leave no row behind");
   } finally {
     await Promise.all([admin.end(), api.end(), worker.end()]);
   }

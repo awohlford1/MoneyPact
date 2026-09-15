@@ -282,6 +282,35 @@ BEGIN
             USING ERRCODE = '23514';
     END IF;
 
+    -- PROTO-INVITATIONS-PK2-SEC-001 SEC-PK2-F02: the columns the identity block
+    -- leaves mutable are not all the same kind of column. state, state_version,
+    -- projection_state, successor_invitation_id and candidate_subject_id are
+    -- lifecycle; the five below are evidence, written once by the transaction
+    -- that earned them and never again. The identity block refuses a column
+    -- that never takes a second value at all; this block refuses a third.
+    IF OLD.accepted_membership_id IS NOT NULL
+        AND NEW.accepted_membership_id IS DISTINCT FROM OLD.accepted_membership_id
+    THEN
+        RAISE EXCEPTION 'budget_space_invitation.accepted_membership_id is set once, by TR-73-13'
+            USING ERRCODE = '23514';
+    END IF;
+    IF (OLD.commit_idempotency_key IS NOT NULL
+            AND NEW.commit_idempotency_key IS DISTINCT FROM OLD.commit_idempotency_key)
+        OR (OLD.commit_request_digest IS NOT NULL
+            AND NEW.commit_request_digest IS DISTINCT FROM OLD.commit_request_digest)
+        OR (OLD.committed_response IS NOT NULL
+            AND NEW.committed_response IS DISTINCT FROM OLD.committed_response)
+    THEN
+        RAISE EXCEPTION 'budget_space_invitation commit receipt is write-once once recorded (CBD-275-AC03/AC04)'
+            USING ERRCODE = '23514';
+    END IF;
+    IF OLD.private_terminal_cause IS NOT NULL
+        AND NEW.private_terminal_cause IS DISTINCT FROM OLD.private_terminal_cause
+    THEN
+        RAISE EXCEPTION 'budget_space_invitation.private_terminal_cause is write-once once set'
+            USING ERRCODE = '23514';
+    END IF;
+
     RETURN NEW;
 END;
 $$;
@@ -290,6 +319,36 @@ CREATE TRIGGER budget_space_invitation_forbid_mutation
     BEFORE UPDATE ON budget_space_invitation
     FOR EACH ROW
     EXECUTE FUNCTION forbid_budget_space_invitation_mutation();
+
+-- SEC-PK2-F06 item 2: IC-73-012 says the invitation was created by a member of
+-- this space, and the composite foreign key above proves the membership is of
+-- this space -- but nothing yet proved that created_by_subject_id is that
+-- membership's own subject, so an invitation could name one member's
+-- membership and another member's subject and pass both deferred keys. The
+-- same shape, and the same deferral, as budget_space_consent_subject_coherence
+-- (20260914T170000Z).
+CREATE FUNCTION budget_space_invitation_creator_matches_membership() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    member_subject uuid;
+BEGIN
+    SELECT m.account_subject_id INTO member_subject
+        FROM budget_space_membership m
+        WHERE m.budget_space_id = NEW.budget_space_id
+          AND m.membership_id = NEW.created_by_membership_id;
+    IF member_subject IS NOT NULL AND member_subject IS DISTINCT FROM NEW.created_by_subject_id THEN
+        RAISE EXCEPTION 'budget_space_invitation.created_by_subject_id must be the subject of created_by_membership_id (IC-73-012)'
+            USING ERRCODE = '23514';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER budget_space_invitation_creator_coherence
+    AFTER INSERT ON budget_space_invitation
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW
+    EXECUTE FUNCTION budget_space_invitation_creator_matches_membership();
 
 REVOKE DELETE ON budget_space_invitation FROM cobudget_worker, cobudget_api;
 
@@ -532,6 +591,40 @@ BEGIN
             USING ERRCODE = '23514';
     END IF;
 
+    -- SEC-PK2-F03: the attachment is made once. SS5.4's account switch
+    -- invalidates the ceremony and TR-73-08 resolves a new one; it never
+    -- re-points an attached ceremony at a second subject. The acceptance action
+    -- bound to the attachment by
+    -- budget_space_invitation_ceremony_acceptance_requires_attachment is only
+    -- evidence of who acted if the attachment it names cannot be replaced
+    -- afterwards.
+    IF OLD.attached_at IS NOT NULL
+        AND (NEW.attached_subject_id IS DISTINCT FROM OLD.attached_subject_id
+             OR NEW.attached_session_ref IS DISTINCT FROM OLD.attached_session_ref
+             OR NEW.attached_at IS DISTINCT FROM OLD.attached_at
+             OR NEW.primary_contact_match IS DISTINCT FROM OLD.primary_contact_match)
+    THEN
+        RAISE EXCEPTION 'budget_space_invitation_ceremony attachment evidence is write-once once attached_at is set (SS5.4 invalidates a ceremony, it never re-attaches one)'
+            USING ERRCODE = '23514';
+    END IF;
+
+    -- The channel proof is monotonic. proved cannot be un-proved, which would
+    -- retire the SS5.2 precondition of an acceptance action already taken, and
+    -- exhausted cannot be reset into a fresh challenge, which is the whole
+    -- point of the bounded attempt counter above.
+    IF OLD.channel_proof_state IN ('proved', 'exhausted')
+        AND NEW.channel_proof_state IS DISTINCT FROM OLD.channel_proof_state
+    THEN
+        RAISE EXCEPTION 'budget_space_invitation_ceremony.channel_proof_state never leaves %', OLD.channel_proof_state
+            USING ERRCODE = '23514';
+    END IF;
+    IF OLD.channel_proved_at IS NOT NULL
+        AND NEW.channel_proved_at IS DISTINCT FROM OLD.channel_proved_at
+    THEN
+        RAISE EXCEPTION 'budget_space_invitation_ceremony.channel_proved_at is write-once'
+            USING ERRCODE = '23514';
+    END IF;
+
     RETURN NEW;
 END;
 $$;
@@ -660,6 +753,26 @@ BEGIN
         AND NOT (OLD.state = 'requested' AND NEW.state IN ('confirmed', 'rejected', 'expired'))
     THEN
         RAISE EXCEPTION 'budget_space_invitation_confirmation admits only requested to confirmed, rejected or expired'
+            USING ERRCODE = '23514';
+    END IF;
+
+    -- SEC-PK2-F03: once the owner has decided, the decision is closed. DR-73-13
+    -- retains this row as the authority evidence of IC-73-018; a decision that
+    -- can be re-attributed afterwards to another membership, another subject,
+    -- another time or another authorization version is evidence of nothing.
+    IF OLD.decided_at IS NOT NULL
+        AND (NEW.decided_by_membership_id IS DISTINCT FROM OLD.decided_by_membership_id
+             OR NEW.decided_by_subject_id IS DISTINCT FROM OLD.decided_by_subject_id
+             OR NEW.decided_at IS DISTINCT FROM OLD.decided_at
+             OR NEW.decided_authorization_version IS DISTINCT FROM OLD.decided_authorization_version)
+    THEN
+        RAISE EXCEPTION 'budget_space_invitation_confirmation decision evidence is write-once once decided_at is set'
+            USING ERRCODE = '23514';
+    END IF;
+    IF OLD.committed_consent_id IS NOT NULL
+        AND NEW.committed_consent_id IS DISTINCT FROM OLD.committed_consent_id
+    THEN
+        RAISE EXCEPTION 'budget_space_invitation_confirmation.committed_consent_id is write-once'
             USING ERRCODE = '23514';
     END IF;
     RETURN NEW;
@@ -849,7 +962,21 @@ CREATE TABLE budget_space_lifecycle_audit (
 
     -- A denial always names its class; CBD-73 SS9 has no unexplained deny.
     CONSTRAINT budget_space_lifecycle_audit_denial_has_reason
-        CHECK (result <> 'deny' OR reason_class IS NOT NULL)
+        CHECK (result <> 'deny' OR reason_class IS NOT NULL),
+
+    -- SEC-PK2-F04: the restricted-only classes of CBD-73 SS14 cannot be
+    -- labelled for a customer surface. AE-73-03 and AE-73-04 are internal
+    -- delivery evidence, AE-73-11 and AE-73-12 restricted decline and block
+    -- evidence, AE-73-26 a personal-account event, and AE-73-27 the synthetic
+    -- suppression security event; each is security scope only. audience is the
+    -- one mechanical thing between such a cause and the customer projection
+    -- PK-6 will build on this table, so the rule is a CHECK and not only the
+    -- comment on the column below.
+    CONSTRAINT budget_space_lifecycle_audit_restricted_classes
+        CHECK (event_code NOT IN (
+                   'AE-73-03', 'AE-73-04', 'AE-73-11',
+                   'AE-73-12', 'AE-73-26', 'AE-73-27'
+               ) OR audience = 'restricted')
 );
 
 COMMENT ON TABLE budget_space_lifecycle_audit IS
@@ -941,3 +1068,45 @@ CREATE TRIGGER invitation_security_event_forbid_update
     EXECUTE FUNCTION forbid_invitation_security_event_update();
 
 REVOKE DELETE ON invitation_security_event FROM cobudget_worker, cobudget_api;
+
+-- ===========================================================================
+-- What the DDL cannot prove, said in the catalog (SEC-PK2-F07)
+-- ===========================================================================
+-- Three of the text columns above carry a value whose safety is a property of
+-- what PK-5 writes into them, not of their type. A comment is the only place
+-- the database can carry that rule, and PK-5 carries the matching acceptance
+-- criterion.
+
+COMMENT ON COLUMN budget_space_invitation_ceremony.attached_session_ref IS
+    'The account_session row identifier of the session the ceremony was attached from -- never the opaque session token, never its verifier digest, and never any value a client presents. It exists so that a revoked session can be correlated to the attachment it made; a token here would put a live credential in a table read for evidence.';
+
+COMMENT ON COLUMN budget_space_invitation_ceremony.channel_challenge_digest IS
+    'The digest of the six-digit channel challenge. It must be a keyed HMAC under the CBD-246 field-encryption key derivation, exactly like the session verifier digests: an unkeyed hash over a 10^6 value space is reversible by enumeration in negligible time, so an unkeyed digest here would be the challenge itself.';
+
+COMMENT ON COLUMN budget_space_invitation_code.abuse_fingerprint IS
+    'A non-reversible keyed fingerprint of a presented value, for TR-73-14 abuse counting. Keyed for the same reason channel_challenge_digest is: the terminal_record and expired_record outcomes fingerprint a real bearer, so an unkeyed digest would be a rainbow-table target. Never the presented value.';
+
+COMMENT ON COLUMN invitation_security_event.abuse_fingerprint IS
+    'The same non-reversible keyed fingerprint budget_space_invitation_code holds, under the same rule: keyed, never the presented value.';
+
+-- ===========================================================================
+-- Worker privileges on the secret-bearing records (SEC-PK2-F05)
+-- ===========================================================================
+-- The default privileges of 20260912T170000Z__grant_application_roles.sql give
+-- cobudget_worker INSERT, SELECT and UPDATE on every table this migration
+-- creates, including the three that carry secrets: the outbox holds the raw
+-- bearer and the raw channel challenge as envelope ciphertext until custody
+-- ends, the ceremony holds the ceremony secret digest and the channel
+-- challenge digest, and the code row holds the bearer verifier digest.
+--
+-- Under PROVIDERS-LOCAL-001 there is no worker path to any of them: TR-73-02
+-- writes the outbox inside the API transaction, the developer-only surface
+-- reads it from the API, and TR-73-07 expiry and the custody sweep run on
+-- request, because there is no scheduler (design proposal SS4.6). The CBD-191
+-- correction round (20260913T110005Z, CBD191-SECURITY-002 finding 5)
+-- established the rule this follows: a role with no code path to a
+-- secret-bearing table gets no grant on it, and the grant comes back with the
+-- code path, per operation, when one lands.
+REVOKE ALL ON budget_space_invitation_outbox FROM cobudget_worker;
+REVOKE ALL ON budget_space_invitation_ceremony FROM cobudget_worker;
+REVOKE ALL ON budget_space_invitation_code FROM cobudget_worker;

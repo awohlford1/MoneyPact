@@ -204,3 +204,137 @@ ALTER TABLE financial_profile
 
 COMMENT ON COLUMN financial_profile.display_name IS
     'CBD-91 DI-91-065 display identity: the name other members of a shared space see. Subject-owned, set by the subject (or from the provider name claim at first sign-in), never derived from a contact address and never the contact itself. NULL means every surface shows the neutral label.';
+
+-- ---------------------------------------------------------------------------
+-- 5. The UPDATE path this file opens, closed here
+--    (PROTO-INVITATIONS-PK2-SEC-001 SEC-PK2-F01 Level 3, SEC-PK2-F06 item 1).
+-- ---------------------------------------------------------------------------
+--
+-- Until section 1 above ran, budget_space_membership.role and .status each
+-- admitted exactly one value, so no UPDATE could change either and the CBD-231
+-- identity trigger (20260913T090100Z) needed no rule about them. Widening them
+-- opens, for the first time, two writes CBD-73 says never happen:
+--
+--   * an ended membership returning to active. DR-73-09 makes a membership end
+--     terminal and IC-73-006 makes a restoration a new invitation, never a
+--     reversal of the old row; without the guard below an UPDATE could leave an
+--     active membership with zero current consent rows, because the activation
+--     trigger of 20260914T170000Z fires on INSERT only.
+--   * a role change carrying no consent evidence. TR-73-21 and IC-73-018 make
+--     a membership change a consent-bearing event and TR-73-43 writes the new
+--     consent row in the same transaction as the role change.
+--
+-- Both are closed in the database rather than in the statement modules PK-5
+-- will write, because the database guard is the one that survives an
+-- application bug.
+
+-- SEC-PK2-F06 item 1: ended_reason_class is a class, as its comment in section
+-- 1 already claims. The set is the membership-end paths CBD-73 SS11 draws --
+-- TR-73-30 self-revocation, and TR-73-31/TR-73-32 removal by an entitled owner
+-- -- plus the whole-account and whole-space ends that end a membership without
+-- anybody removing it. No route produces any of them in this increment (the
+-- revocation and removal packet is section 17 item 13), so the set is closed
+-- exactly the way CBD-231 closed role and status: the packet that needs a
+-- further class widens it deliberately and visibly, as section 1 of this file
+-- widens those two.
+ALTER TABLE budget_space_membership
+    ADD CONSTRAINT budget_space_membership_ended_reason_class_check
+        CHECK (
+            (status = 'active' AND ended_reason_class IS NULL)
+            OR (status <> 'active' AND ended_reason_class IN (
+                'self_revocation', 'removed_by_owner',
+                'account_closed', 'space_archived'
+            ))
+        );
+
+-- SEC-PK2-F01 (a): the terminal end, and the write-once end evidence that goes
+-- with it. Shaped after forbid_budget_space_consent_evidence_mutation
+-- (20260914T170000Z), which closes the same shape on the consent row. It is a
+-- second BEFORE UPDATE trigger rather than an edit of
+-- forbid_budget_space_membership_identity_mutation, so that the CBD-231
+-- contract that migration states is left exactly as it was written.
+CREATE FUNCTION forbid_budget_space_membership_lifecycle_regression() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF OLD.status <> 'active' THEN
+        IF NEW.status IS DISTINCT FROM OLD.status THEN
+            RAISE EXCEPTION 'budget_space_membership.status is terminal once it leaves active: an ended membership is never restored, a new invitation is (DR-73-09, IC-73-006)'
+                USING ERRCODE = '23514';
+        END IF;
+        IF NEW.role IS DISTINCT FROM OLD.role THEN
+            RAISE EXCEPTION 'budget_space_membership.role is frozen once the membership has ended'
+                USING ERRCODE = '23514';
+        END IF;
+        IF NEW.ended_at IS DISTINCT FROM OLD.ended_at
+            OR NEW.ended_reason_class IS DISTINCT FROM OLD.ended_reason_class
+            OR NEW.ended_by_event_id IS DISTINCT FROM OLD.ended_by_event_id
+        THEN
+            RAISE EXCEPTION 'budget_space_membership end evidence is write-once'
+                USING ERRCODE = '23514';
+        END IF;
+    END IF;
+
+    -- TR-73-30, TR-73-31, TR-73-32 and TR-73-21 all say the authorization
+    -- version advances with the change. Requiring it here is what makes a
+    -- concurrent writer lose rather than overwrite, exactly as
+    -- budget_space_invitation.state_version does for the invitation record.
+    IF NEW.status IS DISTINCT FROM OLD.status
+        AND NEW.authorization_version <= OLD.authorization_version
+    THEN
+        RAISE EXCEPTION 'budget_space_membership.authorization_version must advance when the membership ends'
+            USING ERRCODE = '23514';
+    END IF;
+    IF NEW.role IS DISTINCT FROM OLD.role
+        AND NEW.authorization_version <= OLD.authorization_version
+    THEN
+        RAISE EXCEPTION 'budget_space_membership.authorization_version must advance with a role change'
+            USING ERRCODE = '23514';
+    END IF;
+    IF NEW.authorization_version < OLD.authorization_version THEN
+        RAISE EXCEPTION 'budget_space_membership.authorization_version never decreases'
+            USING ERRCODE = '23514';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER budget_space_membership_forbid_lifecycle_regression
+    BEFORE UPDATE ON budget_space_membership
+    FOR EACH ROW
+    EXECUTE FUNCTION forbid_budget_space_membership_lifecycle_regression();
+
+-- SEC-PK2-F01 (b): a role change needs its consent row, checked at COMMIT so
+-- that TR-73-43's UPDATE-then-INSERT order (design proposal SS10.3 step 3) and
+-- TR-73-21's supersede-then-insert both satisfy it without an ordering
+-- constraint on the application. The mirror of
+-- budget_space_membership_activation_requires_consent for the UPDATE path: the
+-- INSERT trigger asks for exactly one current consent row, this one asks that
+-- the row is for the role the membership now holds.
+CREATE FUNCTION budget_space_membership_role_requires_matching_consent() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    current_rows integer;
+BEGIN
+    IF NEW.role IS NOT DISTINCT FROM OLD.role THEN
+        RETURN NULL;
+    END IF;
+    SELECT count(*) INTO current_rows
+        FROM budget_space_consent c
+        WHERE c.budget_space_id = NEW.budget_space_id
+          AND c.membership_id = NEW.membership_id
+          AND c.state = 'current'
+          AND c.role = NEW.role;
+    IF current_rows <> 1 THEN
+        RAISE EXCEPTION 'a changed budget_space_membership.role must have exactly one current consent row for the new role at commit (TR-73-21, TR-73-43)'
+            USING ERRCODE = '23514';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER budget_space_membership_role_change_requires_consent
+    AFTER UPDATE OF role ON budget_space_membership
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW
+    EXECUTE FUNCTION budget_space_membership_role_requires_matching_consent();
