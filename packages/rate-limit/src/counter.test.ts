@@ -136,3 +136,51 @@ it("PROTO-QA-FIXES-001 F1: the engine surfaces the store's refund on an allow de
   assert.equal(typeof decision.refund, "function");
   assert.equal(await decision.refund!(), false, "an ordinary recovery unit is never refunded");
 });
+it("EXEC-POV-C200F01-001 item 3: the store names in_flight only for the concurrency dimension with ceiling room; the ceiling wins when both are exceeded; release restores admission", async () => {
+  let time = 0; const store = new InProcessCounterStore(() => time); const mutation = records[2]!;
+  const first = await store.consume(input(mutation));
+  assert.equal(first.outcome, "accepted"); if (first.outcome !== "accepted") return;
+  assert.equal((await store.consume(input(mutation))).outcome, "in_flight", "a second unit while the first is in flight");
+  assert.equal((await store.consume(input(mutation, "d".repeat(64)))).outcome, "accepted", "another actor's bucket is unaffected");
+  await first.release();
+  const admitted = await store.consume(input(mutation)); assert.equal(admitted.outcome, "accepted", "released: admitted again"); if (admitted.outcome !== "accepted") return;
+  await admitted.release();
+  // Fill the sliding ceiling (15): fourteen released units, then the fifteenth held in flight. The next consume is
+  // the uniform exhausted even though a unit is in flight -- the ceiling is the first check, so an out-of-capacity
+  // bucket never learns anything more specific -- and it stays exhausted after the held unit is released.
+  for (let i = 3; i <= 14; i++) { const unit = await store.consume(input(mutation)); assert.equal(unit.outcome, "accepted", `unit ${i}`); if (unit.outcome === "accepted") await unit.release(); }
+  const held = await store.consume(input(mutation)); assert.equal(held.outcome, "accepted", "the fifteenth unit"); if (held.outcome !== "accepted") return;
+  assert.equal((await store.consume(input(mutation))).outcome, "exhausted", "the ceiling refusal is undifferentiated even with a unit in flight");
+  await held.release();
+  assert.equal((await store.consume(input(mutation))).outcome, "exhausted", "still the ceiling, not in_flight, after the release");
+  // Records without the concurrency dimension never say in_flight: the read record admits many at once.
+  const reads = await Promise.all(Array.from({ length: 5 }, () => store.consume(input(records[1]!))));
+  assert.deepEqual(reads.map((r) => r.outcome), ["accepted", "accepted", "accepted", "accepted", "accepted"]);
+});
+it("EXEC-POV-C200F01-001 item 3: the engine types deny_in_flight only for a post-authentication actor-keyed record decided for that actor; every other refusal keeps the uniform denial", async () => {
+  const registry = loadPrototypeRegistry(); const registrations = loadRegistrations();
+  const store = new InProcessCounterStore(() => 0);
+  const engine = new RateLimitEngine(registry, registrations, store);
+  const mutation = registrations.find((r) => r.parameter_record_id === "rlp-266-mutation-v1" && r.registration_lifecycle === "active")!;
+  const decide = (actorId: string | undefined, registration = mutation, context: Partial<import("./counter.ts").VerifiedContext> = {}) => engine.decide({
+    registrationId: registration.registration_id, surfaceId: registration.surface_id, parameterRecordId: registration.parameter_record_id,
+    releaseSetDigest: registry.releaseSetDigest, requestOrJobUnit: 1, verifiedContext: { localCaller: true, ...(actorId ? { actorId } : {}), ...context } });
+  const first = await decide("actor-a"); assert.equal(first.outcome, "allow"); if (first.outcome !== "allow") return;
+  assert.equal((await decide("actor-a")).outcome, "deny_in_flight", "the same verified actor's second in-flight mutation");
+  assert.equal((await decide("actor-b")).outcome, "allow", "another actor is admitted on its own bucket");
+  assert.equal((await decide(undefined)).outcome, "deny_input_invalid", "no verified actor: the actor-keyed record cannot even derive a key");
+  await first.release();
+  assert.equal((await decide("actor-a")).outcome, "allow", "released: admitted again");
+  // A compound (bootstrap) record's reserved-stage refusal stays deny_exhausted: it is not actor-keyed after the
+  // fashion the item names, and the ceremony pool is shared with pre-authentication traffic.
+  const begin = registrations.find((r) => r.registration_id === "api:POST:/v1/identity/begin")!;
+  const ceremony = { ceremonyId: "ceremony-1", bootstrapStage: "first_sign_in" as const, credentialVerified: true };
+  const reserved = await decide(undefined, begin, ceremony); assert.equal(reserved.outcome, "allow"); if (reserved.outcome !== "allow") return;
+  assert.equal((await decide(undefined, begin, ceremony)).outcome, "deny_exhausted", "a reserved unit already taken is the uniform denial");
+  // Unregistered, mismatched and foreign-release inputs are untouched by the new outcome.
+  assert.equal((await engine.decide({ registrationId: "api:POST:/new", surfaceId: "", parameterRecordId: null, releaseSetDigest: registry.releaseSetDigest, requestOrJobUnit: 1, verifiedContext: { localCaller: true, actorId: "actor-a" } })).outcome, "deny_unregistered");
+  assert.equal((await engine.decide({ registrationId: mutation.registration_id, surfaceId: mutation.surface_id, parameterRecordId: mutation.parameter_record_id, releaseSetDigest: "0".repeat(64), requestOrJobUnit: 1, verifiedContext: { localCaller: true, actorId: "actor-a" } })).outcome, "deny_policy_unavailable");
+  // A store that reports in_flight for a record that is not actor-keyed is still the uniform denial at the engine.
+  const foreign = new RateLimitEngine(registry, registrations, { consume: async () => ({ outcome: "in_flight" }) });
+  assert.equal((await foreign.decide({ registrationId: begin.registration_id, surfaceId: begin.surface_id, parameterRecordId: begin.parameter_record_id, releaseSetDigest: registry.releaseSetDigest, requestOrJobUnit: 1, verifiedContext: { localCaller: true, ...ceremony } })).outcome, "deny_exhausted");
+});

@@ -155,6 +155,16 @@ const ELIGIBLE_PRE_AUTHENTICATION_SURFACES: ReadonlySet<string> = new Set([
   "POST /v1/invitations/:ceremonyId/decline",
 ]);
 const SAFE_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
+/**
+ * EXEC-POV-C200F01-001 item 3: the one surface answer that is not the uniform denial. A verified actor whose own
+ * earlier mutation is still in flight (`rlp-266-mutation-v1` and the other post-authentication actor-keyed
+ * `concurrency=1` records, CBD-266 section 7 `deny_in_flight`) is told to retry after one second. The body carries
+ * no count, no remaining quota and no other actor's state; the header set differs from the 403 only by
+ * `Retry-After`, and the answer is unreachable before session verification (CBD-268: an unauthenticated caller is
+ * rejected at the session gate before the counter is consulted, so the 403 and the 429 are never compared by an
+ * unauthenticated timing observer). Frozen so no route can vary it.
+ */
+export const IN_FLIGHT_RETRY = Object.freeze({ status: 429, retryAfterSeconds: "1", body: Object.freeze({ outcome: "retry", reason: "in_flight" }) as Readonly<{ outcome: "retry"; reason: "in_flight" }> });
 const active = new WeakMap<object, EffectContext>();
 export const Authorization = createParamDecorator((_data: unknown, context: ExecutionContext): EffectContext => {
   const effect = active.get(context.switchToHttp().getRequest<object>());
@@ -250,6 +260,19 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
         if (actor !== undefined && await this.#rateLimit.reserved?.(request, actor)) { this.#deferred.set(request, actor); return; }
         const decision = await this.#rateLimit.enforce(request, actor);
         if (decision.outcome !== "allow") {
+          // EXEC-POV-C200F01-001 item 3 (SEC-C200-R01): a verified actor's second in-flight unit on a post-authentication,
+          // actor-keyed `concurrency=1` record is the one refusal a client can act on, so it is answered 429 with
+          // Retry-After instead of the uniform denial. Reachable only here, after the session gate resolved the actor
+          // (`actor !== undefined`; a pre-authentication surface never resolves one and the engine never types the
+          // outcome without a verified actor), and keyed on that actor's own bucket, so it discloses nothing about
+          // any other actor. It is still a denial: audited as the earliest decisive gate exactly like the 403, nothing
+          // consumed, no replay lookup, policy or effect. An audit failure falls to the outer catch and the uniform
+          // denial (RF-1); the deferred (reserved-unit) path in canActivate never answers it.
+          if (decision.outcome === "deny_in_flight" && actor !== undefined) {
+            try { await this.#options.boundary.rejectEnforcement(surfaceOutcome(evidence, decision.outcome)); }
+            catch (error) { if (!(error instanceof AuthorizationDenied)) throw error; }
+            return reply.code(IN_FLIGHT_RETRY.status).header("retry-after", IN_FLIGHT_RETRY.retryAfterSeconds).send(IN_FLIGHT_RETRY.body);
+          }
           // F4: an unresolvable request on a navigation surface is denied the same way (audited, nothing consumed) and answered by navigation.
           const navigation = decision.outcome === "deny_input_invalid" ? this.#deniedNavigation.get(`${request.method} ${request.routeOptions.url}`)?.(request) : undefined;
           if (navigation) {

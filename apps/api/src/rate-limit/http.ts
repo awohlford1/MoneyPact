@@ -1,6 +1,6 @@
 import type { FastifyRequest } from "fastify";
 import { apiIdentity, InProcessCounterStore, loadPrototypeRegistry, loadRegistrations, RateLimitEngine, invocation } from "../../../../packages/rate-limit/src/index.ts";
-import type { Decision, EnforcementEvidence, Registration, VerifiedContext } from "../../../../packages/rate-limit/src/index.ts";
+import type { CounterStore, Decision, EnforcementEvidence, Registration, VerifiedContext } from "../../../../packages/rate-limit/src/index.ts";
 
 /**
  * PROTO-ACTIVATION-001 A7 (review R04, SEC-ACT-F03): the identity runtime supplies the bootstrap record's
@@ -31,7 +31,7 @@ export class ApiRateLimits implements ApiSurfaceGate {
   readonly #evidence = new WeakMap<object, EnforcementEvidence>();
   readonly #ceremony: CeremonyContextResolver | undefined;
   readonly #contexts = new WeakMap<object, Promise<Awaited<ReturnType<CeremonyContextResolver>>>>();
-  constructor(build: string, registry = loadPrototypeRegistry(), registrations = loadRegistrations(), store = new InProcessCounterStore(), ceremony?: CeremonyContextResolver) {
+  constructor(build: string, registry = loadPrototypeRegistry(), registrations = loadRegistrations(), store: CounterStore = new InProcessCounterStore(), ceremony?: CeremonyContextResolver) {
     this.#engine = new RateLimitEngine(registry, registrations, store); this.#registrations = registrations; this.#build = build; this.#ceremony = ceremony;
   }
   evidence(request: FastifyRequest): EnforcementEvidence {
