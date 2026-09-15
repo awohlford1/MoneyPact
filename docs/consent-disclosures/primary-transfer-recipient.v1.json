@@ -1,0 +1,36 @@
+{
+  "kind": "primary_transfer_recipient",
+  "version": 1,
+  "heading": "Before you accept primary ownership of this budget space",
+  "items": [
+    {
+      "id": "space",
+      "text": "This proposal names the budget space and the display name of the Primary Owner who proposes to hand primary ownership of it to you."
+    },
+    {
+      "id": "role",
+      "text": "Accepting makes you the sole Primary Owner of this budget space once the transfer commits, with the approved full shared financial scope and complete administration of it. The powers only a Primary Owner has become yours: inviting a Co-owner, removing a Co-owner, handing primary ownership to another member, and deleting or archiving this budget space."
+    },
+    {
+      "id": "prior_role",
+      "text": "The role you hold in this budget space today ends when the transfer commits, and the Primary Owner role replaces it. Your memberships in other budget spaces are unaffected."
+    },
+    {
+      "id": "connections",
+      "text": "No bank-connection authority is handed to you with this budget space. Each person's bank connection stays theirs. Accepting creates no payment, financial, legal, or bank-account authority, and it moves no money."
+    },
+    {
+      "id": "other_members",
+      "text": "The Primary Owner who proposed this becomes a Co-owner of this budget space when the transfer commits. Existing Co-owners keep the roles they hold, and no other member's role changes."
+    },
+    {
+      "id": "exits",
+      "text": "As the sole Primary Owner your two exits from this budget space will be handing primary ownership to another member and archiving the budget space. Each is a separate action you take, and nothing else ends that role."
+    },
+    {
+      "id": "choice",
+      "text": "Accepting or declining is your explicit choice, and neither is selected for you. The transfer commits only once the current Primary Owner also confirms it, and no role changes before then. The record kept of this step is evidence of the action you took here; nothing agrees on your behalf."
+    }
+  ],
+  "acknowledgement": "I have read the items above and I agree to become the Primary Owner of this budget space."
+}

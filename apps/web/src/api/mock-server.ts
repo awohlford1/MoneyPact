@@ -14,7 +14,7 @@ import type { CadenceDefinition } from "@cobudget/budget-domain/schedule";
 import { addDays, toISODate } from "@cobudget/budget-domain/shared";
 import { fullPeriodTargets } from "@cobudget/budget-domain/targets";
 import { ApiError, createHttpClient } from "./client.ts";
-import type { ApiClient, FieldError, WireCategoryList, WirePlan, WireSession, WireSpaceDetail, WireSpaceList, WireTargetSet } from "./client.ts";
+import type { ApiClient, FieldError, WireAccountList, WireAccountMutation, WireCategoryDetail, WireCategoryList, WirePlan, WireProgress, WireSession, WireSpaceDetail, WireSpaceList, WireTargetSet, WireTransactionMutation } from "./client.ts";
 import type { Confirmation, Disclosure, Draft, Proposal, ProposalRead } from "./proposals.ts";
 
 /** The mock's stand-in for config/consent-disclosure-registry.json; the live API serves the approved entry. */
@@ -46,7 +46,12 @@ function expiry(now: number, timeZone: string) {
   return new Date(high).toISOString();
 }
 interface MockCategory { categoryId: string; label: string; position: number; archivedAt: string | null }
-interface MockSpace { detail: WireSpaceDetail; schedule: CadenceDefinition; categories: MockCategory[]; base: Map<string, number> }
+/** PROTO-INCREMENT-B-001: the mock's manual accounts and manual expenses, in the API's own shapes. */
+interface MockAccount { accountId: string; origin: string; accountType: string; label: string; currencyCode: string; minorUnitPrecision: number; openingBalanceMinorUnits: number; ownerSubjectId: string; archivedAt: string | null; version: number }
+interface MockAllocation { categoryId: string; amountMinorUnits: number }
+/** One retained version, exactly as `manual_transaction` stores it: an edit appends, a removal is a tombstone. */
+interface MockVersion { transactionId: string; revision: number; accountId: string; amountMinorUnits: number; budgetDate: string; description: string | null; allocations: MockAllocation[]; removedAt: string | null; supersededAt: string | null }
+interface MockSpace { detail: WireSpaceDetail; schedule: CadenceDefinition; categories: MockCategory[]; base: Map<string, number>; accounts: MockAccount[]; versions: MockVersion[] }
 
 /** The wire-level mock of one signed-in browser session. */
 export interface MockWire {
@@ -63,6 +68,16 @@ export interface MockWire {
   plan(id: string, periodId: string): WirePlan;
   putCategories(id: string, body: unknown): WireCategoryList;
   putTargets(id: string, body: unknown): WireTargetSet;
+  listAccounts(id: string): WireAccountList;
+  createAccount(id: string, body: unknown): WireAccountMutation;
+  editAccount(id: string, accountId: string, body: unknown): WireAccountMutation;
+  archiveAccount(id: string, accountId: string): WireAccountMutation;
+  restoreAccount(id: string, accountId: string): WireAccountMutation;
+  createTransaction(id: string, body: unknown): WireTransactionMutation;
+  editTransaction(id: string, transactionId: string, body: unknown): WireTransactionMutation;
+  removeTransaction(id: string, transactionId: string): WireTransactionMutation;
+  progress(id: string, periodId: string): WireProgress;
+  categoryDetail(id: string, periodId: string, categoryId: string): WireCategoryDetail;
 }
 
 export function createServerMock(now = Date.now): MockWire {
@@ -92,6 +107,67 @@ export function createServerMock(now = Date.now): MockWire {
         baseTarget: value.base.has(category.categoryId) ? { amountMinorUnits: value.base.get(category.categoryId)! } : null,
         periodTarget: { amountMinorUnits: computed.find(result => result.categoryId === category.categoryId)!.amountMinorUnits } })),
     };
+  }
+  const ACCOUNT_TYPES: readonly string[] = ["checking", "savings", "cash", "credit-card", "other"];
+  function accountsOf(value: MockSpace): MockAccount[] {
+    return [...value.accounts].sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()) || a.accountId.localeCompare(b.accountId));
+  }
+  function liveAccount(value: MockSpace, accountId: string): MockAccount {
+    const account = value.accounts.find(entry => entry.accountId === accountId);
+    if (!account) throw new ApiError(404, "account_not_found");
+    return account;
+  }
+  function currentVersion(value: MockSpace, transactionId: string): MockVersion {
+    const version = value.versions.find(entry => entry.transactionId === transactionId && entry.supersededAt === null);
+    if (!version) throw new ApiError(404, "transaction_not_found");
+    return version;
+  }
+  /** Current, non-removed versions assigned to one period: what the aggregate and the detail both count. */
+  function settledVersions(value: MockSpace, periodId: string): MockVersion[] {
+    const period = value.detail.activePeriod;
+    if (!period || period.periodId !== periodId) return [];
+    return value.versions.filter(version => version.supersededAt === null && version.removedAt === null && version.budgetDate >= period.start && version.budgetDate <= period.end);
+  }
+  function cellFor(value: MockSpace, periodId: string, categoryId: string, targetMinorUnits: number): WireProgress["cells"][number] {
+    const settledActualMinorUnits = settledVersions(value, periodId)
+      .flatMap(version => version.allocations.filter(allocation => allocation.categoryId === categoryId))
+      .reduce((total, allocation) => total + allocation.amountMinorUnits, 0);
+    // Signed, unclamped, exactly as budget-domain computes it: an overspent cell reports a negative remaining.
+    return { categoryId, targetMinorUnits, settledActualMinorUnits, remainingAfterSettledMinorUnits: targetMinorUnits + settledActualMinorUnits };
+  }
+  /** The manual-expense write rules, in the same order and with the same canonical codes the API uses. */
+  function parseWrite(value: MockSpace, body: unknown): Omit<MockVersion, "transactionId" | "revision" | "removedAt" | "supersededAt"> {
+    const fields = body as Record<string, unknown>;
+    if (Object.keys(fields).some(field => !["accountId", "amountMinorUnits", "budgetDate", "description", "allocations"].includes(field))) throw new ApiError(400, "invalid_request");
+    const account = value.accounts.find(entry => entry.accountId === fields.accountId);
+    if (!account) throw new ApiError(404, "account_not_found");
+    if (account.archivedAt !== null) throw new ApiError(409, "account_archived");
+    const amountMinorUnits = fields.amountMinorUnits;
+    if (typeof amountMinorUnits !== "number" || !Number.isSafeInteger(amountMinorUnits)) throw new ApiError(400, "amount_not_integer");
+    const budgetDate = fields.budgetDate;
+    // A real calendar date, not merely the shape of one: 2026-02-30 matches the pattern and is still not a date.
+    if (typeof budgetDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(budgetDate) || new Date(`${budgetDate}T00:00:00Z`).toISOString().slice(0, 10) !== budgetDate) throw new ApiError(400, "date_invalid");
+    const period = value.detail.activePeriod;
+    if (!period || budgetDate < period.start || budgetDate > period.end) throw new ApiError(404, "period_not_found");
+    const description = fields.description === undefined || fields.description === null ? null : String(fields.description);
+    if (description !== null && (description.length < 1 || description.length > 200)) throw new ApiError(400, "description_invalid");
+    const items = fields.allocations;
+    if (!Array.isArray(items)) throw new ApiError(400, "invalid_request");
+    if (items.length === 0) throw new ApiError(400, "allocations_empty");
+    const allocations: MockAllocation[] = [];
+    for (const item of items) {
+      const { categoryId, amountMinorUnits: allocated } = item as { categoryId?: unknown; amountMinorUnits?: unknown };
+      if (typeof categoryId !== "string" || !value.categories.some(category => category.categoryId === categoryId && category.archivedAt === null)) throw new ApiError(400, "allocation_category_invalid");
+      if (allocations.some(existing => existing.categoryId === categoryId)) throw new ApiError(400, "allocation_duplicate_category");
+      if (typeof allocated !== "number" || !Number.isSafeInteger(allocated)) throw new ApiError(400, "amount_not_integer");
+      allocations.push({ categoryId, amountMinorUnits: allocated });
+    }
+    if (allocations.reduce((total, allocation) => total + allocation.amountMinorUnits, 0) !== amountMinorUnits) throw new ApiError(400, "allocation_sum_mismatch");
+    return { accountId: account.accountId, amountMinorUnits, budgetDate, description, allocations };
+  }
+  function snapshot(version: MockVersion): WireTransactionMutation["current"] {
+    const { allocations, ...rest } = structuredClone(version);
+    return { version: { ...rest, currencyCode: "USD", minorUnitPrecision: 2, origin: "manual", settlementState: "settled" }, allocations };
   }
   const mock: MockWire = {
     me() { return session ? { ...session, csrfValue } : null; },
@@ -163,11 +239,117 @@ export function createServerMock(now = Date.now): MockWire {
           activePeriod: { periodId, scheduleVersionId: scheduleId, status: "active", ...current },
           nextPeriods: next,
         },
-        schedule: proposal.normalizedInputs.schedule, categories: [], base: new Map(),
+        schedule: proposal.normalizedInputs.schedule, categories: [], base: new Map(), accounts: [], versions: [],
       });
       proposals.get(id)!.status = "confirmed";
       confirmations.set(idempotency, { id, response });
       return structuredClone(response);
+    },
+    listAccounts(id) {
+      authorize();
+      return { budgetSpaceId: id, accounts: structuredClone(accountsOf(space(id))) };
+    },
+    createAccount(id, body) {
+      authorize(); const value = space(id);
+      const fields = body as Record<string, unknown>;
+      const label = typeof fields.label === "string" ? fields.label.trim() : "";
+      if (!label || [...label].length > 120) throw new ApiError(400, "label_invalid");
+      if (typeof fields.accountType !== "string" || !ACCOUNT_TYPES.includes(fields.accountType)) throw new ApiError(400, "account_type_unsupported");
+      if (fields.currencyCode !== "USD") throw new ApiError(400, "currency_unsupported");
+      const opening = fields.openingBalanceMinorUnits ?? 0;
+      if (typeof opening !== "number" || !Number.isSafeInteger(opening)) throw new ApiError(400, "amount_not_integer");
+      if (value.accounts.some(account => account.archivedAt === null && account.label.toLowerCase() === label.toLowerCase())) throw new ApiError(409, "label_taken");
+      const account: MockAccount = {
+        accountId: randomUUID(), origin: "manual", accountType: fields.accountType, label, currencyCode: "USD", minorUnitPrecision: 2,
+        openingBalanceMinorUnits: opening, ownerSubjectId: session?.accountSubjectId ?? randomUUID(), archivedAt: null, version: 1,
+      };
+      value.accounts.push(account);
+      return { previousVersion: null, account: structuredClone(account) };
+    },
+    editAccount(id, accountId, body) {
+      authorize(); const value = space(id);
+      const account = liveAccount(value, accountId);
+      // SEC-P3-F1, the same rule the API handler owns: an archived account refuses an edit.
+      if (account.archivedAt !== null) throw new ApiError(409, "account_archived");
+      const fields = body as Record<string, unknown>;
+      if (Object.keys(fields).some(field => !["accountType", "label", "openingBalanceMinorUnits", "ownerSubjectId"].includes(field))) throw new ApiError(400, "invalid_request");
+      if (fields.label !== undefined) {
+        const label = typeof fields.label === "string" ? fields.label.trim() : "";
+        if (!label || [...label].length > 120) throw new ApiError(400, "label_invalid");
+        if (value.accounts.some(other => other !== account && other.archivedAt === null && other.label.toLowerCase() === label.toLowerCase())) throw new ApiError(409, "label_taken");
+        account.label = label;
+      }
+      const previousVersion = account.version;
+      account.version += 1;
+      return { previousVersion, account: structuredClone(account) };
+    },
+    archiveAccount(id, accountId) {
+      authorize(); const value = space(id);
+      const account = liveAccount(value, accountId);
+      if (account.archivedAt !== null) throw new ApiError(409, "account_archived");
+      const previousVersion = account.version;
+      account.archivedAt = new Date(now()).toISOString(); account.version += 1;
+      return { previousVersion, account: structuredClone(account) };
+    },
+    restoreAccount(id, accountId) {
+      authorize(); const value = space(id);
+      const account = liveAccount(value, accountId);
+      if (account.archivedAt === null) throw new ApiError(409, "account_not_archived");
+      const previousVersion = account.version;
+      account.archivedAt = null; account.version += 1;
+      return { previousVersion, account: structuredClone(account) };
+    },
+    createTransaction(id, body) {
+      authorize(); const value = space(id);
+      const write = parseWrite(value, body);
+      const version: MockVersion = { transactionId: randomUUID(), revision: 1, ...write, removedAt: null, supersededAt: null };
+      value.versions.push(version);
+      return { previous: null, current: snapshot(version) };
+    },
+    editTransaction(id, transactionId, body) {
+      authorize(); const value = space(id);
+      const previous = currentVersion(value, transactionId);
+      if (previous.removedAt !== null) throw new ApiError(409, "transaction_removed");
+      const write = parseWrite(value, body);
+      previous.supersededAt = new Date(now()).toISOString();
+      const version: MockVersion = { transactionId, revision: previous.revision + 1, ...write, removedAt: null, supersededAt: null };
+      value.versions.push(version);
+      return { previous: snapshot(previous), current: snapshot(version) };
+    },
+    removeTransaction(id, transactionId) {
+      authorize(); const value = space(id);
+      const previous = currentVersion(value, transactionId);
+      if (previous.removedAt !== null) throw new ApiError(409, "transaction_removed");
+      previous.supersededAt = new Date(now()).toISOString();
+      const version: MockVersion = { ...structuredClone(previous), revision: previous.revision + 1, allocations: [], removedAt: new Date(now()).toISOString(), supersededAt: null };
+      value.versions.push(version);
+      return { previous: snapshot(previous), current: snapshot(version) };
+    },
+    progress(id, periodId) {
+      authorize(); const value = space(id);
+      const plan = planFor(value, periodId);
+      return {
+        budgetSpaceId: id, periodId, currencyCode: "USD", minorUnitPrecision: 2, calculationVersion: "budget-domain/progress/1",
+        labels: Object.fromEntries(plan.categories.map(category => [category.categoryId, category.label])),
+        cells: plan.categories.map(category => cellFor(value, periodId, category.categoryId, category.periodTarget.amountMinorUnits)),
+      };
+    },
+    categoryDetail(id, periodId, categoryId) {
+      authorize(); const value = space(id);
+      const plan = planFor(value, periodId);
+      const category = plan.categories.find(entry => entry.categoryId === categoryId);
+      // A category this budget does not own is refused before anything is itemized, as the policy does live.
+      if (!category) throw new ApiError(403, "authorization_denied");
+      return {
+        budgetSpaceId: id, periodId, categoryId, label: category.label, currencyCode: "USD", minorUnitPrecision: 2,
+        cell: cellFor(value, periodId, categoryId, category.periodTarget.amountMinorUnits),
+        items: settledVersions(value, periodId).flatMap(version => version.allocations.filter(allocation => allocation.categoryId === categoryId).map(allocation => ({
+          transactionId: version.transactionId, accountId: version.accountId, budgetDate: version.budgetDate,
+          description: version.description, amountMinorUnits: allocation.amountMinorUnits,
+          // As the API counts it: the whole version's allocations, not this category's share (F-REVB-01).
+          allocationCount: version.allocations.length,
+        }))).sort((a, b) => a.budgetDate.localeCompare(b.budgetDate) || a.transactionId.localeCompare(b.transactionId)),
+      };
     },
     listSpaces() {
       authorize();
@@ -238,6 +420,17 @@ export async function handleMockRequest(mock: MockWire, request: Request, path: 
       if (path.length === 3 && path[2] === "plan" && request.method === "GET") return json(mock.plan(path[1]!, url.searchParams.get("periodId") ?? ""));
       if (path.length === 3 && path[2] === "categories" && request.method === "PUT") return json(mock.putCategories(path[1]!, body));
       if (path.length === 3 && path[2] === "targets" && request.method === "PUT") return json(mock.putTargets(path[1]!, body));
+      // PROTO-INCREMENT-B-001: accounts, manual expenses, progress and the CBD-211 drill-down.
+      if (path.length === 3 && path[2] === "accounts" && request.method === "GET") return json(mock.listAccounts(path[1]!));
+      if (path.length === 3 && path[2] === "accounts" && request.method === "POST") return json(mock.createAccount(path[1]!, body), 201);
+      if (path.length === 4 && path[2] === "accounts" && request.method === "PATCH") return json(mock.editAccount(path[1]!, path[3]!, body));
+      if (path.length === 5 && path[2] === "accounts" && path[4] === "archive" && request.method === "POST") return json(mock.archiveAccount(path[1]!, path[3]!), 201);
+      if (path.length === 5 && path[2] === "accounts" && path[4] === "restore" && request.method === "POST") return json(mock.restoreAccount(path[1]!, path[3]!), 201);
+      if (path.length === 3 && path[2] === "transactions" && request.method === "POST") return json(mock.createTransaction(path[1]!, body), 201);
+      if (path.length === 4 && path[2] === "transactions" && request.method === "PATCH") return json(mock.editTransaction(path[1]!, path[3]!, body));
+      if (path.length === 5 && path[2] === "transactions" && path[4] === "remove" && request.method === "POST") return json(mock.removeTransaction(path[1]!, path[3]!), 201);
+      if (path.length === 5 && path[2] === "periods" && path[4] === "progress" && request.method === "GET") return json(mock.progress(path[1]!, path[3]!));
+      if (path.length === 6 && path[2] === "periods" && path[4] === "progress" && request.method === "GET") return json(mock.categoryDetail(path[1]!, path[3]!, path[5]!));
     }
     throw new ApiError(404, "not_found");
   } catch (error) {

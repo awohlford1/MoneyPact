@@ -131,6 +131,8 @@ async function cardinalities(spaceId) {
     operation: await count("budget_creation_operation", w, [spaceId]), success: await count("budget_creation_success", w, [spaceId]),
     audit: await count("budget_creation_audit", w, [spaceId]), idempotency: await count("budget_creation_idempotency", w, [spaceId]),
     category: await count("budget_category", w, [spaceId]), base_target: await count("budget_category_base_target", w, [spaceId]), period_target: await count("budget_category_period_target", w, [spaceId]),
+    // PROTO-INCREMENT-B-001: the manual-account and manual-expense tables, so a refused write is proven to have written nothing there either.
+    financial_account: await count("financial_account", w, [spaceId]), manual_transaction: await count("manual_transaction", w, [spaceId]), transaction_allocation: await count("transaction_allocation", w, [spaceId]),
   };
 }
 async function identityCounts() {
@@ -1050,6 +1052,194 @@ async function phaseConsent() {
 }
 
 // ---------------------------------------------------------------------------
+// Phase: manual accounts, manual expenses and budget progress
+// (PROTO-INCREMENT-B-001; CBD-196, CBD-199, CBD-200, CBD-201, CBD-209, CBD-211)
+//
+// Its own API process and therefore its own reserved initial-creation units
+// (CL-F03): several criteria in other phases assert the exact gate a denial
+// reaches, which depends on how many units that phase has spent, so this one
+// does not extend an existing phase's bookkeeping.
+// ---------------------------------------------------------------------------
+async function phaseSpending() {
+  const browser = new Browser("spending");
+  await signIn(browser, "subject-a");
+  const { confirmed } = await createBudget(browser, monthly("Spending"));
+  const spaceId = confirmed.budgetSpaceId;
+  const periodId = confirmed.currentPeriodId;
+  const [groceries, transport] = await categories(browser, spaceId, ["Groceries", "Transport"]);
+  expect((await targets(browser, spaceId, [{ categoryId: groceries.categoryId, amountMinorUnits: 50_000 }, { categoryId: transport.categoryId, amountMinorUnits: 20_000 }])).status === 200, "targets");
+  const planned = await plan(browser, spaceId, periodId);
+  expect(planned.status === 200, `plan ${planned.status} ${planned.text}`);
+  const budgetDate = planned.json.period.start;
+  const accounts = `/v1/budget-spaces/${spaceId}/accounts`;
+  const transactions = `/v1/budget-spaces/${spaceId}/transactions`;
+  const progressUrl = `/v1/budget-spaces/${spaceId}/periods/${periodId}/progress`;
+  let accountId;
+  let transactionId;
+
+  await criterion("CBD-196-AC01", "positive: a Primary Owner creates, lists, edits, archives and restores a manual account over HTTP, and every row is manual origin with a monotonic version", async () => {
+    const created = await browser.fetch(accounts, { method: "POST", body: { accountType: "checking", label: "Everyday", currencyCode: "USD", openingBalanceMinorUnits: 125_000 } });
+    expect(created.status === 201, `create ${created.status} ${created.text}`);
+    accountId = created.json.account.accountId;
+    expect(created.json.previousVersion === null && created.json.account.version === 1, JSON.stringify(created.json));
+    expect(created.json.account.origin === "manual", "origin is manual");
+    const rows = await q("select origin, archived_at, version, opening_balance_minor_units from financial_account where budget_space_id = $1", [spaceId]);
+    expect(rows.length === 1 && rows[0].origin === "manual" && Number(rows[0].opening_balance_minor_units) === 125_000, JSON.stringify(rows));
+
+    const listed = await browser.fetch(accounts);
+    expect(listed.status === 200 && listed.json.accounts.length === 1, `list ${listed.status} ${listed.text}`);
+    const edited = await browser.fetch(`${accounts}/${accountId}`, { method: "PATCH", body: { label: "Everyday checking" } });
+    expect(edited.status === 200 && edited.json.previousVersion === 1 && edited.json.account.version === 2, `edit ${edited.status} ${edited.text}`);
+    const archived = await browser.fetch(`${accounts}/${accountId}/archive`, { method: "POST", body: {} });
+    expect(archived.status === 201 && archived.json.account.archivedAt !== null, `archive ${archived.status} ${archived.text}`);
+    const stillListed = await browser.fetch(accounts);
+    expect(stillListed.json.accounts.length === 1, "AC04: an archived account stays queryable");
+    const restored = await browser.fetch(`${accounts}/${accountId}/restore`, { method: "POST", body: {} });
+    expect(restored.status === 201 && restored.json.account.archivedAt === null && restored.json.account.openingBalanceMinorUnits === 125_000, `restore ${restored.status} ${restored.text}`);
+    return `create 201 v1, list 200, edit 200 v1->v2, archive 201, restore 201 with the balance intact; one manual financial_account row`;
+  });
+
+  await criterion("CBD-200-AC01", "denial: account-state admissibility is the handler's, not the policy's (SEC-P3-F1): restore of a live account, archive of an archived one, edit of an archived one and an expense against an archived one are each refused with a canonical code and nothing is written", async () => {
+    const live = await browser.fetch(`${accounts}/${accountId}/restore`, { method: "POST", body: {} });
+    expect(live.status === 409 && live.json.error === "account_not_archived", `restore of a live account ${live.status} ${live.text}`);
+    const versionBefore = Number((await q("select version from financial_account where account_id = $1", [accountId]))[0].version);
+    expect((await browser.fetch(`${accounts}/${accountId}/archive`, { method: "POST", body: {} })).status === 201, "archive");
+    for (const [label, request, code] of [
+      ["archive of an archived account", { url: `${accounts}/${accountId}/archive`, method: "POST", body: {} }, "account_archived"],
+      ["edit of an archived account", { url: `${accounts}/${accountId}`, method: "PATCH", body: { label: "renamed" } }, "account_archived"],
+      ["an expense against an archived account", { url: transactions, method: "POST", body: { accountId, amountMinorUnits: -100, budgetDate, description: null, allocations: [{ categoryId: groceries.categoryId, amountMinorUnits: -100 }] } }, "account_archived"],
+    ]) {
+      const denied = await browser.fetch(request.url, { method: request.method, body: request.body });
+      expect(denied.status === 409 && denied.json.error === code, `${label}: ${denied.status} ${denied.text}`);
+    }
+    expect(await count("manual_transaction", "budget_space_id = $1", [spaceId]) === 0, "a refused write stored a transaction");
+    const versionAfter = Number((await q("select version from financial_account where account_id = $1", [accountId]))[0].version);
+    expect(versionAfter === versionBefore + 1, `only the one legal archive advanced the version (${versionBefore} -> ${versionAfter})`);
+    expect((await browser.fetch(`${accounts}/${accountId}/restore`, { method: "POST", body: {} })).status === 201, "the legal restore still works");
+    return "restore of a live account 409 account_not_archived; archive, edit and an expense against an archived account each 409 account_archived with nothing written; the legal transitions still succeed";
+  });
+
+  await criterion("CBD-201-AC02", "positive and denial: an expense whose allocations sum exactly is recorded across two categories; every inexact, empty, duplicated or foreign split is refused with a canonical code and nothing reaches the database", async () => {
+    const body = (allocations, overrides = {}) => ({ accountId, amountMinorUnits: -1_250, budgetDate, description: "Corner shop", allocations, ...overrides });
+    const before = await count("manual_transaction", "budget_space_id = $1", [spaceId]);
+    for (const [label, request, status, code] of [
+      ["an inexact split", body([{ categoryId: groceries.categoryId, amountMinorUnits: -800 }]), 400, "allocation_sum_mismatch"],
+      ["an empty split", body([]), 400, "allocations_empty"],
+      ["a duplicated category", body([{ categoryId: groceries.categoryId, amountMinorUnits: -600 }, { categoryId: groceries.categoryId, amountMinorUnits: -650 }]), 400, "allocation_duplicate_category"],
+      ["a category from no budget", body([{ categoryId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", amountMinorUnits: -1_250 }]), 400, "allocation_category_invalid"],
+      ["an impossible date", body([{ categoryId: groceries.categoryId, amountMinorUnits: -1_250 }], { budgetDate: "2026-02-30" }), 400, "date_invalid"],
+      ["a fractional amount", body([{ categoryId: groceries.categoryId, amountMinorUnits: -12.5 }], { amountMinorUnits: -12.5 }), 400, "amount_not_integer"],
+    ]) {
+      const denied = await browser.fetch(transactions, { method: "POST", body: request });
+      expect(denied.status === status && denied.json.error === code, `${label}: ${denied.status} ${denied.text}`);
+    }
+    expect(await count("manual_transaction", "budget_space_id = $1", [spaceId]) === before, "a refused split stored a version");
+
+    const recorded = await browser.fetch(transactions, { method: "POST", body: body([{ categoryId: groceries.categoryId, amountMinorUnits: -800 }, { categoryId: transport.categoryId, amountMinorUnits: -450 }]) });
+    expect(recorded.status === 201, `record ${recorded.status} ${recorded.text}`);
+    transactionId = recorded.json.current.version.transactionId;
+    expect(recorded.json.current.version.periodId === periodId, "CBD-199-AC04: the period is assigned from the stored bounds");
+    expect(recorded.json.current.version.settlementState === "settled" && recorded.json.current.version.origin === "manual", "CBD-199-AC02: manual and settled");
+    expect(recorded.json.current.allocations.length === 2, "two allocations");
+    const stored = await q("select count(*)::int as n, coalesce(sum(amount_minor_units), 0)::bigint as total from transaction_allocation where transaction_version_id = $1", [recorded.json.current.version.transactionVersionId]);
+    expect(stored[0].n === 2 && Number(stored[0].total) === -1_250, `stored allocations ${JSON.stringify(stored)}`);
+    return "six inexact or malformed splits each refused with its canonical code and nothing stored; the exact split recorded as one settled manual version with two allocations summing to the amount";
+  });
+
+  await criterion("CBD-200-AC02", "positive: an edit writes a new version and supersedes the old one, a removal writes a tombstone with no allocations, and history reads in revision order", async () => {
+    const edited = await browser.fetch(`${transactions}/${transactionId}`, { method: "PATCH", body: { accountId, amountMinorUnits: -2_000, budgetDate, description: "Corner shop, corrected", allocations: [{ categoryId: groceries.categoryId, amountMinorUnits: -2_000 }] } });
+    expect(edited.status === 200, `edit ${edited.status} ${edited.text}`);
+    expect(edited.json.current.version.revision === 2, "the edit is revision 2");
+    const versions = await q("select revision, superseded_at, removed_at from manual_transaction where transaction_id = $1 order by revision", [transactionId]);
+    expect(versions.length === 2 && versions[0].superseded_at !== null && versions[1].superseded_at === null, JSON.stringify(versions));
+
+    const removed = await browser.fetch(`${transactions}/${transactionId}/remove`, { method: "POST", body: {} });
+    expect(removed.status === 201, `remove ${removed.status} ${removed.text}`);
+    expect(removed.json.current.allocations.length === 0 && removed.json.current.version.removedAt !== null, "CBD-200-AC03: the tombstone carries no allocations");
+    const after = await q("select revision, superseded_at, removed_at from manual_transaction where transaction_id = $1 order by revision", [transactionId]);
+    expect(after.length === 3 && after.filter((row) => row.superseded_at === null).length === 1, `exactly one current version: ${JSON.stringify(after)}`);
+
+    const history = await browser.fetch(`${transactions}/${transactionId}/history`);
+    expect(history.status === 200, `history ${history.status} ${history.text}`);
+    expect(JSON.stringify(history.json.history.map((entry) => entry.version.revision)) === JSON.stringify([1, 2, 3]), JSON.stringify(history.json.history.map((entry) => entry.version.revision)));
+    expect(JSON.stringify(history.json.history.map((entry) => entry.allocations.length)) === JSON.stringify([2, 1, 0]), "each version keeps its own allocation set");
+    const removedRow = await q("select count(*)::int as n from manual_transaction where transaction_id = $1", [transactionId]);
+    expect(removedRow[0].n === 3, "no version was deleted; removal is a tombstone");
+    return "edit 200 revision 2 with revision 1 stamped; remove 201 as revision 3 with no allocations; history 1,2,3 with allocation sets 2,1,0 and nothing deleted";
+  });
+
+  await criterion("CBD-209-AC02", "positive: the aggregate reports settled spent and remaining per category for the period, signed and unclamped, and a removed expense appears in neither aggregate nor detail", async () => {
+    const empty = await browser.fetch(progressUrl);
+    expect(empty.status === 200, `progress ${empty.status} ${empty.text}`);
+    const cellOf = (body, categoryId) => body.cells.find((cell) => cell.categoryId === categoryId);
+    expect(cellOf(empty.json, groceries.categoryId).settledActualMinorUnits === 0, "the removed expense is not counted");
+    expect(cellOf(empty.json, groceries.categoryId).remainingAfterSettledMinorUnits === 50_000, "remaining returns to the target");
+
+    const recorded = await browser.fetch(transactions, { method: "POST", body: { accountId, amountMinorUnits: -1_250, budgetDate, description: "Corner shop", allocations: [{ categoryId: groceries.categoryId, amountMinorUnits: -800 }, { categoryId: transport.categoryId, amountMinorUnits: -450 }] } });
+    expect(recorded.status === 201, `record ${recorded.status} ${recorded.text}`);
+    transactionId = recorded.json.current.version.transactionId;
+    const after = await browser.fetch(progressUrl);
+    expect(after.status === 200, `progress ${after.status} ${after.text}`);
+    expect(cellOf(after.json, groceries.categoryId).settledActualMinorUnits === -800, `groceries ${JSON.stringify(cellOf(after.json, groceries.categoryId))}`);
+    expect(cellOf(after.json, groceries.categoryId).remainingAfterSettledMinorUnits === 49_200, "remaining = target + actual");
+    expect(cellOf(after.json, transport.categoryId).settledActualMinorUnits === -450, "transport");
+    expect(cellOf(after.json, transport.categoryId).remainingAfterSettledMinorUnits === 19_550, "transport remaining");
+
+    // Unclamped: an overspent cell reports a negative remaining rather than zero.
+    const big = await browser.fetch(transactions, { method: "POST", body: { accountId, amountMinorUnits: -60_000, budgetDate, description: "Big shop", allocations: [{ categoryId: groceries.categoryId, amountMinorUnits: -60_000 }] } });
+    expect(big.status === 201, `big ${big.status} ${big.text}`);
+    const over = await browser.fetch(progressUrl);
+    expect(cellOf(over.json, groceries.categoryId).remainingAfterSettledMinorUnits === -10_800, `overspent ${JSON.stringify(cellOf(over.json, groceries.categoryId))}`);
+    expect((await browser.fetch(`${transactions}/${big.json.current.version.transactionId}/remove`, { method: "POST", body: {} })).status === 201, "remove the overspend");
+    return "0/-800/-450 settled and 50000/49200/19550 remaining across the period's cells; an overspent cell reports -10800, not a clamped zero; a removed expense counts in neither";
+  });
+
+  await criterion("CBD-211-AC01", "positive and denial: the detail read itemizes one category under 14.view_progress_detail bound to the category row, agrees with the aggregate, and a category owned by another budget is a policy denial rather than an empty result", async () => {
+    const detail = await browser.fetch(`${progressUrl}/${groceries.categoryId}`);
+    expect(detail.status === 200, `detail ${detail.status} ${detail.text}`);
+    expect(detail.json.categoryId === groceries.categoryId && detail.json.label === "Groceries", JSON.stringify(detail.json).slice(0, 300));
+    expect(detail.json.cell.settledActualMinorUnits === -800, "CBD-209: the aggregate and the detail agree for the same cell");
+    expect(detail.json.items.length === 1 && detail.json.items[0].amountMinorUnits === -800 && detail.json.items[0].description === "Corner shop", JSON.stringify(detail.json.items));
+    expect(detail.json.items[0].transactionId === transactionId, "the itemized row points back at the real transaction");
+
+    // A second budget of the same owner: its category exists, and this budget's detail read denies it.
+    const second = await freshProposal("subject-a", monthly("Other budget"));
+    const otherCreated = await confirm(second.browser, second.proposal);
+    expect(otherCreated.status === 201, `second budget ${otherCreated.status} ${otherCreated.text}`);
+    const [foreign] = await categories(second.browser, otherCreated.json.budgetSpaceId, ["Foreign"]);
+    const denied = await browser.fetch(`${progressUrl}/${foreign.categoryId}`);
+    expect(denied.status === 403, `a category of another budget: ${denied.status} ${denied.text}`);
+    expect(denied.json.outcome === "deny", `the denial is the uniform external one: ${denied.text}`);
+    const nonsense = await browser.fetch(`${progressUrl}/00000000-0000-4000-8000-000000009999`);
+    expect(nonsense.status === 403, `a category that exists nowhere: ${nonsense.status} ${nonsense.text}`);
+    return `detail 200 with one item of -800 agreeing with the aggregate; a category of another budget and a category that exists nowhere are both denied 403 and indistinguishable`;
+  });
+
+  await criterion("CBD-196-AC02", "denial: an unauthenticated request to every new route is refused before any effect, and no account, transaction or allocation row results", async () => {
+    const anonymous = new Browser("anonymous-spending");
+    const before = await cardinalities(spaceId);
+    for (const [method, url, body] of [
+      ["POST", accounts, { accountType: "checking", label: "Smuggled", currencyCode: "USD" }],
+      ["GET", accounts, undefined],
+      ["PATCH", `${accounts}/${accountId}`, { label: "Smuggled" }],
+      ["POST", `${accounts}/${accountId}/archive`, {}],
+      ["POST", `${accounts}/${accountId}/restore`, {}],
+      ["POST", transactions, { accountId, amountMinorUnits: -1, budgetDate, description: null, allocations: [{ categoryId: groceries.categoryId, amountMinorUnits: -1 }] }],
+      ["PATCH", `${transactions}/${transactionId}`, { accountId, amountMinorUnits: -1, budgetDate, description: null, allocations: [{ categoryId: groceries.categoryId, amountMinorUnits: -1 }] }],
+      ["POST", `${transactions}/${transactionId}/remove`, {}],
+      ["GET", `${transactions}/${transactionId}/history`, undefined],
+      ["GET", progressUrl, undefined],
+      ["GET", `${progressUrl}/${groceries.categoryId}`, undefined],
+    ]) {
+      const denied = await anonymous.fetch(url, body === undefined ? {} : { method, body });
+      expect(denied.status === 403, `${method} ${url}: ${denied.status} ${denied.text}`);
+    }
+    expect(JSON.stringify(await cardinalities(spaceId)) === JSON.stringify(before), "an unauthenticated request changed stored state");
+    return "all eleven routes deny 403 without a session and nothing is written";
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Phase 4: CBD-190 identity (local adapter)
 // ---------------------------------------------------------------------------
 async function phaseIdentity(started) {
@@ -1258,6 +1448,8 @@ async function main() {
     await phase("CBD-232 proposals", phaseProposals);
     await phase("CBD-233 confirmation", phaseConfirmation);
     await phase("CBD-236 consent record", phaseConsent);
+    // CL-F03: its own phase, so its reserved-unit bookkeeping is its own.
+    await phase("manual accounts, expenses and progress", phaseSpending);
     await phase("CBD-190 identity", phaseIdentity);
     await phase("CBD-190 expired challenge", phaseExpiredChallenge, { COBUDGET_IDENTITY_CHALLENGE_LIFETIME_SECONDS: "1" });
     await phaseConfiguration();

@@ -249,8 +249,24 @@ Both scripts drop and recreate the named scratch database. Never point them at
   session is admitted; only the committed confirm keeps the unit, and a second creation
   on the same ceremony is denied. Counters are process-local: a restart or a
   second API process starts from empty.
-- Manual accounts, transactions, spent and remaining are the next increment
-  and are not present.
+- Manual accounts and manual expenses are present. A Primary Owner can add,
+  rename, archive and restore a manual account, record an expense against it
+  split across one or more categories, edit it and remove it, and see spent and
+  remaining per category for the active period with an itemized drill-down
+  behind each figure. Amounts are signed end to end -- an expense is negative --
+  and the browser shows spent as a magnitude and labels a negative remaining as
+  over rather than clamping it to zero. An edit writes a new version and retains
+  the old one; a removal writes a tombstone; nothing is ever deleted.
+  Account-state admissibility is the route handler's, not the policy's
+  (`SEC-P3-F1`): restore refuses a live account, archive refuses an archived
+  one, and neither an edit nor an expense is accepted against an archived
+  account.
+- Still missing from that half: bank connections and imports (CBD-9), so every
+  account and every transaction is manual and settled -- no pending or
+  provisional state is representable at all; non-owner roles on the account
+  cells (`OQ-236-011`), so only the Primary Owner of a space can use them; and
+  transfers between accounts, income beyond a positive manual amount, and
+  attachments.
 
 ## Validate changes
 

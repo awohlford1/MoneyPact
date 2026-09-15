@@ -278,10 +278,15 @@ function evaluate(input: PolicyInput, policy: RegisteredPolicy): PolicyDecision 
   if (!("membership" in input) || !input.membership || !input.consent || !input.space || !input.resource) return initial;
   if (input.membership.status !== "active") return { ...initial, reasonClass: "membership_not_active" };
   if (input.consent.state !== "current") return { ...initial, reasonClass: "consent_not_current" };
-  const cell = policy.userCells.find((candidate) => candidate.action === input.request.action);
-  if (!cell) return { ...initial, reasonClass: "input_unsupported" };
-  if (cell.permission === "subject") return initial;
-  if (input.membership.role !== "primary_owner" || cell.notation === "Deny" || cell.notation === "Not applicable") return { ...initial, reasonClass: "role_not_permitted" };
+  // Section 8.2: a user cell is keyed on (action, role). An action with no cell at all is unsupported; an action
+  // represented in USER_CELLS whose cell for the acting role is absent, Deny or Not applicable denies
+  // role_not_permitted. Through p3 every space-bound cell is a Primary Owner cell, so every other role finds no
+  // cell; p4 (section 8.7) is the first version that carries a cell for another role.
+  const cells = policy.userCells.filter((candidate) => candidate.action === input.request.action);
+  if (cells.length === 0) return { ...initial, reasonClass: "input_unsupported" };
+  if (cells.some((candidate) => candidate.permission === "subject")) return initial;
+  const cell = cells.find((candidate) => candidate.role === input.membership.role);
+  if (!cell || cell.notation === "Deny" || cell.notation === "Not applicable") return { ...initial, reasonClass: "role_not_permitted" };
   if (input.resource.type !== actionDefinition.resourceType || input.resource.owningSpaceId !== input.space.spaceId) return { ...initial, reasonClass: "scope_mismatch" };
   if (cell.notation === "Primary" && input.membership.membershipId !== input.space.primaryOwnerMembershipId) return { ...initial, reasonClass: "role_not_permitted" };
   if (cell.notation === "Authorizer" && input.resource.authorizerSubjectId !== input.subject.accountSubjectId) return { ...initial, reasonClass: "scope_mismatch" };

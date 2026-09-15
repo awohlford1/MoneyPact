@@ -42,9 +42,13 @@ void test("registered confirmation route authenticates before lookup, rejects ec
   const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { logger: false });
   try {
     await app.init(); await app.getHttpAdapter().getInstance().ready();
-    // PROTO-ACTIVATION-001: the eight routes are registered in config/rate-limit/registrations.json (the proposal file is gone).
+    // PROTO-ACTIVATION-001: the routes this composition installs are registered in
+    // config/rate-limit/registrations.json (the proposal file is gone). The registration file also
+    // carries the routes of the sibling modules this test does not compose -- CBD-153 targets, and
+    // PROTO-INCREMENT-B-001's accounts, transactions and progress -- so they are excluded by path.
+    const otherModules = ["/categories", "/targets", "/plan", "/accounts", "/transactions", "/progress"];
     assert.deepEqual(installedRoutes(app.getHttpAdapter().getInstance()).map(route => route.id).filter(id => id.includes("/v1/budget-")).sort(),
-      loadRegistrations().map(row => row.registration_id).filter(id => id.includes("/v1/budget-") && !id.includes("/categories") && !id.includes("/targets") && !id.includes("/plan")).sort());
+      loadRegistrations().map(row => row.registration_id).filter(id => id.includes("/v1/budget-") && !otherModules.some(path => id.includes(path))).sort());
     const url = "/v1/budget-creation-proposals/" + request.proposalId + "/confirm";
     assert.equal((await app.inject({ method: "POST", url, payload: { confirmationBinding: "binding" } })).statusCode, 403);
     assert.equal(lookups, 0);

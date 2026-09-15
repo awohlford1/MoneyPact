@@ -153,6 +153,70 @@ async function main() {
     await page.screenshot({ path: join(shots, "walkthrough-6-reload.png") });
     expect(before.includes("400.00") && after.includes("400.00"), "plan content is stable");
 
+    // --- PROTO-INCREMENT-B-001: an account, one split expense, progress and the detail -------------
+    await page.goto(`${ORIGIN}/budgets/${budgetId}`); await waitText("Accounts and spending");
+    const fill = async (selector, value) => {
+      await page.waitForSelector(selector);
+      await page.focus(selector);
+      await page.keyboard.down("Control"); await page.keyboard.press("KeyA"); await page.keyboard.up("Control");
+      await page.keyboard.press("Backspace");
+      await page.type(selector, value);
+      const actual = await page.$eval(selector, (node) => node.value);
+      expect(actual === value, `typing into ${selector} did not take (${actual})`);
+    };
+    await fill("#account-name", "Everyday");
+    await fill("#account-opening", "1250.00");
+    await clickText("Add account"); await waitText("Added Everyday.");
+    await waitText("checking · opening balance 1250.00 USD");
+    log("Add account Everyday (checking, opening 1250.00)", "POST .../accounts 201; the account is listed with its type and opening balance");
+    await page.screenshot({ path: join(shots, "walkthrough-7-accounts.png") });
+
+    const periodStart = (await text()).match(/(\d{4}-\d{2}-\d{2}) through/)[1];
+    const allocationIds = await page.$$eval('input[id^="allocation-"]', (nodes) => nodes.map((node) => `#${node.id}`));
+    expect(allocationIds.length === 2, `one allocation input per live category, got ${allocationIds.length}`);
+    const recordExpense = async (groceries, rent) => {
+      await fill("#expense-date", periodStart);
+      await fill("#expense-amount", "12.50");
+      await fill("#expense-description", "Corner shop");
+      await fill(allocationIds[0], groceries);
+      await fill(allocationIds[1], rent);
+      await clickText("Record expense");
+    };
+    await recordExpense("8.00", "4.00");
+    await waitText("The category amounts must add up to the expense amount exactly.");
+    log("Record expense with an inexact split", "POST .../transactions 400 allocation_sum_mismatch; the server's refusal is shown on the allocation fieldset");
+
+    await recordExpense("8.00", "4.50");
+    await waitText("Expense recorded.");
+    await waitText("Spent 8.00 USD of 400.00 USD");
+    await waitText("Remaining 392.00 USD");
+    await waitText("Spent 4.50 USD of 1500.00 USD");
+    await waitText("Remaining 1495.50 USD");
+    log("Record expense 12.50 split 8.00 Groceries / 4.50 Rent", "POST .../transactions 201; GET .../progress: Groceries spent 8.00 remaining 392.00, Rent spent 4.50 remaining 1495.50");
+    await page.screenshot({ path: join(shots, "walkthrough-8-progress.png") });
+
+    await page.reload(); await waitText("Spent 8.00 USD of 400.00 USD");
+    log("Reload after recording", "the same figures: they are the server's, not the browser's");
+
+    await clickText("Groceries"); await waitText("Transactions in this category");
+    await waitText("Corner shop");
+    await waitText("8.00 USD · Everyday");
+    log("Open the Groceries detail", "GET .../progress/{categoryId} 200: one itemized transaction of 8.00 USD agreeing with the aggregate");
+    await page.screenshot({ path: join(shots, "walkthrough-9-detail.png") });
+
+    await clickText("Edit this expense");
+    const amountId = await page.$eval('input[id^="edit-amount-"]', (node) => `#${node.id}`);
+    await fill(amountId, "20.00");
+    await clickText("Save expense"); await waitText("Expense updated.");
+    await waitText("20.00 USD · Everyday");
+    await clickText("Remove this expense"); await waitText("Expense removed.");
+    await waitText("Nothing has been recorded against this category for the active period.");
+    await clickText("Back to the budget"); await waitText("Accounts and spending");
+    await waitText("Spent 0.00 USD of 400.00 USD");
+    await waitText("Remaining 400.00 USD");
+    log("Edit then remove the expense", "PATCH .../transactions 200 revision 2, POST .../remove 201 tombstone; spent returns to 0.00 and remaining to the target in both the aggregate and the detail");
+    await page.screenshot({ path: join(shots, "walkthrough-10-removed.png") });
+
     await clickText("Sign out"); await page.waitForFunction(() => location.pathname === "/");
     expect(!(await browser.cookies()).some((cookie) => cookie.name === "__Host-cobudget_session"), "the session cookie is deleted at logout");
     await page.goto(`${ORIGIN}/budgets`); await page.waitForFunction(() => location.pathname === "/sign-in");
