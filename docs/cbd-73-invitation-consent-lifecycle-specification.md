@@ -15,6 +15,7 @@
 | Message inventory | `docs/cbd-73-customer-message-inventory.md` |
 | Test inventory | `docs/cbd-73-negative-recovery-test-inventory.md` |
 | Traceability and review | `docs/cbd-73-acceptance-criteria-traceability.md` |
+| Pending amendment | 1.0.4 **proposed** (§13.1 and the §16 row), awaiting Product Owner approval under `PO-CONTRACT-APPROVALS-001`; the approved v1.0.3 status, version and every other section stand unchanged |
 | Last updated | August 18, 2026 |
 
 > **Authority and blocking boundary:** The approved CBD-72 permission model, CBD-94 security/privacy requirements, CBD-91 data boundaries, the CBD-11/CBD-71 inherited rules, and the August 16, 2026 `RI-93-*` Product Owner decisions are controlling inputs. This specification defines the invitation, informed-consent, membership-change, revocation, and removal lifecycle that consumes them. It cannot weaken or broaden an approved outcome without explicit change control. The conspicuous register in §15 is normative: no behavior named there as blocked may ship, be treated as approved, or be silently resolved by implementation. Execution mechanisms may refine mechanics but not outcomes.
@@ -475,6 +476,103 @@ CBD-91 rules govern existing classes, but several v0.2 records have materially d
 | DR-73-12 | Ownership-transfer workflow | Space; current Primary/recipient memberships and versions; disclosure/version/expiry; recipient-consent and Primary-confirmation/assurance references; each evidence record's pending/consumed/closed disposition and terminal-event link; Proposed/RecipientAccepted/PrimaryConfirmed/Ready/Declined/Withdrawn/Expired/Invalidated/Committed state; resulting authorization and ended-consent links; notice/audit correlation. | `DI-91-007`/`DI-91-009`/`DI-91-052`; any split subject to OI-73-003 |
 | DR-73-13 | Intended-recipient confirmation and binding | Invitation and version; ceremony; acceptor account; confirming membership, exact permission, and authorization version; binding-rule ID/version; requested/confirmed/rejected/expired state with its authoritative expiry; displayed-identity version shown to the confirmer; correlation to the acceptor's pending consent evidence and to the TR-73-13 commit or terminal event. Retained as authority evidence under `IC-73-018`; replay grants nothing. | `DI-91-007` / `DI-91-009`; class assignment remains `OI-73-003` |
 
+### 13.1 `DR-73-04` physical mapping (proposed amendment, not approved)
+
+**Proposed amendment (v1.0.4), pending Product Owner approval under
+`PO-CONTRACT-APPROVALS-001`.** This subsection records the physical record that
+now implements `DR-73-04` for the Primary Owner's creation-time consent. It is
+the amendment `CBD236-CONSENT-SEMANTICS-001` item 6 deferred to this package. It
+adds no requirement, changes no `DR-73-04` semantic minimum, closes no open
+issue, and is not CBD-91 class approval: `OI-73-003` remains open and the
+`DI-91-007` mapping above remains the governing statement.
+
+**The record.** `DR-73-04` consent evidence is physically the `budget_space_consent`
+table, budget-space scoped, created by
+`packages/migrations/migrations/20260914T170000Z__create_budget_space_consent.sql`
+in the shape specified by `docs/cbd-236-consent-facts-proposal.md` §4. One row
+per consent event. It is the single store for every consent source: the Primary
+Owner's creation-time row is the first row of a space's consent history, and
+invitation acceptance (`TR-73-13`), membership change (`DR-73-08`) and Primary
+transfer (`DR-73-12`) add rows of the same shape rather than a second store. The
+row is historical evidence and never an authorization input (§2, §6 rule 6):
+`budget_space_membership` and its authorization version authorize. Consent
+evidence can only deny — by its absence, or by a state other than `current`.
+
+| `DR-73-04` required content | Column | Note |
+| --- | --- | --- |
+| Person/account | `account_subject_id` | Constrained by trigger to equal the referenced membership's subject |
+| Budget space; membership | `budget_space_id`, `membership_id` | Tenant-scoped composite foreign key to `budget_space_membership`, so a membership from another space is rejected |
+| Role/profile/resource scope | `role`, `resource_scope` | Closed by CHECK to `primary_owner` and `full` for the prototype; see the forward rule below |
+| Timestamp | `recorded_at`, `recorded_by_subject_id` | The acting subject; equal to `account_subject_id` for this source, and legitimately different for a future system-committed transfer |
+| Copy/disclosure version | `disclosure_kind`, `disclosure_version`, `disclosure_digest` | From the approved registry only; see the disclosure version source below |
+| Policy version | `policy_version`, `policy_digest` | The tuple of the decision that authorized the write, linking `DI-91-005` authorization versions as `DR-73-04` requires |
+| Invitation/change/transfer source and version | `source`, `source_record_id`, `source_record_version` | For this source, the CBD-233 proposal and its confirmed lifecycle revision |
+| Ceremony correlation | `source_record_id` for this source | Where the `DR-73-03` ceremony binding for the invitation source lives is `OQ-CF-005`, unresolved here |
+| Assurance reference where required | `assurance_ref` | Null for `self_disclosure`, which is not a protected action |
+| `supersedes_consent_id` | `supersedes_consent_id` | Set only at insert; a superseding row is inserted and the prior row transitions to `superseded` in one transaction (§6 rule 6; `TR-73-21`, `TR-73-43`) |
+| `ended_by_event_id/time/reason_class` | `ended_by_event_id`, `ended_at`, `ended_reason_class` | Set exactly when `state` leaves `current` |
+| Historical/non-authorizing marker | the table comment and `state` | `state` is one of `current`, `superseded`, `ended`; the latter two are terminal |
+
+**Write-once.** A `BEFORE UPDATE` trigger admits only `current → superseded` and
+`current → ended` and rejects a change to any other column; `DELETE` is revoked
+from the application roles. Evidence is immutable for historical explanation
+(`IC-73-018`). A partial unique index enforces one `current` consent per
+membership.
+
+**The `self_disclosure` source value.** The Primary Owner's creation-time row
+carries `source = 'self_disclosure'`. Under `CBD236-CONSENT-SEMANTICS-001`
+item 1, a Primary Owner's explicit CBD-233 confirmation, taken after the
+complete current-version Primary Owner self-disclosure, is consent under §6
+rule 1; without that disclosure it is not consent. The row is written inside the
+CBD-233 transaction immediately after the creator membership, from server-side
+facts only, and a stale, foreign or absent acknowledgement denies the whole
+confirmation with nothing written — the commit-time denial `TR-73-13` already
+requires for an acceptance against a stale disclosure version.
+
+**The disclosure version source.** `disclosure_version` is the version of an
+approved disclosure text in the append-only, digest-pinned registry
+`config/consent-disclosure-registry.json`, read server-side. It is never an
+authorization version, never a policy version and never a request value. Each
+entry pins the SHA-256 digest of its content file — for the prototype,
+`docs/consent-disclosures/primary-owner-self.v1.json` — and both a build-time
+guard and an API startup guard refuse a registry whose digests do not reproduce
+or whose approved entries were changed, reordered or removed. Versions are dense
+from 1 per kind, so the current version of a kind is its highest version. A
+material change to the content is a new version (§6 rule 3; `TR-73-05` for
+invitations); a new version changes nothing retroactively, and whether a later
+self-disclosure version obliges an existing Primary Owner to re-consent is
+`OQ-CF-002`, which this amendment leaves open. The `primary_owner_self`
+version 1 content is approved for the prototype phase only; exact copy,
+accessibility and comprehension evidence remain `OI-73-004`.
+
+**Forward rule (`SEC-F02`), binding on every later membership path.** A deferred
+constraint trigger on `budget_space_membership` refuses at commit any *inserted*
+membership that does not have exactly one `current` consent row for its
+`(budget_space_id, membership_id)`. Existing memberships are never inspected, so
+no space is stranded, and insert ordering within the transaction is free.
+Therefore:
+
+1. Every future membership insert — invitation acceptance (`TR-73-13`),
+   membership change, and Primary ownership transfer (§12) — **must write its
+   consent row in the same transaction as the membership**, or it fails closed
+   at commit.
+2. It **must first widen the closed CHECK constraints by migration**: the
+   consent `role`, `resource_scope`, `source` and `disclosure_kind` constraints
+   are closed to `primary_owner`, `full`, `self_disclosure` and
+   `primary_owner_self`, and `budget_space_membership.role`/`status` are closed
+   in the same way. A widening migration is part of the implementing packet, in
+   the same way this specification's other physical constraints are deferred.
+3. Superseding an existing consent **must update the prior row to `superseded`
+   before inserting the new `current` row**, because the one-current-per-
+   membership index is immediate, not deferred.
+
+**Deliberately left open by this amendment.** `OQ-CF-002` (re-consent on a new
+disclosure version) and `OQ-CF-003` (whether §14 allocates a dedicated
+consent-recorded event class, or the creation audit's reference to the consent
+evidence suffices) are unresolved and remain with their named owners in
+`docs/cbd-236-consent-facts-proposal.md` §13, as does `OQ-CF-005`. No `AE-73-*`
+code is added or changed here. `OI-73-003` and `OI-73-004` remain binding gates.
+
 ## 14. Audit-event inventory
 
 Every event uses the CBD-72 §9 envelope where the event has a resolved budget-space target: event ID, time, actor/principal, acting membership/role, budget space, action, target type/safe identifier, decision/result, policy/rule version, safe reason class, correlation/idempotency IDs, and safe semantic delta. A malformed/unknown code has no resolved space or target; AE-73-14 then uses an explicitly nullable global security envelope and a non-reversible fingerprint. No event contains a raw code/proof, unmasked destination, block/limit state in customer scope, or data its audience cannot inspect.
@@ -549,6 +647,7 @@ Audit-placement rules:
 
 | Version | Date | Author | Change | Approval |
 | --- | --- | --- | --- | --- |
+| 1.0.4 (proposed) | September 15, 2026 | Claude specification specialist, dispatched by Manager (`PROTO-CONSENT-AMENDMENTS-001`) | Added §13.1, the physical `DR-73-04` mapping to `budget_space_consent` deferred to this package by `CBD236-CONSENT-SEMANTICS-001` item 6: the column-by-column mapping as merged in PR #337, the `self_disclosure` source value for the Primary Owner's creation-time row, the append-only digest-pinned registry as the disclosure version source, and the `SEC-F02` forward rule binding every later membership insert. No lifecycle transition, invariant, message row, scenario, data requirement, audit code or open-issue gate changed; no open issue closed. | **Proposed, not approved.** The approved v1.0.3 status line and document version are unchanged and no approval is claimed. Pending Product Owner approval under `PO-CONTRACT-APPROVALS-001` |
 | 1.0.3 | September 3, 2026 | Claude with Alexander Wohlford as Product Owner | Brand amendment. The ceremony-entry disclosure in the specification's §7 said the surface discloses "that this is a CoBudget invitation requiring verification"; it now says MoneyPact, matching `EM-92-002` as amended at CBD-92 v1.0.1 and the `MSG-73-002`/`MSG-73-010` rows already corrected at v1.0.2. The naming standard is `RT-75-01`. No lifecycle transition, invariant, message row, scenario, or gate changed. | Consequential amendment to an approved document under change control; the v1.0 approval otherwise stands |
 | 1.0.2 | September 2, 2026 | Claude with Alexander Wohlford as Product Owner | Brand amendment. The two customer-facing strings that named the product, in `MSG-73-002` and `MSG-73-010`, said "a CoBudget invitation". The September 2, 2026 brand decision recorded in `docs/brand-foundation.md` makes MoneyPact the customer-facing name and keeps CoBudget as the internal codename, so a customer-readable invitation must say MoneyPact. Both now do. No semantic rule changes; the naming standard is `RT-75-*` in the CBD-75 package. | Product Owner authorized September 2, 2026 |
 | 1.0.1 | August 18, 2026 | Claude with Alexander Wohlford as Product Owner | Corrected the v1.0 status line, which kept a stale trailing clause and so read as approved and awaiting review at the same time. No rule, decision, or gate changed. | Correction to approved v1.0 |
