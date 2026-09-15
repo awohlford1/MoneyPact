@@ -36,7 +36,7 @@
 // ---------------------------------------------------------------------------
 
 export type InvitableRole = "collaborator" | "co_owner";
-export type InvitationState = "pending" | "accepted" | "replaced" | "cancelled" | "no_longer_active";
+export type InvitationState = "pending" | "awaiting_confirmation" | "accepted" | "replaced" | "cancelled" | "no_longer_active";
 /** The customer projection of one invitation record; `kind`, private state and cause never leave the server. */
 export interface WireInvitation {
   invitationId: string; destinationMasked: string; proposedRole: InvitableRole; state: InvitationState;
@@ -155,7 +155,8 @@ export function sentenceFor(messageCode: string): string {
 export const ROLE_LABELS: Readonly<Record<string, string>> = Object.freeze({ primary_owner: "Primary Owner", co_owner: "Co-owner", collaborator: "Collaborator" });
 export function roleLabel(role: string): string { return ROLE_LABELS[role] ?? role; }
 export const INVITATION_STATE_LABELS: Readonly<Record<InvitationState, string>> = Object.freeze({
-  pending: "Sent, awaiting a response", accepted: "Accepted and confirmed", replaced: "Replaced by a newer invitation", cancelled: "Cancelled", no_longer_active: "No longer active",
+  pending: "Sent, awaiting a response", awaiting_confirmation: "Acceptance awaiting your confirmation",
+  accepted: "Accepted and confirmed", replaced: "Replaced by a newer invitation", cancelled: "Cancelled", no_longer_active: "No longer active",
 });
 export const TRANSFER_STATE_LABELS: Readonly<Record<TransferState, string>> = Object.freeze({
   proposed: "Proposed, awaiting the recipient", recipient_accepted: "Accepted by the recipient, awaiting the Primary Owner's confirmation",

@@ -47,6 +47,17 @@ async function awaitingConfirmation(world: TestWorld, destination = "invitee@exa
   return { invitationId, ceremonyId: resolved.ceremonyId };
 }
 
+void test("TR-73-38 projects awaiting_confirmation to the inviter, not pending (EXEC-PK8-RULINGS-001 item (a), PK8-F05)", async () => {
+  const world = testWorld();
+  const { invitationId } = await awaitingConfirmation(world);
+  const record = world.repository.invitations.get(invitationId);
+  assert.equal(record?.state, "awaiting_confirmation");
+  assert.equal(record?.projectionState, "awaiting_confirmation");
+  const audit = world.repository.audits.find((row) => row.eventCode === "AE-73-32" && row.eventSubtype === "confirmation_requested");
+  assert.equal(audit?.payload.invitationState, "awaiting_confirmation");
+  assert.equal(audit?.payload.projectionState, "awaiting_confirmation");
+});
+
 void test("SS8 writes exactly the set it names: confirmation, membership, consent, terminal states, audit group and notices", async () => {
   const world = testWorld();
   const { invitationId, ceremonyId } = await awaitingConfirmation(world);

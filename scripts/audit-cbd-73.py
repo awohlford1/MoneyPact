@@ -57,6 +57,19 @@ SCENARIO_COUNTS = {
     "TRF": 10,
 }
 
+# PROTO-INVITATIONS-AWAITING-CONFIRMATION-001 (EXEC-PK8-RULINGS-001 item (a)):
+# the specification alone bumped to 1.0.6 for the SS4.5 `awaiting_confirmation`
+# projection sentence; the message inventory, negative/recovery test inventory
+# and traceability register are unchanged by that edit and stay pinned at
+# 1.0.5, exactly as the specification alone bumped to 1.0.4 for SS13.1 while
+# its siblings stayed behind.
+EXPECTED_DOCUMENT_VERSION: dict[Path, str] = {
+    SPEC: "1.0.6",
+    MESSAGES: "1.0.5",
+    TESTS: "1.0.5",
+    TRACE: "1.0.5",
+}
+
 EXPECTED_OPEN_ISSUES = {f"OI-73-{number:03d}" for number in range(1, 13)}
 EXPECTED_REVIEW_FINDINGS = {f"RV-73-{number:03d}" for number in range(1, 30)}
 EXPECTED_AC = {f"CBD-73-AC{number:02d}" for number in range(1, 18)}
@@ -386,13 +399,14 @@ def check_markdown_structure(audit: Audit, path: Path, text: str) -> None:
         not trailing,
         f"{path}: trailing whitespace on lines {', '.join(map(str, trailing))}",
     )
+    expected_version = EXPECTED_DOCUMENT_VERSION[path]
     audit.check(
-        "| Status | **Approved v1.0.5 " in text,
-        f"{path}: package status is not Approved v1.0.5",
+        f"| Status | **Approved v{expected_version} " in text,
+        f"{path}: package status is not Approved v{expected_version}",
     )
     audit.check(
-        "| Document version | 1.0.5 |" in text,
-        f"{path}: document version is not 1.0.5",
+        f"| Document version | {expected_version} |" in text,
+        f"{path}: document version is not {expected_version}",
     )
 
     headings = re.findall(r"^#{2,6}\s+(.+)$", text, flags=re.MULTILINE)

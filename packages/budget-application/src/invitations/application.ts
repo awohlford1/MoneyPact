@@ -1136,7 +1136,7 @@ export async function acceptInvitation(deps: InvitationDependencies, invitee: In
 
   assertInvitationEdge(invitation.state, "awaiting_confirmation");
   const applied = await deps.repository.updateInvitation(invitation.budgetSpaceId, invitation.invitationId, invitation.stateVersion, {
-    state: "awaiting_confirmation", projectionState: "pending",
+    state: "awaiting_confirmation", projectionState: "awaiting_confirmation",
   });
   if (!applied) throw new InvitationError("stale_version", "invitation.stateVersion");
 
@@ -1163,6 +1163,7 @@ export async function acceptInvitation(deps: InvitationDependencies, invitee: In
     payload: {
       invitationId: invitation.invitationId, ceremonyId: ceremony.ceremonyId, confirmationId,
       disclosureKind: invitation.disclosureKind, disclosureVersion: invitation.disclosureVersion,
+      invitationState: "awaiting_confirmation", projectionState: "awaiting_confirmation",
     },
   });
   // AE-73-30: the owner is told there is something to decide.

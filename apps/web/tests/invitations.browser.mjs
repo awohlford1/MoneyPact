@@ -154,7 +154,7 @@ export async function pk8Journey(t, { browser, origin, errors }) {
   });
 
   await t.test("the owner confirms the acceptance; both members are listed; the notices say so", async () => {
-    await owner.page.reload(); await owner.waitText("Sent, awaiting a response");
+    await owner.page.reload(); await owner.waitText("Acceptance awaiting your confirmation");
     await owner.clickText("Confirm acceptance from i***@example.com");
     await owner.waitText("Acceptance confirmed: the person joined as Collaborator.");
     await owner.waitText("Accepted and confirmed");

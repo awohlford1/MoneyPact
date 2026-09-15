@@ -248,13 +248,15 @@ describe("PK-6 invitation routes through the real Fastify instance", () => {
       assert.equal(accepted.json().state, "awaiting_confirmation");
       assert.equal(world.repository.invitations.get(invitationId)?.state, "awaiting_confirmation");
 
-      // The owner's projection list shows one pending chain and nothing private.
+      // The owner's projection list shows the awaiting_confirmation chain
+      // (EXEC-PK8-RULINGS-001 item (a), PK8-F05) and nothing private.
       asOwner();
       const listed = await call("GET", `/v1/budget-spaces/${SPACE}/invitations`);
       assert.equal(listed.statusCode, 200, listed.body);
       assert.equal(listed.json().invitations.length, 1);
       assert.deepEqual(Object.keys(listed.json().invitations[0]).sort(), ["destinationMasked", "inactiveAt", "invitationId", "issuedAt", "predecessorInvitationId", "proposedRole", "state"]);
       assert.equal(listed.json().invitations[0].destinationMasked, "i***@example.com");
+      assert.equal(listed.json().invitations[0].state, "awaiting_confirmation", "a synthetic record never reaches it and a real one is never told apart from pending, except here");
 
       const confirmed = await call("POST", `/v1/budget-spaces/${SPACE}/invitations/${invitationId}/confirm`, { confirmationIdempotencyKey: "c-1" });
       assert.equal(confirmed.statusCode, 200, confirmed.body);
