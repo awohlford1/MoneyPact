@@ -1082,7 +1082,7 @@
         "cbd-72-model"
       ],
       "policy": "approved",
-      "approved_sha256": "fb1aad8d93c9d9266119013ce4f69826f3b7fdd9187c3f2d3597158bbb5af6c4"
+      "approved_sha256": "18c28fe6561e4de61464f6449f2470e91a032b161f31a32f570b432cc7c86248"
     },
     {
       "path": "docs/cbd-72-authorization-scenario-catalog.md",
@@ -1099,7 +1099,7 @@
         "cbd-72-model"
       ],
       "policy": "approved",
-      "approved_sha256": "d1a51aee5f06be6efcafe3be3f0280d04c463a9af0aae0f88fae26e9bb469fa1"
+      "approved_sha256": "24d462bd2b713fc308019dda5b89ba6e6bb2930b1d78af530c4dd3273bad87e9"
     },
     {
       "path": "docs/cbd-72-collaboration-permission-model.md",
@@ -1116,7 +1116,7 @@
         "future-feature-register"
       ],
       "policy": "approved",
-      "approved_sha256": "e480180f06ee7fc4a6a3772327dfead4b827548e95cce4b8231c614c4a20188a"
+      "approved_sha256": "b49e2f8ee5fe04c306f89a891192c710be0f6ad630a5277211e0c0f6a7cb02cd"
     },
     {
       "path": "docs/cbd-72-permission-matrix-audit.md",
@@ -1140,7 +1140,7 @@
         "cbd-73-review-findings"
       ],
       "policy": "approved",
-      "approved_sha256": "246e6c8312fe2897bb39e0722fad6b29d6f4638def5baf79f8da85f2c7ebe1a4"
+      "approved_sha256": "23c19afee88b610c2864d58f5b64afd9702bd9a9504c02d5383a55c0f1cf7c2a"
     },
     {
       "path": "docs/cbd-73-customer-message-inventory.md",
@@ -1559,7 +1559,7 @@
         "cbd-94-review-findings"
       ],
       "policy": "approved",
-      "approved_sha256": "4fefefb7609b98022a14770212b318f69fa87778495f47fa77df080a0cb5a408"
+      "approved_sha256": "3c7d2dd4dc22115ee2a0c5887a0408688aa21c1fc1b5396a44b77109f3432893"
     },
     {
       "path": "docs/cobudget-future-feature-register.md",

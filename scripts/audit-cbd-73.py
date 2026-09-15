@@ -196,12 +196,14 @@ GOVERNING_BLOBS = {
     Path("docs/cbd-71-mvp-schedule-decision-register.md"): (
         "fb70a7a0754a876b88c66a97469f0a57f67dd9c9"
     ),
-    # Re-pinned September 2, 2026 for the CBD-72 v0.1.54 section 5.4 amendment,
-    # which removed the recipient-configurable "privacy" item.  CBD-73 cites
-    # section 5.4 only for the personal-settings boundary, which the amendment
-    # reinforces rather than changes, so no CBD-73 rule is affected.
+    # Re-pinned September 15, 2026 for the CBD-72 row 36 amendment (manual-account
+    # management, PO-CBD72-ROW36-001), which adds a permission row and touches no
+    # section CBD-73 cites; previously re-pinned September 2, 2026 for the v0.1.54
+    # section 5.4 amendment, which removed the recipient-configurable "privacy"
+    # item.  CBD-73 cites section 5.4 only for the personal-settings boundary,
+    # which neither amendment changes, so no CBD-73 rule is affected.
     Path("docs/cbd-72-collaboration-permission-model.md"): (
-        "f1842e5d020e7781c6808730ae4df43faedaaabd"
+        "ffd3deb4d4fe0999cffc9c3d1389b75d90eafffc"
     ),
     # Re-pinned September 3, 2026, most recently for CBD-91 v1.0.4, which
     # records the corrected CR-91-001/002/003/004/005/006 sources.  Every row

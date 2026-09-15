@@ -89,13 +89,13 @@ FROZEN_BLOBS = {
     # CBD-72 is a context freeze here, not a source family: SOURCE_FAMILIES
     # counts no CBD-72 identifier, so none of this moves a CBD-95 total.
     Path("docs/cbd-72-collaboration-permission-model.md"): (
-        "f1842e5d020e7781c6808730ae4df43faedaaabd"
+        "ffd3deb4d4fe0999cffc9c3d1389b75d90eafffc"
     ),
     Path("docs/cbd-72-authorization-scenario-catalog.md"): (
-        "2c6030df745adf1e1b6a812d3a0afbd4985ba7a0"
+        "8875695c0d3732dd752db9f99ad133eef39d952f"
     ),
     Path("docs/cbd-72-acceptance-criteria-traceability.md"): (
-        "ce7cdc70399e2fbf7df276eb7189760c8a3aac20"
+        "59570a4b866a17ca8f0d5c1d5e9e889dbdb947d7"
     ),
 }
 
