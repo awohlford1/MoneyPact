@@ -775,6 +775,10 @@ export async function withdrawPrimaryTransfer(
 /**
  * `29.view_primary_transfer`. Either party reads the workflow's status.
  *
+ * The party check is the same one accept and decline run (`SEC-PK7A-F4`):
+ * the acting membership must be one of the two parties, must be active, and
+ * must belong to the acting subject. A membership id alone is not a party.
+ *
  * It does not materialize an expiry: a read is not a mutation, and
  * `TR-73-46`'s closure is a mutating transition that belongs to the next
  * write. A timestamp-expired workflow therefore reads as what it is, and the
@@ -787,6 +791,10 @@ export async function viewPrimaryTransfer(
   const record = await deps.repository.readTransfer(actor.budgetSpaceId, request.transferId);
   if (!record) throw new PrimaryTransferError("transfer_not_found", "transferId");
   if (record.proposerMembershipId !== actor.membershipId && record.recipientMembershipId !== actor.membershipId) {
+    return deny(deps, actor, "authorization_denied", request.transferId);
+  }
+  const party = await deps.repository.readMembership(record.budgetSpaceId, actor.membershipId);
+  if (!party || party.status !== "active" || party.accountSubjectId !== actor.subjectId) {
     return deny(deps, actor, "authorization_denied", request.transferId);
   }
   return { outcome: "view", transfer: transferView(record) };

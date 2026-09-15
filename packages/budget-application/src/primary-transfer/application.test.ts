@@ -339,6 +339,15 @@ void test("PK7A-02: the status read answers either party and nobody else, and ne
   }
   const stranger = { ...world.primary("29.view_primary_transfer"), membershipId: "00000000-0000-4000-8000-123412341234" };
   assert.equal((await viewPrimaryTransfer(world.deps, stranger, { transferId })).outcome, "denied");
+  // SEC-PK7A-F4: a party's membership id under another subject is not the
+  // party, and neither is a party whose membership has ended.
+  const forgedSubject = { ...world.recipient("29.view_primary_transfer"), subjectId: OTHER_SUBJECT };
+  assert.equal((await viewPrimaryTransfer(world.deps, forgedSubject, { transferId })).outcome, "denied");
+  const recipient = await world.repository.readMembership(SPACE, RECIPIENT_MEMBERSHIP);
+  world.repository.seedMembership({ ...recipient!, status: "ended", endedAt: world.clock.now() });
+  assert.equal((await viewPrimaryTransfer(world.deps, world.recipient("29.view_primary_transfer"), { transferId })).outcome, "denied");
+  world.repository.seedMembership(recipient!);
+  assert.equal((await viewPrimaryTransfer(world.deps, world.recipient("29.view_primary_transfer"), { transferId })).outcome, "view");
 
   world.clock.advanceSeconds(8 * 24 * 60 * 60);
   const afterExpiry = await viewPrimaryTransfer(world.deps, world.primary("29.view_primary_transfer"), { transferId });
