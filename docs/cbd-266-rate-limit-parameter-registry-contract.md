@@ -672,7 +672,8 @@ required by `RL-92-006` rather than retrying without bound.
 external denial (proposed, `EXEC-POV-C200F01-001` item 3). The API's surface
 hook answers it `429` with body `{"outcome": "retry", "reason": "in_flight"}`
 and the header `Retry-After: 1`, and only after the session gate has resolved
-the verified actor: the answer is keyed on the actor's own bucket, discloses no
+the verified actor and, for a non-safe method, the request has carried the
+CSRF/origin proof: the answer is keyed on the actor's own bucket, discloses no
 count, no remaining quota and no other actor's, ceremony's or cohort's state,
 and is audited as the earliest decisive gate exactly like every other surface
 denial (`authorization_evaluation: not_run`, `counter_store_evidence:

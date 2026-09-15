@@ -176,4 +176,23 @@ describe("EXEC-POV-C200F01-001 item 3: a verified actor's second in-flight mutat
       assert.deepEqual(difference, ["retry-after"]);
     } finally { await app.close(); }
   });
+  it("SEC-G429-F1: a verified actor without the CSRF/origin proof is answered the uniform 403 with no Retry-After even when the gate reports deny_in_flight", async () => {
+    handlerCalls = 0; const h = new Harness();
+    const module = await Test.createTestingModule({
+      imports: [AppModule.register(config, () => undefined, {
+        boundary: h.boundary, surfaceApproved: async () => true, csrf: async () => false,
+        rateLimit: { evidence: (request) => invocation(apiIdentity(request.method, request.routeOptions.url!), "api_route", "test-only", "test-only"), enforce: async () => ({ outcome: "deny_in_flight" }) },
+        sessionLocator: (request) => request.headers.cookie,
+        deny: (response) => { throw new HttpException(response, 403); },
+      }, testHistory)],
+      controllers: [BootstrapController],
+    }).compile();
+    const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { logger: false });
+    try {
+      await app.init(); await app.getHttpAdapter().getInstance().ready();
+      const unproven = await app.inject({ method: "POST", url: "/protected/bootstrap", headers: { cookie: "opaque" } });
+      assert.equal(unproven.statusCode, 403); assert.deepEqual(unproven.json(), UNIFORM); assert.equal(unproven.headers["retry-after"], undefined);
+      assert.equal(handlerCalls, 0);
+    } finally { await app.close(); }
+  });
 });

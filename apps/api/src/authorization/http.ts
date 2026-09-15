@@ -266,9 +266,12 @@ export class ApiAuthorizationBoundary implements CanActivate, NestInterceptor, O
           // (`actor !== undefined`; a pre-authentication surface never resolves one and the engine never types the
           // outcome without a verified actor), and keyed on that actor's own bucket, so it discloses nothing about
           // any other actor. It is still a denial: audited as the earliest decisive gate exactly like the 403, nothing
-          // consumed, no replay lookup, policy or effect. An audit failure falls to the outer catch and the uniform
-          // denial (RF-1); the deferred (reserved-unit) path in canActivate never answers it.
-          if (decision.outcome === "deny_in_flight" && actor !== undefined) {
+          // consumed, no replay lookup, policy or effect. rejectEnforcement swallows an audit-append failure and still
+          // throws the denial (SEC-G429-F3), so the 429 is sent exactly as the 403 would be; the deferred
+          // (reserved-unit) path in canActivate never answers it. SEC-G429-F1: a non-safe request must also carry the
+          // CSRF/origin proof (A1) before it is told anything about its own bucket; without it the answer is the
+          // uniform denial, as it is for the session-gate failure canActivate would otherwise raise.
+          if (decision.outcome === "deny_in_flight" && actor !== undefined && (SAFE_METHODS.has(request.method.toUpperCase()) || await this.#options.csrf(request))) {
             try { await this.#options.boundary.rejectEnforcement(surfaceOutcome(evidence, decision.outcome)); }
             catch (error) { if (!(error instanceof AuthorizationDenied)) throw error; }
             return reply.code(IN_FLIGHT_RETRY.status).header("retry-after", IN_FLIGHT_RETRY.retryAfterSeconds).send(IN_FLIGHT_RETRY.body);
