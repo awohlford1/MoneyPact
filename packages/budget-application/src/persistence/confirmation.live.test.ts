@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { randomUUID } from "node:crypto";
 import { loadLocalDatabaseConfig } from "@cobudget/migrations/local";
+import type { DataAccessClient } from "@cobudget/data-access";
 import { bindClient } from "../../../data-access/src/binding.ts";
 import { PRODUCTION_TABLE_CATALOG } from "../../../data-access/src/catalog.ts";
 import { createOrRegenerateProposal } from "../creation-proposals/application.ts";
@@ -11,6 +12,28 @@ import { consentDependency } from "./consent-store.ts";
 import { confirmationRequest, confirmBudgetCreation } from "../creation-confirmation/index.ts";
 import { DurableProposalStore } from "./proposal-store.ts";
 import { DurableConfirmationStore } from "./confirmation-store.ts";
+
+/**
+ * CBD233-STALE-CHECK-ORDER-001: a write counter over the CBD-246 statement seam.
+ *
+ * Every statement the confirmation can write goes through one of these methods, so recording them
+ * here is the transaction's own write log. The residue queries at the end of a rolled-back
+ * transaction cannot tell a denial that wrote two rows and rolled them back from one that wrote
+ * no row at all; this can. `transaction` re-wraps the scoped client the callback receives, so the
+ * statements issued inside the serializable transaction are counted, not only those outside it.
+ */
+function countingClient(client: DataAccessClient, log: string[]): DataAccessClient {
+  return {
+    ...client,
+    transaction: (options, work) => client.transaction(options, scoped => work(countingClient(scoped, log))),
+    tenantInsert: query => { log.push("tenantInsert " + query.table); return client.tenantInsert(query); },
+    tenantUpdate: query => { log.push("tenantUpdate " + query.table); return client.tenantUpdate(query); },
+    tenantDelete: query => { log.push("tenantDelete " + query.table); return client.tenantDelete(query); },
+    platformInsert: query => { log.push("platformInsert " + query.table); return client.platformInsert(query); },
+    platformUpdate: query => { log.push("platformUpdate " + query.table); return client.platformUpdate(query); },
+    platformDelete: query => { log.push("platformDelete " + query.table); return client.platformDelete(query); },
+  };
+}
 
 // Exactly the opt-in condition in data-access/src/transaction.live.test.ts.
 // Manager provisions/migrates the scratch database; this test never resets it.
@@ -37,7 +60,11 @@ void test("CONF-233 live PostgreSQL graph, concurrent convergence, replay, rollb
         await connection.query("COMMIT");
       } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
       const clock = new FakeClock("2026-09-15T12:00:00.000Z");
-      const proposals = new DurableProposalStore(client, randomUUID, () => clock.now().toISOString());
+      // Everything the confirmation does runs through the counted client; the residue assertions read
+      // through the raw one, so a residue query never disturbs the write log.
+      const writes: string[] = []; const points: string[] = [];
+      const counted = countingClient(client, writes);
+      const proposals = new DurableProposalStore(counted, randomUUID, () => clock.now().toISOString());
       const ports = testPorts({ store: proposals, clock, idGenerator: { proposalId: () => "bcp_" + randomUUID().replaceAll("-", "") }, constraintReader: { currentConstraintVersion: () => "cbd-231/0.1" } });
       const proposal = await createOrRegenerateProposal({ subjectContext: context, idempotencyKeyHeader: randomUUID(), body: {
         name: "Live fixture", timeZone: "America/New_York", currencyCode: "USD", schedule: { cadence: "weekly", anchor: "monday" } } }, ports);
@@ -47,16 +74,19 @@ void test("CONF-233 live PostgreSQL graph, concurrent convergence, replay, rollb
         ? { confirmationBinding: proposal.response.confirmationBinding, acknowledgedDisclosure }
         : { confirmationBinding: proposal.response.confirmationBinding });
       const located = await proposals.locate({ ...context, proposalId: request.proposalId }); assert.ok(located);
-      const store = new DurableConfirmationStore(client, proposals, { attempts: 5, reload: async () => ({ context, ports }),
+      const store = new DurableConfirmationStore(counted, proposals, { attempts: 5, reload: async () => ({ context, ports }),
         authorize: async () => ({ policyVersion: "p1", policyDigest: "a".repeat(64), inputSchemaVersion: 1, authorizationVersion: 1 }),
         allowAudit: async (tx, plan) => { await tx.platformInsert({ table: auditTable, values: { operation_id: plan.operationId, outcome: "allow" } }); },
-        // The production consent write (CBD-236 SS7): the creator's row is written on this same client,
-        // immediately after the creator membership, and a stale claim denies before anything is written.
-        consent: skipConsent ? async () => undefined : consentDependency(disclosures, randomUUID),
+        // The production consent dependency (CBD-236 SS7; CBD233-STALE-CHECK-ORDER-001): phase 1
+        // compares the claim before the first insert, phase 2 writes the creator's row on this same
+        // client immediately after the creator membership.
+        consent: skipConsent ? () => async () => undefined : consentDependency(disclosures, randomUUID),
         boundary: async point => {
+          points.push(point);
           if (point === failure) throw new Error("injected rollback");
         } });
       return { context, request, store, budgetSpaceId: located.candidateBudgetSpaceId, membershipId: located.candidatePrimaryMembershipId,
+        writes, points, reset: () => { writes.length = 0; points.length = 0; },
         confirm: () => confirmBudgetCreation(store, context, request) };
     }
     const same = await fixture(); const [a, b] = await Promise.all([same.confirm(), same.confirm()]); assert.deepEqual(a, b);
@@ -91,13 +121,37 @@ void test("CONF-233 live PostgreSQL graph, concurrent convergence, replay, rollb
       budgetSpaceId: a.budgetSpaceId, conditions: [{ column: "consent_id", value: row.consent_id }] })),
       (e: unknown) => typeof (e as { sqlState?: string }).sqlState === "string");
 
-    // CONSENT-L-04: a stale acknowledgement, and a missing one, fail at commit and write nothing at all.
+    // CONSENT-L-04 (CBD233-STALE-CHECK-ORDER-001): a stale, foreign or absent acknowledgement is
+    // denied `stale_disclosure` ahead of the transaction's first insert. Zero rows at the end proves
+    // only that the rollback worked; the write log proves there was nothing to roll back. The whole
+    // log is pinned, not just its INSERTs: the one statement a denied confirmation still issues is
+    // the conditional no-op UPDATE that claims the proposal row lock, which every denial of this
+    // contract performs and which writes no creation row. The boundary log shows how far the
+    // transaction got -- the claim, reload and authorization decisions, then the disclosure check,
+    // and nothing after it.
     for (const claim of [{ kind: PRIMARY_OWNER_SELF_DISCLOSURE, version: disclosure.version + 1 }, { kind: "invitation", version: disclosure.version }, null]) {
+      const label = JSON.stringify(claim ?? null);
       const stale = await fixture(undefined, claim);
-      await assert.rejects(stale.confirm(), (error: unknown) => (error as { code?: string }).code === "stale_disclosure", JSON.stringify(claim ?? null));
+      stale.reset();
+      await assert.rejects(stale.confirm(), (error: unknown) => (error as { code?: string }).code === "stale_disclosure", label);
+      assert.deepEqual(stale.writes, ["platformUpdate budget_creation_proposal"], "a " + label + " claim wrote " + JSON.stringify(stale.writes));
+      assert.deepEqual(stale.points, ["before:proposal_claim", "after:proposal_claim", "before:dependency_reload", "after:dependency_reload",
+        "before:authorization", "after:authorization", "before:disclosure_check"], "boundary log after " + label);
       for (const table of ["budget_space", "budget_space_membership", "budget_space_consent", "budget_creation_idempotency"]) {
-        assert.equal((await client.tenantSelect({ table, budgetSpaceId: stale.budgetSpaceId })).rowCount, 0, table + " after " + JSON.stringify(claim ?? null));
+        assert.equal((await client.tenantSelect({ table, budgetSpaceId: stale.budgetSpaceId })).rowCount, 0, table + " after " + label);
       }
+    }
+    // The other half of the ordering: a valid claim is compared before the first insert too, and its
+    // consent row is still written immediately after the creator membership in the one transaction.
+    const ordered = await fixture(); ordered.reset();
+    await ordered.confirm();
+    const inserted = ordered.writes.filter(statement => statement.startsWith("tenantInsert") || statement.startsWith("platformInsert"));
+    assert.ok(ordered.points.indexOf("after:disclosure_check") < ordered.points.indexOf("before:budget_space"), "the comparison precedes the first insert");
+    assert.equal(ordered.points[ordered.points.indexOf("after:disclosure_check") + 1], "before:budget_space");
+    assert.deepEqual(inserted.slice(0, 3), ["tenantInsert budget_space", "tenantInsert budget_space_membership", "tenantInsert budget_space_consent"]);
+    assert.equal(ordered.points[ordered.points.indexOf("after:budget_space_membership") + 1], "before:budget_space_consent");
+    for (const table of ["budget_space", "budget_space_membership", "budget_space_consent"]) {
+      assert.equal((await client.tenantSelect({ table, budgetSpaceId: ordered.budgetSpaceId })).rowCount, 1, table + " after a valid claim");
     }
 
     // A membership may not activate without its consent row. The whole confirmation runs unchanged

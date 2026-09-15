@@ -6,8 +6,9 @@
  * No database appears here (CBD-232 SS3.1). This module decides what the
  * creator's `budget_space_consent` row contains and whether the acknowledged
  * disclosure is the approved one; `../persistence/consent-store.ts` is the
- * CBD-246 seam that writes it, inside the CBD-233 confirmation transaction and
- * immediately after the creator membership, from server-side facts only.
+ * CBD-246 seam that compares the claim before the transaction's first insert
+ * and then writes the row immediately after the creator membership, from
+ * server-side facts only.
  * Three of the row's facts are worth naming:
  *
  *  * `disclosure_version` and `disclosure_digest` come from the approved
@@ -35,7 +36,9 @@ export type { AcknowledgedDisclosure, ConsentDisclosure, ConsentDisclosureItem, 
 /**
  * CBD-233 SS3.3 `stale_disclosure`: the claim must equal the registry's current
  * row for the kind. A missing, malformed or superseded claim is denied here,
- * inside the transaction, so the confirmation writes nothing.
+ * inside the transaction but ahead of its first creation insert
+ * (`CBD233-STALE-CHECK-ORDER-001`), so the confirmation inserts no row at all
+ * and there is none to roll back.
  */
 export function assertAcknowledgedDisclosure(claim: AcknowledgedDisclosure | undefined, current: ConsentDisclosure): void {
   if (!claim || claim.kind !== current.kind || claim.version !== current.version) throw new ConfirmationError("stale_disclosure");
