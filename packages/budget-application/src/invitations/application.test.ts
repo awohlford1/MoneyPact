@@ -256,22 +256,59 @@ void test("an unknown code writes one AE-73-14 with no budget space, and a termi
 // TR-73-09, TR-73-10, TR-73-11.
 // ---------------------------------------------------------------------------
 
+void test("SEC-PK5-F01: a wrong channel guess is a returned outcome, so the attempt and its audit row survive the transaction", async () => {
+  const world = testWorld();
+  const { ceremonyRequest } = await ceremony(world, "resolve");
+  const auditsBefore = world.repository.audits.length;
+
+  const first = await verifyChannel(world.deps, { ...ceremonyRequest, channelCode: "000000" });
+  assert.deepEqual(first, { outcome: "retry", attemptsRemaining: MAX_CHANNEL_ATTEMPTS - 1 }, "a wrong guess does not throw");
+  assert.equal(world.repository.ceremonies.get(ceremonyRequest.ceremonyId)?.channelAttempts, 1, "the increment is persisted");
+  const denial = world.repository.audits.slice(auditsBefore).find((row) => row.eventCode === "AE-73-09");
+  assert.equal(denial?.result, "deny");
+  assert.equal(denial?.reasonClass, "channel_challenge_invalid");
+});
+
 void test("the channel challenge is bounded, and exhausting it kills the ceremony for good", async () => {
   const world = testWorld();
   const { ceremonyRequest } = await ceremony(world, "resolve");
   for (let attempt = 1; attempt < MAX_CHANNEL_ATTEMPTS; attempt += 1) {
-    await assert.rejects(
-      verifyChannel(world.deps, { ...ceremonyRequest, channelCode: "000000" }),
-      (error: unknown) => isInvitationError(error, "channel_challenge_invalid"),
-    );
+    const answer = await verifyChannel(world.deps, { ...ceremonyRequest, channelCode: "000000" });
+    assert.deepEqual(answer, { outcome: "retry", attemptsRemaining: MAX_CHANNEL_ATTEMPTS - attempt }, `attempt ${attempt}`);
   }
-  await assert.rejects(
-    verifyChannel(world.deps, { ...ceremonyRequest, channelCode: "000000" }),
-    (error: unknown) => isInvitationError(error, "channel_attempts_exhausted"),
+  assert.deepEqual(
+    await verifyChannel(world.deps, { ...ceremonyRequest, channelCode: "000000" }),
+    { outcome: "exhausted", attemptsRemaining: 0 },
   );
   const ceremonyRow = world.repository.ceremonies.get(ceremonyRequest.ceremonyId);
   assert.equal(ceremonyRow?.channelProofState, "exhausted");
   assert.equal(ceremonyRow?.channelAttempts, MAX_CHANNEL_ATTEMPTS);
+
+  // The bound holds afterwards, and the correct code no longer proves.
+  assert.deepEqual(
+    await verifyChannel(world.deps, { ...ceremonyRequest, channelCode: "000000" }),
+    { outcome: "exhausted", attemptsRemaining: 0 }, "an exhausted ceremony stays exhausted",
+  );
+  assert.equal(world.repository.ceremonies.get(ceremonyRequest.ceremonyId)?.channelAttempts, MAX_CHANNEL_ATTEMPTS, "and takes no further attempt");
+});
+
+void test("SEC-PK5-F01: an already-member attach cancels the record privately and answers the uniform outcome as a value", async () => {
+  const world = testWorld();
+  const { invitationId, ceremonyRequest } = await ceremony(world, "verify");
+  world.repository.seedMembership({
+    membershipId: "99999999-9999-4999-8999-333333333333", budgetSpaceId: SPACE,
+    profileId: "55555555-5555-4555-8555-555555555555", accountSubjectId: INVITEE_SUBJECT,
+    role: "collaborator", status: "active", authorizationVersion: 1, createdBySubjectId: OWNER_SUBJECT, endedAt: null,
+  });
+  const answer = await attachAccount(world.deps, world.invitee, ceremonyRequest);
+  assert.deepEqual(answer, { outcome: "unusable", messageCode: UNIFORM_LINK_MESSAGE_CODE });
+  const record = world.repository.invitations.get(invitationId);
+  assert.equal(record?.state, "cancelled", "the private cancel is committed, not discarded");
+  assert.equal(record?.privateTerminalCause, "already_member");
+  assert.equal(record?.projectionState, "pending", "the inviter learns nothing until TR-73-07");
+  const audit = world.repository.audits.find((row) => row.eventCode === "AE-73-06" && row.targetId === invitationId);
+  assert.equal(audit?.audience, "restricted");
+  assert.equal(audit?.result, "system");
 });
 
 void test("the fixed partial order is the row's: attach needs proof, the disclosure and accept need the attachment", async () => {

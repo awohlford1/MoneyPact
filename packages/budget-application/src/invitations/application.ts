@@ -825,11 +825,20 @@ export interface VerifyChannelResult {
  * `TR-73-09`. The bounded attempt count is the ceremony row's, so a client
  * that reopens the page cannot reset it; exhausting it moves the proof state
  * to `exhausted` permanently and the ceremony becomes unusable.
+ *
+ * `SEC-PK5-F01`. A wrong guess is an **outcome, not an error**. Every command
+ * in this module runs inside the caller's transaction, and that transaction
+ * rolls back on any thrown error (`packages/data-access/src/binding.ts`), so
+ * a function that wrote the attempt increment and then threw discarded its own
+ * increment and its own `AE-73-09` row -- leaving the six-digit challenge
+ * unbounded. `retry` and `exhausted` are therefore returned, and PK-6 maps
+ * them to the 4xx its route needs. The only throw left here is the pre-write
+ * `ceremony_unusable` class, which by definition has written nothing.
  */
 export async function verifyChannel(deps: InvitationDependencies, request: VerifyChannelRequest): Promise<VerifyChannelResult> {
   const { ceremony, invitation } = await loadCeremony(deps, request, null, ["open"]);
   if (ceremony.channelProofState === "proved") return { outcome: "proved", attemptsRemaining: MAX_CHANNEL_ATTEMPTS - ceremony.channelAttempts };
-  if (ceremony.channelProofState === "exhausted") throw new InvitationError("channel_attempts_exhausted");
+  if (ceremony.channelProofState === "exhausted") return { outcome: "exhausted", attemptsRemaining: 0 };
   if (ceremony.channelChallengeDigest === null) throw new InvitationError("ceremony_unusable");
 
   const attempts = ceremony.channelAttempts + 1;
@@ -852,8 +861,8 @@ export async function verifyChannel(deps: InvitationDependencies, request: Verif
     payload: { invitationId: invitation.invitationId, ceremonyId: ceremony.ceremonyId, attemptNumber: attempts, attemptsRemaining: Math.max(0, MAX_CHANNEL_ATTEMPTS - attempts) },
   });
   if (matched) return { outcome: "proved", attemptsRemaining: MAX_CHANNEL_ATTEMPTS - attempts };
-  if (exhausted) throw new InvitationError("channel_attempts_exhausted");
-  throw new InvitationError("channel_challenge_invalid", "channelCode");
+  if (exhausted) return { outcome: "exhausted", attemptsRemaining: 0 };
+  return { outcome: "retry", attemptsRemaining: MAX_CHANNEL_ATTEMPTS - attempts };
 }
 
 /**
@@ -884,10 +893,20 @@ export async function declineInvitation(deps: InvitationDependencies, request: C
   return UNIFORM_UNUSABLE;
 }
 
-export interface AttachResult {
+export interface AttachSuccess {
   readonly ceremonyId: string;
   readonly attached: true;
 }
+
+/**
+ * `SEC-PK5-F01`. The private `already_member` and `stale_after_membership_end`
+ * cancels are writes -- one `TR-73-06` system cancel and one restricted
+ * `AE-73-06` row -- so the uniform answer they produce has to be a **returned
+ * value**. Throwing after the cancel rolled the caller's transaction back, so
+ * the record stayed `pending` and was re-cancelled-and-discarded on every
+ * attach. The invitee's answer is byte-identical either way.
+ */
+export type AttachResult = AttachSuccess | UniformUnusable;
 
 /**
  * `TR-73-10`. The subject must be active with exactly one active profile
@@ -913,22 +932,8 @@ export async function attachAccount(deps: InvitationDependencies, invitee: Invit
   const identity = await deps.repository.readDisplayIdentity(invitee.subjectId);
   if (!identity || identity.profileState !== "active") throw new InvitationError("subject_ineligible", "subjectId");
 
-  const memberships = await deps.repository.listMemberships(invitation.budgetSpaceId, invitee.subjectId);
-  const active = memberships.find((row) => row.status === "active");
-  if (active) {
-    // TR-73-06 system path with the private cause; the invitee gets the uniform outcome.
-    await cancelRecord(deps, ownerFromRecord(invitation, request.correlationId), invitation, "already_member", "restricted", "pending");
-    throw new InvitationError("ceremony_unusable");
-  }
-  const latestEnd = memberships
-    .map((row) => row.endedAt)
-    .filter((value): value is string => typeof value === "string")
-    .sort()
-    .at(-1);
-  if (latestEnd !== undefined && !isBefore(latestEnd, invitation.issuedAt)) {
-    await cancelRecord(deps, ownerFromRecord(invitation, request.correlationId), invitation, "stale_after_membership_end", "restricted", "pending");
-    throw new InvitationError("ceremony_unusable");
-  }
+  const cancelled = await cancelForMembershipState(deps, invitation, invitee.subjectId, request.correlationId);
+  if (cancelled) return cancelled;
 
   const now = deps.clock.now();
   await deps.repository.updateCeremony(ceremony.budgetSpaceId, ceremony.ceremonyId, {
@@ -949,6 +954,38 @@ export async function attachAccount(deps: InvitationDependencies, invitee: Invit
     payload: { invitationId: invitation.invitationId, ceremonyId: ceremony.ceremonyId },
   });
   return { ceremonyId: ceremony.ceremonyId, attached: true };
+}
+
+/**
+ * CBD-73 SS4.4 rule 6, the recipient-side half: an active membership, or an
+ * invitation issued at or before this subject's latest membership end
+ * (`IC-73-017`), cancels the record privately through `TR-73-06` and answers
+ * the uniform outcome. Returns null when neither holds, which is the only
+ * case where the caller may go on.
+ *
+ * The cancel is a write, so this **returns** the uniform answer rather than
+ * throwing it (`SEC-PK5-F01`); the cancel and its restricted `AE-73-06` row
+ * then commit with the caller's transaction.
+ */
+async function cancelForMembershipState(
+  deps: InvitationDependencies, invitation: InvitationRecord, subjectId: string, correlationId: string,
+): Promise<UniformUnusable | null> {
+  const memberships = await deps.repository.listMemberships(invitation.budgetSpaceId, subjectId);
+  const owner = ownerFromRecord(invitation, correlationId);
+  if (memberships.some((row) => row.status === "active")) {
+    await cancelRecord(deps, owner, invitation, "already_member", "restricted", "pending");
+    return UNIFORM_UNUSABLE;
+  }
+  const latestEnd = memberships
+    .map((row) => row.endedAt)
+    .filter((value): value is string => typeof value === "string")
+    .sort()
+    .at(-1);
+  if (latestEnd !== undefined && !isBefore(latestEnd, invitation.issuedAt)) {
+    await cancelRecord(deps, owner, invitation, "stale_after_membership_end", "restricted", "pending");
+    return UNIFORM_UNUSABLE;
+  }
+  return null;
 }
 
 /** A system-path owner context for a transition nobody is acting on. Carries the record's own creator, no decision tuple. */

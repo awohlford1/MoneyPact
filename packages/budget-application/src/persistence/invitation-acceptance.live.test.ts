@@ -53,7 +53,7 @@ import { confirmAcceptance } from "../invitations/acceptance.ts";
 import type { AcceptanceReceipt } from "../invitations/acceptance.ts";
 import { assertInvitationEdge } from "../invitations/transitions.ts";
 import { createKeyedDigest } from "../invitations/secrets.ts";
-import { isInvitationError } from "../invitations/records.ts";
+import { MAX_CHANNEL_ATTEMPTS, isInvitationError } from "../invitations/records.ts";
 import type { OwnerContext } from "../invitations/ports.ts";
 import { invitationPersistence } from "./invitation-store.ts";
 
@@ -300,6 +300,63 @@ void test("PROTO-INVITATIONS-PK5 live PostgreSQL: the acceptance transaction, th
       assert.equal(
         await transaction(async (deps) => deps.repository.writeDisplayName(custodyInvitee.subject, "Nope", identity!.version)),
         null, "a stale profile version writes nothing",
+      );
+    }
+
+    // =================================================================
+    // (f) SEC-PK5-F01. A wrong channel guess must survive the caller's
+    //     transaction: the increment and the AE-73-09 row are what bound
+    //     the 10^6 challenge, and a throw after the write rolled both back.
+    // =================================================================
+    {
+      const boundSpace = await newSpace();
+      const boundId = await transaction(async (deps) =>
+        (await createInvitation(deps, ownerContext(boundSpace), createRequest(`bound-${randomUUID().slice(0, 8)}@example.com`))).projection.invitationId);
+      const boundDelivery = await delivery(boundId);
+      const opened = await transaction(async (deps) =>
+        resolveCode(deps, { presentedCode: boundDelivery.bearer, environment: ENVIRONMENT, correlationId: randomUUID() }));
+      if (opened.outcome !== "resolved") throw new Error("unreachable");
+      const boundRequest = {
+        ceremonyId: opened.ceremonyId, ceremonySecret: opened.ceremonySecret, correlationId: randomUUID(),
+      };
+      const wrong = boundDelivery.challenge === "000000" ? "111111" : "000000";
+
+      const firstGuess = await transaction(async (deps) => verifyChannel(deps, { ...boundRequest, channelCode: wrong }));
+      assert.deepEqual(firstGuess, { outcome: "retry", attemptsRemaining: MAX_CHANNEL_ATTEMPTS - 1 });
+      assert.equal(
+        ((await api.query("SELECT channel_attempts FROM budget_space_invitation_ceremony WHERE ceremony_id = $1", [opened.ceremonyId]))
+          .rows[0] as { channel_attempts: number }).channel_attempts,
+        1, "the attempt increment committed",
+      );
+      assert.equal(
+        (await listLifecycleAudit(client, boundSpace.spaceId)).filter((row) => row.event_code === "AE-73-09").length,
+        1, "the AE-73-09 denial row committed",
+      );
+
+      // The bound really exhausts: four more wrong guesses, then the ceremony
+      // is dead and even the correct code cannot prove it.
+      for (let attempt = 2; attempt < MAX_CHANNEL_ATTEMPTS; attempt += 1) {
+        assert.deepEqual(
+          await transaction(async (deps) => verifyChannel(deps, { ...boundRequest, channelCode: wrong })),
+          { outcome: "retry", attemptsRemaining: MAX_CHANNEL_ATTEMPTS - attempt }, `attempt ${attempt}`,
+        );
+      }
+      assert.deepEqual(
+        await transaction(async (deps) => verifyChannel(deps, { ...boundRequest, channelCode: wrong })),
+        { outcome: "exhausted", attemptsRemaining: 0 },
+      );
+      const exhausted = (await api.query(
+        "SELECT channel_attempts, channel_proof_state FROM budget_space_invitation_ceremony WHERE ceremony_id = $1", [opened.ceremonyId],
+      )).rows[0] as { channel_attempts: number; channel_proof_state: string };
+      assert.equal(exhausted.channel_attempts, MAX_CHANNEL_ATTEMPTS);
+      assert.equal(exhausted.channel_proof_state, "exhausted");
+      assert.deepEqual(
+        await transaction(async (deps) => verifyChannel(deps, { ...boundRequest, channelCode: boundDelivery.challenge })),
+        { outcome: "exhausted", attemptsRemaining: 0 }, "the correct code no longer proves an exhausted ceremony",
+      );
+      assert.equal(
+        (await listLifecycleAudit(client, boundSpace.spaceId)).filter((row) => row.event_code === "AE-73-09").length,
+        MAX_CHANNEL_ATTEMPTS, "one AE-73-09 per attempt that was taken",
       );
     }
 
