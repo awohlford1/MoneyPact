@@ -8,7 +8,8 @@
     "./creation-proposals": "./src/creation-proposals/index.ts",
     "./targets": "./src/targets/index.ts",
     "./accounts": "./src/accounts/index.ts",
-    "./transactions": "./src/transactions/index.ts"
+    "./transactions": "./src/transactions/index.ts",
+    "./invitations": "./src/invitations/index.ts"
   },
   "scripts": {
     "lint": "eslint .",
