@@ -1738,6 +1738,13 @@
       "rationale": "CBD-236 policy version 6 release step is a repository-only operational record for the Manager; it names approvals that do not yet exist and creates no pages.",
       "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy, matching the docs/cbd-236-p5-release-step.md precedent in this manifest.",
       "reopen_when": "The p6 release row is merged with both approval references, after which the document is historical; a Confluence target is registered only in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-190-identity-amendments-proposal.md",
+      "disposition": "unpublished",
+      "rationale": "The CBD-190 first-sign-in display-name write and bounded returnTo destination-class amendments proposal (PROTO-CBD190-AMENDMENTS-PROPOSAL-001) is held repository-only because no approved Confluence target is registered for it; it proposes contract revisions and Executive decisions and creates no pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy, matching the docs/cbd-236-p6-subject-self-amendment-proposal.md precedent in this manifest.",
+      "reopen_when": "The Executive records the section 4 decisions and the Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
     }
   ],
   "retained_pages": []
