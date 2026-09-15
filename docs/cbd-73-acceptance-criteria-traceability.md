@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved v1.0.3 — Product Owner approved the exact package on August 18, 2026 after closing `OI-73-001` and the `OI-73-008` Failed-state semantics, and it is published to Confluence. Approval covers the specification only; the remaining §7 gates stay open** |
-| Document version | 1.0.3 |
+| Status | **Approved v1.0.4 — Product Owner approved the exact package on August 18, 2026 after closing `OI-73-001` and the `OI-73-008` Failed-state semantics, and it is published to Confluence. Approval covers the specification only; the remaining §7 gates stay open. The package moves to v1.0.4 with the specification's §13.1 amendment approved September 15, 2026 (`PO-CONTRACT-APPROVALS-003`), which changes no criterion mapping** |
+| Document version | 1.0.4 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-73](https://cobudget.atlassian.net/browse/CBD-73) |
 | Parent | [CBD-12](https://cobudget.atlassian.net/browse/CBD-12) |
@@ -358,6 +358,7 @@ earlier clean run against different blobs.
 
 | Version | Date | Author | Change | Approval |
 | --- | --- | --- | --- | --- |
+| 1.0.4 | September 15, 2026 | Claude specification specialist, dispatched by Manager (`PROTO-CONSENT-APPROVALS-APPLY-001`) | Package version moved with the specification's §13.1 `DR-73-04` physical mapping to `budget_space_consent`, the `self_disclosure` source value, the append-only digest-pinned disclosure registry as the version source and the `SEC-F02` forward rule, approved at v1.0.4. No row in this document changed. | **Approved — Product Owner, September 15, 2026 (`PO-CONTRACT-APPROVALS-003`)** |
 | 1.0.3 | September 3, 2026 | Claude with Alexander Wohlford as Product Owner | Brand amendment. The ceremony-entry disclosure in the specification's §7 said the surface discloses "that this is a CoBudget invitation requiring verification"; it now says MoneyPact, matching `EM-92-002` as amended at CBD-92 v1.0.1 and the `MSG-73-002`/`MSG-73-010` rows already corrected at v1.0.2. The naming standard is `RT-75-01`. No lifecycle transition, invariant, message row, scenario, or gate changed. | Consequential amendment to an approved document under change control; the v1.0 approval otherwise stands |
 | 1.0.2 | September 2, 2026 | Claude with Alexander Wohlford as Product Owner | Brand amendment. The two customer-facing strings that named the product, in `MSG-73-002` and `MSG-73-010`, said "a CoBudget invitation". The September 2, 2026 brand decision recorded in `docs/brand-foundation.md` makes MoneyPact the customer-facing name and keeps CoBudget as the internal codename, so a customer-readable invitation must say MoneyPact. Both now do. No semantic rule changes; the naming standard is `RT-75-*` in the CBD-75 package. | Product Owner authorized September 2, 2026 |
 | 1.0.1 | August 18, 2026 | Claude with Alexander Wohlford as Product Owner | Corrected the status line, closed `OI-73-007` with the page IDs, versions, and source commit, closed `RV-73-026`, marked the Confluence publication gate complete, and recorded the five page IDs in the front matter. No rule, decision, or gate changed. | Correction to approved v1.0 |
