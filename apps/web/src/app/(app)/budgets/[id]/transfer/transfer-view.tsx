@@ -17,6 +17,7 @@
 // exactly the text shown; the API compares it against the captured values and answers 409 stale_disclosure, writing
 // nothing, when they differ. A view whose text is null (the registry moved) offers neither control.
 import { useCallback, useEffect, useState } from "react";
+import NextLink from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { InvitationApiError, TRANSFER_STATE_LABELS, claimOf, roleLabel, sentenceFor } from "../../../../../api/invitations";
 import type { ConfirmTransferOutcome, ConsentDisclosure, WireMember } from "../../../../../api/invitations";
@@ -29,12 +30,16 @@ import { ReadFailure, SpaceNavigation, describeFailure, formatInstant, leaveRetu
 
 const LIVE: readonly string[] = ["proposed", "recipient_accepted", "primary_confirmed", "ready"];
 
-/** The Primary Owner proposes the transfer to one active member of the space (TR-73-40). */
+/**
+ * The Primary Owner proposes the transfer to one active member of the space (TR-73-40). The page first reads the
+ * space's live transfer (PK8-F04): a party who arrived from a notice, or without the transfer id, is offered the
+ * status view; a non-party reads the same "none" a space without a live transfer answers.
+ */
 export function ProposeTransferView({ id }: { id: string }) {
   const { session } = useSession();
   const api = useInvitationsClient();
   const router = useRouter();
-  const load = useCallback(async (signal: AbortSignal) => ({ members: await api.listMembers(id, signal), own: await api.ownMembership(id, signal) }), [api, id]);
+  const load = useCallback(async (signal: AbortSignal) => ({ live: await api.liveTransfer(id, signal), members: await api.listMembers(id, signal), own: await api.ownMembership(id, signal) }), [api, id]);
   const read = useRead(`${session.sessionRef}:${id}`, load);
   const [recipient, setRecipient] = useState("");
   const [error, setError] = useState("");
@@ -60,7 +65,11 @@ export function ProposeTransferView({ id }: { id: string }) {
     <SpaceNavigation id={id} current="transfer" />
     <p>Every budget space has exactly one Primary Owner. Handing that role to another member is a two-sided step: the member accepts what it means, and the Primary Owner confirms after a fresh identity check. Nothing changes until both have happened.</p>
     {read.error ? <ReadFailure error={read.error} retry={read.refresh} /> : !read.value ? <Alert loading>Loading members…</Alert>
-      : ownRole !== "primary_owner" ? <Alert title="Only the Primary Owner can propose a transfer">Your role in this budget space is {roleLabel(ownRole ?? "")}. If a transfer names you as the recipient, open it from your notices.</Alert>
+      : read.value.live ? <Alert title={read.value.live.transfer.recipientMembershipId === read.value.own ? "You are proposed as the next Primary Owner" : "A transfer is in progress"}>
+        <p>{TRANSFER_STATE_LABELS[read.value.live.transfer.state] ?? read.value.live.transfer.state}. Open it to read what it means and to choose.</p>
+        <NextLink data-testid="open-live-transfer" className="text-interactive underline" href={`/budgets/${encodeURIComponent(id)}/transfer/${encodeURIComponent(read.value.live.transfer.transferId)}`}>Open the transfer</NextLink>
+      </Alert>
+      : ownRole !== "primary_owner" ? <Alert title="Only the Primary Owner can propose a transfer">Your role in this budget space is {roleLabel(ownRole ?? "")}. No transfer currently names you; when one does, it is listed in your notices and opens from here.</Alert>
       : <form aria-labelledby="propose-heading" className="space-y-4 rounded-lg border border-border p-4" onSubmit={event => { event.preventDefault(); void propose(); }}>
         <h2 id="propose-heading" className="text-2xl font-semibold">Propose a transfer</h2>
         <Select id="transfer-recipient" label="Member who would become Primary Owner" value={recipient} onChange={event => setRecipient(event.target.value)} error={error || undefined}>

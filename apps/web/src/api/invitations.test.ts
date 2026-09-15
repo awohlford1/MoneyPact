@@ -262,6 +262,9 @@ test("PK8-02 over the mock: invite, resolve with the cookie, exhaust a link term
   assert.deepEqual(await owner.api.confirmTransfer(spaceId, transferId, outgoingClaim), { outcome: "denied" }, "a confirm without a fresh grant is the uniform denial and consumes nothing");
   const stranger = browser(directory, clock); await stranger.api.beginSignIn();
   await assert.rejects(stranger.api.viewTransfer(spaceId, transferId), (error: unknown) => error instanceof InvitationApiError && error.denied, "a non-member is denied");
+  // PK8-F04: both parties read the live transfer by the space alone; it is the status view.
+  assert.deepEqual(await invitee.api.liveTransfer(spaceId), served);
+  assert.equal((await owner.api.liveTransfer(spaceId))?.transfer.transferId, transferId);
   await assert.rejects(invitee.api.acceptTransfer(spaceId, transferId, { ...recipientClaim, digest: "0".repeat(64) }), (error: unknown) => error instanceof InvitationApiError && error.status === 409 && error.code === "stale_disclosure");
   await assert.rejects(invitee.api.acceptTransfer(spaceId, transferId, outgoingClaim), (error: unknown) => error instanceof InvitationApiError && error.code === "stale_disclosure", "the other leg's claim is stale");
   assert.equal((await invitee.api.viewTransfer(spaceId, transferId)).transfer.state, "proposed", "a stale claim wrote nothing");
@@ -280,6 +283,7 @@ test("PK8-02 over the mock: invite, resolve with the cookie, exhaust a link term
   await invitee.api.beginStepUp(spaceId);
   assert.deepEqual(await invitee.api.confirmTransfer(spaceId, transferId, outgoingClaim), { outcome: "denied" });
   assert.equal((await invitee.api.listNotices()).filter(row => row.messageCode === "MSG-73-042").length, 1);
+  assert.equal(await invitee.api.liveTransfer(spaceId), null, "a committed workflow is not live: the one 404 reads as none");
 });
 
 async function csrfOf(client: ReturnType<typeof browser>): Promise<string> {

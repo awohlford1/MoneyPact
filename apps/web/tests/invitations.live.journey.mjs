@@ -223,7 +223,13 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
     transferUrl = owner.page.url();
     await owner.waitText("Proposed, awaiting the recipient"); await owner.waitText("Before you confirm this transfer of primary ownership");
     await owner.accessibility();
-    await invitee.page.goto(transferUrl); await invitee.waitText("Before you accept primary ownership");
+    // PK8-F01 and F04: the recipient is never handed the id. The MSG-73-040 notice opens the space's transfer page, whose live
+    // read (party-scoped) offers the status view.
+    await invitee.page.goto(`${origin}/notices`); await invitee.waitText("You have been proposed as the next Primary Owner of a budget space.");
+    await invitee.clickText("Open the transfer"); await invitee.waitText("You are proposed as the next Primary Owner"); await invitee.accessibility();
+    await invitee.clickText("Open the transfer");
+    await invitee.page.waitForFunction(url => location.href === url, {}, transferUrl);
+    await invitee.waitText("Before you accept primary ownership");
     await invitee.waitText("(you)"); await invitee.accessibility();
     await invitee.page.click("#recipient-acknowledged"); await invitee.waitEnabled("Accept primary ownership");
     await invitee.clickText("Accept primary ownership"); await invitee.waitText("Acceptance recorded");

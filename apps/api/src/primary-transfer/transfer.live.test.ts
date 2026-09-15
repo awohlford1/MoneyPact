@@ -207,6 +207,10 @@ describe("PK7B-01 live: the whole Primary transfer over HTTP on real PostgreSQL"
         assert.equal(view.statusCode, 200, view.body);
         assert.equal(view.json().transfer.state, "proposed");
         assert.ok(!view.body.includes("ssurance"), "no assurance material on the wire");
+        // PK8-F04: the recipient, handed no id, reads the space's live workflow by the space alone and gets the same view.
+        const live = await h.inject("GET", `${base}/live`);
+        assert.equal(live.statusCode, 200, live.body);
+        assert.deepEqual(live.json(), view.json(), "the live read is the status view");
         // PK8-F03: the view carries the approved texts at the captured values; a differing claim is 409 stale_disclosure, rolled back.
         assert.deepEqual({ kind: view.json().disclosures.recipient.kind, version: view.json().disclosures.recipient.version, digest: view.json().disclosures.recipient.digest }, ACCEPT_BODY.acknowledgedDisclosure);
         assert.ok(typeof view.json().disclosures.recipient.text.heading === "string" && view.json().disclosures.outgoing.text.items.length > 0);
@@ -324,6 +328,9 @@ describe("PK7B-01 live: the whole Primary transfer over HTTP on real PostgreSQL"
         const repeat = await h.inject("POST", `${base}/${transferId}/confirm`, mutation(owner.csrfValue), CONFIRM_BODY);
         assert.equal(repeat.statusCode, 403, repeat.body);
         assert.deepEqual(repeat.json(), { outcome: "deny", reason: "denied" });
+        // PK8-F04: a committed workflow is not live; the space has none to read.
+        const noneLive = await h.inject("GET", `${base}/live`);
+        assert.equal(noneLive.statusCode, 404, noneLive.body); assert.deepEqual(noneLive.json(), { error: "transfer_not_found" });
         const view = await h.inject("GET", `${base}/${transferId}`);
         assert.equal(view.statusCode, 200, view.body);
         assert.equal(view.json().transfer.state, "committed");

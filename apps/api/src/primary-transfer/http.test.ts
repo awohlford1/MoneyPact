@@ -50,6 +50,7 @@ const ROUTES = [
   "/v1/budget-spaces/:budgetSpaceId/primary-transfers/:transferId/confirm",
   "/v1/budget-spaces/:budgetSpaceId/primary-transfers/:transferId/withdraw",
   "/v1/budget-spaces/:budgetSpaceId/primary-transfers/:transferId",
+  "/v1/budget-spaces/:budgetSpaceId/primary-transfers/live",
 ];
 const THIRD_MEMBERSHIP = "56565656-5656-4656-8656-565656565656";
 const THIRD_PROFILE = "57575757-5757-4757-8757-575757575757";
@@ -153,6 +154,7 @@ async function application(options: { readonly recipientRole?: "co_owner" | "col
     // As the production dependency: an active row of the space, or nothing (R-03 / SEC-PK7B-F3).
     membershipExists: async (budgetSpaceId, membershipId) => { const answer = world.repository.memberships.get(`${budgetSpaceId}/${membershipId}`)?.status === "active"; existenceAnswers.push([membershipId, answer]); return answer; },
     transferParties: async (budgetSpaceId, transferId) => { const r = world.repository.transfers.get(transferId); return r && r.budgetSpaceId === budgetSpaceId ? { proposerMembershipId: r.proposerMembershipId, recipientMembershipId: r.recipientMembershipId } : null; },
+    liveTransfer: async (budgetSpaceId) => { const r = [...world.repository.transfers.values()].find((row) => row.budgetSpaceId === budgetSpaceId && ["proposed", "recipient_accepted", "primary_confirmed", "ready"].includes(row.state)); return r ? { transferId: r.transferId, proposerMembershipId: r.proposerMembershipId, recipientMembershipId: r.recipientMembershipId } : null; },
     context: (transaction) => { const real = store.context(transaction); return tamper.context ? tamper.context(real) : real; },
   };
   const module = await Test.createTestingModule({
@@ -497,6 +499,47 @@ describe("PK-7B Primary-transfer routes through the real Fastify instance", () =
       assert.equal(view.json().disclosures.outgoing.version, 1);
       const moved = await accept(nextId, THIRD);
       assert.equal(moved.statusCode, 409); assert.deepEqual(moved.json(), { error: "stale_disclosure" });
+    } finally { await app.close(); }
+  });
+
+  it("PK8-F04: the live read answers the space's one live workflow to its two parties as the status view does, and 404 transfer_not_found to anyone else and to everyone when there is none, with nothing written", async () => {
+    const { app, world, call, as, propose } = await application();
+    try {
+      const snapshot = () => JSON.stringify({ transfers: [...world.repository.transfers.values()], audit: world.repository.audit.length, notices: world.repository.notices.length });
+      const live = async (actor: Actor) => { as(TRANSFER_ACTIONS.view, actor); return call("GET", `${BASE}/live`); };
+      // No live workflow: every member, party-to-be or not, reads the unknown-identifier answer; nothing written.
+      let before = snapshot();
+      for (const actor of [PRIMARY, RECIPIENT(), THIRD]) {
+        const none = await live(actor);
+        assert.equal(none.statusCode, 404, none.body); assert.deepEqual(none.json(), { error: "transfer_not_found" });
+      }
+      assert.equal(snapshot(), before);
+      const transferId = await propose();
+      // Both parties read the same view the id route answers; the texts travel with it.
+      for (const actor of [PRIMARY, RECIPIENT()]) {
+        const answer = await live(actor);
+        assert.equal(answer.statusCode, 200, answer.body);
+        assert.equal(answer.json().transfer.transferId, transferId);
+        assert.equal(answer.json().transfer.state, "proposed");
+        assert.equal(answer.json().disclosures.recipient.kind, "primary_transfer_recipient");
+        as(TRANSFER_ACTIONS.view, actor);
+        assert.deepEqual(answer.json(), (await call("GET", `${BASE}/${transferId}`)).json(), "the live read is the status view");
+      }
+      // A same-space member who is neither party: the party gate, before the policy, nothing written.
+      before = snapshot();
+      const intruder = await live(THIRD);
+      assert.equal(intruder.statusCode, 404, intruder.body); assert.deepEqual(intruder.json(), { error: "transfer_not_found" });
+      assert.equal(snapshot(), before);
+      // A non-member of the space (no membership resolves): the same answer.
+      const stranger = await live({ subject: "99999999-9999-4999-8999-999999999999", membership: "98989898-9898-4898-8898-989898989898", role: "co_owner" });
+      assert.equal(stranger.statusCode, 404, stranger.body);
+      // Once the workflow closes there is no live one again.
+      as(TRANSFER_ACTIONS.withdraw, PRIMARY);
+      assert.equal((await call("POST", `${BASE}/${transferId}/withdraw`, {})).json().outcome, "withdrawn");
+      for (const actor of [PRIMARY, RECIPIENT()]) assert.equal((await live(actor)).statusCode, 404);
+      // A malformed space id names nothing.
+      as(TRANSFER_ACTIONS.view, PRIMARY);
+      assert.equal((await call("GET", "/v1/budget-spaces/not-a-space/primary-transfers/live")).statusCode, 404);
     } finally { await app.close(); }
   });
 

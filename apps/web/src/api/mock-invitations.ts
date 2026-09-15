@@ -364,6 +364,13 @@ export async function handleMockInvitationRequest(directory: MockDirectory, sess
       notice(directory, target.accountSubjectId, budgetSpaceId, "MSG-73-040", at());
       return json({ outcome: "proposed", messageCode: "MSG-73-040", transfer: structuredClone(transfer) }, 201);
     }
+    // PK8-F04: the space's one live workflow for its two parties; none, or a non-party, is the unknown-identifier 404.
+    if (path.length === 4 && path[3] === "live" && request.method === "GET") {
+      const current = live(); if (current) expire(current);
+      const row = live();
+      if (!row || (acting.membershipId !== row.proposerMembershipId && acting.membershipId !== row.recipientMembershipId)) return json({ error: "transfer_not_found" }, 404);
+      return json({ transfer: structuredClone(row), disclosures: structuredClone(TRANSFER_DISCLOSURES) });
+    }
     if (path.length < 4 || !UUID.test(path[3]!)) return json({ error: "transfer_not_found" }, 404);
     const transfer = directory.transfers.get(path[3]!.toLowerCase());
     // SEC-PK7B-F1: a same-space member who is neither party is answered as an unknown identifier.

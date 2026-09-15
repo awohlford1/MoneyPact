@@ -758,5 +758,25 @@
     "registration_lifecycle": "active",
     "introduced_by": "CBD-41",
     "authorization_metadata_id": "profile.read"
+  },
+  {
+    "registration_id": "api:GET:/v1/budget-spaces/{budgetSpaceId}/primary-transfers/live",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/primary-transfer/http.ts#PrimaryTransferController.live",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-280",
+    "authorization_metadata_id": "29.view_primary_transfer"
+  },
+  {
+    "registration_id": "api:HEAD:/v1/budget-spaces/{budgetSpaceId}/primary-transfers/live",
+    "executor_kind": "api_route",
+    "source_locator": "apps/api/src/primary-transfer/http.ts#PrimaryTransferController.live",
+    "surface_id": "surf-266-budget-read",
+    "parameter_record_id": "rlp-266-authenticated-read-v1",
+    "registration_lifecycle": "active",
+    "introduced_by": "CBD-280",
+    "authorization_metadata_id": "29.view_primary_transfer"
   }
 ]

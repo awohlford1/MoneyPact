@@ -197,6 +197,8 @@ export interface InvitationsClient {
   // Primary transfer (PR 368) and the step-up (PR 355).
   proposeTransfer(spaceId: string, recipientMembershipId: string): Promise<WireTransferAnswer>;
   viewTransfer(spaceId: string, transferId: string, signal?: AbortSignal): Promise<WireTransferView>;
+  /** PK8-F04: the space's one live transfer for its two parties; null when there is none or the caller is neither party (the one 404). */
+  liveTransfer(spaceId: string, signal?: AbortSignal): Promise<WireTransferView | null>;
   /** `TR-73-41` with the recipient disclosure's claim; a claim that is not the captured one is thrown as 409 `stale_disclosure` (nothing written). */
   acceptTransfer(spaceId: string, transferId: string, acknowledgedDisclosure: TransferDisclosureClaim): Promise<WireTransferAnswer>;
   declineTransfer(spaceId: string, transferId: string): Promise<WireTransferAnswer>;
@@ -328,6 +330,12 @@ export function createInvitationsClient(base = "/v1", fetcher: typeof fetch = fe
       throw failure(answer);
     },
     viewTransfer: (spaceId, transferId, signal) => request<WireTransferView>(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}`, "GET", undefined, signal),
+    async liveTransfer(spaceId, signal) {
+      const answer = await send(`${space(spaceId)}/primary-transfers/live`, "GET", undefined, { csrf: false, signal });
+      if (answer.status === 404 && answer.json.error === "transfer_not_found") return null;
+      if (answer.status !== 200) throw failure(answer);
+      return answer.json as unknown as WireTransferView;
+    },
     acceptTransfer: (spaceId, transferId, acknowledgedDisclosure) => transferMutation(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/accept`, { acknowledgedDisclosure }),
     declineTransfer: (spaceId, transferId) => transferMutation(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/decline`),
     withdrawTransfer: (spaceId, transferId) => transferMutation(`${space(spaceId)}/primary-transfers/${encodeURIComponent(transferId)}/withdraw`),

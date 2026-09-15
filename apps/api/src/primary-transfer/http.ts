@@ -15,6 +15,16 @@
  *   POST /v1/budget-spaces/:id/primary-transfers/:transferId/confirm    29.transfer_primary_ownership (protected: fresh_assurance) target: the recipient row of the workflow
  *   POST /v1/budget-spaces/:id/primary-transfers/:transferId/withdraw   29.withdraw_primary_transfer  target: the recipient row of the workflow
  *   GET  /v1/budget-spaces/:id/primary-transfers/:transferId            29.view_primary_transfer      target: the recipient row of the workflow
+ *   GET  /v1/budget-spaces/:id/primary-transfers/live                   29.view_primary_transfer      target: the recipient row of the space's one live workflow
+ *
+ * **The live read** (PK8-F04). A party who was not handed a transfer id --
+ * the recipient a `MSG-73-040` notice names, the Primary returning to the
+ * space -- reads the space's one live workflow (the `M3` partial unique
+ * index admits one) by the space alone. It is the status view under the
+ * same cell and the same party gate: the live workflow's two parties are
+ * resolved before the policy and anyone else, and every caller of a space
+ * with no live workflow, is answered `404 transfer_not_found` with nothing
+ * written -- exactly what an unknown identifier answers.
  *
  * **The disclosure binding** (PK8-F03; CBD-287-AC02, CBD-280-AC04; the PK-5
  * pattern). The view answers `disclosures.recipient` and
@@ -83,7 +93,7 @@ import type { AuthorizationTransactionStore, EffectContext } from "../authorizat
 import { currentAction } from "../sessions/action-scope.ts";
 import { RETRYABLE_SQL_STATES, observeSqlState } from "../sessions/transaction-store.ts";
 import {
-  PrimaryTransferError, TRANSFER_ACTION_CODES, TRANSFER_OBLIGATION_KINDS, UNIFORM_DENIAL_MESSAGE_CODE,
+  LIVE_TRANSFER_STATES, PrimaryTransferError, TRANSFER_ACTION_CODES, TRANSFER_OBLIGATION_KINDS, UNIFORM_DENIAL_MESSAGE_CODE,
   acceptPrimaryTransfer, confirmPrimaryTransfer, declinePrimaryTransfer, parseProposeTransferRequest,
   parseTransferDisclosureClaim, proposePrimaryTransfer, viewPrimaryTransfer, withdrawPrimaryTransfer,
 } from "../../../../packages/budget-application/src/primary-transfer/index.ts";
@@ -160,6 +170,8 @@ export interface PrimaryTransferHttpDependencies {
   readonly membershipExists: (budgetSpaceId: string, membershipId: string) => Promise<boolean>;
   /** The two parties of one workflow row, from trusted storage, so the route can name the policy target; null when there is no such row. */
   readonly transferParties: (budgetSpaceId: string, transferId: string) => Promise<{ readonly proposerMembershipId: string; readonly recipientMembershipId: string } | null>;
+  /** PK8-F04: the space's one live workflow and its two parties, from trusted storage; null when the space has none. */
+  readonly liveTransfer: (budgetSpaceId: string) => Promise<{ readonly transferId: string; readonly proposerMembershipId: string; readonly recipientMembershipId: string } | null>;
   /** `SEC-PK7A-F2`: the reference and the ledger the store produced for this transaction handle, and nothing else. */
   readonly context: (transaction: unknown) => TransferTransactionContext;
 }
@@ -222,11 +234,19 @@ export function primaryTransferHttp(dependencies: PrimaryTransferHttpDependencie
    * malformed id does not; accepted). The two parties still reach the module,
    * which keeps its own party check for each cell.
    */
-  const replay = (kind: "propose" | "own" | "recipient") => async (request: FastifyRequest, subject: string) => {
+  const replay = (kind: "propose" | "own" | "recipient" | "live") => async (request: FastifyRequest, subject: string) => {
     const budgetSpaceId = spaceOf(request);
+    const membershipId = await dependencies.membership(subject, budgetSpaceId);
+    if (kind === "live") {
+      // PK8-F04: the space's one live workflow, by the space alone; no live workflow, or a caller who is neither party,
+      // is the unknown-identifier 404 before the policy runs, with nothing written (the SEC-PK7B-F1 gate).
+      const live = await dependencies.liveTransfer(budgetSpaceId);
+      if (!live || membershipId === null || (membershipId !== live.proposerMembershipId && membershipId !== live.recipientMembershipId)) throw new TransferRouteFailure(404, "transfer_not_found");
+      acting.set(request, { subject, budgetSpaceId, transferId: live.transferId, membershipId, targetMembershipId: live.recipientMembershipId });
+      return { kind: "absent" as const };
+    }
     const transferId = kind === "propose" ? null : transferOf(request);
     if (transferId === budgetSpaceId) throw new TransferRouteFailure(404, "transfer_not_found");
-    const membershipId = await dependencies.membership(subject, budgetSpaceId);
     let targetMembershipId = membershipId ?? budgetSpaceId;
     if (kind === "propose") {
       const recipient = bodyOf(request).recipientMembershipId;
@@ -252,7 +272,7 @@ export function primaryTransferHttp(dependencies: PrimaryTransferHttpDependencie
       ...(resolved.membershipId ? { actingMembershipId: resolved.membershipId } : {}),
     };
   };
-  const authorize = (action: TransferActionCode, kind: "propose" | "own" | "recipient") => Authorize({
+  const authorize = (action: TransferActionCode, kind: "propose" | "own" | "recipient" | "live") => Authorize({
     action, purpose: "user_delegated", replay: replay(kind), resourceLocator: locator,
   });
   const within = (request: FastifyRequest, effect: EffectContext, action: TransferActionCode): { scope: PrimaryTransferScope; actor: ActorContext; transferId: string | null; context: TransferTransactionContext } => {
@@ -374,6 +394,17 @@ export function primaryTransferHttp(dependencies: PrimaryTransferHttpDependencie
     @Get(":transferId")
     @authorize(TRANSFER_ACTIONS.view, "recipient")
     async view(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply, @Authorization() effect: EffectContext): Promise<unknown> {
+      return this.#view(request, reply, effect);
+    }
+
+    /** PK8-F04: the same status read, of the space's one live workflow, for its two parties; anyone else and a space with none read `transfer_not_found`. */
+    @Get("live")
+    @authorize(TRANSFER_ACTIONS.view, "live")
+    async live(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply, @Authorization() effect: EffectContext): Promise<unknown> {
+      return this.#view(request, reply, effect);
+    }
+
+    async #view(request: FastifyRequest, reply: FastifyReply, effect: EffectContext): Promise<unknown> {
       const { scope: { deps }, actor, transferId } = within(request, effect, TRANSFER_ACTIONS.view);
       try {
         const result = await viewPrimaryTransfer(deps, actor, { transferId: transferId! });
@@ -553,6 +584,15 @@ export function dataAccessPrimaryTransferDependencies(options: {
       const row = found.rows[0] as { proposer_membership_id?: unknown; recipient_membership_id?: unknown } | undefined;
       return typeof row?.proposer_membership_id === "string" && typeof row.recipient_membership_id === "string"
         ? { proposerMembershipId: row.proposer_membership_id, recipientMembershipId: row.recipient_membership_id }
+        : null;
+    },
+    liveTransfer: async (budgetSpaceId) => {
+      // The closed condition grammar has no set operator: the space's rows are read and the one live one (M3 admits one) picked here.
+      const found = await client.tenantSelect({ table: "budget_space_primary_transfer", budgetSpaceId, columns: ["transfer_id", "proposer_membership_id", "recipient_membership_id", "state"] });
+      const row = (found.rows as { transfer_id?: unknown; proposer_membership_id?: unknown; recipient_membership_id?: unknown; state?: unknown }[])
+        .find((candidate) => typeof candidate.state === "string" && (LIVE_TRANSFER_STATES as readonly string[]).includes(candidate.state));
+      return row && typeof row.transfer_id === "string" && typeof row.proposer_membership_id === "string" && typeof row.recipient_membership_id === "string"
+        ? { transferId: row.transfer_id, proposerMembershipId: row.proposer_membership_id, recipientMembershipId: row.recipient_membership_id }
         : null;
     },
   };
