@@ -122,6 +122,19 @@ export async function pk8Journey(t, { browser, origin, errors }) {
     await invitee.accessibility(); await invitee.narrow();
   });
 
+  let ceremonyUrl;
+  await t.test("R-03: a second, storage-isolated tab of this proved-but-not-yet-signed-in ceremony offers sign-in, never the code entry again", async () => {
+    // Same browser context as the invitee (its cookie jar, including the ceremony cookie), a brand new page --
+    // exactly a second tab: no shared sessionStorage, so `memory.proved` is unknown to it, and no session either,
+    // since the invitee has not signed in yet at this point in the flow.
+    ceremonyUrl = invitee.page.url();
+    const second = driver(await inviteeContext.newPage(), errors); second.page.origin = origin;
+    await second.page.goto(ceremonyUrl);
+    await second.waitText("Sign in or create your MoneyPact account");
+    assert.ok(!(await second.text()).includes("Prove you received this invitation"), "the second tab is never asked for the code again");
+    await second.page.close();
+  });
+
   await t.test("after sign-in the person returns to the ceremony, is attached, reads the approved disclosure with no default choice, and accepts", async () => {
     // The trio (resolve, verify-channel) went out without a CSRF header; attach and accept carry one.
     const posted = [];
@@ -136,6 +149,16 @@ export async function pk8Journey(t, { browser, origin, errors }) {
     assert.equal(await invitee.page.$eval("#choice-decline", node => node.checked), false, "no default: decline is not selected");
     assert.equal(await invitee.enabled("Record my acceptance"), false);
     await invitee.accessibility(); await invitee.narrow();
+    {
+      // R-03, the case the finding names: now signed in and attached, a third tab of the same ceremony has no local
+      // record of any of it either, but the session lets `advance()` attach (idempotently, to the same subject) and
+      // reach the disclosure directly -- the attach step, never the code entry.
+      const third = driver(await inviteeContext.newPage(), errors); third.page.origin = origin;
+      await third.page.goto(ceremonyUrl);
+      await third.waitText("Before you accept");
+      assert.ok(!(await third.text()).includes("Prove you received this invitation"), "a signed-in, attached second tab is never asked for the code again");
+      await third.page.close();
+    }
     // Keyboard: Tab reaches the choice and Space selects it.
     await invitee.page.focus("#choice-accept"); await invitee.page.keyboard.press("Space");
     assert.equal(await invitee.page.$eval("#choice-accept", node => node.checked), true);

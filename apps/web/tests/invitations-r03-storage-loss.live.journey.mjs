@@ -1,13 +1,16 @@
 /**
- * PK9-02 / R-03 observation: PROTO-INVITATIONS-PK8-REVIEW-001-RESULT.r1 finding R-03 (level 1, not required for
- * approval, carried to PK-9) says a proved ceremony opened in a second tab, or with sessionStorage unavailable, is
- * asked for the code again rather than reaching the same disclosure step, because the per-tab `memory.proved` flag
- * (apps/web/src/app/(public)/invitation/ceremony-view.tsx `advance()`) is the only source of the proved state. This
- * is a QA observation, not a fix: the packet excludes product fixes from this assignment (report findings). The
- * case proves channel control once in one browser context, then resolves the identical ceremony link in a second,
- * storage-isolated context (Puppeteer's per-context storage partition stands in for "a second tab or
- * sessionStorage unavailable" -- a fresh BrowserContext shares no sessionStorage, matching the review's exact
- * failure condition) and records the sentence the second context is shown.
+ * PK9-02 / R-03 (PROTO-INVITATIONS-PK8-REVIEW-001-RESULT.r1 finding R-03; PK9-F02) closed by
+ * PROTO-INVITATIONS-R03-RESUME-001: a proved ceremony opened in a second tab, or with sessionStorage unavailable,
+ * used to be asked for the code again because the per-tab `memory.proved` flag
+ * (apps/web/src/app/(public)/invitation/ceremony-view.tsx `advance()`) was the only source of the proved state.
+ * `advance()` now falls back to `memory.expiresAt` (written only when this tab itself resolved the link) to tell a
+ * tab mid-flow from one with no local record at all; a tab with no record tries `attach` when a session exists, or
+ * is offered the same sign-in hand-off a proved ceremony gets when it does not, and the code entry is shown again
+ * only once the API itself says the proof is missing. The case proves channel control once in one browser context,
+ * then resolves the identical ceremony link in a second, storage-isolated context (Puppeteer's per-context storage
+ * partition stands in for "a second tab or sessionStorage unavailable" -- a fresh BrowserContext shares no
+ * sessionStorage or cookies, a stronger and signed-out version of the review's failure condition) and asserts the
+ * second context reaches the hand-off, never the code entry.
  *
  * Setup mirrors invitations.live.journey.mjs (same scratch-database marker, same API/web composition):
  *
@@ -73,7 +76,7 @@ function driver(page) {
   return { page, text, waitText, clickText, fill };
 }
 
-test("PK9-R03 observation: a proved ceremony opened in a second, storage-isolated context is asked for the code again", { skip: !configured, timeout: 300_000 }, async t => {
+test("PK9-R03 / R03-01: a proved ceremony opened in a second, storage-isolated, signed-out context reaches the sign-in hand-off, never the code entry again", { skip: !configured, timeout: 300_000 }, async t => {
   const port = await freePort(); const origin = `http://localhost:${port}`;
   const modeMarker = join(webRoot, ".api-mode");
   const previous = existsSync(modeMarker) ? readFileSync(modeMarker, "utf8") : undefined;
@@ -135,19 +138,18 @@ test("PK9-R03 observation: a proved ceremony opened in a second, storage-isolate
   });
 
   let secondSentence;
-  await t.test("second, storage-isolated context: the identical ceremony URL is opened directly (no fragment, no resolve step -- exactly the second-tab / no-sessionStorage condition R-03 names)", async () => {
+  await t.test("second, storage-isolated, signed-out context: the identical ceremony URL is opened directly (no fragment, no resolve step -- exactly the second-tab / no-sessionStorage condition R-03 names, made stronger by also being signed out and cookie-isolated)", async () => {
     const secondContext = await browser.createBrowserContext();
     const second = driver(await secondContext.newPage());
     await second.page.goto(`${origin}${ceremonyPath}`);
-    // Give the client its render pass, then read whatever main says without asserting a specific outcome -- this
-    // case is an observation, not a pass/fail gate on product behavior QA is not authorized to change.
-    await pause(2000);
+    await second.waitText("Sign in or create your MoneyPact account");
     secondSentence = (await second.text().catch(() => "(no main content rendered)"))?.trim();
-    console.log(`R-03 OBSERVED: second-context ceremony page at ${ceremonyPath} shows: ${JSON.stringify(secondSentence)}`);
+    console.log(`R-03 CLOSED: second-context ceremony page at ${ceremonyPath} shows: ${JSON.stringify(secondSentence)}`);
   });
 
   const askedForCodeAgain = /Prove you received this invitation/u.test(secondSentence ?? "");
   const reachedDisclosureStep = /Sign in or create your MoneyPact account/u.test(secondSentence ?? "");
-  console.log(`R-03 OBSERVED: asked for code again = ${askedForCodeAgain}; reached same step as the first tab = ${reachedDisclosureStep}`);
-  assert.ok(secondSentence, "the second context rendered some sentence to observe");
+  console.log(`R-03 CLOSED: asked for code again = ${askedForCodeAgain}; reached the sign-in hand-off = ${reachedDisclosureStep}`);
+  assert.ok(!askedForCodeAgain, "the second, signed-out context is never asked for the code again");
+  assert.ok(reachedDisclosureStep, "the second, signed-out context reaches the sign-in hand-off, not the code entry");
 });
