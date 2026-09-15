@@ -66,7 +66,12 @@ describe("PROTO-ACTIVATION-001 B1: the reserved initial space.create unit is con
       const two = await inject("POST", "/v1/budget-creation-proposals", { ...mutation, "idempotency-key": randomUUID() }, { ...DRAFT, name: "Reserved two" });
       assert.equal(one.statusCode, 201, one.body); assert.equal(two.statusCode, 201, two.body);
       const confirmOne = `/v1/budget-creation-proposals/${one.json().proposalId}/confirm`;
-      const bindingOne = { confirmationBinding: one.json().confirmationBinding as string };
+      // PROTO-HARDENING-001 (CL-F02 sweep): CBD-233 SS3.3 denies `stale_disclosure`
+      // when the confirm does not echo the registry's current disclosure, so the
+      // fixture echoes the one the proposal response carries. Fixture repair only.
+      const claim = (proposal: { currentDisclosure: { kind: string; version: number } }) => ({ kind: proposal.currentDisclosure.kind, version: proposal.currentDisclosure.version });
+      const acknowledgedDisclosure = claim(one.json());
+      const bindingOne = { confirmationBinding: one.json().confirmationBinding as string, acknowledgedDisclosure };
 
       // 1. Missing CSRF value: denied at the session gate, nothing consumed.
       const { "x-cobudget-csrf": _omitted, ...withoutCsrf } = mutation;
@@ -92,7 +97,7 @@ describe("PROTO-ACTIVATION-001 B1: the reserved initial space.create unit is con
       assert.deepEqual(replay.json(), committed.json(), "exact replay of the committed confirmation, answered without a surface decision");
 
       // 5. A second creation on the same ceremony finds the one reserved unit consumed: exactly one per ceremony.
-      const second = await inject("POST", `/v1/budget-creation-proposals/${two.json().proposalId}/confirm`, { ...mutation, "idempotency-key": randomUUID() }, { confirmationBinding: two.json().confirmationBinding as string });
+      const second = await inject("POST", `/v1/budget-creation-proposals/${two.json().proposalId}/confirm`, { ...mutation, "idempotency-key": randomUUID() }, { confirmationBinding: two.json().confirmationBinding as string, acknowledgedDisclosure: claim(two.json()) });
       assert.equal(second.statusCode, 403, second.body);
       assert.equal(lastEnforcement()?.earliest_decisive_gate, "surface");
       assert.equal(lastEnforcement()?.safe_reason_class, "deny_exhausted");
@@ -137,10 +142,12 @@ describe("PROTO-ACTIVATION-001 B1: the reserved initial space.create unit is con
     const propose = async (mutation: Record<string, string>, name: string) => {
       const response = await inject("POST", "/v1/budget-creation-proposals", { ...mutation, "idempotency-key": randomUUID() }, { ...DRAFT, name });
       assert.equal(response.statusCode, 201, response.body);
-      return response.json() as { proposalId: string; confirmationBinding: string };
+      return response.json() as { proposalId: string; confirmationBinding: string; currentDisclosure: { kind: string; version: number } };
     };
-    const confirm = (mutation: Record<string, string>, proposal: { proposalId: string; confirmationBinding: string }, binding = proposal.confirmationBinding) =>
-      inject("POST", `/v1/budget-creation-proposals/${proposal.proposalId}/confirm`, { ...mutation, "idempotency-key": randomUUID() }, { confirmationBinding: binding });
+    // PROTO-HARDENING-001 (CL-F02 sweep): every confirm echoes the registry's current
+    // disclosure, which CBD-233 SS3.3 requires; without it the confirm is `stale_disclosure`.
+    const confirm = (mutation: Record<string, string>, proposal: { proposalId: string; confirmationBinding: string; currentDisclosure: { kind: string; version: number } }, binding = proposal.confirmationBinding) =>
+      inject("POST", `/v1/budget-creation-proposals/${proposal.proposalId}/confirm`, { ...mutation, "idempotency-key": randomUUID() }, { confirmationBinding: binding, acknowledgedDisclosure: { kind: proposal.currentDisclosure.kind, version: proposal.currentDisclosure.version } });
     const budgets = async () => Number((await pool.query("select count(*)::int as n from budget_space")).rows[0].n);
     try {
       // Ceremony A: an altered binding is denied inside the effect (409); the corrected confirm then commits.

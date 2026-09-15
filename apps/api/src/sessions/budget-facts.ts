@@ -120,9 +120,12 @@ function integer(value: unknown): number | undefined {
  *                   `revision` is the version a concurrent edit moves, so a
  *                   stale captured version denies `stale_version`.
  * `category`     -> `budget_category`, the CBD-211 drill-down target required
- *                   by `HO-236-09`. The table carries no version column, so the
- *                   row's own `updated_at` is projected to whole seconds: a
- *                   monotonic integer that changes exactly when the row does.
+ *                   by `HO-236-09`. The row's own `version` column, advanced by
+ *                   the targets module on every edit and held monotonic by the
+ *                   table's trigger (PROTO-HARDENING-001, F-INCB-03). Before
+ *                   20260915T110000Z there was no such column and `updated_at`
+ *                   was projected to whole seconds in its place, which made two
+ *                   edits inside one second the same version.
  *
  * Every read is tenant-scoped on the acting space, so a row belonging to
  * another budget returns nothing, no `resource.*` leaf is produced, and the
@@ -148,13 +151,11 @@ async function rowResourceFacts(client: DataAccessClient, spaceId: string, resou
     return { "resource.owningSpaceId": current.budget_space_id, "resource.version": integer(current.revision), "resource.lifecycle": current.removed_at === null ? "active" : "removed" };
   }
   if (resourceType === "category") {
-    const found = await client.tenantSelect({ table: "budget_category", budgetSpaceId: spaceId, columns: ["budget_space_id", "archived_at", "updated_at"],
+    const found = await client.tenantSelect({ table: "budget_category", budgetSpaceId: spaceId, columns: ["budget_space_id", "archived_at", "version"],
       conditions: [{ column: "category_id", value: resourceId }] });
-    const row = found.rows[0] as { budget_space_id?: unknown; archived_at?: unknown; updated_at?: unknown } | undefined;
+    const row = found.rows[0] as { budget_space_id?: unknown; archived_at?: unknown; version?: unknown } | undefined;
     if (!row) return null;
-    const changed = Date.parse(String(row.updated_at));
-    if (!Number.isFinite(changed)) return null;
-    return { "resource.owningSpaceId": row.budget_space_id, "resource.version": Math.floor(changed / 1000), "resource.lifecycle": row.archived_at === null ? "active" : "archived" };
+    return { "resource.owningSpaceId": row.budget_space_id, "resource.version": integer(row.version), "resource.lifecycle": row.archived_at === null ? "active" : "archived" };
   }
   return null;
 }

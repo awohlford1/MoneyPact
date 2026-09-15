@@ -7,7 +7,7 @@ import type { BaseTargetRecord, CategoryRecord, PeriodTargetRecord } from "./rec
 import { PERIOD_A_OPEN, SCHEDULE_A, SPACE_A, SUBJECT_1 } from "./support.ts";
 
 const CATEGORY = "aaaaaaaa-0000-4000-8000-000000000001";
-const category: CategoryRecord = { categoryId: CATEGORY, budgetSpaceId: SPACE_A, label: "Groceries", position: 3, archivedAt: null, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-02T00:00:00.000Z" };
+const category: CategoryRecord = { categoryId: CATEGORY, budgetSpaceId: SPACE_A, label: "Groceries", position: 3, archivedAt: null, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-02T00:00:00.000Z", version: 1 };
 const baseTarget: BaseTargetRecord = { baseTargetId: "bbbbbbbb-0000-4000-8000-000000000001", budgetSpaceId: SPACE_A, categoryId: CATEGORY, cadence: "monthly", currencyCode: "USD", minorUnitPrecision: 2, amountMinorUnits: 40000, setBySubjectId: SUBJECT_1, source: "user", createdAt: "2026-09-01T00:00:00.000Z", supersededAt: null };
 const periodTarget: PeriodTargetRecord = {
   periodTargetId: "cccccccc-0000-4000-8000-000000000001", budgetSpaceId: SPACE_A, categoryId: CATEGORY, periodId: PERIOD_A_OPEN, periodStart: "2026-09-17", periodEnd: "2026-09-30",
@@ -63,9 +63,10 @@ describe("data-access adapter mapping (CBD-153-AC01)", () => {
     };
     const repository = dataAccessTargetsRepository(statements);
     await repository.insertCategory(category);
-    assert.equal(await repository.updateCategory({ ...category, label: "Food" }), true);
-    assert.equal(await repository.updateCategory({ ...category, budgetSpaceId: "other" }), false);
-    assert.deepEqual(await repository.listCategories(SPACE_A), [{ ...category, label: "Food" }]);
+    // PROTO-HARDENING-001 (F-INCB-03): version crosses the port in both directions.
+    assert.equal(await repository.updateCategory({ ...category, label: "Food", version: 2 }), true);
+    assert.equal(await repository.updateCategory({ ...category, budgetSpaceId: "other", version: 2 }), false);
+    assert.deepEqual(await repository.listCategories(SPACE_A), [{ ...category, label: "Food", version: 2 }]);
     await repository.insertBaseTarget(baseTarget);
     assert.equal(await repository.supersedeBaseTarget(SPACE_A, baseTarget.baseTargetId, "2026-09-03T00:00:00.000Z"), true);
     assert.deepEqual(await repository.listBaseTargets(SPACE_A, "monthly"), [{ ...baseTarget, supersededAt: "2026-09-03T00:00:00.000Z" }]);

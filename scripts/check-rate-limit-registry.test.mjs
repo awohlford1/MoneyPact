@@ -1,9 +1,60 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { URL } from "node:url";
+import { join, relative, resolve, sep } from "node:path";
+import { URL, fileURLToPath } from "node:url";
 import { it } from "node:test";
+
+/**
+ * Crash-safe scratch space for the self-tests that must break approval
+ * evidence to prove the guard catches it (F-BFIX-03 item 1).
+ *
+ * The rule this enforces is that a self-test writes NOTHING inside the
+ * repository, so there is no restore to be interrupted: a run killed at any
+ * instant leaves the working tree exactly as it found it, and the next run
+ * cannot fail because of this one. Three things make that true rather than
+ * merely intended.
+ *
+ *  1. `scratch()` refuses any path that resolves inside the repository, so a
+ *     later edit cannot quietly reintroduce an in-tree mutate-and-restore.
+ *  2. The temp directory is removed in `finally` and again on process exit and
+ *     on SIGINT/SIGTERM, so an interrupted run leaves no residue even outside
+ *     the tree.
+ *  3. `assertRegistryUntouched()` digests every config/rate-limit file before
+ *     and after the mutating test. A write that escaped 1 and 2 fails the
+ *     guard's own suite instead of surfacing as an unexplained exit 1 on
+ *     somebody else's branch a day later.
+ */
+const REPOSITORY_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const REGISTRY_DIRECTORY = join(REPOSITORY_ROOT, "config", "rate-limit");
+const scratchDirectories = new Set();
+
+function removeScratchDirectories() {
+  for (const directory of scratchDirectories) rmSync(directory, { recursive: true, force: true });
+  scratchDirectories.clear();
+}
+process.once("exit", removeScratchDirectories);
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.once(signal, () => { removeScratchDirectories(); process.exit(130); });
+}
+
+/** A temp directory the run owns, proven to be outside the repository. */
+function scratch(prefix) {
+  const directory = mkdtempSync(join(tmpdir(), prefix));
+  const inside = relative(REPOSITORY_ROOT, directory);
+  assert.ok(inside.startsWith("..") || inside.includes(`..${sep}`) || resolve(directory) !== resolve(REPOSITORY_ROOT, inside),
+    `scratch space must be outside the repository, got ${directory}`);
+  assert.ok(!resolve(directory).startsWith(REPOSITORY_ROOT + sep), `scratch space must be outside the repository, got ${directory}`);
+  scratchDirectories.add(directory);
+  return directory;
+}
+
+/** Digest of every approved-record file, so a stray write is named by this suite. */
+function registryDigests() {
+  return readdirSync(REGISTRY_DIRECTORY).sort().map((name) =>
+    `${name}:${createHash("sha256").update(readFileSync(join(REGISTRY_DIRECTORY, name))).digest("hex")}`);
+}
 import { checkInventory, printReport } from "./check-rate-limit-registry.mjs";
 import { loadPrototypeRegistry, loadRegistrations, seal, validateRegistry, prototypeApprovalContext } from "../packages/rate-limit/src/index.ts";
 
@@ -34,8 +85,9 @@ it("rejects a route bound to an explicitly pending record", () => {
   assert.deepEqual(report.MISSING_OR_UNAPPROVED_PARAMETER_RECORDS, [registration.registration_id]);
 });
 
-it("guard fails a changed approval digest and passes restored evidence", () => {
-  const dir = mkdtempSync(join(tmpdir(), "rate-limit-guard-")); const path = join(dir, "approvals.json");
+it("guard fails a changed approval digest and passes restored evidence, writing nothing inside the repository", () => {
+  const before = registryDigests();
+  const dir = scratch("rate-limit-guard-"); const path = join(dir, "approvals.json");
   const original = readFileSync(new URL("../config/rate-limit/approvals.json", import.meta.url), "utf8");
   const registrations = loadRegistrations();
   const discovered = registrations.map((r) => ({ id: r.registration_id, source: r.source_locator }));
@@ -52,5 +104,8 @@ it("guard fails a changed approval digest and passes restored evidence", () => {
     // to rlp-266-bootstrap-v1 on a disjoint stage set (CBD266-IDENTITY-RECORDS-001, CBD266-SURFACE-STAGES-001).
     assert.equal(restored.approved.size, 7);
     console.log("Restored approval evidence: approved=7");
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+  } finally { rmSync(dir, { recursive: true, force: true }); scratchDirectories.delete(dir); }
+  // F-BFIX-03 item 1: nothing under config/rate-limit changed, so no restore
+  // of a repository file could have been interrupted.
+  assert.deepEqual(registryDigests(), before, "the self-test must leave config/rate-limit byte-identical");
 });

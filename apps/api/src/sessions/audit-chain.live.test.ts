@@ -65,7 +65,10 @@ describe("PROTO-ACTIVATION-001 A4: audit chain across commits, a rollback and in
       ]);
       assert.equal(one.statusCode, 201, one.body); assert.equal(two.statusCode, 201, two.body);
       // A committed confirmation (space.create through the creation store), then a rolled-back mutation.
-      const confirmed = await inject("POST", `/v1/budget-creation-proposals/${one.json().proposalId}/confirm`, { ...mutation, "idempotency-key": randomUUID() }, { confirmationBinding: one.json().confirmationBinding });
+      // PROTO-HARDENING-001 (CL-F02 sweep): CBD-233 SS3.3 denies `stale_disclosure`
+      // when the confirm does not echo the registry's current disclosure, so the
+      // fixture echoes the one the proposal response carries. Fixture repair only.
+      const confirmed = await inject("POST", `/v1/budget-creation-proposals/${one.json().proposalId}/confirm`, { ...mutation, "idempotency-key": randomUUID() }, { confirmationBinding: one.json().confirmationBinding, acknowledgedDisclosure: { kind: one.json().currentDisclosure.kind, version: one.json().currentDisclosure.version } });
       assert.equal(confirmed.statusCode, 201, confirmed.body);
       const budgetSpaceId = confirmed.json().budgetSpaceId as string;
       const rolledBack = await inject("PUT", `/v1/budget-spaces/${budgetSpaceId}/categories`, mutation, { categories: [{ label: "" }] });

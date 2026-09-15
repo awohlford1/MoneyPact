@@ -43,7 +43,8 @@ import type { ApiConfig } from "../config.js";
 import { ChallengeStore } from "../identity/challenge.ts";
 import { IdentityCeremony } from "../identity/ceremony.ts";
 import type { IdentityEvidence, IdentityEvidenceSink } from "../identity/ceremony.ts";
-import { IDENTITY_CALLBACK_PATH, resolveIdentityConfig } from "../identity/config.ts";
+import { resolveIdentityConfig } from "../identity/config.ts";
+import { callbackContextMatches, observedOrigin, requestPath } from "../identity/callback-context.ts";
 import type { IdentityConfig, LocalIdentityConfig } from "../identity/config.ts";
 import { extractStateForTermination, parseCallbackEnvelope } from "../identity/envelope.ts";
 import { identityHttp } from "../identity/http.ts";
@@ -208,20 +209,9 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
   });
   const runtime: IdentityRuntime = { ceremony, localIssuer: overrides.transport ? (overrides.transport instanceof LocalIssuer ? overrides.transport : undefined) : localIssuer, sessionPepper: session.pepper };
   const identity = identityHttp(runtime);
-  // PROTO-GUARD-STAGES-SEC-001 SEC-STAGES-F01: origin evaluation the callback context check shares
-  // (identity/http.ts's private observedOrigin, replicated here -- ceremonyContext has no access to that
-  // module's unexported helper and identity/http.ts is outside this packet's write scope). A hosted
-  // deployment needs its own reviewed proxy trust; unchanged from the controller's own logic.
-  const LOOPBACK_IPS: readonly string[] = ["127.0.0.1", "::1", "::ffff:127.0.0.1"];
-  const observedOrigin = (request: import("fastify").FastifyRequest): string => {
-    const forwardedHost = request.headers["x-forwarded-host"];
-    const host = typeof forwardedHost === "string" ? forwardedHost : undefined;
-    if (host && LOOPBACK_IPS.includes(request.ip) && /^[a-z0-9.-]+(?::\d{1,5})?$/iu.test(host)) {
-      const forwardedProto = request.headers["x-forwarded-proto"];
-      return `${forwardedProto === "https" ? "https" : "http"}://${host}`;
-    }
-    return `${request.protocol}://${request.host}`;
-  };
+  // PROTO-HARDENING-001 (GUARD-STAGES-F03): the replica of identity/http.ts's origin derivation that
+  // used to sit here is gone. Both this prediction and IdentityCeremony#complete's own check now call
+  // apps/api/src/identity/callback-context.ts, so a change to one is a change to both by construction.
   /**
    * A7; CBD266-SURFACE-STAGES-001; PROTO-GUARD-STAGES-SEC-001 (SEC-STAGES-F01, SEC-STAGES-F02): ceremony
    * context for the whole authentication surface, which now carries two approved records with disjoint
@@ -268,9 +258,13 @@ function composeLocalRuntime(config: ApiConfig, identityConfig: LocalIdentityCon
       // matching this challenge's own callback URI and environment, and the challenge still `pending`.
       const envelope = parseCallbackEnvelope(rawQuery);
       const known = challenges.find(candidateState!);
-      const eligible = envelope.kind === "success" && envelope.state === candidateState && request.method === "GET"
-        && known?.status === "pending" && known.environmentId === identityConfig.environmentId
-        && `${observedOrigin(request)}${IDENTITY_CALLBACK_PATH}` === known.callbackUri;
+      const eligible = envelope.kind === "success" && envelope.state === candidateState
+        && known?.status === "pending"
+        && callbackContextMatches(
+          { method: request.method, path: requestPath(request.url), observedOrigin: observedOrigin(request) },
+          known,
+          identityConfig.environmentId,
+        );
       return eligible ? { ceremonyId: id, bootstrapStage: "first_sign_in" as const, credentialVerified: true } : { ceremonyId: id, bootstrapStage: "ordinary" as const };
     }
     if (url === "/v1/budget-creation-proposals/:proposalId/confirm" && actorId) { const id = ceremony.ceremonyIdForSubject(actorId); return id ? { ceremonyId: id, bootstrapStage: "initial_space_create" as const, primaryOwnerVerified: true } : {}; }

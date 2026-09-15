@@ -111,9 +111,14 @@ export async function upsertCategories(deps: TargetsDependencies, budgetSpaceId:
     if (current?.archivedAt === null) liveLabels.delete(current.label.toLowerCase());
     if (archivedAt === null) liveLabels.set(item.label.toLowerCase(), categoryId);
     const position = item.position ?? current?.position ?? nextPosition++;
+    // PROTO-HARDENING-001 (F-INCB-03): a category edit advances the row's own
+    // version, which is what CBD-236 SS8.6.1 `resource.version` carries. The
+    // table's trigger refuses an update that does not advance it, so the bump
+    // is here and not optional. A relabel, a reorder, an archive and a restore
+    // are each an edit.
     const record: CategoryRecord = current
-      ? { ...current, label: item.label, position, archivedAt, updatedAt: now }
-      : { categoryId, budgetSpaceId, label: item.label, position, archivedAt, createdAt: now, updatedAt: now };
+      ? { ...current, label: item.label, position, archivedAt, updatedAt: now, version: current.version + 1 }
+      : { categoryId, budgetSpaceId, label: item.label, position, archivedAt, createdAt: now, updatedAt: now, version: 1 };
     if (current) {
       if (!await deps.repository.updateCategory(record)) throw new TargetsError("category_not_found", `${path}.categoryId`);
     } else {
