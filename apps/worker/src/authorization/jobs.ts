@@ -68,7 +68,7 @@ function validEnvelope(value: unknown): value is JobEnvelope {
     : ["delegationVersion", "subjectVersion", "profileVersion", "authorizationVersion", "consentDisclosureVersion", "primaryOwnershipVersion", ...common];
   if (Object.keys(value.claimedVersions).sort().join() !== versions.sort().join()) return false;
   for (const [key, item] of Object.entries(value.claimedVersions)) {
-    if (key === "policyVersion" ? item !== "p5" : key === "policyDigest" ? typeof item !== "string" || !/^[a-f0-9]{64}$/.test(item) : !Number.isSafeInteger(item) || (item as number) < 0) return false;
+    if (key === "policyVersion" ? item !== "p6" : key === "policyDigest" ? typeof item !== "string" || !/^[a-f0-9]{64}$/.test(item) : !Number.isSafeInteger(item) || (item as number) < 0) return false;
   }
   if (!["read", "mutate", "export", "acknowledge", "comment", "lifecycle", "protected"].includes(String(value.claimedEffectClass))) return false;
   return value.transportedDecision === undefined || validTransport(value.transportedDecision);

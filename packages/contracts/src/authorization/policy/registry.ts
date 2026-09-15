@@ -11,13 +11,12 @@ import * as v6 from "./v6.ts";
  * docs/cbd-236-p5-release-step.md section 1 (p4 by docs/cbd-236-p4-release-step.md, released and never
  * deployed), after the release-history rows carrying each version's two approvals (p4:
  * PO-P4P5-APPROVAL-001, PROTO-POLICY-V4-SEC-001-RESULT-001; p5: PO-P4P5-APPROVAL-001,
- * PROTO-POLICY-V5-SEC-001-RESULT-001) were appended (PC-236-011, CBD236-POLICY-APPROVAL-001). p6 is
- * registered here (docs/cbd-236-authorization-policy-contract.md section 8.9) but not yet released:
- * it carries no release-history row and CURRENT_POLICY_VERSION stays p5 until
- * docs/cbd-236-p6-release-step.md is applied by a separate change (PROTO-CONTRACTS-P6-SPLIT-001),
+ * PROTO-POLICY-V5-SEC-001-RESULT-001) were appended (PC-236-011, CBD236-POLICY-APPROVAL-001). p6 was
+ * released by docs/cbd-236-p6-release-step.md (the combined shape docs/cbd-236-p5-release-step.md's
+ * own p6 row states, applied directly above the already-released p5: `EXEC-P6-RULINGS-001` P6-D05),
  * after the release-history row carrying its two approvals (PO-P6-APPROVAL-001,
- * PROTO-CONTRACTS-P6-SEC-001-RESULT) is appended. */
-export const CURRENT_POLICY_VERSION = "p5" as const;
+ * PROTO-CONTRACTS-P6-SEC-001-RESULT) was appended. */
+export const CURRENT_POLICY_VERSION = "p6" as const;
 
 function serialization<V extends string>(version: V, set: { actionDefinitions: readonly v1.ActionDefinition[]; userCells: readonly v6.P6UserCell[]; serviceCells: readonly v1.ServiceCell[] }) {
   return Object.freeze({ version, schemaVersion: 1, actionDefinitions: set.actionDefinitions, userCells: set.userCells, serviceCells: set.serviceCells });
