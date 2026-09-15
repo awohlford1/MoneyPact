@@ -166,6 +166,36 @@ describe("PK4-03: the step_up ceremony reuses the sign-in ceremony and issues no
     assert.equal(afterwards.kind, "outcome");
   });
 
+  it("SEC-PK4-F1: the sign-in callback refuses a step_up challenge by name, even when the context check passes", async () => {
+    // The context comparison already refuses the delivery the two fixed
+    // routes can actually produce (the case above). This case removes that
+    // coincidence -- it presents the step-up challenge at `complete()` with
+    // the step-up path, which is what a provider that can register only one
+    // redirect URI would give us -- so the only thing left between a step-up
+    // answer and session issuance is the explicit ceremony refusal.
+    const context = await signedIn();
+    const before = { sessions: rows(context.harness, "account_session"), subjects: rows(context.harness, "account_subject"), handoffs: rows(context.harness, "identity_session_handoff") };
+    const { callbackUrl } = await stepUpCallbackUrl(context);
+    const result = await context.harness.deliver(callbackUrl, { path: IDENTITY_STEP_UP_CALLBACK_PATH });
+    assert.equal(result.kind, "outcome", JSON.stringify(result));
+    if (result.kind !== "outcome") throw new Error("unreachable");
+    assert.equal(result.outcome, "invalid_or_expired");
+    assert.equal(rows(context.harness, "account_session"), before.sessions, "no session was issued for a step-up answer");
+    assert.equal(rows(context.harness, "account_subject"), before.subjects, "no subject was mapped");
+    assert.equal(rows(context.harness, "identity_session_handoff"), before.handoffs, "no hand-off was prepared, however the ceremony CHECK now reads");
+    assert.equal(rows(context.harness, "account_session_fresh_assurance"), 0, "and no grant either");
+    assert.ok(context.harness.runtime.evidence.some((event) => event.class === "callback_wrong_context"), "the refusal is recorded as a wrong-context delivery");
+    // The refusal is the rule and not a second coincidence: without it this
+    // delivery would reach the exchange and be refused there only because
+    // `#completeSuccess` sends the sign-in redirect URI, which a provider
+    // holding one registered URI would accept.
+    assert.ok(!context.harness.runtime.evidence.some((event) => event.class === "exchange_rejected"), "the provider was never contacted");
+    // Terminated, so the genuine step-up callback cannot complete afterwards.
+    const afterwards = await deliver(context, callbackUrl);
+    assert.equal(afterwards.kind, "outcome");
+    assert.equal(rows(context.harness, "account_session_fresh_assurance"), 0);
+  });
+
   it("the shared callback-context check rejects a wrong method, a wrong path and a foreign observed origin", async () => {
     for (const overrides of [{ method: "POST" }, { path: "/v1/identity/callback" }, { observedOrigin: "https://evil.example" }]) {
       const context = await signedIn();

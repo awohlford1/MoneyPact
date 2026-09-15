@@ -339,6 +339,21 @@ export class IdentityCeremony {
       this.#evidence("callback_wrong_context", known.challengeId, "invalid_or_expired");
       return { kind: "outcome", outcome: "invalid_or_expired", navigateTo: this.#resultNavigation("invalid_or_expired"), challengeId: known.challengeId };
     }
+    if (known.ceremony === "step_up") {
+      // SEC-PK4-F1: a step-up challenge never completes here, whatever the
+      // context check made of the path. Today the two callbacks have different
+      // fixed paths, so the comparison above already refuses one; that is a
+      // coincidence of routing, not a rule, and the migration's widening of
+      // `identity_session_handoff.ceremony` means the database would no longer
+      // refuse a `step_up` hand-off row either. This is the rule: a step-up maps
+      // no subject and issues no session, so it terminates with the same
+      // wrong-context evidence every other out-of-context delivery raises and
+      // never reaches `#completeSuccess` -- including under a provider that can
+      // register only one redirect URI for both ceremonies.
+      this.#d.challenges.terminate(known.challengeId);
+      this.#evidence("callback_wrong_context", known.challengeId, "invalid_or_expired");
+      return { kind: "outcome", outcome: "invalid_or_expired", navigateTo: this.#resultNavigation("invalid_or_expired"), challengeId: known.challengeId };
+    }
     if (known.status !== "pending") {
       const inflight = this.#inflight[known.challengeId];
       if (inflight) {
