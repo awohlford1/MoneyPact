@@ -28,11 +28,13 @@ applied piecemeal: the history row without the flip leaves `p4` released but und
 the row makes the API and worker refuse to start (`policy_version_unsupported`), which is the fail-closed
 behaviour the contract requires.
 
-No route changes. `apps/api/src/accounts/http.ts` already binds the four action names (`HO-236-09`); after the
+No route changes. `apps/api/src/accounts/http.ts` (PROTO-INCREMENT-B-001, PR #340, unmerged when this step was written) binds the four action names (`HO-236-09`); after the
 flip a Co-owner or Collaborator request allows through the same routes with `cellRef.role` naming the acting
 role (`HO-236-10`). No handler may add a role branch of its own.
 
 ## 2. Preconditions (both must be resolvable record identifiers)
+
+The §4.4 route-test recommendation applies once the PROTO-INCREMENT-B-001 routes (PR #340) are on `main`; if the flip is applied before that merge, the recommendation carries into the merge of those routes instead (`SEC-P4-F1`).
 
 | Precondition | Record | Value to cite |
 | --- | --- | --- |
@@ -190,4 +192,5 @@ in a focused change. `OQ-236-011` is already closed by CBD-72 row 36 and needs n
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
+| 0.1.1 | September 15, 2026 | Manager, applying `SEC-P4-F1` | §1 and §2 attribute the route binding to the unmerged PROTO-INCREMENT-B-001 routes (PR #340) and note when the §4.4 route-test recommendation applies. Not applied. |
 | 0.1 | September 15, 2026 | Architecture under `PROTO-POLICY-V4-001` | Initial ready-to-apply release step with the reproducible `p4` digest, the exact history row, the registry flip, every application literal that pins `p3`, the contracts suite proven version-derived under a simulated flip, and every application test change the flip requires with the historical `p1`, `p2` and `p3` literals that stay. Not applied. |
