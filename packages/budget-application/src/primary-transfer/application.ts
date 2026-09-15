@@ -156,17 +156,19 @@ export interface TransferDisclosureClaim {
   readonly digest: string;
 }
 
-/** The accept and confirm request: the workflow and the claim. */
+/**
+ * The accept and confirm request: the workflow and the claim.
+ *
+ * `GAPS-F02` follow-up (`TCF-01`): the field is required at the module
+ * level, not only at the route. `null` is a claim the route could not parse.
+ * Both `null` and the key absent are a stale claim -- a leg taken without
+ * the current disclosure is not consent (CBD-73 SS6 rule 1) -- so every
+ * in-process caller must supply one; there is no longer an "unbound" shape.
+ * The route always parses the body to a claim or `null`, so this changes
+ * nothing at the HTTP surface.
+ */
 export interface TransferLegRequest extends TransferRequest {
-  /**
-   * `null` is a claim the route could not parse and is a stale claim: a leg
-   * taken without the current disclosure is not consent (CBD-73 SS6 rule 1).
-   * `undefined` (the key absent) is an in-process caller that requests no
-   * binding -- the persistence proofs and the obligation suites -- and is
-   * never what a route sends: the route always parses the body to a claim
-   * or `null`.
-   */
-  readonly acknowledgedDisclosure?: TransferDisclosureClaim | null;
+  readonly acknowledgedDisclosure: TransferDisclosureClaim | null;
 }
 
 /** The route's parse: a well-formed `{ kind, version, digest }` claim or `null`. Nothing else is read from the body. */
@@ -188,17 +190,22 @@ export function parseTransferDisclosureClaim(body: unknown): TransferDisclosureC
  * (CBD-41-AC02, `PK5-02`, `R-02`). Called after the party check and the
  * retry answers, so a party's repeat of a leg already recorded is recovered
  * without a claim, and before any write.
+ *
+ * `GAPS-F02` follow-up (`TCF-01`): `undefined` (the key absent) is treated
+ * exactly like `null` -- both are refused `stale_disclosure` -- rather than
+ * silently binding nothing. `claim` still accepts `undefined` in its type so
+ * that a caller who genuinely omits the property (rather than sending an
+ * explicit `null`) is refused the same way, not admitted by a type error.
  */
 export function assertAcknowledgedTransferDisclosure(
   record: Pick<PrimaryTransferRecord, "recipientDisclosureKind" | "recipientDisclosureVersion" | "recipientDisclosureDigest" | "outgoingDisclosureKind" | "outgoingDisclosureVersion" | "outgoingDisclosureDigest">,
   leg: "recipient" | "primary",
   claim: TransferDisclosureClaim | null | undefined,
 ): void {
-  if (claim === undefined) return;
   const captured = leg === "recipient"
     ? { kind: record.recipientDisclosureKind, version: record.recipientDisclosureVersion, digest: record.recipientDisclosureDigest }
     : { kind: record.outgoingDisclosureKind, version: record.outgoingDisclosureVersion, digest: record.outgoingDisclosureDigest };
-  if (claim === null || claim.kind !== captured.kind || claim.version !== captured.version || claim.digest !== captured.digest) {
+  if (claim == null || claim.kind !== captured.kind || claim.version !== captured.version || claim.digest !== captured.digest) {
     throw new PrimaryTransferError("stale_disclosure", "acknowledgedDisclosure");
   }
 }
@@ -892,14 +899,21 @@ export async function viewPrimaryTransfer(
   return { outcome: "view", transfer: transferView(record), disclosures: transferDisclosureTexts(deps, record) };
 }
 
-/** The registry's entry for a captured (kind, version, digest), or null when the registry no longer carries exactly that. */
+/**
+ * The registry's entry for a captured (kind, version, digest), or `null`
+ * when the registry no longer carries exactly that.
+ *
+ * `GAPS-F03` follow-up (`TCF-02`): reads through `ConsentDisclosureSource.at`
+ * rather than requiring the captured version to still be `current`, so a
+ * view after the registry moved on still shows the text the parties read,
+ * as long as that version remains in the registry's own history. A version
+ * the registry moved past *and* no longer keeps -- `at` answers `null` -- is
+ * indistinguishable from one that never existed: both withhold the text,
+ * fail-closed, exactly as an unregistered kind always has.
+ */
 function disclosureTextAt(deps: Pick<PrimaryTransferDependencies, "disclosures">, kind: string, version: number, digest: string): ConsentDisclosure | null {
-  try {
-    const current = deps.disclosures.current(kind);
-    return current.version === version && current.digest === digest ? current : null;
-  } catch {
-    return null;
-  }
+  const entry = deps.disclosures.at?.(kind, version) ?? null;
+  return entry && entry.digest === digest ? entry : null;
 }
 
 /** PK8-F03: both parties' texts at the captured values (see `TransferDisclosureTexts`). Read server-side, never from a request. */

@@ -62,6 +62,7 @@ interface RegistryEntry { kind?: unknown; version?: unknown; digest?: unknown; t
 export function buildConsentDisclosureSource(entries: unknown, contents: Readonly<Record<string, unknown>>, requiredKinds: readonly string[] = REQUIRED_DISCLOSURE_KINDS): ConsentDisclosureSource {
   if (!Array.isArray(entries)) throw new ConsentDisclosureRegistryError("consent_disclosure_registry_malformed");
   const current = new Map<string, ConsentDisclosure>();
+  const byVersion = new Map<string, ConsentDisclosure>();
   for (const [index, value] of entries.entries()) {
     const entry = value as RegistryEntry;
     const { kind, version, digest, text_ref: reference } = entry ?? {};
@@ -81,8 +82,15 @@ export function buildConsentDisclosureSource(entries: unknown, contents: Readonl
     const previous = current.get(kind);
     // Append-only and dense from 1, so the highest version is the current one and no stored flag can disagree.
     if ((previous?.version ?? 0) + 1 !== version) throw new ConsentDisclosureRegistryError(`consent_disclosure_version_not_dense: ${kind} version ${version}`);
-    current.set(kind, Object.freeze({ kind, version: version as number, digest,
-      text: Object.freeze({ heading: text.heading, items: Object.freeze([...text.items] as ConsentDisclosure["text"]["items"]), acknowledgement: text.acknowledgement }) }));
+    const disclosure: ConsentDisclosure = Object.freeze({ kind, version: version as number, digest,
+      text: Object.freeze({ heading: text.heading, items: Object.freeze([...text.items] as ConsentDisclosure["text"]["items"]), acknowledgement: text.acknowledgement }) });
+    current.set(kind, disclosure);
+    // Every approved version the file still carries, not only each kind's
+    // highest -- what `at(kind, version)` (`GAPS-F03` follow-up, `TCF-02`)
+    // answers, so a view can still show the text a party actually read after
+    // the registry's current version moved past it, as long as this loader's
+    // one authoritative file still keeps that entry.
+    byVersion.set(`${kind}:${version as number}`, disclosure);
   }
   for (const kind of requiredKinds) {
     if (!current.has(kind)) throw new ConsentDisclosureRegistryError(`consent_disclosure_kind_unregistered: ${kind}`);
@@ -92,6 +100,9 @@ export function buildConsentDisclosureSource(entries: unknown, contents: Readonl
       const disclosure = current.get(kind);
       if (!disclosure) throw new ConsentDisclosureRegistryError(`consent_disclosure_kind_unregistered: ${kind}`);
       return disclosure;
+    },
+    at(kind: string, version: number): ConsentDisclosure | null {
+      return byVersion.get(`${kind}:${version}`) ?? null;
     },
   };
 }
