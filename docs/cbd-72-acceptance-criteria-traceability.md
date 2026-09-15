@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved v0.1.13 — final package approved by the Product Owner, August 18, 2026; publication is the last completion-rule step** |
+| Status | **Approved v0.1.13 — final package approved by the Product Owner, August 18, 2026; publication is the last completion-rule step. A proposed §2A/§4 note on permission-model row 36 (manual account, `OQ-236-011`) is added at v0.1.14 and not yet approved; the document remains controlling at v0.1.13 pending that approval under `PO-CONTRACT-APPROVALS-001`.** |
 | Document version | 0.1.13 |
 | Owner | Alexander Wohlford |
 | Jira | [CBD-72](https://cobudget.atlassian.net/browse/CBD-72) |
@@ -19,7 +19,7 @@ CBD-72 is complete only when the permission model covers every required role, ac
 
 | Jira deliverable | Specification evidence | Scenario evidence | Status |
 | --- | --- | --- | --- |
-| Versioned permission matrix | Specification §§2–4, 11 | ROLE, COLL, PART | **Complete.** Permissions 1–35 approved; independent audit passed August 18, 2026 |
+| Versioned permission matrix | Specification §§2–4, 11 | ROLE, COLL, PART, MAN | **Complete for permissions 1–35** (independent audit passed August 18, 2026). **Proposed, not yet approved:** permission 36 (manual account, `OQ-236-011`) is pending Product Owner approval; approved scope remains 1–35 until then |
 | Resource-scope rules | Specification §5 | VIEW, PART | **Complete at rule level.** Deterministic fixtures are test-design scope under `VT-94-*` |
 | Ownership and recovery decision record | Specification §6 and OD-72-01–06 | OWN, CONN, LIFE | **Complete.** Sole-owner exit, lost-owner recovery, archival and deletion lifecycle, and orphaned-connection disposition all decided |
 | Cross-budget isolation requirements | Specification §7 and PM-72-010 | XSP | **Complete at rule level.** Deterministic fixtures are test-design scope under `VT-94-*` |
@@ -36,7 +36,7 @@ Each rewritten CBD-72 criterion maps to its controlling specification evidence a
 | CBD-72-AC03 | One active role per person per budget space; no role stacking. | §2.1 | `MEM-02`, `PART-03` |
 | CBD-72-AC04 | Matrix rows cover the full resource and action set. | §4.1–§4.3, permissions 1–35 | All families |
 | CBD-72-AC05 | Explicit notation per intersection; unlisted actions denied by default. | §2.4; PM-72-001 | `AUTH-03`, `ROLE-04` |
-| CBD-72-AC06 | Stable permission numbers 1–35, never reused or renumbered. | §4 preamble | Every scenario citing a permission number |
+| CBD-72-AC06 | Stable permission numbers 1–35, never reused or renumbered. | §4 preamble | Every scenario citing a permission number. **Proposed, not yet approved:** permission 36 (manual account) is appended under the same never-reused-or-renumbered rule; the approved criterion text and count extend to 1–36 only once row 36 is approved |
 | CBD-72-AC07 | One Primary Owner, multiple Co-owners, protected actions, transfer, recovery, orphan prevention. | §2.1; §6.1–§6.3; permissions 26–29, 35 | `OWN-01`, `OWN-04`, `LIFE-02` |
 | CBD-72-AC08 | Primary Owner and every Co-owner administer planning resources, members, and shared settings. | permissions 2a, 3, 4, 24, 25, 30 | `ROLE-02`, `MEM-01`, `SET-01` |
 | CBD-72-AC09 | No Co-owner removes or demotes the Primary; protected actions need reauthentication; one Primary always retained. | §6.1–§6.3; permissions 28, 29, 34, 35 | `OWN-03`, `LIFE-02`, `LIFE-03`, `LIFE-04` |
@@ -52,7 +52,7 @@ Each rewritten CBD-72 criterion maps to its controlling specification evidence a
 | CBD-72-AC19 | Derived data never leaks out-of-scope resources; incomplete reports unavailable; partial views labeled. | §5.1 item 10, §5.2; permissions 17–19 | `VIEW-04`, `VIS-04`, `REP-01` |
 | CBD-72-AC20 | Viewer cannot mutate, comment, self-export, or connect; may acknowledge own firm instance; never informational; may download an owner snapshot. | §5.1 item 11; permissions 11a, 12, 13, 21 | `VIEW-07`, `INT-01`, `EXP-03`, `EXP-04` |
 | CBD-72-AC21 | Collaborator sees the whole shared space as an equal contributor, not an administrator. | §2.2; permissions 14–16 | `VIS-01`, `ROLE-04` |
-| CBD-72-AC22 | Collaborator approved mutation set across planning, reconciliation, categorization, manual transactions, interactions, and acknowledgement. | permissions 2a, 3, 4, 5, 6a–6e, 7, 8, 9, 11a, 12 | `ROLE-01–03`, `REC-01–02`, `DATE-01`, `COLL-01–02`, `CAT-01` |
+| CBD-72-AC22 | Collaborator approved mutation set across planning, reconciliation, categorization, manual transactions, interactions, and acknowledgement. | permissions 2a, 3, 4, 5, 6a–6e, 7, 8, 9, 11a, 12 | `ROLE-01–03`, `REC-01–02`, `DATE-01`, `COLL-01–02`, `CAT-01`. **Proposed, not yet approved:** permission 36 (manual account) would add manual-account create/edit/archive/restore to this set; see `MAN-03` |
 | CBD-72-AC23 | Collaborator prohibitions: immutable bank fields and no ownership, member, permission, other-authorizer, admin-export, settings, archival, or deletion authority. | permission 10; denial cells in permissions 20b, 22–35 | `COLL-03`, `ROLE-04`, `EXP-02`, `CONN-03` |
 | CBD-72-AC24 | Every Collaborator mutation is attributed and audited with a complete record. | PM-72-007; §9 | `AUD-01`, `COLL-01`, `COLL-02` |
 | CBD-72-AC25 | Accountability Partner is comprehensive, financially read-only, fixed field boundary, no resource-level grants. | §5.3; permission 23 | `PART-01`, `PART-03` |
@@ -61,7 +61,7 @@ Each rewritten CBD-72 criterion maps to its controlling specification evidence a
 | CBD-72-AC28 | One authorizer per connection; authorizer-only management; joint accounts use independent connections. | PM-72-009/011; permissions 32, 33 | `CONN-03`, `CONN-04`, `CONN-05`, `CONN-06` |
 | CBD-72-AC29 | Authorizer membership loss stops that connection's sync, preserves history, and transfers no authority. | §6.3; PM-72-011 | `CONN-02`, `CONN-07` |
 | CBD-72-AC30 | Comment authorship, author-only mutation, universal moderation denial, and MVP attachment and mention exclusions. | §5.6; permissions 11a–11d | `INT-01`, `INT-02`, `INT-03` |
-| CBD-72-AC31 | Confirmed resources archive rather than hard-delete; drafts discard; manual transactions restore for 30 days then purge to a tombstone. | §5.5; permissions 2b, 3, 4, 9 | `ROLE-02`, `ROLE-03`, `CAT-01`, `MAN-01`, `MAN-02` |
+| CBD-72-AC31 | Confirmed resources archive rather than hard-delete; drafts discard; manual transactions restore for 30 days then purge to a tombstone. | §5.5; permissions 2b, 3, 4, 9 | `ROLE-02`, `ROLE-03`, `CAT-01`, `MAN-01`, `MAN-02`. **Proposed, not yet approved:** `MAN-03` covers permission 36 (manual account) archive/restore under the same §5.5 contract |
 | CBD-72-AC32 | Financial export, Primary-only administrative-history export, categorical Viewer and Partner denial, and the owner-authorized snapshot. | §5.7, §5.8; permissions 20a, 20b, 21 | `EXP-01`–`EXP-06` |
 | CBD-72-AC33 | Three correlated alert records; built-in thresholds; system cooldown; personal delivery preferences. | §5.4, §5.4.1; permissions 12, 13 | `ALERT-01`–`ALERT-04`, `PART-04`, `PART-05` |
 | CBD-72-AC34 | Required server-side authorization inputs. | §8 | `AUTH-03`, `VIS-01` |
@@ -87,7 +87,7 @@ Each rewritten CBD-72 criterion maps to its controlling specification evidence a
 
 | Gate | Required evidence | Current result |
 | --- | --- | --- |
-| Matrix completeness | Every action category and role has an explicit cell; no blank or implied allow. | **Pass.** Independent re-audit August 18, 2026: mechanical cross-document audit clean — 78 scenarios with no duplicates or placeholders, all 38 criteria mapped bidirectionally, every permission citation 1–35 and scenario reference resolves, RF-72-01–61 contiguous — on top of the cell-by-cell reviews recorded in RF-72-55–61 and the CBD-94/95 exhaustive review |
+| Matrix completeness | Every action category and role has an explicit cell; no blank or implied allow. | **Pass for permissions 1–35.** Independent re-audit August 18, 2026: mechanical cross-document audit clean — 78 scenarios with no duplicates or placeholders, all 38 criteria mapped bidirectionally, every permission citation 1–35 and scenario reference resolves, RF-72-01–61 contiguous — on top of the cell-by-cell reviews recorded in RF-72-55–61 and the CBD-94/95 exhaustive review. **Proposed, not yet approved:** permission 36 (manual account) is added with an explicit cell for all five roles and `MAN-03` scenario evidence; this re-audit has not yet covered it and it is not yet part of the approved 1–35/78/38 counts |
 | Role/resource consistency | Viewer profiles never elevate role authority; Partner is not treated as broad Viewer. | **Pass.** Held through RF-72-55–61 and the CBD-95 reconciliation, which corrected downstream tickets to this model rather than the reverse |
 | Ownership safety | Exactly one Primary, multiple Co-owners permitted, protected actions fail atomically, a sole Primary Owner always has a supported exit, and a permanently unavailable owner cannot strand the other members. | **Pass.** All six open decisions closed |
 | Cross-space isolation | All synchronous and asynchronous data paths bind membership and target to one space. | **Pass at rule level.** XSP-01–03 and the §7/§8 requirements are approved; deterministic fixtures are test-design scope under `VT-94-*` |
@@ -191,6 +191,7 @@ Each rewritten CBD-72 criterion maps to its controlling specification evidence a
 
 | Version | Date | Author | Change | Approval |
 | --- | --- | --- | --- | --- |
+| 0.1.14 | September 15, 2026 | Claude (product) | **Proposed, not yet approved.** Added deliverable-table, `CBD-72-AC06`/`AC22`/`AC31`, and matrix-completeness notes for permission-model row 36 (manual account, closing `OQ-236-011`) and its `MAN-03` scenario evidence. No approved row, count, or criterion text changed; the approved package remains permissions 1–35, 78 scenarios, 38 criteria until row 36 is approved. | Pending Product Owner approval under `PO-CONTRACT-APPROVALS-001` |
 | 0.1.13 | August 18, 2026 | Alexander Wohlford — Product Owner | **Approved.** Final package approval of model 0.1.53, catalog 0.1.14, and this record at 0.1.13. The Product Owner approval review gate is Pass; publication follows the merge under the repository working rules. | **Approved v0.1.13** |
 | 0.1.13 | August 18, 2026 | Claude with Alexander Wohlford as Product Owner | Recorded RF-72-62 (RI-93-012 §6.3 safety-routing amendment) and RF-72-63 (close-out dispositions for fixtures, specialist reviews, and the stale CBD-14 gate texts). Every review gate is now dispositioned; exact-version approval and publication remain. | Product Owner approved dispositions August 18, 2026 |
 | 0.1.12 | August 15, 2026 | Claude with Alexander Wohlford as Product Owner | Recorded RF-72-61 from the CBD-93 abuse-case analysis and amended OD-72-05 so that export follows read scope from an archived budget space. The prior blanket bar in §6.5 item 10 had no recorded rationale, was absent from the OD-72-05 decision record, was not among the activities §6.5 item 3 ends, and ran against RF-72-60's own finding. Flagged that `DI-91-034`–`DI-91-036` in the approved CBD-91 v1.0 inventory still state the superseded prohibition and need a follow-up amendment under change control. | Product Owner approved August 15, 2026; `LIFE`/`EXP` fixture completion and the CBD-14 gate remain |
