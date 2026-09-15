@@ -17,6 +17,17 @@
  * of the CBD-211 presentation criteria live in
  * scripts/prototype-qa-browser-cbd211.mjs.
  *
+ * PROTO-CBD200-CONCURRENCY-IDEMPOTENCY-001 (Executive decision 2026-09-16 on
+ * QA-F01, F02, F03): the CBD-200-AC04 and AC05 cases are the acceptance proof
+ * of the version precondition, the conflict mapping and the idempotency
+ * store. The concurrent AC04 case has two halves, because the merged
+ * CBD-266 mutation surface (`rlp-266-mutation-v1`, `concurrency=1`) admits
+ * one in-flight mutation per verified actor and refuses the rest at the
+ * surface gate before authorization: six simultaneous edits by one Primary
+ * Owner therefore prove the gate, and the effect-level race is proved
+ * against a writer the gate cannot see -- a second transaction on the
+ * database standing in for a second API process.
+ *
  * Same harness shape as scripts/prototype-qa-criteria.mjs (cookie-jar
  * browser, local ceremony, CBD-266 pacing) without that script's phases, so
  * the Manager can run this one alone in a few minutes.
@@ -341,6 +352,8 @@ async function cbd200(browser, world) {
 
   await criterion("CBD-200-AC04", "A stale mutation commits no transaction or calculation change and returns a reload-and-retry result (concurrent: six simultaneous edits of one current version; the losers reload and retry)", async () => {
     const current = (await versionsOf(transactionId)).find((v) => v.superseded_at === null);
+    // Part 1: six simultaneous edits by one actor. The CBD-266 surface admits one in flight per actor;
+    // the rest are refused at the gate with nothing consumed, evaluated or written.
     const before = await progress();
     await roomFor(browser.subject, 7);
     const attempts = await Promise.all([1, 2, 3, 4, 5, 6].map((i) => browser.fetch(`${transactions}/${transactionId}`, { method: "PATCH", unpaced: true, body: write({ amountMinorUnits: -1_000 - i, description: `racer ${i}`, allocations: [{ categoryId: groceries, amountMinorUnits: -1_000 - i }] }) })));
@@ -362,9 +375,55 @@ async function cbd200(browser, world) {
     expect(reloaded.revision === versions.length, "reload sees the committed revision");
     const retry = await browser.fetch(`${transactions}/${transactionId}`, { method: "PATCH", body: write({ amountMinorUnits: -1_250, description: "retried after reload", allocations: [{ categoryId: groceries, amountMinorUnits: -800 }, { categoryId: transport, amountMinorUnits: -450 }] }) });
     expect(retry.status === 200 && retry.json.current.version.revision === reloaded.revision + 1, `retry ${retry.status} ${retry.text}`);
-    const observed = `${summary}; losers ${losers.length} answered ${JSON.stringify(losers.map((a) => `${a.status} ${a.text.slice(0, 80)}`))}; reload sees revision ${reloaded.revision}; retry 200 revision ${reloaded.revision + 1}. The losers commit nothing (the database's one-current-version rule under serializable isolation refuses them), but they are refused by the authorization boundary's uniform denial, not by a conflict the client can act on; a single-user race is the only staleness this API refuses at all`;
-    expect(losers.every((a) => a.status === 409 && (a.json?.error === "conflict" || a.json?.error === "constraint_violation")), `expected every loser to receive a canonical conflict it can reload and retry on, not the uniform authorization denial; ${observed}`);
-    return observed;
+    const gated = losers.filter((a) => a.status === 403);
+    const conflicted = losers.filter((a) => a.status === 409 && (a.json?.error === "conflict" || a.json?.error === "stale_version"));
+    expect(gated.length + conflicted.length === losers.length, `expected every loser to be either the CBD-266 surface refusal (403, concurrency=1, before authorization) or a canonical 409 conflict/stale_version; ${summary}; losers ${JSON.stringify(losers.map((a) => `${a.status} ${a.text.slice(0, 80)}`))}`);
+
+    // Part 2: the effect-level race the gate cannot fence. A second writer -- this script's own
+    // superuser connection, standing in for a second API process -- supersedes the current version
+    // and holds the row lock uncommitted. The API's edit passes the surface gate, the precheck and
+    // the commit-window recheck (all of which see the still-current version), then blocks at its
+    // supersession stamp until the writer commits, at which point the database refuses it as the
+    // loser. The client must get a 409 it can reload and retry on, and the API must have written
+    // nothing.
+    const held = (await versionsOf(transactionId)).find((v) => v.superseded_at === null);
+    const heldRow = (await q("select transaction_version_id from manual_transaction where transaction_id = $1 and superseded_at is null", [transactionId]))[0];
+    const writer = new pg.Client(dbConnection); await writer.connect();
+    let external;
+    try {
+      await writer.query("begin");
+      await writer.query("update manual_transaction set superseded_at = now() where transaction_version_id = $1", [heldRow.transaction_version_id]);
+      external = (await writer.query(
+        "insert into manual_transaction (transaction_version_id, transaction_id, budget_space_id, account_id, revision, origin, settlement_state, currency_code, minor_unit_precision,"
+        + " amount_minor_units, budget_date, period_id, period_start_date, period_end_date, description, recorded_by_subject_id, source, created_at)"
+        + " select gen_random_uuid(), transaction_id, budget_space_id, account_id, revision + 1, origin, settlement_state, currency_code, minor_unit_precision,"
+        + " amount_minor_units, budget_date, period_id, period_start_date, period_end_date, 'external writer', recorded_by_subject_id, source, now()"
+        + " from manual_transaction where transaction_version_id = $1 returning transaction_version_id, revision, amount_minor_units::int as amount", [heldRow.transaction_version_id])).rows[0];
+      await writer.query("insert into transaction_allocation (allocation_id, budget_space_id, transaction_version_id, category_id, currency_code, minor_unit_precision, amount_minor_units, created_at)"
+        + " select gen_random_uuid(), budget_space_id, $2, category_id, currency_code, minor_unit_precision, amount_minor_units, now() from transaction_allocation where transaction_version_id = $1", [heldRow.transaction_version_id, external.transaction_version_id]);
+      const racing = browser.fetch(`${transactions}/${transactionId}`, { method: "PATCH", body: write({ amountMinorUnits: -1_300, description: "racer against an external writer", allocations: [{ categoryId: groceries, amountMinorUnits: -1_300 }] }) });
+      // Wait until the API's stamp is blocked on the writer's row lock, then let the writer win.
+      const deadline = Date.now() + 15_000; let blocked = false;
+      while (Date.now() < deadline && !blocked) {
+        const waiting = await q("select count(*)::int as n from pg_stat_activity where datname = $1 and wait_event_type = 'Lock' and query ilike 'update manual_transaction%'", [DB_NAME]);
+        blocked = waiting[0].n > 0; if (!blocked) await pause(100);
+      }
+      expect(blocked, "the API's supersession stamp never blocked on the external writer's lock (the race did not form)");
+      await writer.query("commit");
+      const lost = await racing;
+      const afterRace = await versionsOf(transactionId);
+      const currentAfterRace = afterRace.filter((v) => v.superseded_at === null);
+      const raceSummary = `external writer committed revision ${external.revision}; the API's concurrent edit answered ${lost.status} ${lost.text.slice(0, 120)}; versions ${afterRace.length} (was ${held.revision}), current ${currentAfterRace.length} at revision ${currentAfterRace[0]?.revision} amount ${currentAfterRace[0]?.amount}`;
+      expect(lost.status === 409 && lost.json?.error === "conflict", `expected the concurrent loser to receive 409 conflict, never the uniform denial; ${raceSummary}`);
+      expect(afterRace.length === held.revision + 1 && currentAfterRace.length === 1 && currentAfterRace[0].amount === external.amount, `expected the loser to have written nothing and the writer's version to stand alone; ${raceSummary}`);
+      // The loser reloads and retries against the writer's version: one more revision, no partial state.
+      const reloadedAgain = (await browser.fetch(`${transactions}/${transactionId}/history`)).json.history.find((entry) => entry.version.supersededAt === null).version;
+      expect(reloadedAgain.revision === external.revision, `reload sees the writer's revision ${external.revision}, saw ${reloadedAgain.revision}`);
+      const retried = await browser.fetch(`${transactions}/${transactionId}`, { method: "PATCH", body: { ...write({ amountMinorUnits: -1_250, description: "retried after the external writer", allocations: [{ categoryId: groceries, amountMinorUnits: -800 }, { categoryId: transport, amountMinorUnits: -450 }] }), expectedTransactionVersionId: reloadedAgain.transactionVersionId } });
+      expect(retried.status === 200 && retried.json.current.version.revision === external.revision + 1, `retry after reload ${retried.status} ${retried.text.slice(0, 120)}`);
+      const observed = `${summary}; losers ${losers.length}: ${gated.length} refused by the CBD-266 surface gate (403, concurrency=1 per actor, before authorization) and ${conflicted.length} by a canonical 409; reload sees revision ${reloaded.revision}; retry 200 revision ${reloaded.revision + 1}. Effect-level race: ${raceSummary}; reload sees revision ${reloadedAgain.revision}; retry with the reloaded basis 200 revision ${external.revision + 1}`;
+      return observed;
+    } finally { try { await writer.query("rollback"); } catch { /* already committed */ } await writer.end(); }
   });
 
   await criterion("CBD-200-AC05", "Replaying the same operation identity produces one transaction revision, one recalculation outcome, and one correlated audit-success effect", async () => {
@@ -385,11 +444,17 @@ async function cbd200(browser, world) {
     const edit1 = await browser.fetch(`${transactions}/${target}`, { method: "PATCH", body: editBody, headers: { "idempotency-key": editKey } });
     const edit2 = await browser.fetch(`${transactions}/${target}`, { method: "PATCH", body: editBody, headers: { "idempotency-key": editKey } });
     const editVersions = await versionsOf(target);
-    const observed = `POST x2 with Idempotency-Key ${key.slice(0, 8)}: ${first.status} then ${replay.status}; transaction identities created ${identities.size} (rows ${rows.length}, table delta ${(await count("manual_transaction", "budget_space_id = $1", [spaceId])) - before}); transport ${JSON.stringify(cellBefore)} -> ${JSON.stringify(cellAfter)} (the effect applied ${(cellBefore.settledActualMinorUnits - cellAfter.settledActualMinorUnits) / 333} times); PATCH x2 with key ${editKey.slice(0, 8)}: ${edit1.status} rev ${edit1.json?.current?.version?.revision} then ${edit2.status} rev ${edit2.json?.current?.version?.revision}; versions of the target ${editVersions.length}. Audit-success count is not externally observable (in-process restricted stream); by construction (transactions replay hook returns {kind:'absent'}) each accepted request is a separate decision and audit event`;
+    const stored = await q("select action, idempotency_key, transaction_version_id from manual_transaction_idempotency where budget_space_id = $1 and idempotency_key = any($2) order by created_at", [spaceId, [key, editKey]]);
+    // The same key with a different command is refused before policy, and writes nothing.
+    const mismatch = await browser.fetch(transactions, { method: "POST", body: write({ amountMinorUnits: -334, description: body.description, allocations: [{ categoryId: transport, amountMinorUnits: -334 }] }), headers: { "idempotency-key": key } });
+    const rowsAfterMismatch = await q("select transaction_id from manual_transaction where budget_space_id = $1 and description = $2", [spaceId, body.description]);
+    const observed = `POST x2 with Idempotency-Key ${key.slice(0, 8)}: ${first.status} then ${replay.status} (${replay.json?.current?.version?.transactionVersionId === first.json?.current?.version?.transactionVersionId ? "same stored response" : "different response"}); transaction identities created ${identities.size} (rows ${rows.length}, table delta ${(await count("manual_transaction", "budget_space_id = $1", [spaceId])) - before}); transport ${JSON.stringify(cellBefore)} -> ${JSON.stringify(cellAfter)} (the effect applied ${(cellBefore.settledActualMinorUnits - cellAfter.settledActualMinorUnits) / 333} times); PATCH x2 with key ${editKey.slice(0, 8)}: ${edit1.status} rev ${edit1.json?.current?.version?.revision} then ${edit2.status} rev ${edit2.json?.current?.version?.revision}; versions of the target ${editVersions.length}; idempotency rows ${JSON.stringify(stored.map((r) => r.action))}; same key, different command: ${mismatch.status} ${mismatch.json?.error} with ${rowsAfterMismatch.length} row(s) still. Audit-success count is not externally observable (in-process restricted stream); a replay is answered from the stored response before policy, so it evaluates no decision and emits no second allow event`;
     expect(identities.size === 1 && rows.length === 1, `expected one transaction from the replayed identity; ${observed}`);
     expect(cellAfter.settledActualMinorUnits === cellBefore.settledActualMinorUnits - 333, `expected one recalculation outcome; ${observed}`);
-    expect(replay.status === 200 || replay.status === 201, `expected the replay to answer with the first outcome; ${observed}`);
-    expect(editVersions.length === 2, `expected one revision from the replayed edit identity; ${observed}`);
+    expect(replay.status === 201 && replay.json?.current?.version?.transactionVersionId === first.json.current.version.transactionVersionId, `expected the replay to answer with the first outcome; ${observed}`);
+    expect(editVersions.length === 2 && edit1.status === 200 && edit2.status === 200 && edit2.json?.current?.version?.revision === 2, `expected one revision from the replayed edit identity; ${observed}`);
+    expect(stored.length === 2 && stored[0].action === "create" && stored[1].action === "edit", `expected one idempotency row per accepted key; ${observed}`);
+    expect(mismatch.status === 409 && mismatch.json?.error === "idempotency_mismatch" && rowsAfterMismatch.length === 1, `expected the same key with a different command to be refused idempotency_mismatch with nothing written; ${observed}`);
     return observed;
   });
 }

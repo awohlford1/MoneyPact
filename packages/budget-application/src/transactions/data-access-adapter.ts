@@ -22,6 +22,7 @@ import type {
   BudgetCategorySummaryRow,
   BudgetSpacePeriodRow,
   FinancialAccountRow,
+  ManualTransactionIdempotencyRow,
   ManualTransactionRow,
   Supersession,
   TransactionAllocationRow,
@@ -29,7 +30,7 @@ import type {
   TransactionsRepository,
 } from "./ports.ts";
 import { MANUAL_TRANSACTION_ORIGIN, SETTLED_STATE, TRANSACTION_SOURCES, TransactionError } from "./records.ts";
-import type { AllocationRecord, CategorySummary, PeriodRecord, TransactionRecord, TransactionSnapshot, TransactionSource } from "./records.ts";
+import type { AllocationRecord, CategorySummary, IdempotencyRecord, IdempotencyScope, PeriodRecord, TransactionMutation, TransactionRecord, TransactionSnapshot, TransactionSource } from "./records.ts";
 import { accountFromRow } from "../accounts/data-access-adapter.ts";
 import type { AccountRecord } from "../accounts/records.ts";
 
@@ -144,6 +145,35 @@ export function periodFromRow(row: BudgetSpacePeriodRow): PeriodRecord {
   };
 }
 
+/** The stored response is the `TransactionMutation` the route returned; a row that does not carry one is a stored-state defect, not a replay. */
+export function idempotencyFromRow(row: ManualTransactionIdempotencyRow): IdempotencyRecord {
+  const response = row.committed_response;
+  if (typeof response !== "object" || response === null || !("current" in response)) throw new TransactionError("constraint_violation", "committed_response");
+  return {
+    budgetSpaceId: row.budget_space_id,
+    membershipId: row.membership_id,
+    action: row.action,
+    idempotencyKey: row.idempotency_key,
+    requestDigest: row.request_digest,
+    transactionVersionId: row.transaction_version_id,
+    committedResponse: response as TransactionMutation,
+    createdAt: row.created_at,
+  };
+}
+
+export function idempotencyToRow(record: IdempotencyRecord): Omit<ManualTransactionIdempotencyRow, "idempotency_id"> {
+  return {
+    budget_space_id: record.budgetSpaceId,
+    membership_id: record.membershipId,
+    action: record.action,
+    idempotency_key: record.idempotencyKey,
+    request_digest: record.requestDigest,
+    transaction_version_id: record.transactionVersionId,
+    committed_response: record.committedResponse,
+    created_at: record.createdAt,
+  };
+}
+
 export function categorySummaryFromRow(row: BudgetCategorySummaryRow): CategorySummary {
   return { categoryId: row.category_id, budgetSpaceId: row.budget_space_id, archivedAt: row.archived_at };
 }
@@ -200,6 +230,15 @@ export function dataAccessTransactionsRepository(statements: TransactionStatemen
         }
         await statements.insertAllocation(allocationToRow(allocation));
       }
+    }),
+    readIdempotency: (scope: IdempotencyScope) => guarded(async () => {
+      if (statements.readIdempotency === undefined) throw new TransactionError("constraint_violation", "idempotency_unavailable");
+      const row = await statements.readIdempotency(scope);
+      return row === null ? null : idempotencyFromRow(row);
+    }),
+    recordIdempotency: (record) => guarded(async () => {
+      if (statements.insertIdempotency === undefined) throw new TransactionError("constraint_violation", "idempotency_unavailable");
+      await statements.insertIdempotency(idempotencyToRow(record));
     }),
   };
 }

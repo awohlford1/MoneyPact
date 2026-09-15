@@ -13,10 +13,14 @@
 import type { AccountRecord } from "../accounts/records.ts";
 import type { Supersession, TransactionsRepository } from "./ports.ts";
 import { SETTLED_STATE, MANUAL_TRANSACTION_ORIGIN, TransactionError } from "./records.ts";
-import type { AllocationRecord, CategorySummary, PeriodRecord, TransactionRecord, TransactionSnapshot } from "./records.ts";
+import type { AllocationRecord, CategorySummary, IdempotencyRecord, IdempotencyScope, PeriodRecord, TransactionRecord, TransactionSnapshot } from "./records.ts";
 
 function key(budgetSpaceId: string, id: string): string {
   return `${budgetSpaceId}|${id}`;
+}
+
+function scopeKey(scope: IdempotencyScope): string {
+  return `${scope.budgetSpaceId}|${scope.membershipId}|${scope.action}|${scope.idempotencyKey}`;
 }
 
 export class InMemoryTransactionsRepository implements TransactionsRepository {
@@ -25,6 +29,7 @@ export class InMemoryTransactionsRepository implements TransactionsRepository {
   readonly categories = new Map<string, CategorySummary>();
   readonly versions = new Map<string, TransactionRecord>();
   readonly allocations = new Map<string, AllocationRecord>();
+  readonly idempotency = new Map<string, IdempotencyRecord>();
 
   seedPeriod(period: PeriodRecord): void {
     this.periods.set(key(period.budgetSpaceId, period.periodId), structuredClone(period));
@@ -98,6 +103,17 @@ export class InMemoryTransactionsRepository implements TransactionsRepository {
     for (const allocation of allocations) {
       this.allocations.set(key(allocation.budgetSpaceId, allocation.allocationId), structuredClone(allocation));
     }
+  }
+
+  async readIdempotency(scope: IdempotencyScope): Promise<IdempotencyRecord | null> {
+    return structuredClone(this.idempotency.get(scopeKey(scope)) ?? null);
+  }
+
+  /** The unique scope of 20260915T140000Z: a second first-attempt under one key is a conflict, and the row must name a stored version. */
+  async recordIdempotency(record: IdempotencyRecord): Promise<void> {
+    if (this.idempotency.has(scopeKey(record))) throw new TransactionError("conflict", "idempotency_key");
+    if (!this.versions.has(key(record.budgetSpaceId, record.transactionVersionId))) throw new TransactionError("constraint_violation", "transaction_version_id");
+    this.idempotency.set(scopeKey(record), structuredClone(record));
   }
 
   #assertStorable(version: TransactionRecord, allocations: readonly AllocationRecord[]): void {

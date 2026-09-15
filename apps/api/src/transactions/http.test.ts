@@ -12,11 +12,13 @@ import { PERIOD_A_OPEN, SPACE_A, SPACE_B, SUBJECT_1, testWorld } from "../../../
 import { parseBaseTargetRequest, parseCategoryUpsertRequest, setBaseTargets, upsertCategories } from "../../../../packages/budget-application/src/targets/index.ts";
 import { InMemoryTransactionsRepository } from "../../../../packages/budget-application/src/transactions/index.ts";
 import { testAccount } from "../../../../packages/budget-application/src/transactions/support.ts";
+import { StatementFailedError } from "@cobudget/data-access";
+import type { DataAccessClient } from "@cobudget/data-access";
 import { AppModule } from "../app.module.js";
 import { RouteFailure } from "../authorization/http.js";
 import { Harness, testHistory } from "../authorization/test-support.js";
 import { loadApiConfigFrom } from "../config.js";
-import { transactionsHttp } from "./http.js";
+import { TransactionsAuthorizationStore, commitConflict, transactionsHttp } from "./http.js";
 import type { TransactionsHttpDependencies } from "./http.js";
 
 const config = loadApiConfigFrom({ API_PORT: "3001", LOG_LEVEL: "info", NODE_ENV: "test", SERVICE_VERSION: "transactions-test", COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local", COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: Buffer.alloc(32, 7).toString("base64"), COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1" });
@@ -73,6 +75,7 @@ async function application() {
     repository: () => { repositoryCalls++; return ledger; },
     targets: () => plan.repository,
     membership: async (subject, spaceId) => memberships[`${subject}:${spaceId}`] ?? null,
+    replay: (scope) => ledger.readIdempotency(scope),
     clock: { now: () => plan.now }, ids: { uuid: () => plan.ids.uuid() },
   };
   const module = await Test.createTestingModule({
@@ -89,10 +92,10 @@ async function application() {
   }).compile();
   const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { logger: false });
   await app.init(); await app.getHttpAdapter().getInstance().ready();
-  const call = (method: "GET" | "POST" | "PATCH", url: string, payload?: unknown, cookie: string | undefined = "opaque") =>
-    app.inject({ method, url, ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }), ...(cookie === undefined ? {} : { headers: { cookie } }) });
+  const call = (method: "GET" | "POST" | "PATCH", url: string, payload?: unknown, cookie: string | undefined = "opaque", headers: Record<string, string> = {}) =>
+    app.inject({ method, url, ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }), headers: { ...(cookie === undefined ? {} : { cookie }), ...headers } });
   const space = `/v1/budget-spaces/${SPACE_A}`;
-  return { app, h, call, space, groceries, transport, repositoryCalls: () => repositoryCalls, memberships };
+  return { app, h, call, space, groceries, transport, repositoryCalls: () => repositoryCalls, memberships, ledger };
 }
 
 const split = (groceries: string, transport: string) => ({
@@ -290,6 +293,132 @@ describe("CBD-199/200/201/209/211 transaction and progress routes through the re
       assert.equal(repositoryCalls(), before, "neither denial reached the handler, so neither ran a query");
       assert.equal((await call("GET", `${space}/periods/${PERIOD_A_OPEN}/progress/${groceries}`)).statusCode, 200, "the space's own category still reads");
     } finally { await app.close(); }
+  });
+
+  it("CBD-200-AC04 (QA-F01): a stated basis that is no longer current is refused 409 stale_version with the current version and nothing written", async () => {
+    const { app, call, space, groceries, transport, ledger } = await application();
+    try {
+      const created = await call("POST", `${space}/transactions`, split(groceries, transport));
+      assert.equal(created.statusCode, 201, created.body);
+      const transactionId = created.json().current.version.transactionId as string;
+      const basis = created.json().current.version.transactionVersionId as string;
+      // Client A moves the transaction on, stating its basis in the body: admitted.
+      const editA = await call("PATCH", `${space}/transactions/${transactionId}`, { ...split(groceries, transport), amountMinorUnits: -900, allocations: [{ categoryId: groceries, amountMinorUnits: -900 }], expectedTransactionVersionId: basis });
+      assert.equal(editA.statusCode, 200, editA.body);
+      const current = editA.json().current.version as { transactionVersionId: string; revision: number };
+      assert.equal(current.revision, 2);
+      // Client B, still holding revision 1, states the same basis in the body and in If-Match: refused, told what is current.
+      const stale = { ...split(groceries, transport), amountMinorUnits: -700, allocations: [{ categoryId: transport, amountMinorUnits: -700 }], expectedTransactionVersionId: basis };
+      for (const [payload, headers] of [
+        [stale, {}],
+        [split(groceries, transport), { "if-match": `"${basis}"` }],
+        [stale, { "if-match": `"${basis}"` }],
+      ] as const) {
+        const editB = await call("PATCH", `${space}/transactions/${transactionId}`, payload, "opaque", headers);
+        assert.equal(editB.statusCode, 409, editB.body);
+        assert.deepEqual(editB.json(), { error: "stale_version", current: { transactionVersionId: current.transactionVersionId, revision: 2 } });
+      }
+      const removeB = await call("POST", `${space}/transactions/${transactionId}/remove`, { expectedTransactionVersionId: basis });
+      assert.equal(removeB.statusCode, 409, removeB.body);
+      assert.equal(removeB.json().error, "stale_version");
+      assert.equal(ledger.versions.size, 2, "the stale mutations wrote no version");
+      assert.equal([...ledger.versions.values()].filter((v) => v.supersededAt === null)[0]?.amountMinorUnits, -900, "A's edit stands");
+      // The split proposal's older field name is refused, not silently ignored.
+      const older = await call("PATCH", `${space}/transactions/${transactionId}`, { ...split(groceries, transport), expectedRevision: 1 });
+      assert.equal(older.statusCode, 400, older.body);
+      assert.deepEqual(older.json(), { error: "invalid_request" });
+      // A weak or malformed tag is a 400, not a silently absent precondition.
+      const weak = await call("PATCH", `${space}/transactions/${transactionId}`, split(groceries, transport), "opaque", { "if-match": `W/"${basis}"` });
+      assert.equal(weak.statusCode, 400, weak.body);
+      // Without a basis the route behaves as before; with the current basis it is admitted.
+      const blind = await call("PATCH", `${space}/transactions/${transactionId}`, split(groceries, transport));
+      assert.equal(blind.statusCode, 200, blind.body);
+      const removed = await call("POST", `${space}/transactions/${transactionId}/remove`, undefined, "opaque", { "if-match": blind.json().current.version.transactionVersionId as string });
+      assert.equal(removed.statusCode, 201, removed.body);
+      assert.equal(ledger.versions.size, 4);
+    } finally { await app.close(); }
+  });
+
+  it("CBD-200-AC05 (QA-F03): one Idempotency-Key yields one transaction, one effect, one revision; a different command under the same key is refused", async () => {
+    const { app, call, space, groceries, transport, ledger, repositoryCalls } = await application();
+    try {
+      const key = "create-7c1d";
+      const first = await call("POST", `${space}/transactions`, split(groceries, transport), "opaque", { "idempotency-key": key });
+      assert.equal(first.statusCode, 201, first.body);
+      const effects = repositoryCalls();
+      const replay = await call("POST", `${space}/transactions`, split(groceries, transport), "opaque", { "idempotency-key": key });
+      assert.equal(replay.statusCode, 201, replay.body);
+      assert.deepEqual(replay.json(), first.json(), "the replay answers the stored response");
+      assert.equal(repositoryCalls(), effects, "the replay ran no effect");
+      assert.equal(ledger.versions.size, 1, "one transaction");
+      assert.equal(ledger.allocations.size, 2, "one allocation set");
+      assert.equal(ledger.idempotency.size, 1);
+      const mismatch = await call("POST", `${space}/transactions`, { ...split(groceries, transport), description: "Different shop" }, "opaque", { "idempotency-key": key });
+      assert.equal(mismatch.statusCode, 409, mismatch.body);
+      assert.deepEqual(mismatch.json(), { error: "idempotency_mismatch" });
+      assert.equal(ledger.versions.size, 1, "the mismatch wrote nothing");
+      // A whitespace-only reordering of the same body is the same command.
+      const reordered = Object.fromEntries(Object.entries(split(groceries, transport)).reverse());
+      assert.equal((await call("POST", `${space}/transactions`, reordered, "opaque", { "idempotency-key": key })).statusCode, 201);
+      assert.equal(ledger.versions.size, 1);
+
+      const transactionId = first.json().current.version.transactionId as string;
+      const editKey = "edit-9a2f";
+      const edit = { ...split(groceries, transport), amountMinorUnits: -444, allocations: [{ categoryId: transport, amountMinorUnits: -444 }] };
+      const edit1 = await call("PATCH", `${space}/transactions/${transactionId}`, edit, "opaque", { "idempotency-key": editKey });
+      assert.equal(edit1.statusCode, 200, edit1.body);
+      assert.equal(edit1.json().current.version.revision, 2);
+      const edit2 = await call("PATCH", `${space}/transactions/${transactionId}`, edit, "opaque", { "idempotency-key": editKey });
+      assert.equal(edit2.statusCode, 200, edit2.body);
+      assert.deepEqual(edit2.json(), edit1.json());
+      assert.equal(ledger.versions.size, 2, "one revision from the replayed edit");
+      // The same key on a different action, or on a different target, is a different scope.
+      const removeKey = editKey;
+      const remove1 = await call("POST", `${space}/transactions/${transactionId}/remove`, {}, "opaque", { "idempotency-key": removeKey });
+      assert.equal(remove1.statusCode, 201, remove1.body);
+      const remove2 = await call("POST", `${space}/transactions/${transactionId}/remove`, {}, "opaque", { "idempotency-key": removeKey });
+      assert.equal(remove2.statusCode, 201, remove2.body);
+      assert.deepEqual(remove2.json(), remove1.json());
+      assert.equal(ledger.versions.size, 3, "one tombstone from the replayed removal");
+      assert.equal(ledger.idempotency.size, 3);
+      // A malformed key is a 400; a request that does not parse is the handler's own 400, with no identity recorded.
+      assert.equal((await call("POST", `${space}/transactions`, split(groceries, transport), "opaque", { "idempotency-key": "has space" })).statusCode, 400);
+      const bad = await call("POST", `${space}/transactions`, { ...split(groceries, transport), amountMinorUnits: "x" }, "opaque", { "idempotency-key": "bad-1" });
+      assert.equal(bad.statusCode, 400, bad.body);
+      assert.equal(ledger.idempotency.size, 3);
+    } finally { await app.close(); }
+  });
+
+  it("CBD-200-AC04 (QA-F02): the commit-time one-current-version refusal and the serialization failures are a 409 conflict, once; every other commit failure stays the denial", async () => {
+    const conflicts = [
+      new StatementFailedError("transaction", "commit", "23514", "manual_transaction_assert_one_current"),
+      new StatementFailedError("transaction", "commit", "40001"),
+      new StatementFailedError("transaction", "commit", "40P01"),
+      new StatementFailedError("transaction", "commit", "23505", "manual_transaction_one_current"),
+    ];
+    const denials = [
+      new StatementFailedError("transaction", "commit", "23514"),
+      new StatementFailedError("transaction", "commit", "23514", "transaction_allocation_exact_sum"),
+      new StatementFailedError("transaction", "commit", "23503", "manual_transaction_period_id_fkey"),
+      new StatementFailedError("transaction", "work", "40001"),
+      new StatementFailedError("manual_transaction", "update", "23514", "manual_transaction_assert_one_current"),
+      new Error("anything else"),
+    ];
+    for (const error of conflicts) { const mapped = commitConflict(error); assert.ok(mapped instanceof RouteFailure); assert.equal(mapped.status, 409); assert.deepEqual(mapped.response, { error: "conflict" }); }
+    for (const error of denials) assert.equal(commitConflict(error), null);
+    // Through the store: the transaction seam rejects at commit; the store answers the route failure the boundary transports, and reports the rollback.
+    const outcomes: string[] = [];
+    for (const error of [...conflicts, ...denials]) {
+      const client = { transaction: async (_options: unknown, work: (client: unknown) => Promise<unknown>) => { await work({ handle: true }); throw error; } } as unknown as DataAccessClient;
+      const store = new TransactionsAuthorizationStore(client);
+      store.observe({ committed: () => outcomes.push("committed"), rolledBack: () => outcomes.push("rolledBack") });
+      const expectedConflict = commitConflict(error) !== null;
+      if (expectedConflict) {
+        const result: unknown = await store.transaction(async () => "unreached");
+        assert.ok(result instanceof RouteFailure); assert.equal(result.status, 409);
+      } else await assert.rejects(() => store.transaction(async () => "unreached"), (thrown: unknown) => thrown === error);
+    }
+    assert.deepEqual(outcomes, new Array(conflicts.length + denials.length).fill("rolledBack"));
   });
 
   it("INCB-03: a period that is not this budget's is a canonical 404, and every route denies a subject without membership", async () => {

@@ -22,8 +22,10 @@
  * what comes back. That is what keeps the aggregate/detail identity a
  * property of one pure function rather than of this module's SQL.
  */
+import { createHash } from "node:crypto";
 import { calculateBudgetProgress } from "@cobudget/budget-domain/progress";
 import type { ProgressInput, ProgressRecord, ProgressResult } from "@cobudget/budget-domain/progress";
+import { canonicalJSON } from "../creation-proposals/canonical-json.ts";
 import { parseSignedMinorUnits } from "../accounts/records.ts";
 import type { AccountRecord } from "../accounts/records.ts";
 import type { Clock, IdGenerator, TransactionsRepository } from "./ports.ts";
@@ -32,12 +34,14 @@ import {
   MANUAL_TRANSACTION_ORIGIN,
   MAX_DESCRIPTION_LENGTH,
   SETTLED_STATE,
+  StaleVersionError,
   TransactionError,
   asTransactionError,
   compareTransactionIds,
 } from "./records.ts";
 import type {
   AllocationRecord,
+  IdempotentTransactionAction,
   PeriodRecord,
   TransactionMutation,
   TransactionRecord,
@@ -144,6 +148,70 @@ export function parseTransactionWriteRequest(body: unknown): TransactionWriteReq
     } catch (error) { return asTransactionError(error); }
   });
   return { accountId: body.accountId, amountMinorUnits, budgetDate: body.budgetDate, description, allocations };
+}
+
+/**
+ * The client's stated basis for an edit or a removal (CBD-200-AC04): the
+ * transaction version it was looking at when it decided to mutate.
+ *
+ * One shape, two carriers. In the body, `expectedTransactionVersionId`; in
+ * the request, `If-Match` carrying the same version id as an entity tag
+ * (`"<uuid>"`, the quotes optional). Both may be sent and must then agree.
+ * Absent everywhere, the mutation has no precondition and behaves as it did
+ * before this field existed (backward compatible); present and not the
+ * current version, the command refuses `stale_version` having written nothing.
+ *
+ * `expectedRevision` is deliberately not a carrier. The split-expense
+ * proposal (`docs/split-expense-edit-proposal.md`, `OQ-SPLIT-005`) named it
+ * before this shape was fixed; a body that states a revision and no version
+ * id is refused `invalid_request` rather than silently ignored, so a client
+ * written to the older name fails fast instead of losing an update.
+ */
+export interface VersionPrecondition {
+  readonly expectedTransactionVersionId: string;
+}
+
+const ENTITY_TAG = /^(W\/)?"?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"?$/iu;
+
+export function parseVersionPrecondition(body: unknown, ifMatch: string | readonly string[] | undefined): VersionPrecondition | null {
+  let fromBody: string | null = null;
+  if (isRecordObject(body)) {
+    if (body.expectedTransactionVersionId !== undefined && body.expectedTransactionVersionId !== null) {
+      if (!isUuid(body.expectedTransactionVersionId)) throw new TransactionError("invalid_request", "expectedTransactionVersionId");
+      fromBody = body.expectedTransactionVersionId.toLowerCase();
+    } else if (body.expectedRevision !== undefined && body.expectedRevision !== null) {
+      throw new TransactionError("invalid_request", "expectedRevision");
+    }
+  }
+  let fromHeader: string | null = null;
+  const header = Array.isArray(ifMatch) ? ifMatch.join(",") : ifMatch;
+  if (typeof header === "string" && header.trim() !== "" && header.trim() !== "*") {
+    const match = ENTITY_TAG.exec(header.trim());
+    // A weak tag is a representation-level comparison; a version id is exact, so only a strong tag names one.
+    if (match === null || match[1] !== undefined || match[2] === undefined) throw new TransactionError("invalid_request", "If-Match");
+    fromHeader = match[2].toLowerCase();
+  }
+  if (fromBody !== null && fromHeader !== null && fromBody !== fromHeader) throw new TransactionError("invalid_request", "If-Match");
+  const expected = fromBody ?? fromHeader;
+  return expected === null ? null : { expectedTransactionVersionId: expected };
+}
+
+function assertCurrentBasis(current: TransactionRecord, precondition: VersionPrecondition | null): void {
+  if (precondition === null) return;
+  if (current.transactionVersionId.toLowerCase() !== precondition.expectedTransactionVersionId) {
+    throw new StaleVersionError({ transactionVersionId: current.transactionVersionId, revision: current.revision });
+  }
+}
+
+/**
+ * The request digest an Idempotency-Key is bound to (CBD-200-AC05): SHA-256
+ * hex over the canonical JSON of the action, its target and the parsed
+ * request, so two requests that parse to the same command share a digest
+ * regardless of key order or whitespace, and the same key with a different
+ * command is detectable without storing the command.
+ */
+export function transactionRequestDigest(action: IdempotentTransactionAction, target: { readonly budgetSpaceId: string; readonly transactionId: string | null }, request: TransactionWriteRequest | null, precondition: VersionPrecondition | null): string {
+  return createHash("sha256").update(canonicalJSON({ action, budgetSpaceId: target.budgetSpaceId, transactionId: target.transactionId, request, precondition })).digest("hex");
 }
 
 /**
@@ -271,8 +339,13 @@ export async function editManualTransaction(
   transactionId: string,
   actingSubjectId: string,
   request: TransactionWriteRequest,
+  precondition: VersionPrecondition | null = null,
 ): Promise<TransactionMutation> {
   const previous = await currentSnapshot(deps, budgetSpaceId, transactionId);
+  // The basis is compared before anything else about the current version is
+  // judged: a client holding a pre-removal view learns it is stale, which is
+  // the reload-and-retry result, rather than a bare `transaction_removed`.
+  assertCurrentBasis(previous.version, precondition);
   if (previous.version.removedAt !== null) throw new TransactionError("transaction_removed", "transactionId");
   const account = await resolveAccount(deps, budgetSpaceId, request.accountId);
   const period = assignPeriod(await deps.repository.listPeriods(budgetSpaceId), request.budgetDate);
@@ -297,8 +370,10 @@ export async function removeManualTransaction(
   budgetSpaceId: string,
   transactionId: string,
   actingSubjectId: string,
+  precondition: VersionPrecondition | null = null,
 ): Promise<TransactionMutation> {
   const previous = await currentSnapshot(deps, budgetSpaceId, transactionId);
+  assertCurrentBasis(previous.version, precondition);
   if (previous.version.removedAt !== null) throw new TransactionError("transaction_removed", "transactionId");
   const now = deps.clock.now();
   const version: TransactionRecord = {

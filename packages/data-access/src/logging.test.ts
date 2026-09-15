@@ -28,6 +28,17 @@ void test("CBD-246-AC06: wrapDriverError never carries the canary statement text
   void driverError; // constructed only to prove its message is never read by wrapDriverError
 });
 
+void test("CBD-200-AC04: wrapDriverError keeps the SQLSTATE and a constraint identifier, and drops a constraint field that is not one", () => {
+  const named = wrapDriverError("manual_transaction", "commit", { code: "23514", constraint: "manual_transaction_assert_one_current" });
+  assert.equal(named.sqlState, "23514");
+  assert.equal(named.constraint, "manual_transaction_assert_one_current");
+  // A driver that put a value or statement text where an identifier belongs must not get it forwarded.
+  const smuggled = wrapDriverError("manual_transaction", "commit", { code: "23514", constraint: CANARY_SQL });
+  assert.equal(smuggled.constraint, undefined);
+  assert.ok(!JSON.stringify({ ...smuggled, message: smuggled.message }).includes(CANARY));
+  assert.equal(wrapDriverError("manual_transaction", "commit", { code: "23514" }).constraint, undefined);
+});
+
 void test("CBD-246-AC06: statementLogLine only ever carries the allowlisted fields", () => {
   const line = statementLogLine({ level: "error", table: "accounts", operation: "select", durationMs: 12 });
   assert.equal(line, "level=error table=accounts operation=select durationMs=12");

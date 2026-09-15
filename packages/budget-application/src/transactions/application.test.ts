@@ -7,15 +7,18 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  StaleVersionError,
   TransactionError,
   assignPeriod,
   createManualTransaction,
   editManualTransaction,
   isCalendarDate,
   parseTransactionWriteRequest,
+  parseVersionPrecondition,
   readBudgetProgress,
   readTransactionHistory,
   removeManualTransaction,
+  transactionRequestDigest,
 } from "./index.ts";
 import type { TransactionErrorCode, TransactionWriteRequest } from "./index.ts";
 import {
@@ -286,6 +289,81 @@ describe("CBD-200 at the application layer: edit and remove", () => {
     await refuses("transaction_not_found", () => readTransactionHistory(world.deps, TX_SPACE_B, created.current.version.transactionId));
     await refuses("transaction_not_found", () => removeManualTransaction(world.deps, TX_SPACE_B, created.current.version.transactionId, TX_SUBJECT_1));
     await refuses("invalid_request", () => readTransactionHistory(world.deps, TX_SPACE_A, "nope"));
+  });
+});
+
+describe("CBD-200-AC04 at the application layer: the stated basis of an edit or a removal", () => {
+  const VERSION_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const VERSION_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+  it("parses one shape from either carrier, and requires the two carriers to agree", () => {
+    assert.equal(parseVersionPrecondition({}, undefined), null, "no basis stated is no precondition");
+    assert.equal(parseVersionPrecondition({ expectedTransactionVersionId: null }, ""), null);
+    assert.equal(parseVersionPrecondition({}, "*"), null, "If-Match: * asserts existence only, which the route already checks");
+    assert.deepEqual(parseVersionPrecondition({ expectedTransactionVersionId: VERSION_A.toUpperCase() }, undefined), { expectedTransactionVersionId: VERSION_A });
+    assert.deepEqual(parseVersionPrecondition({}, `"${VERSION_A}"`), { expectedTransactionVersionId: VERSION_A });
+    assert.deepEqual(parseVersionPrecondition({}, VERSION_A), { expectedTransactionVersionId: VERSION_A }, "the quotes are optional");
+    assert.deepEqual(parseVersionPrecondition({ expectedTransactionVersionId: VERSION_A }, `"${VERSION_A}"`), { expectedTransactionVersionId: VERSION_A });
+    refusesSync("invalid_request", () => parseVersionPrecondition({ expectedTransactionVersionId: VERSION_A }, `"${VERSION_B}"`));
+    refusesSync("invalid_request", () => parseVersionPrecondition({ expectedTransactionVersionId: "not-a-uuid" }, undefined));
+    refusesSync("invalid_request", () => parseVersionPrecondition({}, `W/"${VERSION_A}"`));
+    refusesSync("invalid_request", () => parseVersionPrecondition({}, '"abc"'));
+    // The split proposal's older name is refused, not ignored: a client written to it must not lose an update silently.
+    refusesSync("invalid_request", () => parseVersionPrecondition({ expectedRevision: 5 }, undefined));
+    assert.deepEqual(parseVersionPrecondition({ expectedRevision: 5, expectedTransactionVersionId: VERSION_A }, undefined), { expectedTransactionVersionId: VERSION_A }, "a body that names the version id as well is fine");
+  });
+
+  it("an edit or a removal from a stale basis is refused stale_version, names the current version, and writes nothing", async () => {
+    const world = transactionWorld();
+    const created = await createManualTransaction(world.deps, TX_SPACE_A, TX_SUBJECT_1, request());
+    const id = created.current.version.transactionId;
+    const basis = created.current.version.transactionVersionId;
+    world.now = "2026-09-16T10:00:00.000Z";
+    const edited = await editManualTransaction(world.deps, TX_SPACE_A, id, TX_SUBJECT_1, request({ amountMinorUnits: -900, allocations: [{ categoryId: TX_CATEGORY_GROCERIES, amountMinorUnits: -900 }] }), { expectedTransactionVersionId: basis });
+    assert.equal(edited.current.version.revision, 2, "a basis that is current is admitted");
+    world.now = "2026-09-16T11:00:00.000Z";
+    for (const attempt of [
+      () => editManualTransaction(world.deps, TX_SPACE_A, id, TX_SUBJECT_1, request({ amountMinorUnits: -700, allocations: [{ categoryId: TX_CATEGORY_TRANSPORT, amountMinorUnits: -700 }] }), { expectedTransactionVersionId: basis }),
+      () => removeManualTransaction(world.deps, TX_SPACE_A, id, TX_SUBJECT_1, { expectedTransactionVersionId: basis }),
+    ]) {
+      await assert.rejects(attempt, (error: unknown) => error instanceof StaleVersionError && error.code === "stale_version"
+        && error.current.transactionVersionId === edited.current.version.transactionVersionId && error.current.revision === 2);
+    }
+    assert.equal(world.repository.versions.size, 2, "nothing was written by the stale attempts");
+    assert.equal([...world.repository.versions.values()].filter((v) => v.supersededAt === null).length, 1);
+    // Without a basis the mutation behaves as it did before the field existed.
+    const removed = await removeManualTransaction(world.deps, TX_SPACE_A, id, TX_SUBJECT_1);
+    assert.equal(removed.current.version.revision, 3);
+    // A stale basis against a tombstone is still stale_version: the reload tells the client what happened.
+    await assert.rejects(() => editManualTransaction(world.deps, TX_SPACE_A, id, TX_SUBJECT_1, request(), { expectedTransactionVersionId: basis }), (error: unknown) => error instanceof StaleVersionError && error.current.revision === 3);
+    await refuses("transaction_removed", () => editManualTransaction(world.deps, TX_SPACE_A, id, TX_SUBJECT_1, request(), { expectedTransactionVersionId: removed.current.version.transactionVersionId }));
+  });
+});
+
+describe("CBD-200-AC05 at the application layer: the request digest and the idempotency scope", () => {
+  const target = { budgetSpaceId: TX_SPACE_A, transactionId: null };
+  it("the digest is over the parsed command: key order and whitespace do not change it, the command does", () => {
+    const one = transactionRequestDigest("create", target, request(), null);
+    assert.match(one, /^[0-9a-f]{64}$/u, "the migration's CHECK admits hex SHA-256 only");
+    const reordered = parseTransactionWriteRequest(Object.fromEntries(Object.entries(writeBody()).reverse()));
+    assert.equal(transactionRequestDigest("create", target, reordered, null), one);
+    assert.notEqual(transactionRequestDigest("create", target, request({ amountMinorUnits: -1_251, allocations: [{ categoryId: TX_CATEGORY_GROCERIES, amountMinorUnits: -1_251 }] }), null), one);
+    assert.notEqual(transactionRequestDigest("edit", { ...target, transactionId: "11111111-1111-4111-8111-111111111111" }, request(), null), one, "the action and the target are part of the identity");
+    assert.notEqual(transactionRequestDigest("create", target, request(), { expectedTransactionVersionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }), one);
+  });
+
+  it("the in-memory scope admits one record per key and binds it to a stored version", async () => {
+    const world = transactionWorld();
+    const created = await createManualTransaction(world.deps, TX_SPACE_A, TX_SUBJECT_1, request());
+    const scope = { budgetSpaceId: TX_SPACE_A, membershipId: "membership-1", action: "create" as const, idempotencyKey: "key-1" };
+    assert.equal(await world.repository.readIdempotency(scope), null);
+    const record = { ...scope, requestDigest: transactionRequestDigest("create", target, request(), null), transactionVersionId: created.current.version.transactionVersionId, committedResponse: created, createdAt: world.now };
+    await world.repository.recordIdempotency(record);
+    assert.deepEqual(await world.repository.readIdempotency(scope), record);
+    assert.equal(await world.repository.readIdempotency({ ...scope, action: "edit" }), null, "the action is part of the scope");
+    assert.equal(await world.repository.readIdempotency({ ...scope, membershipId: "membership-2" }), null, "the membership is part of the scope");
+    await refuses("conflict", () => world.repository.recordIdempotency(record));
+    await refuses("constraint_violation", () => world.repository.recordIdempotency({ ...record, idempotencyKey: "key-2", transactionVersionId: "99999999-9999-4999-8999-999999999999" }));
   });
 });
 
