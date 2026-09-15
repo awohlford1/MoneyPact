@@ -121,6 +121,10 @@ export function testWorld(options: { readonly correlationId?: string } = {}): Te
   const owner: OwnerContext = {
     budgetSpaceId: SPACE, subjectId: OWNER_SUBJECT, membershipId: OWNER_MEMBERSHIP,
     decision: { policyVersion: "p5", policyDigest: "c".repeat(64), authorizationVersion: 1 },
+    // The cell the allow decision was taken against. Required on confirm,
+    // reject and replace (`SEC-PK5-F02`); `24` is the Collaborator cell, so a
+    // co_owner fixture overrides it with `26`.
+    permission: "24",
     correlationId,
   };
   const invitee: InviteeContext = {
@@ -137,6 +141,18 @@ export function testWorld(options: { readonly correlationId?: string } = {}): Te
       return { destination: row.destination, bearer: row.bearer, challenge: row.challenge };
     },
   };
+}
+
+/**
+ * The same owner with the decided cell omitted -- what a PK-6 route that
+ * forgot to pass one would supply. `exactOptionalPropertyTypes` makes
+ * `permission: undefined` a different thing from an absent key, and it is the
+ * absent key the check has to refuse (`SEC-PK5-F02`, `R-03`).
+ */
+export function ownerWithoutPermission(owner: OwnerContext): OwnerContext {
+  const { permission, ...rest } = owner;
+  void permission;
+  return rest;
 }
 
 /** The kind a role's invitation carries, so a test does not restate the mapping. */

@@ -153,7 +153,11 @@ export async function confirmAcceptance(
   });
 
   // --- 4: inviter authority. -----------------------------------------------
-  if (owner.permission !== undefined && owner.permission !== invitation.requiredPermission) {
+  // `SEC-PK5-F02` / `R-03`: required, not optional. A context that carries no
+  // permission is a route that did not decide against a cell, and SS8 step 4
+  // is the one check tying the confirmer's cell to the invitation's
+  // `required_permission`; skipping it on omission is a fail-open default.
+  if (owner.permission !== invitation.requiredPermission) {
     throw new InvitationError("permission_mismatch", "requiredPermission");
   }
   const confirmerMembership = await repository.readActiveMembership(invitation.budgetSpaceId, owner.subjectId);
@@ -351,7 +355,8 @@ export async function rejectAcceptance(
   const confirmation = await currentConfirmation(deps, invitation);
   const ceremony = await repository.readCeremony(invitation.budgetSpaceId, confirmation.ceremonyId);
   if (!ceremony) throw new InvitationError("confirmation_not_current", "ceremonyId");
-  if (owner.permission !== undefined && owner.permission !== invitation.requiredPermission) {
+  // `SEC-PK5-F02` / `R-03`: required on reject as it is on confirm.
+  if (owner.permission !== invitation.requiredPermission) {
     throw new InvitationError("permission_mismatch", "requiredPermission");
   }
   const confirmerMembership = await repository.readActiveMembership(invitation.budgetSpaceId, owner.subjectId);

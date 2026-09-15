@@ -58,6 +58,13 @@ export interface OwnerContext {
    * against. SS8 step 4 requires the invitation's `required_permission` to
    * equal it at commit, so an owner holding a different permission than the
    * one the creation required cannot confirm.
+   *
+   * Optional only because the system path (`ownerFromRecord`) acts on nobody's
+   * decision and never reaches an actor command. `confirmAcceptance`,
+   * `rejectAcceptance` and `replaceInvitation` **require** it and answer
+   * `permission_mismatch` when it is absent (`SEC-PK5-F02`, `R-03`): an
+   * omitted permission is a route that did not decide, not a route that was
+   * allowed.
    */
   readonly permission?: "24" | "26";
   /** The correlation id of the request, shared by every audit row and notice the command writes. */

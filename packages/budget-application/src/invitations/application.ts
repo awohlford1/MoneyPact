@@ -549,7 +549,10 @@ export async function replaceInvitation(
 ): Promise<CreateInvitationResult> {
   const record = await requireOwnedInvitation(deps, owner, invitationId);
   if (record.kind !== "real") throw new InvitationError("invitation_not_current", "kind");
-  if (record.requiredPermission !== ROLE_PERMISSION[record.proposedRole]) throw new InvitationError("permission_mismatch", "requiredPermission");
+  // `R-03`: the actor's own permission, not `ROLE_PERMISSION[proposedRole]`,
+  // which the record satisfies by construction and therefore checked nothing.
+  // `TR-73-05` requires "the same current exact permission as `TR-73-01`".
+  if (owner.permission !== record.requiredPermission) throw new InvitationError("permission_mismatch", "requiredPermission");
   const disclosure = deps.disclosures.current(record.disclosureKind);
   const replaced = await replaceInvitationRecord(deps, owner, record, {
     channel: "email", destination: "", destinationMasked: record.destinationMasked,

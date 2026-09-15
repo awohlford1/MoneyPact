@@ -18,7 +18,7 @@ import {
 import { confirmAcceptance } from "./acceptance.ts";
 import { MAX_CHANNEL_ATTEMPTS, NEUTRAL_DISPLAY_LABEL, UNIFORM_LINK_MESSAGE_CODE, isInvitationError } from "./records.ts";
 import { canonicalizeEmailDestination, maskEmailDestination } from "./secrets.ts";
-import { ENVIRONMENT, INVITEE_SUBJECT, OWNER_SUBJECT, SPACE, testWorld } from "./support.ts";
+import { ENVIRONMENT, INVITEE_SUBJECT, OWNER_SUBJECT, SPACE, ownerWithoutPermission, testWorld } from "./support.ts";
 import type { TestWorld } from "./support.ts";
 
 const DESTINATION = "Invitee@Example.COM";
@@ -457,6 +457,16 @@ void test("PK5-03: replace supersedes the predecessor, invalidates its code and 
   const { invitationId, delivery } = await dispatched(world);
   const opened = await resolveCode(world.deps, { presentedCode: delivery.bearer, environment: ENVIRONMENT, correlationId: "c" });
   assert.equal(opened.outcome, "resolved");
+
+  // R-03: replace compares the actor's own permission against the record's
+  // required_permission, so a wrong or absent cell denies before any write.
+  for (const actor of [ownerWithoutPermission(world.owner), { ...world.owner, permission: "26" as const }]) {
+    await assert.rejects(
+      replaceInvitation(world.deps, actor, invitationId),
+      (error: unknown) => isInvitationError(error, "permission_mismatch"),
+    );
+  }
+  assert.equal(world.repository.invitations.get(invitationId)?.state, "pending", "the denial wrote nothing");
 
   const replacement = await replaceInvitation(world.deps, world.owner, invitationId);
   const predecessor = world.repository.invitations.get(invitationId);

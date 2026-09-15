@@ -17,7 +17,7 @@ import { acceptInvitation, attachAccount, createInvitation, parseCreateInvitatio
 import { ACCEPTANCE_BOUNDARIES, confirmAcceptance, rejectAcceptance } from "./acceptance.ts";
 import { isInvitationError } from "./records.ts";
 import type { InvitationErrorCode } from "./records.ts";
-import { ENVIRONMENT, INVITEE_SUBJECT, OWNER_MEMBERSHIP, OWNER_SUBJECT, SPACE, testWorld } from "./support.ts";
+import { ENVIRONMENT, INVITEE_SUBJECT, OWNER_MEMBERSHIP, OWNER_SUBJECT, SPACE, ownerWithoutPermission, testWorld } from "./support.ts";
 import type { TestWorld } from "./support.ts";
 
 function request(destination = "invitee@example.com", role: "collaborator" | "co_owner" = "collaborator") {
@@ -106,6 +106,11 @@ void test("PK5-01/PK5-02: every denial before step 7 writes nothing", async () =
     }, "stale_disclosure"],
     ["step 4, permission", async (world, invitationId) => {
       await confirmAcceptance(world.deps, { ...world.owner, permission: "26" }, { invitationId, confirmationIdempotencyKey: "k" });
+    }, "permission_mismatch"],
+    // SEC-PK5-F02 / R-03: an omitted permission is a route that did not decide
+    // against a cell. It denies rather than skipping step 4.
+    ["step 4, permission omitted", async (world, invitationId) => {
+      await confirmAcceptance(world.deps, ownerWithoutPermission(world.owner), { invitationId, confirmationIdempotencyKey: "k" });
     }, "permission_mismatch"],
     ["step 4, authorization version", async (world, invitationId) => {
       await confirmAcceptance(world.deps, { ...world.owner, decision: { ...world.owner.decision, authorizationVersion: 9 } }, { invitationId, confirmationIdempotencyKey: "k" });
@@ -214,6 +219,12 @@ void test("every sibling record bound to the accepting person is cancelled with 
 void test("reject cancels the invitation, writes no membership or consent, and tells the acceptor nothing", async () => {
   const world = testWorld();
   const { invitationId, ceremonyId } = await awaitingConfirmation(world);
+  // R-03: reject requires the permission too, and denies before any write.
+  await assert.rejects(
+    rejectAcceptance(world.deps, ownerWithoutPermission(world.owner), { invitationId }),
+    (error: unknown) => isInvitationError(error, "permission_mismatch"),
+  );
+  assert.equal([...world.repository.confirmations.values()][0]?.state, "requested", "the denial wrote nothing");
   const projection = await rejectAcceptance(world.deps, world.owner, { invitationId });
   assert.equal(projection.state, "cancelled");
   assert.equal(world.repository.memberships.filter((row) => row.accountSubjectId === INVITEE_SUBJECT).length, 0);
@@ -229,7 +240,8 @@ void test("reject cancels the invitation, writes no membership or consent, and t
 void test("a co-owner invitation commits a co_owner membership against its own disclosure kind", async () => {
   const world = testWorld();
   const { invitationId } = await awaitingConfirmation(world, "coowner@example.com", "co_owner");
-  const receipt = await confirmAcceptance(world.deps, world.owner, { invitationId, confirmationIdempotencyKey: "k1" });
+  // The co_owner cell, which is what a co_owner invitation's required_permission is.
+  const receipt = await confirmAcceptance(world.deps, { ...world.owner, permission: "26" }, { invitationId, confirmationIdempotencyKey: "k1" });
   assert.equal(receipt.role, "co_owner");
   assert.equal(world.repository.consents[0]?.role, "co_owner");
   assert.equal(world.repository.consents[0]?.disclosureKind, "invitation_co_owner");
