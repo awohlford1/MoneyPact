@@ -126,12 +126,12 @@ test("R-01 over the mock: a withdrawn transfer after beginStepUp leaves the sess
   assert.equal((await owner.api.session())!.assurance, "fresh");
   // The page's rule (transfer-view.tsx confirm): read the view first and confirm only a live workflow.
   const current = await owner.api.viewTransfer(spaceId, transferId);
-  const live = ["proposed", "recipient_accepted", "primary_confirmed", "ready"].includes(current.state);
+  const live = ["proposed", "recipient_accepted", "primary_confirmed", "ready"].includes(current.transfer.state);
   assert.equal(live, false);
-  if (live) await owner.api.confirmTransfer(spaceId, current.transferId);
+  if (live && current.disclosures.outgoing) await owner.api.confirmTransfer(spaceId, current.transfer.transferId, claimOf(current.disclosures.outgoing));
   assert.equal((await owner.api.session())!.assurance, "fresh", "no confirm was sent, so the grant is unspent");
   // For contrast, the unguarded path: the mock's boundary answers the uniform denial with the grant returned (no live workflow).
-  assert.deepEqual(await owner.api.confirmTransfer(spaceId, transferId), { outcome: "denied" });
+  assert.deepEqual(await owner.api.confirmTransfer(spaceId, transferId, current.disclosures.outgoing ? claimOf(current.disclosures.outgoing) : { kind: proposed.transfer.outgoingDisclosureKind, version: proposed.transfer.outgoingDisclosureVersion, digest: "" }), { outcome: "denied" });
   assert.equal((await owner.api.session())!.assurance, "fresh");
 });
 
