@@ -325,7 +325,12 @@ tooling itself and is never the demo target.
   (CBD-200-AC05): the same key with the same request answers the stored
   response and writes nothing; the same key with a different request is
   refused `409 idempotency_mismatch`. The rows live in
-  `manual_transaction_idempotency` and are append-only.
+  `manual_transaction_idempotency` and are append-only. An `Idempotency-Key`
+  value is an opaque client-chosen identifier, not a credential -- the API
+  never logs it, but PostgreSQL's own server log records it verbatim in the
+  `DETAIL` line of a unique-violation error (`Key
+  (budget_space_id, membership_id, action, idempotency_key)=(...)`), so treat
+  server logs, not just application logs, as in scope when handling one.
 - Still missing from that half: bank connections and imports (CBD-9), so every
   account and every transaction is manual and settled -- no pending or
   provisional state is representable at all; non-owner roles on the account

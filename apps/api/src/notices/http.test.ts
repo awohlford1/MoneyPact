@@ -1,8 +1,10 @@
 /**
  * PK8-F01 route tests through the real Fastify instance, the real
  * `ApiAuthorizationBoundary`, the real fact assembler and the released policy
- * (the `profile.read` subject-self cell), over an in-memory notice store
- * wrapped in a snapshot transaction so commit and rollback are observable.
+ * (CBD-236 p6: the dedicated `notice.read` / `notice.mark_read` subject-self
+ * cells, docs/cbd-236-p6-subject-self-amendment-proposal.md `P6-E04`), over
+ * an in-memory notice store wrapped in a snapshot transaction so commit and
+ * rollback are observable.
  *
  *   NOTICES-01  GET /v1/notices answers the caller's own rows only, newest
  *               first, with `read_at`, in the `WireNotice` shape and nothing
@@ -28,7 +30,7 @@ import type { AccountLifecycleNoticeRow } from "../../../../packages/data-access
 import { AppModule } from "../app.module.js";
 import { Harness, testHistory } from "../authorization/test-support.js";
 import { loadApiConfigFrom } from "../config.js";
-import { NOTICES_ACTION, noticesHttp } from "./http.ts";
+import { NOTICES_MARK_READ_ACTION, NOTICES_READ_ACTION, noticesHttp } from "./http.ts";
 import type { NoticesHttpDependencies } from "./http.ts";
 
 const config = loadApiConfigFrom({ API_PORT: "3001", LOG_LEVEL: "info", NODE_ENV: "test", SERVICE_VERSION: "notices-test", COBUDGET_FIELD_ENCRYPTION_PROVIDER: "local", COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: Buffer.alloc(32, 7).toString("base64"), COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "test-v1" });
@@ -41,8 +43,8 @@ const N2 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
 const N3 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3";
 const NOW = "2026-09-15T18:00:00.000Z";
 
-function subjectInput(accountSubjectId: string): PolicyInput {
-  const base = subjectFixture(NOTICES_ACTION, CURRENT_POLICY_VERSION);
+function subjectInput(accountSubjectId: string, action: string = NOTICES_READ_ACTION): PolicyInput {
+  const base = subjectFixture(action, CURRENT_POLICY_VERSION);
   const input = { ...base, subject: { ...base.subject, accountSubjectId } };
   return { ...input, provenance: expectedProvenance(input as PolicyInput) } as PolicyInput;
 }
@@ -75,9 +77,11 @@ async function application() {
     }),
   };
   const h = new Harness(subjectInput(ALICE));
-  // The general store's obligation handling for the read cell: `bind_cache_key` names caching dimensions, nothing to write.
+  // The general store's obligation handling: `bind_cache_key` (notice.read) names caching dimensions, nothing to write;
+  // `recheck_at_commit` (notice.mark_read, CBD-236 p6) is discharged by the boundary itself (boundary.ts), never routed
+  // to the store's own discharge, but the store's verify() still sees the full obligation list and must accept it.
   h.store.discharge = async (_transaction, _input, obligation) => obligation.kind === "bind_cache_key";
-  h.store.verify = async (_transaction, _input, obligations) => obligations.every((obligation) => obligation.kind === "audit" || obligation.kind === "bind_cache_key");
+  h.store.verify = async (_transaction, _input, obligations) => obligations.every((obligation) => obligation.kind === "audit" || obligation.kind === "bind_cache_key" || obligation.kind === "recheck_at_commit");
   // A snapshot transaction over the in-memory rows: kept on return, discarded on throw.
   const harnessTransaction = h.store.transaction.bind(h.store);
   h.store.transaction = async (work) => {
@@ -99,8 +103,12 @@ async function application() {
   }).compile();
   const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { logger: false });
   await app.init(); await app.getHttpAdapter().getInstance().ready();
-  const as = (subject: string) => { h.input = subjectInput(subject); };
-  const call = (method: "GET" | "POST", url: string) => app.inject({ method, url, ...(method === "POST" ? { payload: {} } : {}), headers: { cookie: "opaque" } });
+  let subject = ALICE;
+  const as = (nextSubject: string) => { subject = nextSubject; };
+  const call = (method: "GET" | "POST", url: string) => {
+    h.input = subjectInput(subject, method === "POST" ? NOTICES_MARK_READ_ACTION : NOTICES_READ_ACTION);
+    return app.inject({ method, url, ...(method === "POST" ? { payload: {} } : {}), headers: { cookie: "opaque" } });
+  };
   return { app, h, rows, statements, as, call };
 }
 

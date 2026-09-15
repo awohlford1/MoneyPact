@@ -46,8 +46,26 @@ export class SequenceIds {
   }
 }
 
-/** The two registered transfer disclosure kinds at version 1, with stable digests. */
-export function testDisclosures(overrides: Partial<Record<string, ConsentDisclosure>> = {}): ConsentDisclosureSource {
+/** The kind, version and digest of a claim that matches {@link testDisclosures}' default recipient entry. */
+export const RECIPIENT_DISCLOSURE_CLAIM: { readonly kind: string; readonly version: number; readonly digest: string } = {
+  kind: RECIPIENT_DISCLOSURE_KIND, version: 1, digest: "a".repeat(64),
+};
+/** The kind, version and digest of a claim that matches {@link testDisclosures}' default outgoing entry. */
+export const OUTGOING_DISCLOSURE_CLAIM: { readonly kind: string; readonly version: number; readonly digest: string } = {
+  kind: OUTGOING_DISCLOSURE_KIND, version: 1, digest: "b".repeat(64),
+};
+
+/**
+ * The two registered transfer disclosure kinds at version 1, with stable
+ * digests, plus `at(kind, version)` over whatever entries this call carries
+ * (the defaults, `overrides`' replacements and `extra`'s additional
+ * versions) -- so a test can prove `TCF-02`'s "still available" and
+ * "moved and removed" cases without touching the real registry file.
+ */
+export function testDisclosures(
+  overrides: Partial<Record<string, ConsentDisclosure>> = {},
+  extra: readonly ConsentDisclosure[] = [],
+): ConsentDisclosureSource {
   const entries: Record<string, ConsentDisclosure> = {
     [RECIPIENT_DISCLOSURE_KIND]: {
       kind: RECIPIENT_DISCLOSURE_KIND, version: 1, digest: "a".repeat(64),
@@ -59,11 +77,17 @@ export function testDisclosures(overrides: Partial<Record<string, ConsentDisclos
     },
     ...overrides,
   };
+  const byVersion = new Map<string, ConsentDisclosure>();
+  for (const entry of Object.values(entries)) byVersion.set(`${entry.kind}:${entry.version}`, entry);
+  for (const entry of extra) byVersion.set(`${entry.kind}:${entry.version}`, entry);
   return {
     current(kind: string): ConsentDisclosure {
       const entry = entries[kind];
       if (!entry) throw new Error(`unregistered disclosure kind: ${kind}`);
       return entry;
+    },
+    at(kind: string, version: number): ConsentDisclosure | null {
+      return byVersion.get(`${kind}:${version}`) ?? null;
     },
   };
 }

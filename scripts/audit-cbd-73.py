@@ -57,14 +57,16 @@ SCENARIO_COUNTS = {
     "TRF": 10,
 }
 
-# PROTO-INVITATIONS-AWAITING-CONFIRMATION-001 (EXEC-PK8-RULINGS-001 item (a)):
-# the specification alone bumped to 1.0.6 for the SS4.5 `awaiting_confirmation`
-# projection sentence; the message inventory, negative/recovery test inventory
-# and traceability register are unchanged by that edit and stay pinned at
-# 1.0.5, exactly as the specification alone bumped to 1.0.4 for SS13.1 while
-# its siblings stayed behind.
+# PROTO-DOCS-OWNER-SENTENCES-001 (P6-F03): the specification alone bumped to
+# 1.0.7 for the SS13 `DR-73-11` API-surface sentence, following the same
+# spec-only bump to 1.0.6 for the SS4.5 `awaiting_confirmation` projection
+# sentence under PROTO-INVITATIONS-AWAITING-CONFIRMATION-001
+# (EXEC-PK8-RULINGS-001 item (a)); the message inventory, negative/recovery
+# test inventory and traceability register are unchanged by either edit and
+# stay pinned at 1.0.5, exactly as the specification alone bumped to 1.0.4 for
+# SS13.1 while its siblings stayed behind.
 EXPECTED_DOCUMENT_VERSION: dict[Path, str] = {
-    SPEC: "1.0.6",
+    SPEC: "1.0.7",
     MESSAGES: "1.0.5",
     TESTS: "1.0.5",
     TRACE: "1.0.5",
