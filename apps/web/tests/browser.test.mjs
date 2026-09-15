@@ -269,6 +269,70 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     assert.deepEqual(errors, []);
   });
 
+  // CBD-200-F03/CBD-266-F04 (WF3-02): the mock models the CBD-200 precondition and the 429 the live
+  // API has, so the browser suite can exercise the client paths against it directly -- a stale basis,
+  // a repeated Idempotency-Key, and a second in-flight write by the same session -- through the same
+  // in-browser fetch the production client issues, on this same signed-in session.
+  await t.test("CBD-200-F03/CBD-266-F04: the mock answers stale_version, a repeated key replays, and a second in-flight write is 429", async () => {
+    requireBudget();
+    const outcome = await page.evaluate(async (id) => {
+      const csrf = (await (await fetch("/api/mock/v1/identity/me")).json()).csrfValue;
+      const write = (path, method, body, idempotencyKey) => fetch(`/api/mock${path}`, {
+        method, headers: { "content-type": "application/json", "x-cobudget-csrf": csrf, ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}) },
+        body: JSON.stringify(body),
+      }).then(async (response) => ({ status: response.status, retryAfter: response.headers.get("Retry-After"), body: await response.json().catch(() => null) }));
+
+      const detail = await (await fetch(`/api/mock/v1/budget-spaces/${id}`)).json();
+      const periodId = detail.activePeriod.periodId; const periodStart = detail.activePeriod.start;
+      const plan = await (await fetch(`/api/mock/v1/budget-spaces/${id}/plan?periodId=${periodId}`)).json();
+      const categoryId = plan.categories[0].categoryId;
+      const accounts = await (await fetch(`/api/mock/v1/budget-spaces/${id}/accounts`)).json();
+      const accountId = accounts.accounts[0].accountId;
+      const body = { accountId, amountMinorUnits: -700, budgetDate: periodStart, description: "WF3-02 precondition check", allocations: [{ categoryId, amountMinorUnits: -700 }] };
+
+      // A repeated Idempotency-Key answers the stored first result: same transaction, same version, both 201.
+      const first = await write(`/v1/budget-spaces/${id}/transactions`, "POST", body, "wf3-02-replay-key");
+      const replay = await write(`/v1/budget-spaces/${id}/transactions`, "POST", body, "wf3-02-replay-key");
+      const transactionId = first.body.current.version.transactionId; const versionId = first.body.current.version.transactionVersionId;
+
+      // A stale basis is refused 409 stale_version, with the current version in the error and nothing written.
+      const stale = await write(`/v1/budget-spaces/${id}/transactions/${transactionId}`, "PATCH", { ...body, expectedTransactionVersionId: "not-the-current-version" });
+      const readBack = await (await fetch(`/api/mock/v1/budget-spaces/${id}/periods/${periodId}/progress/${categoryId}`)).json();
+      const untouchedRevision = readBack.items.find((item) => item.transactionId === transactionId)?.amountMinorUnits;
+
+      // The stated basis is admitted, and the edit takes effect.
+      const admitted = await write(`/v1/budget-spaces/${id}/transactions/${transactionId}`, "PATCH", { ...body, amountMinorUnits: -750, allocations: [{ categoryId, amountMinorUnits: -750 }], expectedTransactionVersionId: versionId });
+
+      // A second, genuinely concurrent write from this same session is 429 in_flight with Retry-After while the first is still in progress.
+      const raceBody = { accountId, amountMinorUnits: -100, budgetDate: periodStart, description: "WF3-02 race", allocations: [{ categoryId, amountMinorUnits: -100 }] };
+      const [raceA, raceB] = await Promise.all([
+        write(`/v1/budget-spaces/${id}/transactions`, "POST", raceBody, "wf3-02-race-a"),
+        write(`/v1/budget-spaces/${id}/transactions`, "POST", raceBody, "wf3-02-race-b"),
+      ]);
+      return { first, replay, transactionId, stale, untouchedRevision, admitted, raceA, raceB };
+    }, budgetId);
+
+    assert.equal(outcome.first.status, 201);
+    assert.equal(outcome.replay.status, 201);
+    assert.equal(outcome.replay.body.current.version.transactionId, outcome.transactionId, "the repeated key answers the stored first result");
+    assert.deepEqual(outcome.replay.body, outcome.first.body, "byte-identical replay, not a second write");
+
+    assert.equal(outcome.stale.status, 409);
+    assert.equal(outcome.stale.body.error, "stale_version");
+    assert.equal(typeof outcome.stale.body.current?.transactionVersionId, "string");
+    assert.equal(outcome.stale.body.current.revision, 1);
+    assert.equal(outcome.untouchedRevision, -700, "the stale write left the stored amount unchanged");
+
+    assert.equal(outcome.admitted.status, 200);
+    assert.equal(outcome.admitted.body.current.version.revision, 2);
+
+    const statuses = [outcome.raceA.status, outcome.raceB.status].sort();
+    assert.deepEqual(statuses, [201, 429], "exactly one of the two concurrent writes is admitted");
+    const loser = outcome.raceA.status === 429 ? outcome.raceA : outcome.raceB;
+    assert.deepEqual(loser.body, { outcome: "retry", reason: "in_flight" });
+    assert.equal(loser.retryAfter, "1");
+  });
+
   const detailResponse = await page.evaluate(async id => (await fetch(`/api/mock/v1/budget-spaces/${id}`)).json(), budgetId);
   let scenario = null;
   await page.setRequestInterception(true);

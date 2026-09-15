@@ -222,7 +222,10 @@ test("PK8-02 over the mock: invite, resolve with the cookie, exhaust a link term
   await assert.rejects(invitee.api.accept(second.ceremonyId, { kind: view.disclosure.kind, version: 2 }), (error: unknown) => error instanceof InvitationApiError && error.code === "stale_disclosure");
   const accepted = await invitee.api.accept(second.ceremonyId, { kind: view.disclosure.kind, version: view.disclosure.version });
   assert.equal("state" in accepted && accepted.state, "awaiting_confirmation");
-  assert.equal((await invitee.api.listNotices()).some(row => row.messageCode === "MSG-73-051"), true);
+  // GAPS-F05: the real API writes no durable notice row for the invitee at accept (MSG-73-051 is the
+  // ceremony page's own immediate message, never a stored notice); the invitee's durable row is
+  // MSG-73-015, written at the owner's confirm below.
+  assert.equal((await invitee.api.listNotices()).length, 0, "no notice row yet for the invitee");
   // PK8-F01: the owner is told an acceptance waits (MSG-73-050); the stamp is set once, own rows only.
   const waiting = (await owner.api.listNotices()).find(row => row.messageCode === "MSG-73-050");
   assert.ok(waiting && waiting.readAt === null && waiting.budgetSpaceId === spaceId);
