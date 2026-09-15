@@ -71,6 +71,42 @@ class SecretScannerTests(unittest.TestCase):
                 body = b"postgresql://fixture:Q7vX2mN9-" + value + b"@example.invalid/db"
                 self.assertIn("cobudget-postgresql-credential", [hit[0] for hit in self.scan(body)])
 
+    def test_generic_api_key_ignores_identifier_shaped_values_only(self):
+        """PK5-F05, both directions: ordinary TypeScript no longer trips the rule; a real-shaped key still does."""
+        identifier_shaped = [
+            ("member-path", b"const owner = {\n  authorizationVersion: record.creatingAuthorizationVersion,\n};\n"),
+            ("snake-mapping", b'const columns = { decidedAuthorizationVersion: "decided_authorization_version" };\n'),
+            ("column-array", b'columns: ["state", "authorization_version", "commit_idempotency_key"],\n'),
+            ("import-list", b'import { dataAccessInvitationLocator, dataAccessInvitationRepository } from "./x.ts";\n'),
+            ("code-list", b'  "idempotency_key_reused",\n  "membership_ended_after_issue",\n'),
+            ("increment", b"authorization_version = authorization_version + 1\n"),
+        ]
+        for fixture_id, body in identifier_shaped:
+            with self.subTest(fixture=fixture_id):
+                self.assertEqual(self.scan(body, "source.ts"), [])
+        # The other direction: a value with a digit, `-`, `=`, `+` or `/` in it
+        # is not identifier-shaped and is still reported, in code as in an env
+        # file, quoted or bare, and inside a list.
+        secret = b"Q7vX2mN9" + b"pL4rT8zK5wB3aH6cD1fG0jS2"
+        real_shaped = [
+            ("quoted-assignment", b'api_key = "' + secret + b'"\n'),
+            ("bare-env", b"SERVICE_API_KEY=" + secret + b"\n"),
+            ("object-member", b"const config = { accessKey: '" + secret + b"' };\n"),
+            ("list-member", b'const pair = ["api_key_primary", "' + secret + b'"];\n'),
+            ("dashed", b'access_key: "' + b"-".join(secret[i:i + 4] for i in range(0, 20, 4)) + b'"\n'),
+        ]
+        for fixture_id, body in real_shaped:
+            with self.subTest(fixture=fixture_id):
+                self.assertIn("generic-api-key", [hit[0] for hit in self.scan(body, "source.ts")])
+        # The narrowing is the one rule's: a letters-only value after a
+        # secret/password/token name is still the cobudget-secret-assignment
+        # rule's to report, exactly as before.
+        letters_only = b"QvXmNpLrTzKwBaHcDfGjSuVxWq"
+        hits = [hit[0] for hit in self.scan(b'token = "' + letters_only + b'"\n', "source.ts")]
+        self.assertIn("cobudget-secret-assignment", hits)
+        self.assertNotIn("generic-api-key", hits)
+        self.assertEqual(scanner.IDENTIFIER_SHAPED_RULES, {"generic-api-key"})
+
     def test_unicode_encodings_keep_detection_lines_and_fingerprints(self):
         for fixture_id, rule, positive, negative in fixtures():
             # Include CRLF and a non-ASCII character before the finding.
