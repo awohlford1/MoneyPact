@@ -43,7 +43,7 @@
     "version": "p6",
     "digest": "7ed466ae58ab3ac7903aeebaea4603aba6bdec81cb336d07d9a230f9456998ea",
     "schemaVersion": 1,
-    "releaseCommit": "TBD-MERGE-COMMIT-OF-PR-A",
+    "releaseCommit": "2b16c870b7a757c4ee50668b60fba4a2e4e34f0b",
     "productApprovalRef": "PO-P6-APPROVAL-001",
     "securityApprovalRef": "PROTO-CONTRACTS-P6-SEC-001-RESULT"
   }

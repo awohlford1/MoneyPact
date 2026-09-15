@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Applied**, pending `releaseCommit`. Branch `chore/release-policy-p6` (`PROTO-CONTRACTS-P6-SPLIT-001`) carries this step on top of `feat/contracts-p6-tables`; the history row's `releaseCommit` is the literal `TBD-MERGE-COMMIT-OF-PR-A` until the Manager rebases this branch onto `main` after `feat/contracts-p6-tables`'s PR merges and fills in that PR's merge commit SHA |
+| Status | **Applied** — `releaseCommit` `2b16c870b7a757c4ee50668b60fba4a2e4e34f0b` (the merge commit of PR #382, `feat/contracts-p6-tables`); `p6` is released and current under `PO-P6-APPROVAL-001` and `PROTO-CONTRACTS-P6-SEC-001-RESULT`, applied by the Manager from branch `chore/release-policy-p6` (`PROTO-CONTRACTS-P6-SPLIT-001`) |
 | Document version | 0.1 |
 | Governing contract | [`docs/cbd-236-authorization-policy-contract.md`](./cbd-236-authorization-policy-contract.md) v0.14 §6 `PC-236-011`, `PC-236-013`, §8.9 |
 | Governing decisions | `EXEC-P6-RULINGS-001` (`P6-D01`–`P6-D05`; `P6-D05` releases `p6` immediately once its two approvals exist, no extended "registered and not current" interval); `CBD236-POLICY-APPROVAL-001` (Product Owner and Security sign-off cited in every released row); `PROTO-POLICY-V2-DECISION-001` precedent (add a version through an implementation packet and a following Security review; release requires both approvals as separate records) |
@@ -45,8 +45,8 @@ release" note).
 | Security clearance of the `p6` amendment, cells and fixtures | the Security result for the `p6` candidate with disposition `clear` (or `remediate` with every condition closed) | `PROTO-CONTRACTS-P6-SEC-001-RESULT` → `securityApprovalRef` of the `p6` row |
 
 `releaseCommit` is the full SHA of the `main` merge commit that carries the `p6` registry and fixtures — the
-merge commit of `feat/contracts-p6-tables`'s pull request (replacing PR #381), not this branch's own SHA. This
-branch records the literal `TBD-MERGE-COMMIT-OF-PR-A` in its place and the Manager fills it in after that merge,
+merge commit of `feat/contracts-p6-tables`'s pull request PR #382 (replacing PR #381), `2b16c870b7a757c4ee50668b60fba4a2e4e34f0b`, not
+this branch's own SHA. The branch carried a placeholder until that merge and the Manager filled it in afterwards,
 following the p2..p5 convention this split exists to restore.
 
 ## 3. The digest
@@ -81,7 +81,7 @@ commit; every field must be a non-empty string or integer, and the row must cont
     "version": "p6",
     "digest": "7ed466ae58ab3ac7903aeebaea4603aba6bdec81cb336d07d9a230f9456998ea",
     "schemaVersion": 1,
-    "releaseCommit": "TBD-MERGE-COMMIT-OF-PR-A",
+    "releaseCommit": "2b16c870b7a757c4ee50668b60fba4a2e4e34f0b",
     "productApprovalRef": "PO-P6-APPROVAL-001",
     "securityApprovalRef": "PROTO-CONTRACTS-P6-SEC-001-RESULT"
   }
@@ -178,4 +178,4 @@ edits already state the released wording; the Manager's sweep after the rebase i
 
 | Version | Date | Author | Change |
 | --- | --- | --- | --- |
-| 0.1 | September 15, 2026 | Implementation under `PROTO-CONTRACTS-P6-SPLIT-001` | Initial release step, split out of the single-shot release `PROTO-CONTRACTS-P6-IMPL-001` applied on branch `feat/contracts-p6-tables` (registration) and `chore/release-policy-p6` (this step), so `releaseCommit` names the registering PR's merge commit rather than a branch SHA, following the `p2`..`p5` convention. `releaseCommit` recorded as the literal `TBD-MERGE-COMMIT-OF-PR-A` pending the Manager's rebase onto `main` after `feat/contracts-p6-tables` merges. |
+| 0.1 | September 15, 2026 | Implementation under `PROTO-CONTRACTS-P6-SPLIT-001` | Initial release step, split out of the single-shot release `PROTO-CONTRACTS-P6-IMPL-001` applied on branch `feat/contracts-p6-tables` (registration) and `chore/release-policy-p6` (this step), so `releaseCommit` names the registering PR's merge commit rather than a branch SHA, following the `p2`..`p5` convention. `releaseCommit` recorded as the literal `2b16c870b7a757c4ee50668b60fba4a2e4e34f0b` pending the Manager's rebase onto `main` after `feat/contracts-p6-tables` merges. |
