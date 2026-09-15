@@ -57,4 +57,34 @@ test("WF3-01: recordExpense sends the caller's Idempotency-Key; the same key on 
 });
 
 test("WF3-01: the client's own 429 retry resends the same Idempotency-Key (built into the request helper)", async () => {
+  const { api, calls, waits } = harness([inFlight, result]);
+  await api.me();
+  const expense = await api.recordExpense(SPACE, draft, 2, "submission_key_retry");
+  assert.equal(expense.revision, 1);
+  const writes = () => calls.filter((call) => call.method === "POST" && call.url.endsWith("/transactions"));
+  assert.equal(writes().length, 2, "one retry after the 429");
+  const sentValues = writes().map((call) => call.sentIdempotency);
+  assert.equal(sentValues[0], "submission_key_retry"); assert.equal(sentValues[1], "submission_key_retry");
+  assert.deepEqual(waits, [1000]);
+});
 
+test("WF3-01: a user's manual retry after a lost response reuses the held key; editExpense carries the same header support", async () => {
+  const lost = harness([() => { throw new TypeError("network failure, no response"); }, result]);
+  await lost.api.me();
+  const key = new SubmissionKey(() => "edit_submission_key");
+  const attempt = key.next();
+  await assert.rejects(
+    lost.api.editExpense(SPACE, TX, draft, 2, "v0", attempt),
+    (error: unknown) => error instanceof TypeError,
+  );
+  key.settle(false); // no ApiError reached this attempt: no answer arrived
+  const retry = key.next();
+  assert.equal(retry, "edit_submission_key", "the same key is sent on the caller's retry after a lost response");
+  await lost.api.editExpense(SPACE, TX, draft, 2, "v0", retry);
+  key.settle(true);
+  const writes = lost.calls.filter((call) => call.method === "PATCH");
+  assert.equal(writes.length, 2);
+  const sentValues = writes.map((call) => call.sentIdempotency);
+  assert.equal(sentValues[0], "edit_submission_key"); assert.equal(sentValues[1], "edit_submission_key");
+  assert.equal(key.next(), key.next(), "still the same key until an answer settles it");
+});
