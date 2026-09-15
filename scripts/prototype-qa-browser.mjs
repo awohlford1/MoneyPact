@@ -180,6 +180,22 @@ async function main() {
         const wait = 61_000 - (now - recent[0].at); console.log(`   (pacing: waiting ${Math.ceil(wait / 1000)} s for the mutation window)`); await pause(wait);
       }
     };
+    /**
+     * The read half of `roomFor`. Every GET of a budget surface counts against the approved
+     * authenticated-read record (`rlp-266-authenticated-read-v1`: 60 a minute per actor for the whole
+     * surface), and PROTO-INCREMENT-B-001 made one dashboard load cost four of them rather than two,
+     * so a sequence of cases that refresh the dashboard repeatedly can exhaust the window and see the
+     * uniform 403 instead of the state it is testing. Reads were never paced before because two per
+     * load never came close. This is the harness catching up with the page, not a product limit: a
+     * person does not load the dashboard fifteen times a minute.
+     */
+    const roomForReads = async (n) => {
+      for (;;) {
+        const now = Date.now(); const recent = apiRequests.filter((r) => r.method === "GET" && r.path.startsWith("/v1/budget-") && now - r.at < 61_000);
+        if (recent.length + n <= 50) return;
+        const wait = 61_000 - (now - recent[0].at); console.log(`   (pacing: waiting ${Math.ceil(wait / 1000)} s for the read window)`); await pause(wait);
+      }
+    };
     /** Performs the browser's proposal POST from here (same cookie, CSRF and key) so the response can be altered before Chrome sees it. */
     const proxiedPost = async (request) => {
       const cookie = (await browser.cookies()).map((c) => `${c.name}=${c.value}`).join("; ");
@@ -246,7 +262,7 @@ async function main() {
       return { proposal, response };
     };
     const ensureDashboard = async () => {
-      await ensureSignedIn();
+      await ensureSignedIn(); await roomForReads(6);
       if (!budgetId) await createBudget("Household QA");
       await page.goto(`${ORIGIN}/budgets/${budgetId}`);
       await waitText("Active period identity"); await page.waitForFunction(() => [...document.querySelectorAll("button")].some((n) => n.textContent === "Refresh budget"));
