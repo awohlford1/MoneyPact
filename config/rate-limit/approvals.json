@@ -67,6 +67,6 @@
     "decidedAt": "2026-09-15T02:31:00Z",
     "expiresAt": null,
     "revoked": false,
-    "decisionRecord": ".agent-state/decisions/CBD266-INVITATION-RECORDS-001.r1.agent-record.json (revision 2 pins the six PK-6 digests; rlp-266-protected-action-v1 appended by PK-7B); .agent-state/decisions/INVITATIONS-DESIGN-001.r1.agent-record.json item 12; docs/cbd-234-invitations-consent-design-proposal.md section 12"
+    "decisionRecord": ".agent-state/decisions/CBD266-INVITATION-RECORDS-001.r3.agent-record.json (revision 2 pins the six PK-6 digests; revision 3 pins rlp-266-protected-action-v1, appended by PK-7B); .agent-state/decisions/INVITATIONS-DESIGN-001.r1.agent-record.json item 12; docs/cbd-234-invitations-consent-design-proposal.md section 12"
   }
 ]
