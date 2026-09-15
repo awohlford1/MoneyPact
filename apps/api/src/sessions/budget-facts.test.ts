@@ -165,13 +165,17 @@ describe("row-level resource facts for the increment-B route targets", () => {
       { budget_space_id: SPACE, revision: 1, removed_at: null, superseded_at: "2026-09-15T12:00:00.000Z" },
       { budget_space_id: SPACE, revision: 2, removed_at: null, superseded_at: null },
     ],
-    budget_category: [{ budget_space_id: SPACE, archived_at: null, updated_at: "2026-09-15T12:00:00.000Z" }],
+    budget_category: [{ budget_space_id: SPACE, archived_at: null, version: 7 }],
   };
+
+  /** Columns the last reader run selected, per table; PROTO-HARDENING-001 asserts what the category read asks for. */
+  const selected: Record<string, string[]> = {};
 
   function reader(present: boolean) {
     const client = {
-      tenantSelect: async (query: { table: string; budgetSpaceId: string }) => {
+      tenantSelect: async (query: { table: string; budgetSpaceId: string; columns?: readonly string[] }) => {
         assert.equal(query.budgetSpaceId, SPACE, "every row read is tenant-scoped on the acting space");
+        (selected[query.table] ??= []).push(...(query.columns ?? []));
         if (query.table === "budget_space") return { rows: [{ budget_space_id: SPACE, lifecycle: "live", lifecycle_version: 1, primary_owner_membership_id: MEMBERSHIP }] };
         if (query.table === "budget_space_membership") return { rows: [owner()] };
         if (query.table === "budget_space_consent") return { rows: [consentRow()] };
@@ -197,11 +201,18 @@ describe("row-level resource facts for the increment-B route targets", () => {
     assert.equal(facts?.["resource.lifecycle"], "active");
   });
 
-  it("answers the category row for the CBD-211 drill-down, with a monotonic version", async () => {
+  it("answers the category row for the CBD-211 drill-down, with the row's own version column", async () => {
+    // PROTO-HARDENING-001 (F-INCB-03): this was updated_at projected to whole
+    // seconds until 20260915T110000Z added budget_category.version. The reader
+    // must select version and must not fall back to a timestamp: a category
+    // edited twice inside one second used to carry the same version twice.
+    delete selected.budget_category;
     const facts = await reader(true)("category", CATEGORY);
     assert.equal(facts?.["resource.owningSpaceId"], SPACE);
-    assert.equal(facts?.["resource.version"], Math.floor(Date.parse("2026-09-15T12:00:00.000Z") / 1000));
+    assert.equal(facts?.["resource.version"], 7, "the category row's own version column");
     assert.equal(Number.isSafeInteger(facts?.["resource.version"]), true);
+    assert.ok(selected.budget_category?.includes("version"), "the category read selects version");
+    assert.ok(!selected.budget_category?.includes("updated_at"), "and no longer reads updated_at as a version");
   });
 
   it("the whole-set target is still the space's own row", async () => {

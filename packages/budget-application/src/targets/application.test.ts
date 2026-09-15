@@ -23,6 +23,24 @@ describe("categories (CBD-153-AC03)", () => {
     assert.deepEqual(updated.map((c) => [c.categoryId, c.label, c.position]), [[rent!.categoryId, "Housing", 0], [categories[2]!.categoryId, "Fun", 2], [groceries!.categoryId, "Food", 5]]);
     assert.equal(updated.find((c) => c.categoryId === groceries!.categoryId)?.createdAt, groceries!.createdAt);
   });
+  it("starts every category at version 1 and advances the version on each edit (F-INCB-03)", async () => {
+    // PROTO-HARDENING-001: budget_category.version is what CBD-236 SS8.6.1
+    // `resource.version` carries for the CBD-211 category target, and the
+    // table's trigger refuses an update that does not advance it. A relabel, a
+    // reorder, an archive and a restore are each an edit.
+    const { world, categories } = await seedCategories();
+    assert.deepEqual(categories.map((c) => c.version), [1, 1, 1]);
+    const groceries = categories[0]!;
+    const edit = async (item: { label: string; position?: number | null; archived?: boolean }) =>
+      (await upsertCategories(world.deps, SPACE_A, [{ categoryId: groceries.categoryId, label: item.label, position: item.position ?? null, archived: item.archived ?? false }]))
+        .find((c) => c.categoryId === groceries.categoryId)!.version;
+    assert.equal(await edit({ label: "Food" }), 2, "relabel");
+    assert.equal(await edit({ label: "Food", position: 7 }), 3, "reorder");
+    assert.equal(await edit({ label: "Food", archived: true }), 4, "archive");
+    assert.equal(await edit({ label: "Food" }), 5, "restore");
+    // A category nobody edited is untouched: the bump is per row, not per request.
+    assert.equal((await listCategories(world.deps, SPACE_A)).find((c) => c.categoryId === categories[1]!.categoryId)?.version, 1);
+  });
   it("refuses an unknown identity, a duplicate identity, a taken live label and an invalid label or position", async () => {
     const { world, categories } = await seedCategories();
     const id = categories[0]!.categoryId;

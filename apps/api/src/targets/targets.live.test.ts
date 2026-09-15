@@ -127,6 +127,19 @@ void test("CBD-153 live: round trip, completed-period immutability, identity-dri
     assert.equal((await repository.listPeriodTargets(a.space, open.id)).filter((t) => t.categoryId === groceries!.categoryId).length, 1);
     await assert.rejects(client.tenantUpdate({ table: "budget_category", budgetSpaceId: a.space, set: { category_id: randomUUID() }, conditions: [{ column: "category_id", value: groceries!.categoryId }] }), sqlState("23514"));
 
+    // PROTO-HARDENING-001 (F-INCB-03): budget_category.version exists, starts
+    // at 1, advances on each edit, and the trigger refuses an update that does
+    // not advance it -- so resource.version for the CBD-211 category target is
+    // the row's own version and nothing derived from a clock.
+    const versionOf = async (categoryId: string) => (await repository.listCategories(a.space)).find((c) => c.categoryId === categoryId)!.version;
+    assert.equal(await versionOf(rent!.categoryId), 1, "a category nobody edited is still version 1");
+    assert.equal(await versionOf(groceries!.categoryId), 2, "the relabel above advanced the version");
+    await upsertCategories(deps, a.space, [{ categoryId: groceries!.categoryId, label: "Food", position: 10, archived: false }]);
+    assert.equal(await versionOf(groceries!.categoryId), 3, "the reorder advanced it again");
+    await assert.rejects(client.tenantUpdate({ table: "budget_category", budgetSpaceId: a.space, set: { label: "Stuck", version: 3 }, conditions: [{ column: "category_id", value: groceries!.categoryId }] }), sqlState("23514"), "an update that does not advance version is refused");
+    await assert.rejects(client.tenantUpdate({ table: "budget_category", budgetSpaceId: a.space, set: { label: "Backwards", version: 1 }, conditions: [{ column: "category_id", value: groceries!.categoryId }] }), sqlState("23514"), "and one that moves it backwards is refused");
+    assert.equal(await versionOf(groceries!.categoryId), 3, "neither refused update changed the row");
+
     // AC02 and F-REVIEW-TARGETS-001: the open period is recomputed after a base
     // change as a new version; the prior row is retained, stamped superseded,
     // with its identifier, timestamps, actor and provenance intact.

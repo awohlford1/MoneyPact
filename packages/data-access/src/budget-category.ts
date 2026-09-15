@@ -28,6 +28,8 @@ export interface BudgetCategoryRow {
   readonly archived_at: string | null;
   readonly created_at: string;
   readonly updated_at: string;
+  /** PROTO-HARDENING-001 (F-INCB-03): the row's own monotonic version, what CBD-236 SS8.6.1 `resource.version` carries for a category. */
+  readonly version: number;
 }
 
 export interface BudgetCategoryInsert {
@@ -38,6 +40,7 @@ export interface BudgetCategoryInsert {
   readonly archived_at: string | null;
   readonly created_at: string;
   readonly updated_at: string;
+  readonly version: number;
 }
 
 export interface BudgetCategoryUpdate {
@@ -45,6 +48,8 @@ export interface BudgetCategoryUpdate {
   readonly position: number;
   readonly archived_at: string | null;
   readonly updated_at: string;
+  /** Must be strictly greater than the stored value; the table's trigger refuses an update that does not advance it. */
+  readonly version: number;
 }
 
 /** `timestamptz` arrives as a driver `Date`; an ISO string is what crosses the port. */
@@ -90,6 +95,7 @@ function toRow(value: unknown): BudgetCategoryRow {
     archived_at: nullableInstantText(row.archived_at),
     created_at: instantText(row.created_at),
     updated_at: instantText(row.updated_at),
+    version: integerValue(row.version),
   };
 }
 
