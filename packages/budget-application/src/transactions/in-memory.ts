@@ -79,6 +79,11 @@ export class InMemoryTransactionsRepository implements TransactionsRepository {
       const superseded = this.versions.get(key(version.budgetSpaceId, supersedes.transactionVersionId));
       if (superseded === undefined) throw new TransactionError("transaction_not_found", "transactionVersionId");
       if (superseded.supersededAt !== null) throw new TransactionError("conflict", "supersededAt");
+      // manual_transaction_check1: a supersession stamp is never earlier than
+      // the version it closes. The database compares the application's stamp
+      // with the row's created_at, so a stored row whose created_at came from
+      // a different clock than the command's is refused here as it is there.
+      if (Date.parse(supersedes.supersededAt) < Date.parse(superseded.createdAt)) throw new TransactionError("constraint_violation", "superseded_at");
       this.versions.set(key(version.budgetSpaceId, superseded.transactionVersionId), { ...superseded, supersededAt: supersedes.supersededAt });
     }
     for (const existing of this.versions.values()) {
@@ -113,6 +118,8 @@ export class InMemoryTransactionsRepository implements TransactionsRepository {
       throw new TransactionError("constraint_violation", "budget_date");
     }
     if ((version.removedAt === null) !== (version.removedBySubjectId === null)) throw new TransactionError("constraint_violation", "removed_at");
+    // manual_transaction_check2: a tombstone is removed no earlier than it was created.
+    if (version.removedAt !== null && Date.parse(version.removedAt) < Date.parse(version.createdAt)) throw new TransactionError("constraint_violation", "removed_at");
     // The deferred exact-sum constraint, restated.
     if (version.removedAt !== null) {
       if (allocations.length !== 0) throw new TransactionError("constraint_violation", "allocations");
