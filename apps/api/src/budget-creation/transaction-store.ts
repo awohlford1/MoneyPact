@@ -3,6 +3,7 @@ import type { Obligation, PolicyInput } from "@cobudget/contracts/authorization"
 import type { AuthorizationTransactionStore } from "../authorization/boundary.js";
 import { RouteFailure } from "../authorization/http.js";
 import { AuthorizationDenied } from "../authorization/boundary.js";
+import { RETRYABLE_SQL_STATES, observeSqlState } from "../sessions/transaction-store.js";
 import { ConfirmationError, type ConfirmBudgetCreationResponse, type CreationPlan } from "../../../../packages/budget-application/src/creation-confirmation/index.ts";
 import { proposalUuid } from "../../../../packages/budget-application/src/persistence/proposal-store.ts";
 import type { ProposalRecord } from "../../../../packages/budget-application/src/creation-proposals/ports.ts";
@@ -70,8 +71,16 @@ export class CreationAuthorizationStore implements AuthorizationTransactionStore
     for (let attempt = 1; ; attempt++) {
       let handle: object | undefined;
       let durable = false;
+      let observedState: string | undefined;
       try {
-        const result = await this.#client.transaction({ isolation: "serializable" }, async client => {
+        const result = await this.#client.transaction({ isolation: "serializable" }, async scoped => {
+          // H2-F02: a serialization failure can surface on any statement of the attempt -- including
+          // inside `work`'s own fact read -- and be reduced to a higher layer's own fail-closed answer
+          // (the session store's `not_authenticated`, the assembler's `FactFailure`) before it reaches
+          // this loop. The scoped client is observed the same way `ApiTransactionStore` observes it
+          // (`packages/sessions`-adjacent `observeSqlState`, SEC-PK4-F4), so a retryable SQLSTATE seen
+          // anywhere in the attempt retries it, whichever error object finally arrives below.
+          const client = observeSqlState(scoped, (state) => { if (RETRYABLE_SQL_STATES.has(state)) observedState = state; });
           handle = client;
           try { return await work(client); }
           finally { failure = this.#failures.get(client); this.#failures.set(client, undefined); plan = this.#plans.get(client); replay = this.#replays.get(client); this.#plans.set(client, undefined); this.#replays.set(client, undefined); }
@@ -90,7 +99,9 @@ export class CreationAuthorizationStore implements AuthorizationTransactionStore
         if (handle && !durable) this.#outcomes?.rolledBack(handle);
         if (replay) return replay as T;
         if (failure) return failure as T;
-        const state = (error as { sqlState?: string }).sqlState;
+        // H2-F02: the thrown error's own state, or a retryable state any statement of this attempt
+        // reported before a higher layer replaced the error (SEC-PK4-F4's fallback, mirrored here).
+        const state = (error as { sqlState?: string }).sqlState ?? observedState;
         if (plan && ["23505", "40001", "40P01"].includes(state ?? "")) {
           const committed = await lookupConfirmation(this.#client, plan.context, plan.request);
           if (committed) return committed as T;

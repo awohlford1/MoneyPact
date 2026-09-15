@@ -139,6 +139,8 @@ export interface ManualTransactionIdempotencyRow {
   readonly request_digest: string;
   readonly transaction_version_id: string;
   readonly committed_response: unknown;
+  /** SEC-C200-F1: the acting membership's authorization_version at write time (migration 20260915T160000Z). */
+  readonly authorization_version: number;
   readonly created_at: string;
 }
 

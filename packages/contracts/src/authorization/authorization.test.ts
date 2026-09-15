@@ -1103,8 +1103,10 @@ describe("POV: space.primaryOwnershipVersion is captured from the column (CBD-23
         for (const fixture of own) denyIsInert(fixture.input, "input_invalid", version);
       }
       const malformed = negatives.filter((item) => item.family === "malformed_primary_ownership_version");
-      assert.equal(malformed.length, cells.length * 3, `${version} malformed`);
-      for (const suffix of ["string", "negative", "fraction"]) assert.ok(malformed.some((item) => item.id.endsWith(`.${suffix}`)), suffix);
+      // SEC-POV-F1 (PROTO-API-HARDENING-003): zero joins string, negative and fraction -- the column's own
+      // CHECK is >= 1, and `isPositiveInteger`/`validLeaf`'s version rule now reject 0 for every version leaf.
+      assert.equal(malformed.length, cells.length * 4, `${version} malformed`);
+      for (const suffix of ["string", "negative", "fraction", "zero"]) assert.ok(malformed.some((item) => item.id.endsWith(`.${suffix}`)), suffix);
       for (const fixture of malformed) denyIsInert(fixture.input, "input_invalid", version);
     }
     // POV-N02 in both forms: the key deleted from the leaves alone, and restamped from the shape, deny alike.

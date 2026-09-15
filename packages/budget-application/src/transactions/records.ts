@@ -174,13 +174,15 @@ export interface IdempotencyScope {
   readonly idempotencyKey: string;
 }
 
-/** The row `manual_transaction_idempotency` (20260915T140000Z) keeps for one accepted key. */
+/** The row `manual_transaction_idempotency` (20260915T140000Z, widened 20260915T160000Z) keeps for one accepted key. */
 export interface IdempotencyRecord extends IdempotencyScope {
   /** SHA-256 hex over the canonical form of the parsed request. */
   readonly requestDigest: string;
   /** The current version the committed response names; the row is bound to it. */
   readonly transactionVersionId: string;
   readonly committedResponse: TransactionMutation;
+  /** SEC-C200-F1: the acting membership's authorization_version at write time. A replay is refused when this is behind the membership's current authorization_version. */
+  readonly authorizationVersion: number;
   readonly createdAt: string;
 }
 
