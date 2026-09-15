@@ -89,9 +89,11 @@ void test("PK7A-01 TR-73-43: the whole commit, in the SS10.3 order, through the 
   assert.equal(committedEvents[0]?.payload.cancelledInvitationCount, 1);
   const enqueues = world.repository.audit.filter((row) => row.eventCode === "AE-73-30" && row.targetId === transferId);
   assert.equal(enqueues.filter((row) => row.payload.messageCode === "MSG-73-042").length, 2);
-  assert.deepEqual(world.repository.notices.map((row) => row.accountSubjectId).sort(),
-    [PRIMARY_SUBJECT, RECIPIENT_SUBJECT].sort());
-  assert.deepEqual([...new Set(world.repository.notices.map((row) => row.messageCode))], ["MSG-73-042"]);
+  const commitNotices = world.repository.notices.filter((row) => row.messageCode === "MSG-73-042");
+  assert.deepEqual(commitNotices.map((row) => row.accountSubjectId).sort(), [PRIMARY_SUBJECT, RECIPIENT_SUBJECT].sort());
+  // PK7A-F01: the proposal's MSG-73-040 to the recipient is the only other durable notice.
+  assert.deepEqual(world.repository.notices.filter((row) => row.messageCode !== "MSG-73-042").map((row) => [row.messageCode, row.accountSubjectId]),
+    [["MSG-73-040", RECIPIENT_SUBJECT]]);
 
   // The transfer row is the receipt (M3 carries no receipt column).
   const record = await world.repository.readTransfer(SPACE, transferId);
@@ -255,6 +257,7 @@ void test("PK7A-01: a stale disclosure denies at the commit with nothing written
   });
   const deps = { ...world.deps, disclosures: moved };
   const auditsBefore = world.repository.audit.length;
+  const noticesBefore = world.repository.notices.length;
   const result = await confirmPrimaryTransfer(deps, world.primary("29.transfer_primary_ownership"), { transferId });
   // R-02: the four discharge before the completing leg, so the denial writes
   // nothing at all -- not the leg, not its audit row -- and the workflow
@@ -269,7 +272,7 @@ void test("PK7A-01: a stale disclosure denies at the commit with nothing written
   assert.equal(record?.primaryAssuranceRef, null);
   assert.equal((await world.repository.readMembership(SPACE, PRIMARY_MEMBERSHIP))?.role, "primary_owner");
   assert.equal((await world.repository.readConsent(SPACE, PRIMARY_CONSENT))?.state, "current");
-  assert.equal(world.repository.notices.length, 0);
+  assert.equal(world.repository.notices.length, noticesBefore);
   assert.equal(world.cancelled.length, 0);
   const written = world.repository.audit.slice(auditsBefore);
   assert.deepEqual(written.map((row) => row.eventSubtype), ["transfer_denied"]);
@@ -339,7 +342,7 @@ void test("PK7A-01: every boundary in the commit sequence is reachable and each 
     const orderedPoints = [...COMMIT_BOUNDARIES];
     assert.equal(stateWritten, orderedPoints.indexOf(point) >= orderedPoints.indexOf("after-state"), point);
     if (orderedPoints.indexOf(point) <= orderedPoints.indexOf("after-invitations")) {
-      assert.equal(world.repository.notices.length, 0, point);
+      assert.equal(world.repository.notices.filter((row) => row.messageCode === "MSG-73-042").length, 0, point);
     }
   }
   assert.deepEqual(seen, [...COMMIT_BOUNDARIES]);

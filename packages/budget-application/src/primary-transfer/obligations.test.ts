@@ -72,8 +72,9 @@ void test("PK7A-03: all four discharge on a ready workflow, and the commit then 
   assert.equal(capture.notifySubjects.length, 2);
   assert.equal(capture.freshAssuranceRef, ASSURANCE_REFERENCE);
 
-  // Nothing has been written by the discharges themselves.
-  assert.equal(world.repository.notices.length, 0);
+  // Nothing has been written by the discharges themselves: the one notice
+  // is the proposal's MSG-73-040 (PK7A-F01), not a commit notice.
+  assert.deepEqual(world.repository.notices.map((row) => row.messageCode), ["MSG-73-040"]);
   assert.equal(world.cancelled.length, 0);
   assert.equal((await world.repository.readMembership(SPACE, PRIMARY_MEMBERSHIP))?.role, "primary_owner");
 

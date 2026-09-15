@@ -154,7 +154,16 @@ export const CONFIRMATION_BINDING_RULE_VERSION = 1;
 /** `FIDELITY_LABEL`, the same label the CBD-190 local adapter carries: this is a simulation of a delivery. */
 export const DELIVERY_FIDELITY_LABEL = "simulated";
 
-export const NOTICE_MESSAGE_CODES = ["MSG-73-015", "MSG-73-019", "MSG-73-042", "MSG-73-050", "MSG-73-052"] as const;
+/**
+ * The closed set `account_lifecycle_notice.message_code` admits: the five
+ * invitation and commit notices of `M3`, plus the five Primary-transfer
+ * lifecycle notices of `TR-73-40`, `TR-73-44`, `TR-73-45` and `TR-73-46`
+ * that migration `20260915T130001Z` widened the CHECK by (`PK7A-F01`).
+ */
+export const NOTICE_MESSAGE_CODES = [
+  "MSG-73-015", "MSG-73-019", "MSG-73-042", "MSG-73-050", "MSG-73-052",
+  "MSG-73-040", "MSG-73-043", "MSG-73-044", "MSG-73-045", "MSG-73-027",
+] as const;
 export type NoticeMessageCode = (typeof NOTICE_MESSAGE_CODES)[number];
 
 export const SECURITY_EVENT_OUTCOME_CLASSES = ["unknown_value", "malformed_value", "terminal_record", "expired_record"] as const;
