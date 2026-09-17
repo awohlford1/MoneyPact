@@ -207,7 +207,10 @@ export async function handleMockInvitationRequest(directory: MockDirectory, sess
     if (path.length === 2 && request.method === "GET") {
       // PK8-F06: the space name and the inviter's display label, behind attachment only. The mock keeps no
       // display names (its members list shows the neutral label too), so the inviter is the neutral label.
-      return json({ ceremonyId, proposedRole: loaded.invitation.proposedRole, resourceScope: "full", disclosure: structuredClone(DISCLOSURES[loaded.invitation.proposedRole]), twoWayNoticeCode: "MSG-73-016", confirmationNoticeCode: "MSG-73-051", budgetSpaceName: directory.names.get(loaded.invitation.budgetSpaceId) ?? "Your budget space", inviterDisplayName: NEUTRAL_DISPLAY_LABEL, expiresAt: loaded.ceremony.expiresAt, choice: { accept: false, decline: false } });
+      // registerMockSpace always names the space, so a missing name is a mock defect, never a third label.
+      const budgetSpaceName = directory.names.get(loaded.invitation.budgetSpaceId);
+      if (budgetSpaceName === undefined) throw new Error(`mock budget space ${loaded.invitation.budgetSpaceId} has no registered name`);
+      return json({ ceremonyId, proposedRole: loaded.invitation.proposedRole, resourceScope: "full", disclosure: structuredClone(DISCLOSURES[loaded.invitation.proposedRole]), twoWayNoticeCode: "MSG-73-016", confirmationNoticeCode: "MSG-73-051", budgetSpaceName, inviterDisplayName: NEUTRAL_DISPLAY_LABEL, expiresAt: loaded.ceremony.expiresAt, choice: { accept: false, decline: false } });
     }
     if (path.length === 3 && path[2] === "accept" && request.method === "POST") {
       if (loaded.ceremony.proof !== "proved") return json(UNIFORM, 404);

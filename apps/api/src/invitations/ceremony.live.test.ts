@@ -43,6 +43,7 @@ import { readReleaseHistory } from "../authorization/compatibility.js";
 import { APPLICATION_ORIGIN, localConfig } from "../identity/test-support/harness.ts";
 import { INVITATION_CEREMONY_COOKIE_NAME } from "./cookie.ts";
 import { UNIFORM_INVITATION_BODY, UNIFORM_INVITATION_STATUS } from "./http.ts";
+import { NEUTRAL_DISPLAY_LABEL } from "../../../../packages/budget-application/src/invitations/index.ts";
 
 const database = loadLocalDatabaseConfig();
 const configured = database.database !== "cobudget_dev" && database.database !== "cobudget_demo";
@@ -109,14 +110,15 @@ async function signIn(h: Harness, scenario: "subject-a" | "subject-b"): Promise<
 }
 
 /** A live budget space whose Primary Owner is `subject`, with the consent row the landing requires. */
-async function seedSpace(subject: string): Promise<{ spaceId: string; membershipId: string }> {
+async function seedSpace(subject: string): Promise<{ spaceId: string; membershipId: string; ownerDisplayName: string | null }> {
   const { createMigrationConnection } = await import("../../../../packages/data-access/src/connection.ts");
   const admin = createMigrationConnection();
   const seed = await admin.connect();
   const spaceId = randomUUID(); const membershipId = randomUUID(); const scheduleId = randomUUID(); const periodId = randomUUID();
   try {
-    const profiles = await seed.query("SELECT profile_id FROM financial_profile WHERE account_subject_id = $1 AND profile_state = 'active'", [subject]);
+    const profiles = await seed.query("SELECT profile_id, display_name FROM financial_profile WHERE account_subject_id = $1 AND profile_state = 'active'", [subject]);
     const profileId = String(profiles.rows[0]!.profile_id);
+    const ownerDisplayName = profiles.rows[0]!.display_name === null ? null : String(profiles.rows[0]!.display_name);
     await seed.query("BEGIN");
     await seed.query("INSERT INTO budget_space (budget_space_id, name, time_zone, time_zone_data_version, currency_code, currency_catalog_version, primary_owner_membership_id, initial_schedule_version_id, current_schedule_version_id, current_period_id, created_by_subject_id) VALUES ($1,$2,'America/New_York','2026a','USD','cbd-231/0.1',$3,$4,$4,$5,$6)",
       [spaceId, `PK-6 ${spaceId.slice(0, 8)}`, membershipId, scheduleId, periodId, subject]);
@@ -126,7 +128,7 @@ async function seedSpace(subject: string): Promise<{ spaceId: string; membership
     await seed.query("INSERT INTO budget_space_schedule_version (schedule_version_id, budget_space_id, sequence, status, cadence_definition, proposal_preview_digest) VALUES ($1,$2,1,'authoritative',$3,'digest')", [scheduleId, spaceId, JSON.stringify({ cadence: "monthly", anchor: { kind: "day-of-month", day: 1 } })]);
     await seed.query("INSERT INTO budget_space_period (period_id, budget_space_id, schedule_version_id, status, period_start_date, period_end_date) VALUES ($1,$2,$3,'active','2099-01-01','2099-01-31')", [periodId, spaceId, scheduleId]);
     await seed.query("COMMIT");
-    return { spaceId, membershipId };
+    return { spaceId, membershipId, ownerDisplayName };
   } catch (error) { await seed.query("ROLLBACK"); throw error; } finally { seed.release(); await admin.end(); }
 }
 
@@ -217,9 +219,11 @@ describe("PK6-01 live: the whole invitation ceremony over HTTP on real PostgreSQ
         assert.equal(view.json().disclosure.version, 1);
         assert.ok(view.json().disclosure.text.items.length > 0, "the approved text");
         assert.deepEqual(view.json().choice, { accept: false, decline: false });
-        // PK8-F06: the space name from the budget_space row and the inviter's display label (the seeded name, or the neutral label).
+        // PK8-F06: the space name from the budget_space row, and the inviter's display label: the owner's seeded
+        // display_name, or the neutral label when the seed has none (displayLabel treats blank as none).
         assert.equal(view.json().budgetSpaceName, `PK-6 ${space.spaceId.slice(0, 8)}`);
-        assert.ok(typeof view.json().inviterDisplayName === "string" && view.json().inviterDisplayName.length > 0);
+        const expectedInviter = space.ownerDisplayName && space.ownerDisplayName.trim().length > 0 ? space.ownerDisplayName : NEUTRAL_DISPLAY_LABEL;
+        assert.equal(view.json().inviterDisplayName, expectedInviter);
         assert.ok(!view.body.includes(owner.accountSubjectId), "never the inviter's subject id");
         const stale = await h.inject("POST", `/v1/invitations/${ceremonyId}/accept`, mutation(invitee.csrfValue), { acknowledgedDisclosure: { kind: "invitation_collaborator", version: 2 } });
         assert.equal(stale.statusCode, 409); assert.deepEqual(stale.json(), { error: "stale_disclosure" });
