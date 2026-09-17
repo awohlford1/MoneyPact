@@ -21,6 +21,22 @@
  * never `cobudget_dev`; the API child receives an explicit environment
  * built here. Screenshots go to apps/web/.next/walkthrough-*.png
  * (untracked). No secret is printed; key material is generated per run.
+ *
+ * Mock mode (PROTO-WALKTHROUGH-MOCK-001) runs the same journey against the web
+ * app's own mock adapter (`apps/web/src/api/mock-server.ts`, selected by the
+ * development server when `apps/web/.api-mode` does not say `live`): no API
+ * process, no database, no Docker.
+ *
+ *   node scripts/prototype-browser-walkthrough.mjs --mock
+ *
+ * `--db` is refused together with `--mock`. The marker is written as `mock`
+ * for the run and restored exactly as in live mode. The mock signs in and
+ * steps up without the hosted chooser on 127.0.0.1:3001 and enforces no rate
+ * limit, so the steps that exist only to exercise those live-API surfaces are
+ * logged as "skipped in mock mode: <reason>" instead of failing; every other
+ * step runs and asserts as it does live. Screenshots go to
+ * apps/web/.next/mock-walkthrough-*.png, and the transcript ends with the
+ * count of steps run and skipped. Live mode is unchanged.
  */
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -33,8 +49,14 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const WEB_PORT = 3000; const API_PORT = 3001;
 const ORIGIN = `http://localhost:${WEB_PORT}`; const CEREMONY_ORIGIN = `http://127.0.0.1:${API_PORT}`;
 function argument(name) { const index = process.argv.indexOf(name); return index === -1 ? undefined : process.argv[index + 1]; }
+const MOCK = process.argv.includes("--mock");
 const DB_NAME = argument("--db");
-if (!DB_NAME || DB_NAME === "cobudget_dev") { console.error("--db must name a migrated scratch database (never cobudget_dev)"); process.exit(2); }
+if (MOCK && process.argv.includes("--db")) { console.error("--db cannot be combined with --mock: mock mode runs against the web mock adapter with no API process and no database"); process.exit(2); }
+if (!MOCK && (!DB_NAME || DB_NAME === "cobudget_dev")) { console.error("--db must name a migrated scratch database (never cobudget_dev), or pass --mock to run against the web mock adapter"); process.exit(2); }
+/** The browser-side API base the web app uses in each mode (`apps/web/src/api/runtime-mode*.ts`) and the session cookie each transport sets. */
+const API_BASE = MOCK ? "/api/mock/v1" : "/v1";
+const SESSION_COOKIE = MOCK ? "__Host-cobudget_mock" : "__Host-cobudget_session";
+const SHOT_PREFIX = MOCK ? "mock-walkthrough" : "walkthrough";
 
 /** Exactly the variables `npm run dev` for the API needs (values here are per-run non-secrets); see the PR body. */
 const apiEnvironment = {
@@ -56,6 +78,9 @@ const apiEnvironment = {
 
 const steps = [];
 function log(step, detail) { const line = `${String(steps.length + 1).padStart(2, "0")}. ${step}${detail === undefined ? "" : `: ${detail}`}`; steps.push(line); console.log(line); }
+/** Mock mode only: one clear line for a step the mock adapter cannot perform, counted separately from the steps run. */
+const skipped = [];
+function skip(step, reason) { const line = `--. ${step}: skipped in mock mode: ${reason}`; skipped.push(line); console.log(line); }
 function expect(condition, message) { if (!condition) { console.error(`FAILED: ${message}`); process.exitCode = 1; throw new Error(message); } }
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -69,17 +94,19 @@ async function main() {
   const marker = join(root, "apps/web/.api-mode");
   // Restore whatever was there before (content included), or remove the marker if it did not exist.
   const previous = existsSync(marker) ? readFileSync(marker, "utf8") : undefined;
-  writeFileSync(marker, "live\n");
-  const api = spawn(process.execPath, ["--import=tsx", "src/main.ts"], { cwd: join(root, "apps/api"), env: apiEnvironment, stdio: ["ignore", "pipe", "pipe"] });
+  writeFileSync(marker, MOCK ? "mock\n" : "live\n");
+  // Mock mode starts no API child: the web mock adapter answers every request inside the Next process.
+  const api = MOCK ? undefined : spawn(process.execPath, ["--import=tsx", "src/main.ts"], { cwd: join(root, "apps/api"), env: apiEnvironment, stdio: ["ignore", "pipe", "pipe"] });
   const web = spawn(process.execPath, [join(root, "node_modules/next/dist/bin/next"), "dev", "--port", String(WEB_PORT)], { cwd: join(root, "apps/web"), stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
   let apiOutput = ""; let webOutput = "";
-  for (const stream of [api.stdout, api.stderr]) stream.on("data", (chunk) => { apiOutput = (apiOutput + chunk).slice(-8000); });
+  if (api) for (const stream of [api.stdout, api.stderr]) stream.on("data", (chunk) => { apiOutput = (apiOutput + chunk).slice(-8000); });
   for (const stream of [web.stdout, web.stderr]) stream.on("data", (chunk) => { webOutput = (webOutput + chunk).slice(-8000); });
   let browser;
   try {
-    await waitFor(async () => api.exitCode === null && (await fetch(`${CEREMONY_ORIGIN}/health`)).status === 200, `API ready (${apiOutput})`);
+    if (api) await waitFor(async () => api.exitCode === null && (await fetch(`${CEREMONY_ORIGIN}/health`)).status === 200, `API ready (${apiOutput})`);
     await waitFor(async () => web.exitCode === null && (await fetch(`${ORIGIN}/sign-in`)).ok, `web ready (${webOutput})`, 120_000);
-    log("Processes", `API ${CEREMONY_ORIGIN} (NODE_ENV=development, COBUDGET_IDENTITY_PROVIDER=local, COBUDGET_DB_NAME=${DB_NAME}); web ${ORIGIN} (npm run dev, apps/web/.api-mode=live, mock adapter off)`);
+    if (MOCK) log("Processes", `web ${ORIGIN} only (npm run dev, apps/web/.api-mode=mock, mock adapter on at ${API_BASE}); no API process, no database`);
+    else log("Processes", `API ${CEREMONY_ORIGIN} (NODE_ENV=development, COBUDGET_IDENTITY_PROVIDER=local, COBUDGET_DB_NAME=${DB_NAME}); web ${ORIGIN} (npm run dev, apps/web/.api-mode=live, mock adapter off)`);
     const executablePath = ["C:/Program Files/Google/Chrome/Application/chrome.exe", "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"].find(existsSync);
     browser = await puppeteer.launch({ ...(executablePath ? { executablePath } : {}), headless: true, args: ["--no-sandbox"] });
     const page = await browser.newPage(); page.setDefaultTimeout(30_000);
@@ -87,7 +114,7 @@ async function main() {
     const errors = []; page.on("pageerror", (error) => errors.push(error.message));
     const requests = [];
     const readTimes = [];
-    page.on("request", (request) => { const url = new URL(request.url()); if (url.pathname.startsWith("/v1/")) requests.push(`${request.method()} ${url.pathname}`); if (request.method() === "GET" && url.pathname.startsWith("/v1/budget-spaces")) readTimes.push(Date.now()); });
+    page.on("request", (request) => { const url = new URL(request.url()); if (url.pathname.startsWith(`${API_BASE}/`)) requests.push(`${request.method()} ${url.pathname}`); if (request.method() === "GET" && url.pathname.startsWith(`${API_BASE}/budget-spaces`)) readTimes.push(Date.now()); });
     const text = () => page.$eval("main", (node) => node.textContent ?? "");
     const waitText = (value) => page.waitForFunction((value) => document.querySelector("main")?.textContent?.includes(value), {}, value);
     /** One progress row by its category label, every snippet present (CBD-211: the four values are per row, so "0.00 USD, no activity" alone names no category). */
@@ -104,17 +131,24 @@ async function main() {
     await page.goto(`${ORIGIN}/budgets`); await page.waitForFunction(() => location.pathname === "/sign-in");
     log("GET /budgets signed out", "redirected to /sign-in (GET /v1/identity/me denied)");
     await clickText("Continue to sign in");
-    await page.waitForFunction(() => location.pathname === "/v1/identity/local/authorize" && location.port === "3001");
-    log("Continue to sign in", `POST /v1/identity/begin, browser navigated to the hosted chooser on ${CEREMONY_ORIGIN}`);
-    await page.screenshot({ path: join(shots, "walkthrough-1-chooser.png") });
-    await clickText("subject-a");
+    if (MOCK) {
+      // The mock's POST identity/begin sets the session cookie and answers `navigateTo: /budgets` itself: no provider hop.
+      skip("Continue to sign in (hosted chooser)", `the mock adapter signs in without the hosted chooser on ${CEREMONY_ORIGIN}; POST ${API_BASE}/identity/begin navigates straight to /budgets`);
+      skip("Chooser subject-a", "no chooser and no callback on the application origin in mock mode; the session is the mock's own");
+    } else {
+      await page.waitForFunction(() => location.pathname === "/v1/identity/local/authorize" && location.port === "3001");
+      log("Continue to sign in", `POST /v1/identity/begin, browser navigated to the hosted chooser on ${CEREMONY_ORIGIN}`);
+      await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-1-chooser.png`) });
+      await clickText("subject-a");
+    }
     await page.waitForFunction(() => location.pathname === "/budgets");
     await waitText("Your budgets");
     const cookies = await browser.cookies();
-    expect(cookies.some((cookie) => cookie.name === "__Host-cobudget_session" && cookie.httpOnly), "the session cookie is HttpOnly");
+    expect(cookies.some((cookie) => cookie.name === SESSION_COOKIE && cookie.httpOnly), "the session cookie is HttpOnly");
     expect(!cookies.some((cookie) => cookie.name.toLowerCase().includes("csrf")), "no CSRF cookie exists");
-    log("Chooser subject-a", "callback committed on the application origin, __Host-cobudget_session (HttpOnly) set, no CSRF cookie, landed on /budgets");
-    await page.screenshot({ path: join(shots, "walkthrough-2-budgets.png") });
+    if (MOCK) log("Signed in on the mock adapter", `${SESSION_COOKIE} (HttpOnly) set, no CSRF cookie, landed on /budgets`);
+    else log("Chooser subject-a", "callback committed on the application origin, __Host-cobudget_session (HttpOnly) set, no CSRF cookie, landed on /budgets");
+    await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-2-budgets.png`) });
 
     await clickText("Create a budget"); await waitText("Budget name");
     await page.type('[id="field-name"]', "Household walkthrough");
@@ -129,14 +163,14 @@ async function main() {
     const periods = await page.$$eval("ol li", (nodes) => nodes.map((node) => node.textContent));
     expect(periods.length === 4, "the preview shows the current period plus three");
     log("Create a budget: Preview schedule (monthly, day 1)", `POST /v1/budget-creation-proposals 201; ${periods.length} periods rendered; confirm enabled after render`);
-    await page.screenshot({ path: join(shots, "walkthrough-3-preview.png") });
+    await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-3-preview.png`) });
     await clickText("Confirm and create budget");
     await waitText("No categories yet");
     const budgetId = new URL(page.url()).pathname.split("/").at(-1);
     const dashboard = await text();
     expect(dashboard.includes("Active period identity"), "the dashboard shows the active period");
     log("Confirm and create budget", `POST .../confirm committed; dashboard /budgets/${budgetId} shows the stored active period`);
-    await page.screenshot({ path: join(shots, "walkthrough-4-dashboard.png") });
+    await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-4-dashboard.png`) });
 
     await clickText("Edit category plan"); await waitText("Add category");
     for (const [name, amount] of [["Groceries", "400"], ["Rent", "1500"]]) {
@@ -152,14 +186,14 @@ async function main() {
       await waitText(`Period target: ${amount}.00 USD`);
       log(`Add category ${name}, base target ${amount}`, `PUT categories, PUT targets, GET plan: period target ${amount}.00 USD`);
     }
-    await page.screenshot({ path: join(shots, "walkthrough-5-plan.png") });
+    await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-5-plan.png`) });
     const before = await text();
     await page.reload(); await waitText("Period target: 1500.00 USD");
     const after = await text();
     expect(after.includes("Period target: 400.00 USD") && after.includes("Period target: 1500.00 USD"), "both targets survive the reload");
     expect(after.includes(budgetId), "the same budget identity after reload");
     log("Reload", "GET /v1/identity/me bootstrapped again, GET detail and plan: the same plan (Groceries 400.00, Rent 1500.00 USD)");
-    await page.screenshot({ path: join(shots, "walkthrough-6-reload.png") });
+    await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-6-reload.png`) });
     expect(before.includes("400.00") && after.includes("400.00"), "plan content is stable");
 
     // --- PROTO-INCREMENT-B-001: an account, one split expense, progress and the detail -------------
@@ -178,7 +212,7 @@ async function main() {
     await clickText("Add account"); await waitText("Added Everyday.");
     await waitText("checking · opening balance 1250.00 USD");
     log("Add account Everyday (checking, opening 1250.00)", "POST .../accounts 201; the account is listed with its type and opening balance");
-    await page.screenshot({ path: join(shots, "walkthrough-7-accounts.png") });
+    await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-7-accounts.png`) });
 
     const periodStart = (await text()).match(/(\d{4}-\d{2}-\d{2}) through/)[1];
     const allocationIds = await page.$$eval('input[id^="allocation-"]', (nodes) => nodes.map((node) => `#${node.id}`));
@@ -201,7 +235,7 @@ async function main() {
     await waitRow("Groceries", "Target 400.00 USD", "Settled actual: 8.00 USD spent", "Pending provisional impact: 0.00 USD, none", "Remaining after settled: 392.00 USD", "Remaining after pending: 392.00 USD");
     await waitRow("Rent", "Target 1500.00 USD", "Settled actual: 4.50 USD spent", "Pending provisional impact: 0.00 USD, none", "Remaining after settled: 1495.50 USD", "Remaining after pending: 1495.50 USD");
     log("Record expense 12.50 split 8.00 Groceries / 4.50 Rent", "POST .../transactions 201; GET .../progress: Groceries settled actual 8.00 spent, pending 0.00 none, remaining after settled 392.00, remaining after pending 392.00; Rent 4.50 spent, 1495.50 remaining after settled and after pending");
-    await page.screenshot({ path: join(shots, "walkthrough-8-progress.png") });
+    await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-8-progress.png`) });
 
     await page.reload(); await waitRow("Groceries", "Settled actual: 8.00 USD spent");
     log("Reload after recording", "the same figures: they are the server's, not the browser's");
@@ -214,7 +248,7 @@ async function main() {
     expect((await figure("settled")) === "8.00 USD spent" && (await figure("pending")) === "0.00 USD, none" && (await figure("remaining-settled")) === "392.00 USD" && (await figure("remaining-pending")) === "392.00 USD",
       `the detail header disagrees with the row: settled "${await figure("settled")}", pending "${await figure("pending")}", remaining after settled "${await figure("remaining-settled")}", remaining after pending "${await figure("remaining-pending")}"`);
     log("Open the Groceries detail", "GET .../progress/{categoryId} 200: one itemized transaction of 8.00 USD spent agreeing with the header (settled actual 8.00 USD spent, pending 0.00 USD none, remaining after settled and after pending 392.00 USD)");
-    await page.screenshot({ path: join(shots, "walkthrough-9-detail.png") });
+    await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-9-detail.png`) });
 
     // F-REVB-01 (PR #340): this row is the Groceries SHARE of a 12.50 expense split 8.00/4.50.
     // The in-place edit rewrites the whole transaction with one allocation, so offering it here
@@ -230,7 +264,7 @@ async function main() {
     expect((await controls()).includes("Remove this whole expense"), `the whole-expense removal is missing: ${JSON.stringify(await controls())}`);
     await splitShareIntact("when the detail refused the edit");
     log("The split share refuses the in-place edit", "allocationCount 2: no 'Edit this expense' control, the page states 'This expense is split across 2 categories, so it cannot be changed from this page', and removal is offered as 'Remove this whole expense'");
-    await page.screenshot({ path: join(shots, "walkthrough-10-split-refusal.png") });
+    await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-10-split-refusal.png`) });
 
     // A single-category expense is the whole expense, so it does still edit in place.
     await clickText("Back to the budget"); await waitText("Accounts and spending");
@@ -256,7 +290,7 @@ async function main() {
     await waitText("20.00 USD spent · Everyday");
     await splitShareIntact("when the single-category expense was edited");
     log("Edit Milk in place to 20.00", "PATCH .../transactions 200 revision 2; the split share is still Corner shop 8.00 USD, so editing one expense moved no other category");
-    await page.screenshot({ path: join(shots, "walkthrough-11-single-edit.png") });
+    await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-11-single-edit.png`) });
 
     await clickText("Remove this expense"); await waitText("Expense removed.");
     // The detail states its own settled actual, in the same words as the dashboard row.
@@ -271,18 +305,19 @@ async function main() {
     await waitRow("Groceries", "Settled actual: 0.00 USD, no activity", "Remaining after settled: 400.00 USD", "Remaining after pending: 400.00 USD");
     await waitRow("Rent", "Settled actual: 0.00 USD, no activity", "Remaining after settled: 1500.00 USD", "Remaining after pending: 1500.00 USD");
     log("Remove the whole split expense", "POST .../remove 201 tombstone on the split transaction; both shares go with it, so the settled actual returns to 0.00 USD, no activity, and remaining after settled and after pending to the target for Groceries and Rent alike, in the aggregate and the detail");
-    await page.screenshot({ path: join(shots, "walkthrough-12-removed.png") });
+    await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-12-removed.png`) });
 
     // --- PK-8 (INVITATIONS-DESIGN-001): the invitation ceremony over the web and the Primary transfer with the step-up ---
     // A second browser context is the invitee's own browser: its own cookie jar, no session, the link in hand.
     // The owner's reads count on rlp-266-authenticated-read-v1 (60 per sliding minute plus a burst of 10 per actor); the
     // steps above spend most of that pool, so the PK-8 half starts once the window has drained rather than as a uniform denial.
     const recentReads = readTimes.filter((at) => Date.now() - at < 60_000);
-    if (recentReads.length >= 30) { const wait = 61_000 - (Date.now() - recentReads[0]); log("Rate-limit window", `${recentReads.length} budget reads in the sliding minute; waiting ${Math.ceil(wait / 1000)} s for surf-266-budget-read to drain`); await pause(wait); }
+    if (MOCK) skip("Rate-limit window", `the mock adapter enforces no rlp-266-authenticated-read-v1 pool (${recentReads.length} budget reads in the sliding minute, no wait)`);
+    else if (recentReads.length >= 30) { const wait = 61_000 - (Date.now() - recentReads[0]); log("Rate-limit window", `${recentReads.length} budget reads in the sliding minute; waiting ${Math.ceil(wait / 1000)} s for surf-266-budget-read to drain`); await pause(wait); }
     const inviteeContext = await browser.createBrowserContext();
     const invitee = await inviteeContext.newPage(); invitee.setDefaultTimeout(30_000);
     invitee.on("pageerror", (error) => errors.push(error.message));
-    invitee.on("request", (request) => { const url = new URL(request.url()); if (url.pathname.startsWith("/v1/")) requests.push(`${request.method()} ${url.pathname}`); });
+    invitee.on("request", (request) => { const url = new URL(request.url()); if (url.pathname.startsWith(`${API_BASE}/`)) requests.push(`${request.method()} ${url.pathname}`); });
     const on = (target) => ({
       text: () => target.$eval("main", (node) => node.textContent ?? ""),
       waitText: (value) => target.waitForFunction((value) => document.querySelector("main")?.textContent?.includes(value), {}, value),
@@ -296,17 +331,17 @@ async function main() {
 
     await page.goto(`${ORIGIN}/budgets/${budgetId}/members`); await owner.rows(1); await owner.waitText("Primary Owner");
     log("Members page", "GET .../members on 1.view_members: one row, display name (the neutral label until a display name exists), role Primary Owner, joined-at");
-    await page.screenshot({ path: join(shots, "walkthrough-13-members.png") });
+    await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-13-members.png`) });
 
     await owner.clickText("Invitations"); await owner.waitText("No invitations yet");
     await owner.fill("#invite-destination", "Invitee@Example.com"); await owner.clickText("Send invitation");
     await owner.waitText("Invitation sent to i***@example.com as Collaborator."); await owner.waitText("Sent, awaiting a response");
-    const deliveries = await page.evaluate(async () => (await fetch("/v1/local/invitation-deliveries")).json());
+    const deliveries = await page.evaluate(async (base) => (await fetch(`${base}/local/invitation-deliveries`)).json(), API_BASE);
     const delivered = deliveries.deliveries.find((row) => row.destinationMasked === "i***@example.com");
     expect(delivered && deliveries.fidelityLabel === "simulated", "the simulated delivery surface renders the new invitation");
     expect(!(await owner.text()).includes(delivered.code), "the bearer never appears on the owner's page");
-    log("Invite a person (Collaborator, i***@example.com)", "POST .../invitations 201 on 24.invite_nonowner with an idempotency key; the list shows the masked destination, role and state; GET /v1/local/invitation-deliveries (FIDELITY_LABEL simulated) carries the link code and the six-digit challenge");
-    await page.screenshot({ path: join(shots, "walkthrough-14-invitations.png") });
+    log("Invite a person (Collaborator, i***@example.com)", `POST .../invitations 201 on 24.invite_nonowner with an idempotency key; the list shows the masked destination, role and state; GET ${API_BASE}/local/invitation-deliveries (FIDELITY_LABEL simulated) carries the link code and the six-digit challenge`);
+    await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-14-invitations.png`) });
 
     await invitee.goto(`${ORIGIN}/invitation#code=${encodeURIComponent(delivered.code)}`);
     await invitee.waitForFunction(() => location.pathname.startsWith("/invitation/ceremony/"));
@@ -319,24 +354,33 @@ async function main() {
     await holder.fill("#channel-code", delivered.channelChallenge); await holder.clickText("Check code"); await holder.waitText("Sign in or create your MoneyPact account");
     expect(!(await holder.text()).includes("Collaborator"), "nothing about the invitation is shown before sign-in");
     log("Invitee opens the link in a second browser", "POST /v1/invitations/resolve 200 (same-origin, no CSRF header) set __Host-mp_invitation_ceremony; one wrong six-digit code committed its attempt (4 remain); the right one proved the channel; the page offers sign-in or account creation and shows nothing about the invitation yet");
-    await invitee.screenshot({ path: join(shots, "walkthrough-15-ceremony-signin.png") });
+    await invitee.screenshot({ path: join(shots, `${SHOT_PREFIX}-15-ceremony-signin.png`) });
 
-    await holder.clickText("Sign in or create your MoneyPact account"); await holder.chooser("subject-b");
+    const ceremonyUrl = invitee.url();
+    await holder.clickText("Sign in or create your MoneyPact account");
+    if (MOCK) {
+      // The mock's identity/begin for `invitation_ceremony` sets the session and lands on /invitation with no chooser;
+      // the person then reopens their invitation link (the same ceremony URL), as apps/web/tests/invitations.browser.mjs does.
+      skip("Invitee chooser subject-b", "the mock adapter signs the invitee in without the hosted chooser and lands on /invitation; the ceremony URL is reopened to continue");
+      await invitee.waitForFunction(() => location.pathname === "/invitation");
+      await invitee.goto(ceremonyUrl);
+    } else await holder.chooser("subject-b");
     await invitee.waitForFunction(() => location.pathname.startsWith("/invitation/ceremony/"));
     await holder.waitText("Before you accept");
     expect((await invitee.$eval("#choice-accept", (node) => node.checked)) === false && (await invitee.$eval("#choice-decline", (node) => node.checked)) === false, "the choice is presented with no default");
-    await invitee.screenshot({ path: join(shots, "walkthrough-16-disclosure.png") });
+    await invitee.screenshot({ path: join(shots, `${SHOT_PREFIX}-16-disclosure.png`) });
     await invitee.click("#choice-accept"); await invitee.click("#acknowledged-disclosure"); await holder.waitEnabled("Record my acceptance");
     await holder.clickText("Record my acceptance"); await holder.waitText("Your acceptance is recorded");
     log("Invitee signs in as subject-b and returns, attaches, reads, accepts", "POST /v1/identity/begin returned to /budgets and the return marker brought the person back; POST .../attach 200 (CSRF header); GET /v1/invitations/{ceremonyId}: the approved invitation_collaborator v1 text with choice {accept: false, decline: false}; POST .../accept 200 awaiting_confirmation with the acknowledged kind and version only");
-    await invitee.screenshot({ path: join(shots, "walkthrough-17-accepted.png") });
+    await invitee.screenshot({ path: join(shots, `${SHOT_PREFIX}-17-accepted.png`) });
 
-    await page.reload(); await owner.waitText("Sent, awaiting a response");
+    // The mock projects `awaiting_confirmation` the moment the invitee accepts; the live path keeps its original assertion unchanged.
+    await page.reload(); await owner.waitText(MOCK ? "Acceptance awaiting your confirmation" : "Sent, awaiting a response");
     await owner.clickText("Confirm acceptance from i***@example.com"); await owner.waitText("Acceptance confirmed: the person joined as Collaborator.");
     await owner.clickText("Members"); await owner.rows(2); await owner.waitText("Collaborator");
     await invitee.goto(`${ORIGIN}/budgets/${budgetId}/members`); await holder.rows(2);
     log("Owner confirms the acceptance (TR-73-39 + TR-73-13)", "POST .../invitations/{id}/confirm 200 with a confirmationIdempotencyKey: the receipt names the role; GET .../members shows Primary Owner and Collaborator to both members");
-    await page.screenshot({ path: join(shots, "walkthrough-18-members-two.png") });
+    await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-18-members-two.png`) });
 
     await page.goto(`${ORIGIN}/budgets/${budgetId}/transfer`); await owner.waitText("Propose a transfer");
     await page.select("#transfer-recipient", await page.$eval("#transfer-recipient option:nth-child(2)", (node) => node.value));
@@ -348,11 +392,13 @@ async function main() {
     await invitee.click("#recipient-acknowledged"); await holder.waitEnabled("Accept primary ownership"); await holder.clickText("Accept primary ownership");
     await holder.waitText("Accepted by the recipient, awaiting the Primary Owner's confirmation");
     log("Recipient accepts (TR-73-41)", "POST .../accept 200 recipient_accepted after the approved primary_transfer_recipient v1 disclosure was acknowledged");
-    await invitee.screenshot({ path: join(shots, "walkthrough-19-transfer-accepted.png") });
+    await invitee.screenshot({ path: join(shots, `${SHOT_PREFIX}-19-transfer-accepted.png`) });
 
     await owner.clickText("Refresh transfer"); await owner.waitText("Accepted by the recipient");
     await page.click("#outgoing-acknowledged"); await owner.waitEnabled("Continue to the identity check");
-    await owner.clickText("Continue to the identity check"); await owner.chooser("subject-a");
+    await owner.clickText("Continue to the identity check");
+    if (MOCK) skip("Step-up chooser subject-a", "the mock adapter issues the fresh-assurance grant without a chooser hop and navigates to the space's transfer page");
+    else await owner.chooser("subject-a");
     await owner.waitText("Back from the identity check"); await page.waitForFunction(() => location.search === "");
     await page.click("#outgoing-acknowledged"); await owner.waitEnabled("Confirm the transfer"); await owner.clickText("Confirm the transfer");
     await owner.waitText("Transfer committed");
@@ -360,28 +406,29 @@ async function main() {
     const roles = await page.$$eval('[data-testid="member-row"] dd', (nodes) => nodes.map((node) => node.textContent));
     expect(roles.includes("Co-owner") && roles.includes("Primary Owner"), `the roles swapped: ${roles.join(", ")}`);
     log("Primary Owner steps up and confirms (TR-73-42, TR-73-43)", "POST /v1/identity/step-up/begin bound to 29.transfer_primary_ownership and the space, the hosted chooser, GET /v1/identity/step-up/callback back to /budgets and the return marker; POST .../confirm with the acknowledgedDisclosure claim on the live transferId read from the view: committed, freshAssurance consumed; the members list now shows the former Primary Owner as Co-owner and the recipient as Primary Owner");
-    await page.screenshot({ path: join(shots, "walkthrough-20-transfer-committed.png") });
+    await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-20-transfer-committed.png`) });
     await inviteeContext.close();
 
     await clickText("Sign out"); await page.waitForFunction(() => location.pathname === "/");
-    expect(!(await browser.cookies()).some((cookie) => cookie.name === "__Host-cobudget_session"), "the session cookie is deleted at logout");
+    expect(!(await browser.cookies()).some((cookie) => cookie.name === SESSION_COOKIE), "the session cookie is deleted at logout");
     await page.goto(`${ORIGIN}/budgets`); await page.waitForFunction(() => location.pathname === "/sign-in");
     log("Sign out", "POST /v1/identity/logout with X-CoBudget-CSRF: cookie deleted, /budgets redirects to /sign-in again");
     expect(errors.length === 0, `page errors: ${errors.join("; ")}`);
     log("API requests observed from the browser", [...new Set(requests)].join(", "));
+    if (MOCK) console.log(`Mock mode: ${steps.length} steps run, ${skipped.length} skipped${skipped.length ? `\n${skipped.join("\n")}` : ""}`);
     console.log("PROTOTYPE-WALKTHROUGH PASSED");
   } catch (error) {
     console.error(`API output (tail):\n${apiOutput.slice(-2000)}\nweb output (tail):\n${webOutput.slice(-2000)}`);
     // The failing pages, for the person reading the transcript (untracked, like every screenshot here).
     for (const [index, target] of (browser ? await browser.pages() : []).entries()) {
-      try { await target.screenshot({ path: join(root, "apps/web/.next", `walkthrough-failure-${index}.png`), fullPage: true }); } catch { /* a closed page */ }
+      try { await target.screenshot({ path: join(root, "apps/web/.next", `${SHOT_PREFIX}-failure-${index}.png`), fullPage: true }); } catch { /* a closed page */ }
     }
     throw error;
   } finally {
     await browser?.close();
     if (previous === undefined) { try { unlinkSync(marker); } catch { /* already gone */ } } else writeFileSync(marker, previous);
-    api.kill(); web.kill();
-    await Promise.all([new Promise((resolve) => api.once("exit", resolve)), new Promise((resolve) => web.once("exit", resolve))]);
+    api?.kill(); web.kill();
+    await Promise.all([...(api ? [new Promise((resolve) => api.once("exit", resolve))] : []), new Promise((resolve) => web.once("exit", resolve))]);
   }
 }
 
