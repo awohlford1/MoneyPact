@@ -1,3 +1,4 @@
+export { NEUTRAL_DISPLAY_LABEL } from "./display-label.ts";
 export type { DateParts, ISODate } from "./iso-date.ts";
 export {
   MAX_YEAR,

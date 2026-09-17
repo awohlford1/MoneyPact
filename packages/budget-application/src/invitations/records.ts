@@ -383,8 +383,12 @@ export interface DisplayIdentity {
   readonly version: number;
 }
 
-/** The neutral label every surface shows until a subject has chosen a display name (SS9). */
-export const NEUTRAL_DISPLAY_LABEL = "A MoneyPact member";
+/**
+ * The neutral label every surface shows until a subject has chosen a display name (SS9). Defined once, in
+ * `@cobudget/budget-domain/shared`, so the display-name writers in `packages/data-access` can refuse a name that
+ * equals it (SEC-NS-R2) without importing this package; re-exported here for every existing consumer.
+ */
+export { NEUTRAL_DISPLAY_LABEL } from "@cobudget/budget-domain/shared";
 
 /** The allowlisted inviter projection of one invitation. Real and synthetic records are indistinguishable here (`DR-73-10`). */
 export interface InvitationProjection {

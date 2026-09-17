@@ -22,6 +22,7 @@
  * caller read, so two concurrent writers cannot both believe they set the
  * name, and it returns the new version or null when the row had moved on.
  */
+import { NEUTRAL_DISPLAY_LABEL } from "@cobudget/budget-domain/shared";
 import { integerValue, textValue } from "./budget-category.ts";
 import type { QueryResult } from "./driver.ts";
 import type { ProfileSelectQuery, ProfileUpdateQuery } from "./profile.ts";
@@ -55,6 +56,59 @@ const CONTROL_OR_FORMAT = /[\p{Cc}\p{Cf}]/u;
 /** True when `value` contains a Cc or Cf character other than an emoji-sequence ZWJ or a between-letters ZWJ/ZWNJ. */
 export function hasControlOrFormatCharacter(value: string): boolean {
   return CONTROL_OR_FORMAT.test(value.replace(EMOJI_ZERO_WIDTH_JOINER, "").replace(ORTHOGRAPHIC_JOINER, ""));
+}
+
+/** The longest display name the `M1` CHECK admits. */
+export const MAX_DISPLAY_NAME_LENGTH = 80;
+
+const WHITESPACE_RUN = /\p{White_Space}+/gu;
+const LEADING_TRAILING_WHITESPACE = /^\p{White_Space}+|\p{White_Space}+$/gu;
+/**
+ * SEC-NS-R1: everything that renders as nothing. Whitespace, combining marks
+ * (Mn/Mc/Me), format characters, the variation selectors (U+FE00..FE0F,
+ * U+E0100..E01EF), the Hangul fillers (U+3164, U+FFA0, U+115F, U+1160) and
+ * U+2800 BRAILLE PATTERN BLANK. A name with nothing left once these are removed
+ * has no visible grapheme and is refused. Duplicated, deliberately, in
+ * `packages/budget-application/src/creation-proposals/normalize.ts`; change both together.
+ */
+const INVISIBLE = /[\p{White_Space}\p{M}\p{Cf}\uFE00-\uFE0F\u{E0100}-\u{E01EF}\u3164\uFFA0\u115F\u1160\u2800]/gu;
+
+/**
+ * SEC-NS-R1: NFC, then every `\p{White_Space}` run (NBSP, U+3000, the thin
+ * spaces, line separators) collapsed to one U+0020, then trimmed. Applied by
+ * every display-name writer before its checks, so `"Alex\u00A0W."` is stored
+ * as `"Alex W."` and an NBSP-only name is empty. Idempotent.
+ */
+export function normalizeDisplayName(value: string): string {
+  return value.normalize("NFC").replace(WHITESPACE_RUN, " ").replace(LEADING_TRAILING_WHITESPACE, "");
+}
+
+/** Why a normalized display name is refused; every reason answers with the same `display_name_invalid` envelope. */
+export type DisplayNameRejection = "length" | "control_or_format" | "no_visible_grapheme" | "neutral_label";
+
+/** SEC-NS-R2: NFKC, whitespace-collapsed, case-folded (`toUpperCase().toLowerCase()`, the closest JS has to full folding). */
+function foldedForLabelComparison(value: string): string {
+  return value.normalize("NFKC").replace(WHITESPACE_RUN, " ").replace(LEADING_TRAILING_WHITESPACE, "").toUpperCase().toLowerCase();
+}
+const FOLDED_NEUTRAL_LABEL = foldedForLabelComparison(NEUTRAL_DISPLAY_LABEL);
+
+/**
+ * The one display-name rule set, checked in this order on a name
+ * `normalizeDisplayName` has already produced: the 1..80-code-point bound
+ * (`M1`), no Cc/Cf (SEC-F06-OBS1 / SEC-C190-OBS1), at least one visible
+ * grapheme (SEC-NS-R1), and not the neutral label "A MoneyPact member" in any
+ * casing or compatibility spelling (SEC-NS-R2). `undefined` means accepted.
+ * `PUT /v1/identity/me/display-name` maps every reason to `400
+ * display_name_invalid`; the first-sign-in claim (`token.ts` `boundedName`)
+ * maps every reason to an absent claim, never a sign-in failure.
+ */
+export function displayNameRejection(normalized: string): DisplayNameRejection | undefined {
+  const length = [...normalized].length;
+  if (length < 1 || length > MAX_DISPLAY_NAME_LENGTH) return "length";
+  if (hasControlOrFormatCharacter(normalized)) return "control_or_format";
+  if (normalized.replace(INVISIBLE, "").length === 0) return "no_visible_grapheme";
+  if (foldedForLabelComparison(normalized) === FOLDED_NEUTRAL_LABEL) return "neutral_label";
+  return undefined;
 }
 
 /** The subset of a data-access client these statements need. */
@@ -95,9 +149,6 @@ export async function readDisplayIdentity(
   return row === undefined ? null : toRow(accountSubjectId, row);
 }
 
-/** The longest display name the `M1` CHECK admits. */
-export const MAX_DISPLAY_NAME_LENGTH = 80;
-
 /**
  * Set (or clear) `display_name` and advance `version`, but only while the row
  * still carries `expectedVersion`. Returns the new version, or null when the
@@ -107,14 +158,15 @@ export async function writeDisplayName(
   client: ProfileStatementClient, accountSubjectId: string, displayName: string | null, expectedVersion: number,
 ): Promise<number | null> {
   if (displayName !== null) {
-    const trimmed = displayName.trim();
-    if (trimmed.length === 0 || [...trimmed].length > MAX_DISPLAY_NAME_LENGTH) {
-      throw new RangeError(`display_name must be 1 to ${MAX_DISPLAY_NAME_LENGTH} code points, or null`);
+    const normalized = normalizeDisplayName(displayName);
+    switch (displayNameRejection(normalized)) {
+      case "length": throw new RangeError(`display_name must be 1 to ${MAX_DISPLAY_NAME_LENGTH} code points, or null`);
+      case "control_or_format": throw new RangeError("display_name must not contain control or format characters");
+      case "no_visible_grapheme": throw new RangeError("display_name must contain a visible character");
+      case "neutral_label": throw new RangeError("display_name must not be the neutral member label");
+      case undefined: break;
     }
-    if (hasControlOrFormatCharacter(trimmed)) {
-      throw new RangeError("display_name must not contain control or format characters");
-    }
-    displayName = trimmed;
+    displayName = normalized;
   }
   const result = await client.profileUpdate({
     table: FINANCIAL_PROFILE_TABLE, accountSubjectId,

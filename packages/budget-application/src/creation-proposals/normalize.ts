@@ -61,6 +61,17 @@ function hasControlOrFormatCharacter(value: string): boolean {
   return CONTROL_OR_FORMAT.test(value.replace(EMOJI_ZERO_WIDTH_JOINER, "").replace(ORTHOGRAPHIC_JOINER, ""));
 }
 
+/**
+ * SEC-NS-R1: everything that renders as nothing -- whitespace, combining marks,
+ * format characters, variation selectors (U+FE00..FE0F, U+E0100..E01EF), the
+ * Hangul fillers (U+3164, U+FFA0, U+115F, U+1160) and U+2800 BRAILLE PATTERN
+ * BLANK. A name with nothing left once these are removed has no visible
+ * grapheme and is reported as `name.required`, the catalog's existing code for
+ * "nothing was entered" (no new CBD-232 row). Duplicates `INVISIBLE` in
+ * `packages/data-access/src/financial-profile.ts`; change both together.
+ */
+const INVISIBLE = /[\p{White_Space}\p{M}\p{Cf}\uFE00-\uFE0F\u{E0100}-\u{E01EF}\u3164\uFFA0\u115F\u1160\u2800]/gu;
+
 function normalizeName(value: unknown): { value?: string; errors: FieldError[] } {
   if (typeof value !== "string") {
     return {
@@ -83,6 +94,11 @@ function normalizeName(value: unknown): { value?: string; errors: FieldError[] }
       errors: [
         { code: "name.control-characters", path: "name", message: "Remove control and invisible formatting characters." },
       ],
+    };
+  }
+  if (normalized.replace(INVISIBLE, "").length === 0) {
+    return {
+      errors: [{ code: "name.required", path: "name", message: "Enter a budget name." }],
     };
   }
   if ([...new Intl.Segmenter("und", { granularity: "grapheme" }).segment(normalized)].length > 100) {

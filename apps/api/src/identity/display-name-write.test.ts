@@ -12,7 +12,8 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { financialProfileDisplayStatements, MAX_DISPLAY_NAME_LENGTH, readDisplayIdentity, writeDisplayName } from "../../../../packages/data-access/src/financial-profile.ts";
+import { NEUTRAL_DISPLAY_LABEL } from "@cobudget/budget-domain/shared";
+import { displayNameRejection, financialProfileDisplayStatements, MAX_DISPLAY_NAME_LENGTH, normalizeDisplayName, readDisplayIdentity, writeDisplayName } from "../../../../packages/data-access/src/financial-profile.ts";
 import type { ProfileStatementClient } from "../../../../packages/data-access/src/financial-profile.ts";
 import type { ProfileSelectQuery, ProfileUpdateQuery } from "../../../../packages/data-access/src/profile.ts";
 
@@ -75,8 +76,9 @@ describe("CBD-236 p6: writeDisplayName / readDisplayIdentity (DI-91-065, SEC-PK2
     for (const [label, name] of [
       ["U+202E right-to-left override", "Alex \u202EW."],
       ["U+200B zero width space", "Alex\u200B W."],
-      ["U+0009 tab inside the name", "Alex\tW."],
-      ["U+000A line feed inside the name", "Alex\nW."],
+      // U+0009 and U+000A are Cc but also White_Space: since SEC-NS-R1 they collapse to a space before this rule runs (see the whitespace test below).
+      ["U+0007 bell inside the name", "AlexW."],
+      ["U+001B escape inside the name", "AlexW."],
       ["U+00AD soft hyphen", "Al\u00ADex"],
       ["U+FEFF byte order mark", "Alex\uFEFF W."],
       ["U+2066 left-to-right isolate", "\u2066Alex\u2069"],
@@ -101,6 +103,56 @@ describe("CBD-236 p6: writeDisplayName / readDisplayIdentity (DI-91-065, SEC-PK2
       assert.equal(await writeDisplayName(client, "subject-1", name, 1), 2, name);
       assert.equal(row().display_name, name);
     }
+  });
+
+  it("SEC-NS-R1: collapses every whitespace run to one U+0020 (an internal NBSP becomes a valid collapsed name) and refuses a name with no visible grapheme, writing nothing", async () => {
+    const { client, row } = fakeClient({ profile_id: "profile-1", account_subject_id: "subject-1", profile_state: "active", display_name: null, version: 1 });
+    assert.equal(normalizeDisplayName(" Alex  W.　"), "Alex W.");
+    assert.equal(normalizeDisplayName("Alex\t\nW. "), "Alex W.", "tab, line feed and line separator are White_Space and collapse like NBSP (matching normalizeName for budget names)");
+    assert.equal(await writeDisplayName(client, "subject-1", "Alex W.", 1), 2, "internal NBSP collapsed to a space");
+    assert.equal(row().display_name, "Alex W.");
+    for (const [label, name] of [
+      ["U+00A0 NBSP only", "  "],
+      ["U+3000 ideographic space only", "　"],
+      ["combining marks only", "̣́̈"],
+      ["U+2800 braille blank alone", "⠀"],
+      ["U+3164 Hangul filler alone", "ㅤ"],
+      ["U+FFA0 halfwidth Hangul filler and U+2800", "ﾠ ⠀"],
+      ["U+115F and U+1160 jamo fillers", "ᅟᅠ"],
+      ["variation selector alone", "️"],
+    ] as const) {
+      await assert.rejects(() => writeDisplayName(client, "subject-1", name, 2), RangeError, label);
+      assert.equal(row().version, 2, `nothing written for ${label}`);
+      assert.equal(row().display_name, "Alex W.", `nothing written for ${label}`);
+    }
+  });
+
+  it("SEC-NS-R2: refuses a name that equals or visually equals the neutral label in any casing, compatibility spelling or whitespace, writing nothing", async () => {
+    const { client, row } = fakeClient({ profile_id: "profile-1", account_subject_id: "subject-1", profile_state: "active", display_name: null, version: 1 });
+    for (const [label, name] of [
+      ["the label itself", NEUTRAL_DISPLAY_LABEL],
+      ["NBSP-separated", "A MoneyPact member"],
+      ["lower case", "a moneypact member"],
+      ["upper case, padded, doubled spaces", "  A  MONEYPACT   MEMBER "],
+      ["fullwidth compatibility letters", "Ａ ＭｏｎｅｙＰａｃｔ ｍｅｍｂｅｒ"],
+      ["U+1D5A0 MATHEMATICAL SANS-SERIF CAPITAL A spelling the A", "\u{1D5A0} MoneyPact member"],
+    ] as const) {
+      await assert.rejects(() => writeDisplayName(client, "subject-1", name, 1), RangeError, label);
+      assert.equal(row().version, 1, `nothing written for ${label}`);
+      assert.equal(row().display_name, null, `nothing written for ${label}`);
+    }
+    assert.equal(displayNameRejection("A MoneyPact member!"), undefined, "a different string is not the label");
+    assert.equal(displayNameRejection("MoneyPact member"), undefined, "a different string is not the label");
+  });
+
+  it("displayNameRejection names each rule in the packet's order and accepts an ordinary name", () => {
+    assert.equal(displayNameRejection(""), "length");
+    assert.equal(displayNameRejection("x".repeat(MAX_DISPLAY_NAME_LENGTH + 1)), "length");
+    assert.equal(displayNameRejection("Alex ‮W."), "control_or_format");
+    assert.equal(displayNameRejection("​"), "control_or_format", "a lone Cf is reported by the Cc/Cf rule, ahead of the visibility rule");
+    assert.equal(displayNameRejection("⠀"), "no_visible_grapheme");
+    assert.equal(displayNameRejection("a moneypact member"), "neutral_label");
+    assert.equal(displayNameRejection("Alex W."), undefined);
   });
 
   it("clears the name with null and still advances version", async () => {
