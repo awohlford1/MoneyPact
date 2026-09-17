@@ -70,6 +70,32 @@ describe("CBD-236 p6: writeDisplayName / readDisplayIdentity (DI-91-065, SEC-PK2
     assert.equal(row().display_name!.length, MAX_DISPLAY_NAME_LENGTH);
   });
 
+  it("SEC-F06-OBS1: rejects a name containing a Unicode control or format character with a RangeError, and writes nothing", async () => {
+    const { client, row } = fakeClient({ profile_id: "profile-1", account_subject_id: "subject-1", profile_state: "active", display_name: null, version: 1 });
+    for (const [label, name] of [
+      ["U+202E right-to-left override", "Alex \u202EW."],
+      ["U+200B zero width space", "Alex\u200B W."],
+      ["U+200D zero width joiner outside an emoji sequence", "Alex\u200DW."],
+      ["U+0009 tab inside the name", "Alex\tW."],
+      ["U+000A line feed inside the name", "Alex\nW."],
+      ["U+00AD soft hyphen", "Al\u00ADex"],
+      ["U+FEFF byte order mark", "Alex\uFEFF W."],
+      ["U+2066 left-to-right isolate", "\u2066Alex\u2069"],
+    ] as const) {
+      await assert.rejects(() => writeDisplayName(client, "subject-1", name, 1), RangeError, label);
+      assert.equal(row().version, 1, `nothing written for ${label}`);
+      assert.equal(row().display_name, null, `nothing written for ${label}`);
+    }
+  });
+
+  it("SEC-F06-OBS1: accents, CJK, Arabic, and ZWJ-joined emoji sequences still pass", async () => {
+    for (const name of ["Zo\u00EB M\u00FCller", "\u5C71\u7530\u592A\u90CE", "\u0645\u062D\u0645\u062F", "Alex \u{1F468}\u200D\u{1F469}\u200D\u{1F467}", "\u{1F469}\u{1F3FD}\u200D\u{1F4BB} Sam", "\u2764\uFE0F\u200D\u{1F525} Kim"]) {
+      const { client, row } = fakeClient({ profile_id: "profile-1", account_subject_id: "subject-1", profile_state: "active", display_name: null, version: 1 });
+      assert.equal(await writeDisplayName(client, "subject-1", name, 1), 2, name);
+      assert.equal(row().display_name, name);
+    }
+  });
+
   it("clears the name with null and still advances version", async () => {
     const { client, row } = fakeClient({ profile_id: "profile-1", account_subject_id: "subject-1", profile_state: "active", display_name: "Alex", version: 3 });
     const next = await writeDisplayName(client, "subject-1", null, 3);

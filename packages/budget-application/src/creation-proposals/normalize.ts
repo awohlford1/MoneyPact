@@ -39,6 +39,22 @@ export function validateIdempotencyKeyHeader(header: string | undefined): FieldE
 const WHITESPACE_RUN = /\p{White_Space}+/gu;
 const LEADING_TRAILING_WHITESPACE = /^\p{White_Space}+|\p{White_Space}+$/gu;
 
+/**
+ * SEC-F06-OBS1 / SEC-C190-OBS1: a budget name must carry no Unicode control
+ * (Cc) or format (Cf) character -- a bidi override or a zero-width character
+ * can reorder or spoof the sentence that renders the name. U+200D ZERO WIDTH
+ * JOINER is allowed only inside an emoji sequence (grapheme.test.ts relies on
+ * family emoji). This duplicates `hasControlOrFormatCharacter` in
+ * `packages/data-access/src/financial-profile.ts` because this package
+ * consumes `@cobudget/budget-domain/schedule` only; change both together.
+ */
+const EMOJI_ZERO_WIDTH_JOINER = /(?<=(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|️))‍(?=\p{Extended_Pictographic})/gu;
+const CONTROL_OR_FORMAT = /[\p{Cc}\p{Cf}]/u;
+
+function hasControlOrFormatCharacter(value: string): boolean {
+  return CONTROL_OR_FORMAT.test(value.replace(EMOJI_ZERO_WIDTH_JOINER, ""));
+}
+
 function normalizeName(value: unknown): { value?: string; errors: FieldError[] } {
   if (typeof value !== "string") {
     return {
@@ -54,6 +70,13 @@ function normalizeName(value: unknown): { value?: string; errors: FieldError[] }
   if (normalized.length === 0) {
     return {
       errors: [{ code: "name.required", path: "name", message: "Enter a budget name." }],
+    };
+  }
+  if (hasControlOrFormatCharacter(normalized)) {
+    return {
+      errors: [
+        { code: "name.control-characters", path: "name", message: "Remove control and invisible formatting characters." },
+      ],
     };
   }
   if ([...new Intl.Segmenter("und", { granularity: "grapheme" }).segment(normalized)].length > 100) {

@@ -28,6 +28,28 @@ import type { ProfileSelectQuery, ProfileUpdateQuery } from "./profile.ts";
 
 export const FINANCIAL_PROFILE_TABLE = "financial_profile";
 
+/**
+ * SEC-F06-OBS1 / SEC-C190-OBS1: a name must carry no Unicode control (Cc) or
+ * format (Cf) character. A bidi override (U+202E) or a zero-width character
+ * (U+200B) inside a display name can visually reorder or spoof the sentence
+ * that renders it. The one exception is U+200D ZERO WIDTH JOINER *inside an
+ * emoji sequence* (between two pictographic characters, or after a skin-tone
+ * modifier or VS16), which is how family and profession emoji are spelled;
+ * a ZWJ anywhere else is rejected like any other Cf.
+ *
+ * The same test is duplicated, deliberately, in
+ * `packages/budget-application/src/creation-proposals/normalize.ts`
+ * (`normalizeName`): that package consumes `@cobudget/budget-domain/schedule`
+ * only, so it cannot import this one. Change both together.
+ */
+const EMOJI_ZERO_WIDTH_JOINER = /(?<=(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|️))‍(?=\p{Extended_Pictographic})/gu;
+const CONTROL_OR_FORMAT = /[\p{Cc}\p{Cf}]/u;
+
+/** True when `value` contains a Cc or Cf character other than an emoji-sequence ZWJ. */
+export function hasControlOrFormatCharacter(value: string): boolean {
+  return CONTROL_OR_FORMAT.test(value.replace(EMOJI_ZERO_WIDTH_JOINER, ""));
+}
+
 /** The subset of a data-access client these statements need. */
 export interface ProfileStatementClient {
   readonly profileSelect: (query: ProfileSelectQuery) => Promise<QueryResult>;
@@ -81,6 +103,9 @@ export async function writeDisplayName(
     const trimmed = displayName.trim();
     if (trimmed.length === 0 || [...trimmed].length > MAX_DISPLAY_NAME_LENGTH) {
       throw new RangeError(`display_name must be 1 to ${MAX_DISPLAY_NAME_LENGTH} code points, or null`);
+    }
+    if (hasControlOrFormatCharacter(trimmed)) {
+      throw new RangeError("display_name must not contain control or format characters");
     }
     displayName = trimmed;
   }

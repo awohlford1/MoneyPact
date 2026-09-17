@@ -18,13 +18,14 @@ export function MembersView({ id }: { id: string }) {
     <p>Everyone who belongs to this budget space, by display name and role. A person without a display name yet is shown as a MoneyPact member.</p>
     {list.error ? <ReadFailure error={list.error} retry={list.refresh} /> : !list.value ? <Alert loading>Loading members…</Alert>
       : <ul className="space-y-4">{list.value.map(member => <li key={member.membershipId} data-testid="member-row" className="rounded-lg border border-border p-4">
-        <h2 className="break-words text-xl font-semibold">{member.displayName}</h2>
+        {/* SEC-F06-OBS1: the name is a text node inside <bdi>, so a bidi character in it cannot reorder the row. */}
+        <h2 className="break-words text-xl font-semibold"><bdi>{member.displayName}</bdi></h2>
         {/* The four-labelled-values pattern of the progress rows (CBD-211): every value under its own name. */}
         <dl className="grid gap-2 sm:grid-cols-2">
           <div><dt className="font-semibold">Role</dt><dd>{roleLabel(member.role)}</dd></div>
           <div><dt className="font-semibold">Joined</dt><dd>{formatInstant(member.joinedAt)}</dd></div>
           <div><dt className="font-semibold">Membership identity</dt><dd className="break-all">{member.membershipId}</dd></div>
-          <div><dt className="font-semibold">Display name</dt><dd className="break-words">{member.displayName}</dd></div>
+          <div><dt className="font-semibold">Display name</dt><dd className="break-words"><bdi>{member.displayName}</bdi></dd></div>
         </dl>
       </li>)}</ul>}
   </section>;

@@ -40,7 +40,7 @@ import type { DynamicModule } from "@nestjs/common";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { DataAccessClient } from "@cobudget/data-access";
 import { checkCsrf, readSessionCookieValue } from "@cobudget/sessions";
-import { MAX_DISPLAY_NAME_LENGTH, writeDisplayName } from "../../../../packages/data-access/src/financial-profile.ts";
+import { hasControlOrFormatCharacter, MAX_DISPLAY_NAME_LENGTH, writeDisplayName } from "../../../../packages/data-access/src/financial-profile.ts";
 import { Authorization, Authorize, PreAuthenticationSurface, RouteFailure, SessionAuthenticatedSurface } from "../authorization/http.js";
 import type { IdentityCeremony } from "./ceremony.ts";
 import { LOCAL_ISSUER_PATH } from "./config.ts";
@@ -225,6 +225,8 @@ export function identityHttp(runtime: IdentityRuntime | undefined): IdentityHttp
       if (typeof raw !== "string") return new RouteFailure(400, "invalid_request");
       const trimmed = raw.trim();
       if (trimmed.length === 0 || [...trimmed].length > MAX_DISPLAY_NAME_LENGTH) return new RouteFailure(400, "display_name_invalid");
+      // SEC-F06-OBS1 / SEC-C190-OBS1: no Cc/Cf (bidi override, zero-width) in a name; same envelope as the length bound.
+      if (hasControlOrFormatCharacter(trimmed)) return new RouteFailure(400, "display_name_invalid");
       const client = effect.transaction as DataAccessClient;
       if (!client.profileSelect || !client.profileUpdate) return new RouteFailure(503, "identity_unavailable");
       let version: number | null;
