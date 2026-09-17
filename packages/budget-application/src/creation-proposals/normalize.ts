@@ -39,6 +39,28 @@ export function validateIdempotencyKeyHeader(header: string | undefined): FieldE
 const WHITESPACE_RUN = /\p{White_Space}+/gu;
 const LEADING_TRAILING_WHITESPACE = /^\p{White_Space}+|\p{White_Space}+$/gu;
 
+/**
+ * SEC-F06-OBS1 / SEC-C190-OBS1: a budget name must carry no Unicode control
+ * (Cc) or format (Cf) character -- a bidi override or a zero-width character
+ * can reorder or spoof the sentence that renders the name. U+200D ZERO WIDTH
+ * JOINER is allowed only inside an emoji sequence (grapheme.test.ts relies on
+ * family emoji), and ZWJ or U+200C ZWNJ between two letters or marks, where
+ * several scripts use them orthographically (REV-NS-2). This duplicates `hasControlOrFormatCharacter` in
+ * `packages/data-access/src/financial-profile.ts` because this package
+ * consumes `@cobudget/budget-domain/schedule` only; change both together.
+ */
+const EMOJI_ZERO_WIDTH_JOINER = /(?<=(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\uFE0F))\u200D(?=\p{Extended_Pictographic})/gu;
+// REV-NS-2: U+200C ZWNJ and U+200D ZWJ are orthographic in Persian, Urdu, Sinhala, Malayalam and Tamil, so either is
+// allowed when immediately between two letters or marks. At a string edge, next to a space, doubled, or beside any
+// other Cc/Cf character they stay rejected. Both lookarounds read the original string, so a doubled joiner never
+// qualifies through its twin.
+const ORTHOGRAPHIC_JOINER = /(?<=[\p{L}\p{M}])[\u200C\u200D](?=[\p{L}\p{M}])/gu;
+const CONTROL_OR_FORMAT = /[\p{Cc}\p{Cf}]/u;
+
+function hasControlOrFormatCharacter(value: string): boolean {
+  return CONTROL_OR_FORMAT.test(value.replace(EMOJI_ZERO_WIDTH_JOINER, "").replace(ORTHOGRAPHIC_JOINER, ""));
+}
+
 function normalizeName(value: unknown): { value?: string; errors: FieldError[] } {
   if (typeof value !== "string") {
     return {
@@ -54,6 +76,13 @@ function normalizeName(value: unknown): { value?: string; errors: FieldError[] }
   if (normalized.length === 0) {
     return {
       errors: [{ code: "name.required", path: "name", message: "Enter a budget name." }],
+    };
+  }
+  if (hasControlOrFormatCharacter(normalized)) {
+    return {
+      errors: [
+        { code: "name.control-characters", path: "name", message: "Remove control and invisible formatting characters." },
+      ],
     };
   }
   if ([...new Intl.Segmenter("und", { granularity: "grapheme" }).segment(normalized)].length > 100) {

@@ -84,7 +84,7 @@ export const NEGATIVE_TOKEN_SCENARIOS = Object.freeze([
  * `subject-a`'s immutable `sub` with a different valid name, for the
  * never-overwrite negative (`C190-N04`/`C190-N05`).
  */
-export const NAME_BOUND_SCENARIOS = Object.freeze(["subject-a-second-name", "name-blank", "name-oversized"] as const);
+export const NAME_BOUND_SCENARIOS = Object.freeze(["subject-a-second-name", "name-blank", "name-oversized", "name-bidi-override"] as const);
 export type LocalScenario = (typeof HUMAN_SCENARIOS)[number] | (typeof NEGATIVE_TOKEN_SCENARIOS)[number] | (typeof NAME_BOUND_SCENARIOS)[number];
 const ALL_SCENARIOS: readonly string[] = [...HUMAN_SCENARIOS, ...NEGATIVE_TOKEN_SCENARIOS, ...NAME_BOUND_SCENARIOS];
 
@@ -95,6 +95,8 @@ function nameForScenario(scenario: LocalScenario): string | undefined {
     case "subject-a-second-name": return "Blair Q. Later";
     case "name-blank": return "   ";
     case "name-oversized": return "N".repeat(81);
+    // SEC-F06-OBS1 / SEC-C190-OBS1: U+202E RIGHT-TO-LEFT OVERRIDE inside an otherwise valid name.
+    case "name-bidi-override": return "Ada \u202ELacol";
     default: return undefined;
   }
 }

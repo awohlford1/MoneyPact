@@ -53,6 +53,14 @@ describe("CBD-190 identity amendments proposal §2: first-sign-in display-name w
     assert.equal(displayNameFor(h, result.accountSubjectId), null);
   });
 
+  it("SEC-C190-OBS1: name claim carrying U+202E (bidi override) -> treated as absent, NULL, never a ceremony failure", async () => {
+    const h = buildHarness();
+    const result = await h.signIn("name-bidi-override");
+    assert.equal(result.kind, "success", JSON.stringify(result));
+    if (result.kind !== "success") return;
+    assert.equal(displayNameFor(h, result.accountSubjectId), null, "a claim with a Cc/Cf character seeds no name");
+  });
+
   it("C190-N04/N05: a later sign-in with a different name never overwrites the value the first sign-in wrote", async () => {
     const h = buildHarness();
     const first = await h.signIn("subject-a");

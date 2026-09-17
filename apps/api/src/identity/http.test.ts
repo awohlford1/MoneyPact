@@ -196,6 +196,13 @@ describe("PROTO-WIRE-01/02 identity routes through the real Fastify instance", (
       assert.equal(tooLong.statusCode, 400, tooLong.body);
       const wrongType = await b.inject("PUT", "/v1/identity/me/display-name", mutation, { displayName: 5 as unknown as string });
       assert.equal(wrongType.statusCode, 400, wrongType.body);
+      // SEC-F06-OBS1 / SEC-C190-OBS1: a bidi override or a zero-width character is refused with the length bound's own envelope.
+      const bidiOverride = await b.inject("PUT", "/v1/identity/me/display-name", mutation, { displayName: "Alex \u202EW." });
+      assert.equal(bidiOverride.statusCode, 400, bidiOverride.body);
+      assert.deepEqual(bidiOverride.json<object>(), tooLong.json<object>(), "same envelope and code as the length bound");
+      const zeroWidth = await b.inject("PUT", "/v1/identity/me/display-name", mutation, { displayName: "Alex\u200B W." });
+      assert.equal(zeroWidth.statusCode, 400, zeroWidth.body);
+      assert.deepEqual(zeroWidth.json<object>(), tooLong.json<object>(), "same envelope and code as the length bound");
       assert.equal(db.rows("financial_profile").find((row) => row.account_subject_id === db.rows("account_subject")[0]!.account_subject_id)?.version, version, "nothing written by any rejected body");
       assert.equal(runtime.audit!.snapshot().some((event) => event.cellRef === JSON.stringify({ kind: "subject", action: "profile.set_display_name" })), true);
     } finally { await app.close(); }

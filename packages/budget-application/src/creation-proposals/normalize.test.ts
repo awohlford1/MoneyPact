@@ -76,6 +76,25 @@ describe("CBD-232-AC01: name normalization", () => {
     if (!result.ok) assert.ok(result.fieldErrors.some((e) => e.code === "name.too-long"));
   });
 
+  it("SEC-F06-OBS1: rejects a name containing a Unicode control or format character with name.control-characters, ahead of the length check", () => {
+    for (const name of ["Groceries \u202Eseirecorg", "Gro\u200Bceries", "Groceries\u0007", "\u2066Groceries\u2069", "Groceries\uFEFF", "\u0645\u06CC\u200C\u202E\u062E", "\u200D\u0D15\u0D4D\u0D37", "\u0645\u06CC\u200C", "\u0645\u06CC\u200C \u062E\u0648\u0627\u0647\u0645", "\u0D15\u0D4D \u200D\u0D37", "\u0645\u06CC\u200C\u200C\u062E", "\u0D15\u0D4D\u200D\u200D\u0D37", "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F} fund"]) {
+      const result = validateCreateProposalRequest("k".repeat(16), { ...VALID_BODY, name }, deps());
+      assert.equal(result.ok, false, JSON.stringify(name));
+      if (!result.ok) assert.deepEqual(result.fieldErrors.filter((e) => e.path === "name").map((e) => e.code), ["name.control-characters"], JSON.stringify(name));
+    }
+    const long = validateCreateProposalRequest("k".repeat(16), { ...VALID_BODY, name: `${"a".repeat(101)}\u202E` }, deps());
+    assert.equal(long.ok, false);
+    if (!long.ok) assert.deepEqual(long.fieldErrors.filter((e) => e.path === "name").map((e) => e.code), ["name.control-characters"], "reported before name.too-long");
+  });
+
+  it("SEC-F06-OBS1 / REV-NS-2: accents, CJK, Arabic, ZWJ-joined emoji, Persian ZWNJ and Malayalam/Sinhala ZWJ conjuncts still pass", () => {
+    for (const name of ["Caf\u00E9 \u00C0 la carte", "\u5BB6\u8A08\u7C3F", "\u0645\u064A\u0632\u0627\u0646\u064A\u0629", "Family \u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}", "\u{1F3F3}\uFE0F\u200D\u{1F308} Pride fund", "\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645", "\u0D15\u0D4D\u200D\u0D37", "\u0D9A\u0DCA\u200D\u0DBB"]) {
+      const result = validateCreateProposalRequest("k".repeat(16), { ...VALID_BODY, name }, deps());
+      assert.equal(result.ok, true, JSON.stringify(name));
+      if (result.ok) assert.equal(result.normalizedInputs.name, name.normalize("NFC"));
+    }
+  });
+
   it("applies NFC and collapses internal whitespace runs", () => {
     const result = validateCreateProposalRequest("k".repeat(16), { ...VALID_BODY, name: "  Grocery   Budget  " }, deps());
     assert.equal(result.ok, true);

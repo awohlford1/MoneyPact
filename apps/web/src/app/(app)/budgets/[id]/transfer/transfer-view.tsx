@@ -86,7 +86,8 @@ export function ProposeTransferView({ id }: { id: string }) {
         <h2 id="propose-heading" className="text-2xl font-semibold">Propose a transfer</h2>
         <Select id="transfer-recipient" label="Member who would become Primary Owner" value={recipient} onChange={event => setRecipient(event.target.value)} error={error || undefined}>
           <option value="">Choose a member</option>
-          {candidates.map(member => <option key={member.membershipId} value={member.membershipId}>{member.displayName} · {roleLabel(member.role)}</option>)}
+          {/* SEC-F06-OBS1: <option> permits text only, so dir="auto" gives the candidate name the bidi isolation <bdi> gives the other renders. */}
+          {candidates.map(member => <option key={member.membershipId} value={member.membershipId} dir="auto">{member.displayName} · {roleLabel(member.role)}</option>)}
         </Select>
         {candidates.length === 0 && <p>Nobody else belongs to this budget space yet. Invite a person first.</p>}
         <Button type="submit" loading={busy} disabled={candidates.length === 0}>Propose transfer</Button>
@@ -179,8 +180,8 @@ export function TransferView({ id, transferId, resume }: { id: string; transferI
       <dl className="grid gap-3 rounded-lg border border-border p-5 sm:grid-cols-2">
         <div><dt className="font-semibold">State</dt><dd data-testid="transfer-state">{TRANSFER_STATE_LABELS[transfer.state] ?? transfer.state}</dd></div>
         <div><dt className="font-semibold">Transfer identity</dt><dd className="break-all">{transfer.transferId}</dd></div>
-        <div><dt className="font-semibold">Proposed by</dt><dd>{nameOf(transfer.proposerMembershipId, value.members)}{party === "proposer" ? " (you)" : ""}</dd></div>
-        <div><dt className="font-semibold">Proposed to</dt><dd>{nameOf(transfer.recipientMembershipId, value.members)}{party === "recipient" ? " (you)" : ""}</dd></div>
+        <div><dt className="font-semibold">Proposed by</dt><dd><bdi>{nameOf(transfer.proposerMembershipId, value.members)}</bdi>{party === "proposer" ? " (you)" : ""}</dd></div>
+        <div><dt className="font-semibold">Proposed to</dt><dd><bdi>{nameOf(transfer.recipientMembershipId, value.members)}</bdi>{party === "recipient" ? " (you)" : ""}</dd></div>
         <div><dt className="font-semibold">Recipient accepted</dt><dd>{formatInstant(transfer.recipientAcceptedAt)}</dd></div>
         <div><dt className="font-semibold">Primary Owner confirmed</dt><dd>{formatInstant(transfer.primaryConfirmedAt)}</dd></div>
         <div><dt className="font-semibold">{transfer.committedAt ? "Committed" : "Expires"}</dt><dd>{formatInstant(transfer.committedAt ?? transfer.expiresAt)}</dd></div>

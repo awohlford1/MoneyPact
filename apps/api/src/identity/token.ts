@@ -9,7 +9,7 @@
  */
 import { createPublicKey, timingSafeEqual, verify } from "node:crypto";
 import type { KeyObject } from "node:crypto";
-import { MAX_DISPLAY_NAME_LENGTH } from "../../../../packages/data-access/src/financial-profile.ts";
+import { hasControlOrFormatCharacter, MAX_DISPLAY_NAME_LENGTH } from "../../../../packages/data-access/src/financial-profile.ts";
 import type { Jwk } from "./local-issuer.ts";
 
 export const SUBJECT_MAX_LENGTH = 256;
@@ -112,12 +112,19 @@ function numericDate(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
-/** §2.2: trimmed, 1..80 code points (`[...trimmed].length`, matching `writeDisplayName`'s own count), else `undefined`. */
+/**
+ * §2.2: the first-sign-in seed from the provider `name` claim, trimmed. A claim
+ * outside the 1..80-code-point bound (`[...trimmed].length`, matching
+ * `writeDisplayName`'s own count), or one carrying a Unicode control or format
+ * character (SEC-F06-OBS1 / SEC-C190-OBS1: bidi override, zero-width), is
+ * treated as absent -- never a sign-in failure.
+ */
 function boundedName(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   const length = [...trimmed].length;
-  return length >= 1 && length <= MAX_DISPLAY_NAME_LENGTH ? trimmed : undefined;
+  if (length < 1 || length > MAX_DISPLAY_NAME_LENGTH) return undefined;
+  return hasControlOrFormatCharacter(trimmed) ? undefined : trimmed;
 }
 
 function constantTimeEqual(a: string, b: string): boolean {

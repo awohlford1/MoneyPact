@@ -70,6 +70,39 @@ describe("CBD-236 p6: writeDisplayName / readDisplayIdentity (DI-91-065, SEC-PK2
     assert.equal(row().display_name!.length, MAX_DISPLAY_NAME_LENGTH);
   });
 
+  it("SEC-F06-OBS1: rejects a name containing a Unicode control or format character with a RangeError, and writes nothing", async () => {
+    const { client, row } = fakeClient({ profile_id: "profile-1", account_subject_id: "subject-1", profile_state: "active", display_name: null, version: 1 });
+    for (const [label, name] of [
+      ["U+202E right-to-left override", "Alex \u202EW."],
+      ["U+200B zero width space", "Alex\u200B W."],
+      ["U+0009 tab inside the name", "Alex\tW."],
+      ["U+000A line feed inside the name", "Alex\nW."],
+      ["U+00AD soft hyphen", "Al\u00ADex"],
+      ["U+FEFF byte order mark", "Alex\uFEFF W."],
+      ["U+2066 left-to-right isolate", "\u2066Alex\u2069"],
+      ["ZWNJ adjacent to U+202E", "\u0645\u06CC\u200C\u202E\u062E"],
+      ["ZWJ at string start", "\u200D\u0D15\u0D4D\u0D37"],
+      ["ZWNJ at string end", "\u0645\u06CC\u200C"],
+      ["ZWNJ next to a space", "\u0645\u06CC\u200C \u062E\u0648\u0627\u0647\u0645"],
+      ["ZWJ next to a space", "\u0D15\u0D4D \u200D\u0D37"],
+      ["doubled ZWNJ between letters", "\u0645\u06CC\u200C\u200C\u062E"],
+      ["doubled ZWJ between letters", "\u0D15\u0D4D\u200D\u200D\u0D37"],
+      ["tag-sequence flag", "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F} Kim"],
+    ] as const) {
+      await assert.rejects(() => writeDisplayName(client, "subject-1", name, 1), RangeError, label);
+      assert.equal(row().version, 1, `nothing written for ${label}`);
+      assert.equal(row().display_name, null, `nothing written for ${label}`);
+    }
+  });
+
+  it("SEC-F06-OBS1 / REV-NS-2: accents, CJK, Arabic, ZWJ-joined emoji, Persian ZWNJ and Malayalam/Sinhala ZWJ conjuncts still pass", async () => {
+    for (const name of ["Zo\u00EB M\u00FCller", "\u5C71\u7530\u592A\u90CE", "\u0645\u062D\u0645\u062F", "Alex \u{1F468}\u200D\u{1F469}\u200D\u{1F467}", "\u{1F469}\u{1F3FD}\u200D\u{1F4BB} Sam", "\u2764\uFE0F\u200D\u{1F525} Kim", "\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645", "\u0D15\u0D4D\u200D\u0D37 Nair", "\u0DC3\u0DD2\u0D82\u0DC4\u0DBD \u0D9A\u0DCA\u200D\u0DBB"]) {
+      const { client, row } = fakeClient({ profile_id: "profile-1", account_subject_id: "subject-1", profile_state: "active", display_name: null, version: 1 });
+      assert.equal(await writeDisplayName(client, "subject-1", name, 1), 2, name);
+      assert.equal(row().display_name, name);
+    }
+  });
+
   it("clears the name with null and still advances version", async () => {
     const { client, row } = fakeClient({ profile_id: "profile-1", account_subject_id: "subject-1", profile_state: "active", display_name: "Alex", version: 3 });
     const next = await writeDisplayName(client, "subject-1", null, 3);
