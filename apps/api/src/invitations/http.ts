@@ -469,7 +469,7 @@ export function invitationsHttp(dependencies: InvitationsHttpDependencies): { mo
       } catch (error) { return invitationFailure(error); }
     }
 
-    /** The disclosure surface: the full section 6 disclosure for the proposed role, the two-way statement and the section 5.1 item 4 notice. */
+    /** The disclosure surface: the full section 6 disclosure for the proposed role, the two-way statement, the section 5.1 item 4 notice, and (PK8-F06) the space name and inviter's display label the approved texts promise. */
     @Get(":ceremonyId")
     @Authorize({ action: INVITATION_ACTIONS.readCeremony, purpose: "user_delegated", resourceLocator: subjectTarget })
     async read(@Req() request: FastifyRequest, @Authorization() effect: EffectContext): Promise<unknown> {

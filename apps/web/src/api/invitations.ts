@@ -58,6 +58,8 @@ export interface ConsentDisclosure { kind: string; version: number; digest: stri
 export interface WireDisclosureView {
   ceremonyId: string; proposedRole: InvitableRole; resourceScope: "full"; disclosure: ConsentDisclosure;
   twoWayNoticeCode: string; confirmationNoticeCode: string; expiresAt: string;
+  /** PK8-F06: the space and the inviter the approved disclosure texts promise; served only after attachment. */
+  budgetSpaceName: string; inviterDisplayName: string;
   choice: { accept: boolean; decline: boolean };
 }
 export interface WireAcceptance { confirmationId: string; state: "awaiting_confirmation"; confirmationExpiresAt: string }

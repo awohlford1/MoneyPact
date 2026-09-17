@@ -471,7 +471,7 @@ export function dataAccessInvitationRepository(statements: InvitationStatements)
     readBudgetSpace: (budgetSpaceId) => guarded(async () => {
       const row = await statements.readBudgetSpace(budgetSpaceId);
       if (!row) return null;
-      const facts: BudgetSpaceFacts = { budgetSpaceId: row.budget_space_id, lifecycle: row.lifecycle };
+      const facts: BudgetSpaceFacts = { budgetSpaceId: row.budget_space_id, name: row.name, lifecycle: row.lifecycle };
       return facts;
     }),
   };

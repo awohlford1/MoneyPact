@@ -1067,7 +1067,15 @@ export interface DisclosureView {
   /** The two-way statement of CBD-73 SS7.3 and the SS5.1 item 4 confirmation notice, by message code. */
   readonly twoWayNoticeCode: "MSG-73-016";
   readonly confirmationNoticeCode: "MSG-73-051";
-  /** The inviting space's display identity is deliberately absent: the invitee sees the role and the consequence. */
+  /**
+   * PK8-F06 (Executive ruling `EXEC-PK8-RULINGS-001` item b): the approved
+   * disclosure texts promise the budget space's name and the inviter's
+   * display name, so the post-attachment view carries both. The inviter is
+   * the record's creating subject; a missing display name is the neutral
+   * label of SS9 / `PK5-04`, never a contact, id or another space.
+   */
+  readonly budgetSpaceName: string;
+  readonly inviterDisplayName: string;
   readonly expiresAt: string;
 }
 
@@ -1079,6 +1087,11 @@ export interface DisclosureView {
 export async function readDisclosure(deps: InvitationDependencies, invitee: InviteeContext, request: CeremonyRequest): Promise<DisclosureView> {
   const { ceremony, invitation } = await loadCeremony(deps, request, invitee.environment, ["open"]);
   if (ceremony.attachedSubjectId !== invitee.subjectId) throw new InvitationError("attachment_required");
+  // Both reads sit behind the attachment check above: nothing served before
+  // attachment names the space or the inviter (CBD-106 `EM-92-002`).
+  const space = await deps.repository.readBudgetSpace(invitation.budgetSpaceId);
+  if (!space) throw new InvitationError("budget_space_not_found", "budgetSpaceId");
+  const inviter = await deps.repository.readDisplayIdentity(invitation.createdBySubjectId);
   return {
     ceremonyId: ceremony.ceremonyId,
     proposedRole: invitation.proposedRole,
@@ -1086,6 +1099,8 @@ export async function readDisclosure(deps: InvitationDependencies, invitee: Invi
     disclosure: deps.disclosures.current(invitation.disclosureKind),
     twoWayNoticeCode: "MSG-73-016",
     confirmationNoticeCode: "MSG-73-051",
+    budgetSpaceName: space.name,
+    inviterDisplayName: displayLabel(inviter),
     expiresAt: ceremony.expiresAt,
   };
 }

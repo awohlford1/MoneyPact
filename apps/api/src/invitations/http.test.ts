@@ -210,9 +210,12 @@ async function application(options: {
     assert.equal(resolved.statusCode, 200, resolved.body);
     const ceremonyId = resolved.json().ceremonyId as string;
     const secret = cookieOf(resolved.headers["set-cookie"]);
+    // PK8-F06 / CBD-106 EM-92-002: nothing served before attachment names the space or the inviter.
+    assert.deepEqual(Object.keys(resolved.json()).sort(), ["ceremonyExpiresAt", "ceremonyId", "channelType"]);
     if (upTo === "resolve") return { invitationId, delivery, ceremonyId, secret };
     const proved = await call("POST", `/v1/invitations/${ceremonyId}/verify-channel`, { channelCode: delivery.challenge }, ceremonyHeaders(secret));
     assert.equal(proved.statusCode, 200, proved.body);
+    for (const body of [resolved.body, proved.body]) assert.ok(!body.includes("Household") && !body.includes("Alex"), "pre-attachment surfaces carry no space name or inviter");
     if (upTo === "verify") return { invitationId, delivery, ceremonyId, secret };
     asInvitee("invitation.attach");
     const attached = await call("POST", `/v1/invitations/${ceremonyId}/attach`, {}, ceremonyHeaders(secret));
@@ -239,6 +242,9 @@ describe("PK-6 invitation routes through the real Fastify instance", () => {
       assert.equal(view.json().proposedRole, "collaborator");
       assert.equal(view.json().disclosure.kind, "invitation_collaborator");
       assert.equal(view.json().confirmationNoticeCode, "MSG-73-051");
+      // PK8-F06: the disclosure names the space and the inviter, as the approved texts promise.
+      assert.equal(view.json().budgetSpaceName, "Household");
+      assert.equal(view.json().inviterDisplayName, "Alex");
       assert.deepEqual(view.json().choice, { accept: false, decline: false }, "CBD-73 section 7.2 item 8: no default");
       assert.equal(JSON.stringify(view.json()).includes("example.com"), false, "the invitee sees no destination");
       void confirmationId;

@@ -198,7 +198,8 @@ test("PK8-01 live: invite to confirm over the web, then propose to commit with t
     await invitee.page.goto(ceremonyUrl);
     await invitee.page.waitForFunction(() => location.pathname.startsWith("/invitation/ceremony/"));
     await invitee.waitText("Before you accept");
-    assert.ok((await invitee.text()).includes("join a budget space as a Collaborator"));
+    // PK8-F06: the disclose step names the space the owner created; the inviter label is whatever the owner's profile carries.
+    assert.ok((await invitee.text()).includes(`invited you to join ${budgetName} as a Collaborator`));
     await invitee.waitText("Existing members will see your display name");
     assert.equal(await invitee.page.$eval("#choice-accept", node => node.checked), false);
     assert.equal(await invitee.page.$eval("#choice-decline", node => node.checked), false);
