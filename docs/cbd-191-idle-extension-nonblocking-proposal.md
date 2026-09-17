@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | **Proposed.** Nothing in this document is applied. It proposes one CBD-191 amendment (`IDLE-R01`–`IDLE-R04`) for the Product Owner and Security to approve, states the implementation packet that would follow, and puts the residual choices to the Executive (`IDLE-D01`–`IDLE-D04`) |
-| Document version | 0.1 |
+| Document version | 0.1.1 |
 | Proposal identifiers | options `IDLE-OPT-A`–`IDLE-OPT-D`; contract revisions `IDLE-R01`–`IDLE-R04`; implementation edits `IDLE-E01`–`IDLE-E06`; tests `IDLE-T01`–`IDLE-T07`; decisions `IDLE-D01`–`IDLE-D04`; findings `IDLE-F01`–`IDLE-F04` |
 | Owner | Alexander Wohlford |
 | Jira subtask | [CBD-191](https://cobudget.atlassian.net/browse/CBD-191) (sessions); the Manager assigns the delivery ticket afterwards |
@@ -15,7 +15,7 @@
 | Milestone | `PROTOTYPE-SLICE-001` and `PROVIDERS-LOCAL-001` (Executive, September 12, 2026) |
 | Repository baseline | `8697762` on `main` |
 | Written by | Architecture, assignment `ARCH-CBD191-IDLE-EXTENSION-001`, September 17, 2026 |
-| Last updated | September 17, 2026 |
+| Last updated | September 17, 2026 (v0.1.1, Security wording findings applied) |
 
 > **Authority.** CBD-191 v0.3.1 is the approved contract and this document
 > changes nothing in it. It proposes one amendment for the Product Owner and
@@ -306,22 +306,31 @@ Proposed replacement (the first two sentences unchanged; one paragraph added):
 > **`SC-191-006` (Binding). The slide never waits on the session's own
 > in-flight mutation.** A slide performed outside a mutation's effect
 > transaction is best-effort: it is one atomic statement that updates the row
-> only if the row can be locked without waiting, and a row that is locked by
-> the same session's in-flight effect transaction is skipped, not failed. A
-> skipped slide is not a store outage and does not reject the request; the
-> idle window is then measured from the in-flight mutation's own resolution
-> instant, which is never earlier than the request that preceded it. The
-> slide performed *inside* a mutation's effect transaction is not best-effort:
-> it takes the session-row lock at the commit-time re-read and holds it to
-> COMMIT, so a single-row revocation cannot land between that re-read and the
-> commit (§4; CBD-236 `PC-236-014`). Resolution itself never waits on this
-> lock, so a second request of the same session — including one that will be
-> answered `deny_in_flight` by the rate-limit gate (CBD-266 §7) — is answered
-> within the ordinary resolution time, not after the fact-assembly deadline.
+> only if the row can be locked without waiting. The general rule is that a
+> row held by any conflicting lock holder is skipped, not failed: the same
+> session's in-flight effect transaction in any process, an in-flight
+> single-row revocation or rotation of that row, or any future holder of a
+> `FOR UPDATE` or `FOR NO KEY UPDATE` lock on it. The same session's own effect
+> transaction is the expected case. A skipped slide is not a store outage and
+> does not reject the request; the idle window is then measured from the
+> lock-holding transaction's own resolution instant, which is never earlier
+> than the request that preceded it, so the under-extension is at most the
+> duration of the lock-holding transaction. A skipped slide is still evaluated
+> for expiry against the committed row (§3.3 case 5): a request whose slide is
+> skipped and whose committed `idle_expires_at` or `absolute_expires_at` has
+> passed is expired, never extended (fail-closed). The slide performed
+> *inside* a mutation's effect transaction is not best-effort: it takes the
+> session-row lock at the commit-time re-read and holds it to COMMIT, so a
+> single-row revocation cannot land between that re-read and the commit (§4;
+> CBD-236 `PC-236-014`). Resolution outside an effect transaction never waits
+> on this lock, so a second request of the same session — including one that
+> will be answered `deny_in_flight` by the rate-limit gate (CBD-266 §7) — is
+> answered within the ordinary resolution time, not after the fact-assembly
+> deadline.
 
 ### `IDLE-R02` — §8, one new test row after `CT-191-017` (line 715)
 
-> | `CT-191-018` | Same-session request during an in-flight mutation | While a mutation's effect transaction holds the session row (a handler held open past the fact-assembly deadline), a second request of the same session resolves within the ordinary resolution bound, is answered `429` `in_flight` on a `concurrency=1` surface or its ordinary outcome on any other surface, and is never the uniform denial for reason of the lock; its skipped slide leaves `idle_expires_at` at the in-flight mutation's value and `absolute_expires_at` untouched. The `CT-191-013` and A2 fence scenarios (single-row revoke and subject-wide bump during the transaction) keep their outcomes (CBD-191-AC07, AC08) |
+> | `CT-191-018` | Same-session request during an in-flight mutation | When the in-flight mutation is visible to the rate-limit counter (one process today): while a mutation's effect transaction holds the session row (a handler held open past the fact-assembly deadline), a second request of the same session resolves within the ordinary resolution bound, is answered `429` `in_flight` on a `concurrency=1` surface or its ordinary outcome on any other surface, and is never the uniform denial for reason of the lock; its skipped slide leaves `idle_expires_at` at the in-flight mutation's value and `absolute_expires_at` untouched. The `CT-191-013` and A2 fence scenarios (single-row revoke and subject-wide bump during the transaction) keep their outcomes (CBD-191-AC07, AC08) |
 
 ### `IDLE-R03` — §11, `CBD-191-AC08` row (line 775)
 
@@ -331,7 +340,7 @@ say so in the revision entry.
 
 ### `IDLE-R04` — §13, revision row
 
-> | 0.4 | *date* | *specialist, packet* | Applied amendment `SC-191-006` from `docs/cbd-191-idle-extension-nonblocking-proposal.md` (`IDLE-R01`–`IDLE-R03`): the idle slide outside an effect transaction is best-effort and never waits on the session's own in-flight mutation; the in-transaction slide and the authority fence are unchanged. Closes `SEC-G429-F2`. | *disposition* |
+> | 0.4 | *date* | *specialist, packet* | Applied amendment `SC-191-006` from `docs/cbd-191-idle-extension-nonblocking-proposal.md` (`IDLE-R01`–`IDLE-R03`): the idle slide outside an effect transaction is best-effort and never waits on the session's own in-flight mutation; the in-transaction slide and the authority fence are unchanged. Closes the single-process shape of `SEC-G429-F2`; the cross-process shape remains `SEC-C200-F4` / `IDLE-F03`. | *disposition* |
 
 ### No CBD-236 or CBD-266 text changes
 
@@ -351,9 +360,9 @@ Level 2, one worktree, one implementation specialist, then Security reading
 | --- | --- | --- |
 | `IDLE-E01` | `packages/data-access/src/tenant.ts` | `PlatformUpdateQuery` gains `readonly skipLocked?: true`. `platformUpdate` renders, when set, the additional predicate `and ctid in (select ctid from <table> where <same conditions> for no key update skip locked)`, reusing `buildConditions` for both occurrences so the tenant/platform table assertion and identifier checks apply unchanged. No other statement changes. |
 | `IDLE-E02` | `packages/data-access/src/tenant.test.ts` | Renders the exact SQL for a `skipLocked` platform update; rejects `skipLocked` on a tenant statement (not needed by this packet; refuse rather than half-support). |
-| `IDLE-E03` | `packages/sessions/src/store.ts` | `extendIdleExpiry(sessionRef, at, mode: "wait" \| "skip_locked" = "wait")`; `"skip_locked"` passes `skipLocked: true` and returns the row count; the scoped store built for a transaction always calls `"wait"`. |
+| `IDLE-E03` | `packages/sessions/src/store.ts` | Two distinct methods, not a mode flag: `extendIdleExpiry(sessionRef, at)` stays as today (waits), and a new `extendIdleExpiryBestEffort(sessionRef, at)` passes `skipLocked: true` and returns the row count. The best-effort method exists only on the root store: `createSessionStore` for a transaction-bound client (the `storeFor` factory, `apps/api/src/sessions/index.ts` 30) returns a store whose best-effort method is structurally absent (a `TransactionSessionStore` type without it, and a runtime refusal that throws if reached), so the scoped path cannot skip. |
 | `IDLE-E04` | `packages/sessions/src/resolve.ts` | `resolveSession` takes the slide mode from the caller; a zero row count in `"skip_locked"` mode is a resolved outcome, not `store_unavailable`; a thrown error is still `store_unavailable` with the timeout bucket. |
-| `IDLE-E05` | `packages/sessions/src/fact-source.ts` | The root path (no transaction) resolves with `"skip_locked"`; the scoped path (line 45–48) resolves with `"wait"` and fences as today. Comment updated to cite `SC-191-006`. |
+| `IDLE-E05` | `packages/sessions/src/fact-source.ts` | The root path (no transaction) resolves through `extendIdleExpiryBestEffort`; the scoped path (line 45–48) resolves through the waiting `extendIdleExpiry` and fences as today. The choice is made by which store type the path holds, not by a runtime argument. Comment updated to cite `SC-191-006`. |
 | `IDLE-E06` | `docs/cbd-191-session-and-revocation-contract.md`; `config/confluence-publication.json` | Apply `IDLE-R01`–`IDLE-R04`; re-pin the contract's `approved_sha256` per the publication manifest rule. |
 
 Not touched: `apps/api/src/authorization/*`, `transaction-store.ts`, the
@@ -364,7 +373,7 @@ authority fence, the assembler deadline, the counter store, the web client.
 | Test | Kind | Proves |
 | --- | --- | --- |
 | `IDLE-T01` | unit, `packages/sessions/src/resolve.test.ts` | Zero rows in `"skip_locked"` mode resolves; a throw still fails closed with the timeout bucket; `"wait"` mode is byte-identical to today's behaviour. |
-| `IDLE-T02` | unit, `apps/api/src/sessions/fact-source.test.ts` | The transactional read calls `"wait"` and fences; the root read calls `"skip_locked"` and never fences. |
+| `IDLE-T02` | unit guard, `apps/api/src/sessions/fact-source.test.ts` and `packages/sessions/src/store.test.ts` | The transactional read uses the waiting slide and fences; the root read uses the best-effort slide and never fences; a transaction-bound store has no best-effort method and its runtime refusal throws. Deliberate-violation-tested per CLAUDE.md: the specialist inverts the wiring (scoped path calling the best-effort slide), watches the guard fail by name, restores it and watches it pass, and records both runs in the packet result. |
 | `IDLE-T03` | live two-request probe, new `apps/api/src/sessions/idle-extension-nonblocking.live.test.ts`, same opt-in as `revocation-fence.live.test.ts` (scratch database, never `cobudget_dev`/`cobudget_demo`) | A mutation whose handler is held open for longer than the assemble deadline; a second request of the same session on the same `concurrency=1` surface is answered 429 `in_flight` within a bound well under 5 s (assert elapsed < 1 000 ms), `GET /v1/identity/me` is 200 within the same bound, `idle_expires_at` equals the in-flight mutation's value while held and `absolute_expires_at` is unchanged; after release the retry is admitted. This is `CT-191-018` and turns every "(PostgreSQL semantics)" claim in §3.2 into evidence. |
 | `IDLE-T04` | live, existing `apps/api/src/sessions/revocation-fence.live.test.ts` | Unchanged expectations for `revoke`, `bump` and `none`, with and without the fence — the proof that `IDLE-OPT-B` keeps both halves. |
 | `IDLE-T05` | live, existing `apps/api/src/primary-transfer/concurrent-double-confirm.live.test.ts` | Tighten the accepted loser outcome from "429 or 403" to 429 only, with the winner's handler held past the deadline in one process. |
@@ -386,17 +395,28 @@ secret scan; Security reading of `IDLE-E01`, `IDLE-E03`–`IDLE-E05`.
 | `IDLE-D03` | CBD-236 §5.3 (line 281) says the recheck reads "rows read under lock". For the session row this is true today only because the slide write follows the read; `IDLE-OPT-B` keeps exactly that. Should CBD-236's wording say "re-read inside the transaction and locked before COMMIT" to match the mechanism? | Wording only; route to the CBD-236 owner, no change required for this packet. |
 | `IDLE-D04` | Should the precheck slide (step 5, `http.ts` 355) be removed, leaving the gate slide and the in-transaction slide? It is redundant with the gate slide milliseconds earlier and, after this change, is one more best-effort statement per mutation. | Yes, as a follow-on inside the same implementation packet if the specialist finds no test depending on it; otherwise separately (`IDLE-F02`). |
 
+**Security input** (PR #399 reading, disposition `clear`, four Low wording
+findings applied in v0.1.1): `IDLE-D01` approve `IDLE-OPT-B` with three
+conditions — the `SC-191-006` wording as stated in §5 after that reading (the
+scope of the skip, the under-extension bound and the fail-closed expiry
+evaluation, and the single-process scope of `CT-191-018`), the structural
+guard `IDLE-E03`/`IDLE-E05`/`IDLE-T02` that makes the transaction-bound store
+unable to skip, and a Security reading of `IDLE-E01` and `IDLE-E03`–`IDLE-E05`
+before merge; `IDLE-D02` not now; `IDLE-D03` wording only, route to the CBD-236
+owner; `IDLE-D04` yes, remove the precheck slide in the packet.
+
 ## 8. Findings
 
-| ID | Finding | Routed to |
-| --- | --- | --- |
-| `IDLE-F01` | `FactAssembler.#read` aborts a controller on timeout (`facts.ts` 117–120) but the sessions adapter never reads `lookup.signal` (`packages/sessions/src/fact-source.ts` 37–54) and the data-access client has no cancellation, so a timed-out statement keeps its pool connection until it completes. After `IDLE-OPT-B` the gate no longer produces such statements, but the mechanism remains for any slow adapter read. | Sessions owner; reliability. |
-| `IDLE-F02` | A mutation slides its session row three times (gate `http.ts` 253, precheck `http.ts` 355, effect `boundary.ts` 118) where the contract asks for one slide per resolved request; the second is redundant with the first. | `IDLE-D04`. |
-| `IDLE-F03` | Two mutations of the *same subject* from different sessions (two devices) or the same session across two API processes serialize on the authority fence (`store.ts` 293–306) inside the effect transaction's assemble read, which carries the 5 s deadline (`facts.ts` 141–142). A slow first mutation therefore turns the second into a 403 after 5 s in that class today and after this proposal. A shared lock on the authority row (`select ... for share`) would serialize a bump behind COMMIT without serializing sibling mutations, but the data-access client has no locking read and this proposal does not add one. `SEC-C200-F4` already records the multi-process shape. | CBD-266 owner and sessions owner; a later proposal. |
-| `IDLE-F04` | `docs/qa/pk9-criterion-evidence.md` 81 and `concurrent-double-confirm.live.test.ts` 7–13 accept "429 or 403" for the loser. After this change the 403 branch is a regression, not a legitimate outcome, in the single-process case; `IDLE-T05` tightens it. | QA, in the implementation packet. |
+| ID | Severity (Security) | Finding | Routed to |
+| --- | --- | --- | --- |
+| `IDLE-F01` | Medium (availability, pre-existing) | `FactAssembler.#read` aborts a controller on timeout (`facts.ts` 117–120) but the sessions adapter never reads `lookup.signal` (`packages/sessions/src/fact-source.ts` 37–54) and the data-access client has no cancellation, so a timed-out statement keeps its pool connection until it completes. After `IDLE-OPT-B` the gate no longer produces such statements, but the mechanism remains for any slow adapter read. | Sessions owner; reliability. |
+| `IDLE-F02` | Low | A mutation slides its session row three times (gate `http.ts` 253, precheck `http.ts` 355, effect `boundary.ts` 118) where the contract asks for one slide per resolved request; the second is redundant with the first. | `IDLE-D04`. |
+| `IDLE-F03` | Low (same-subject only) | Two mutations of the *same subject* from different sessions (two devices) or the same session across two API processes serialize on the authority fence (`store.ts` 293–306) inside the effect transaction's assemble read, which carries the 5 s deadline (`facts.ts` 141–142). A slow first mutation therefore turns the second into a 403 after 5 s in that class today and after this proposal. A shared lock on the authority row (`select ... for share`) would serialize a bump behind COMMIT without serializing sibling mutations, but the data-access client has no locking read and this proposal does not add one. `SEC-C200-F4` already records the multi-process shape. | CBD-266 owner and sessions owner; a later proposal. |
+| `IDLE-F04` | Low | `docs/qa/pk9-criterion-evidence.md` 81 and `concurrent-double-confirm.live.test.ts` 7–13 accept "429 or 403" for the loser. After this change the 403 branch is a regression, not a legitimate outcome, in the single-process case; `IDLE-T05` tightens it. | QA, in the implementation packet. |
 
 ## 9. Revision history
 
 | Version | Date | Author | Change | Disposition |
 | --- | --- | --- | --- | --- |
+| 0.1.1 | September 17, 2026 | Architecture, `ARCH-CBD191-IDLE-EXTENSION-001`, in the lane | Security reading of PR #399 (`clear`, four Low): `SC-191-006` now names the general skip rule for any conflicting lock holder with the same-session transaction as the expected case, the under-extension bound and fail-closed expiry evaluation of a skipped slide, and "resolution outside an effect transaction never waits"; `CT-191-018` scoped to the counter-visible (single-process) case and `IDLE-R04` to the single-process shape of `SEC-G429-F2`; `IDLE-E03`/`IDLE-E05`/`IDLE-T02` make the transaction-bound store structurally unable to skip with a deliberate-violation-tested guard; Security severity grading in §8 and its decision inputs in §7. | Proposed. |
 | 0.1 | September 17, 2026 | Architecture, `ARCH-CBD191-IDLE-EXTENSION-001` | Initial proposal: problem statement from `SEC-G429-F2`, four options, `IDLE-OPT-B` recommended, `SC-191-006` amendment text, implementation packet outline, decisions and findings. | Proposed. |
