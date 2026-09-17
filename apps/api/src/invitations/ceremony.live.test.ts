@@ -152,7 +152,7 @@ describe("PK6-01 live: the whole invitation ceremony over HTTP on real PostgreSQ
         assert.deepEqual(Object.keys(created.json().invitation).sort(), ["destinationMasked", "inactiveAt", "invitationId", "issuedAt", "predecessorInvitationId", "proposedRole", "state"]);
         assert.equal(created.json().invitation.destinationMasked, "i***@example.com");
         const rows = await h.client.tenantSelect({ table: "budget_space_invitation", budgetSpaceId: space.spaceId, columns: ["state", "required_permission", "policy_version"], conditions: [{ column: "invitation_id", value: invitationId }] });
-        assert.deepEqual(rows.rows[0], { state: "pending", required_permission: "24", policy_version: "p5" });
+        assert.deepEqual(rows.rows[0], { state: "pending", required_permission: "24", policy_version: "p6" });
         const listed = await h.inject("GET", `/v1/budget-spaces/${space.spaceId}/invitations`);
         assert.equal(listed.statusCode, 200, listed.body);
         assert.equal(listed.json().invitations.length, 1);
@@ -243,7 +243,7 @@ describe("PK6-01 live: the whole invitation ceremony over HTTP on real PostgreSQ
         const membership = await h.client.tenantSelect({ table: "budget_space_membership", budgetSpaceId: space.spaceId, columns: ["membership_id", "role", "status"], conditions: [{ column: "account_subject_id", value: invitee.accountSubjectId }] });
         assert.deepEqual(membership.rows, [{ membership_id: receipt.membershipId, role: "collaborator", status: "active" }], "one active Collaborator membership");
         const consent = await h.client.tenantSelect({ table: "budget_space_consent", budgetSpaceId: space.spaceId, columns: ["state", "source", "source_ceremony_id", "recorded_by_subject_id", "disclosure_kind", "disclosure_version", "policy_version"], conditions: [{ column: "membership_id", value: receipt.membershipId }] });
-        assert.deepEqual(consent.rows, [{ state: "current", source: "invitation_acceptance", source_ceremony_id: ceremonyId, recorded_by_subject_id: invitee.accountSubjectId, disclosure_kind: "invitation_collaborator", disclosure_version: 1, policy_version: "p5" }], "one current consent row recorded by the invitee");
+        assert.deepEqual(consent.rows, [{ state: "current", source: "invitation_acceptance", source_ceremony_id: ceremonyId, recorded_by_subject_id: invitee.accountSubjectId, disclosure_kind: "invitation_collaborator", disclosure_version: 1, policy_version: "p6" }], "one current consent row recorded by the invitee");
         const invitation = await h.client.tenantSelect({ table: "budget_space_invitation", budgetSpaceId: space.spaceId, columns: ["state", "projection_state"], conditions: [{ column: "invitation_id", value: invitationId }] });
         assert.deepEqual(invitation.rows[0], { state: "accepted", projection_state: "accepted" });
         const codeRow = await h.client.tenantSelect({ table: "budget_space_invitation_code", budgetSpaceId: space.spaceId, columns: ["disposition"], conditions: [{ column: "invitation_id", value: invitationId }] });
