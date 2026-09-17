@@ -35,19 +35,26 @@ export const FINANCIAL_PROFILE_TABLE = "financial_profile";
  * that renders it. The one exception is U+200D ZERO WIDTH JOINER *inside an
  * emoji sequence* (between two pictographic characters, or after a skin-tone
  * modifier or VS16), which is how family and profession emoji are spelled;
- * a ZWJ anywhere else is rejected like any other Cf.
+ * a ZWJ anywhere else is rejected like any other Cf -- except that ZWJ and
+ * U+200C ZERO WIDTH NON-JOINER are accepted between two letters or marks,
+ * where several scripts use them orthographically (REV-NS-2).
  *
  * The same test is duplicated, deliberately, in
  * `packages/budget-application/src/creation-proposals/normalize.ts`
  * (`normalizeName`): that package consumes `@cobudget/budget-domain/schedule`
  * only, so it cannot import this one. Change both together.
  */
-const EMOJI_ZERO_WIDTH_JOINER = /(?<=(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|️))‍(?=\p{Extended_Pictographic})/gu;
+const EMOJI_ZERO_WIDTH_JOINER = /(?<=(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\uFE0F))\u200D(?=\p{Extended_Pictographic})/gu;
+// REV-NS-2: U+200C ZWNJ and U+200D ZWJ are orthographic in Persian, Urdu, Sinhala, Malayalam and Tamil, so either is
+// allowed when immediately between two letters or marks. At a string edge, next to a space, doubled, or beside any
+// other Cc/Cf character they stay rejected. Both lookarounds read the original string, so a doubled joiner never
+// qualifies through its twin.
+const ORTHOGRAPHIC_JOINER = /(?<=[\p{L}\p{M}])[\u200C\u200D](?=[\p{L}\p{M}])/gu;
 const CONTROL_OR_FORMAT = /[\p{Cc}\p{Cf}]/u;
 
-/** True when `value` contains a Cc or Cf character other than an emoji-sequence ZWJ. */
+/** True when `value` contains a Cc or Cf character other than an emoji-sequence ZWJ or a between-letters ZWJ/ZWNJ. */
 export function hasControlOrFormatCharacter(value: string): boolean {
-  return CONTROL_OR_FORMAT.test(value.replace(EMOJI_ZERO_WIDTH_JOINER, ""));
+  return CONTROL_OR_FORMAT.test(value.replace(EMOJI_ZERO_WIDTH_JOINER, "").replace(ORTHOGRAPHIC_JOINER, ""));
 }
 
 /** The subset of a data-access client these statements need. */

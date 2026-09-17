@@ -112,10 +112,10 @@ function numericDate(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
-/** §2.2: trimmed, 1..80 code points (`[...trimmed].length`, matching `writeDisplayName`'s own count), else `undefined`. */
 /**
- * The first-sign-in seed from the provider `name` claim. A claim outside the
- * 1..80-code-point bound, or one carrying a Unicode control or format
+ * §2.2: the first-sign-in seed from the provider `name` claim, trimmed. A claim
+ * outside the 1..80-code-point bound (`[...trimmed].length`, matching
+ * `writeDisplayName`'s own count), or one carrying a Unicode control or format
  * character (SEC-F06-OBS1 / SEC-C190-OBS1: bidi override, zero-width), is
  * treated as absent -- never a sign-in failure.
  */
