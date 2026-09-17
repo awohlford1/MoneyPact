@@ -232,7 +232,7 @@ export function CeremonyView({ ceremonyId }: { ceremonyId: string }) {
 function DisclosureStep({ view, error, choice, onChoice, acknowledged, onAcknowledged, busy, onRecord }: { view: WireDisclosureView; error?: string; choice: "accept" | "decline" | ""; onChoice(value: "accept" | "decline"): void; acknowledged: boolean; onAcknowledged(value: boolean): void; busy: boolean; onRecord(): void }) {
   const ready = choice === "decline" || (choice === "accept" && acknowledged);
   return <form className="space-y-6" onSubmit={event => { event.preventDefault(); onRecord(); }}>
-    <p>You are invited to join a budget space as a <strong>{roleLabel(view.proposedRole)}</strong>. Read what that means before you choose. This offer ends {view.expiresAt.replace("T", " ").slice(0, 16)} UTC.</p>
+    <p data-testid="disclosure-opening"><strong>{view.inviterDisplayName}</strong> invited you to join <strong>{view.budgetSpaceName}</strong> as a <strong>{roleLabel(view.proposedRole)}</strong>. Read what that means before you choose. This offer ends {view.expiresAt.replace("T", " ").slice(0, 16)} UTC.</p>
     {error && <Alert tone="danger">{error}</Alert>}
     <section aria-labelledby="disclosure-heading" className="space-y-4 rounded-lg border border-border p-4">
       <h2 id="disclosure-heading" className="text-2xl font-semibold">{view.disclosure.text.heading}</h2>

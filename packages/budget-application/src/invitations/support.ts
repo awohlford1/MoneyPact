@@ -89,7 +89,7 @@ export function testWorld(options: { readonly correlationId?: string } = {}): Te
   const digest = testDigest();
   const correlationId = options.correlationId ?? "99999999-9999-4999-8999-999999999999";
 
-  repository.seedSpace({ budgetSpaceId: SPACE, lifecycle: "live" });
+  repository.seedSpace({ budgetSpaceId: SPACE, name: "Household", lifecycle: "live" });
   repository.seedIdentity({
     accountSubjectId: OWNER_SUBJECT, profileId: OWNER_PROFILE, profileState: "active", displayName: "Alex", version: 1,
   });

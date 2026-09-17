@@ -373,6 +373,31 @@ void test("the fixed partial order is the row's: attach needs proof, the disclos
   );
 });
 
+void test("PK8-F06: after attachment the disclosure names the space and the inviter; a nameless inviter is the neutral label and never an identifier", async () => {
+  const world = testWorld();
+  const { resolved, ceremonyRequest } = await ceremony(world, "attach");
+  const view = await readDisclosure(world.deps, world.invitee, ceremonyRequest);
+  assert.equal(view.budgetSpaceName, "Household");
+  assert.equal(view.inviterDisplayName, "Alex");
+  assert.deepEqual(Object.keys(view).sort(), [
+    "budgetSpaceName", "ceremonyId", "confirmationNoticeCode", "disclosure", "expiresAt",
+    "inviterDisplayName", "proposedRole", "resourceScope", "twoWayNoticeCode",
+  ]);
+  // The surfaces served before attachment carry neither (CBD-106 EM-92-002).
+  assert.deepEqual(Object.keys(resolved).sort(), ["ceremonyExpiresAt", "ceremonyId", "ceremonySecret", "channelType", "outcome"]);
+
+  const nameless = testWorld();
+  const owner = await nameless.repository.readDisplayIdentity(OWNER_SUBJECT);
+  nameless.repository.seedIdentity({ ...owner!, displayName: null });
+  const { ceremonyRequest: request2 } = await ceremony(nameless, "attach");
+  const neutral = await readDisclosure(nameless.deps, nameless.invitee, request2);
+  assert.equal(neutral.inviterDisplayName, NEUTRAL_DISPLAY_LABEL);
+  const serialized = JSON.stringify(neutral);
+  for (const secret of [OWNER_SUBJECT, owner!.profileId, "@", DESTINATION]) {
+    assert.equal(serialized.includes(secret), false, `the disclosure never carries ${secret === "@" ? "a contact" : "an identifier"}`);
+  }
+});
+
 void test("attach records the session row id, never a token, and a second subject is refused rather than re-attached", async () => {
   const world = testWorld();
   const { ceremonyRequest } = await ceremony(world, "attach");

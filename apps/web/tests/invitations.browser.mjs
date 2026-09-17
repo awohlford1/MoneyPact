@@ -157,7 +157,8 @@ export async function pk8Journey(t, { browser, origin, errors }) {
     await invitee.waitText("Before you accept");
     await invitee.waitText("Existing members will see your display name");
     await invitee.waitText("must confirm before anything is shared with you");
-    assert.ok((await invitee.text()).includes("join a budget space as a Collaborator"));
+    // PK8-F06: the disclose step names the space and the inviter (the mock keeps no display names, so the neutral label).
+    assert.ok((await invitee.text()).includes("A MoneyPact member invited you to join Shared plan as a Collaborator"));
     assert.equal(await invitee.page.$eval("#choice-accept", node => node.checked), false, "no default: accept is not selected");
     assert.equal(await invitee.page.$eval("#choice-decline", node => node.checked), false, "no default: decline is not selected");
     assert.equal(await invitee.enabled("Record my acceptance"), false);

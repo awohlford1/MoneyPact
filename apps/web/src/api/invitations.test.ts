@@ -54,7 +54,7 @@ test("attach, read and accept carry the bootstrap CSRF value, accept sends only 
     if (url.endsWith("/identity/me")) return Response.json(bootstrap);
     if (url.endsWith("/attach")) return Response.json({ ceremonyId: "c1", attached: true });
     if (url.endsWith("/accept")) return Response.json({ confirmationId: "k", state: "awaiting_confirmation", confirmationExpiresAt: "2026-09-16T00:00:00Z" });
-    return Response.json({ ceremonyId: "c1", proposedRole: "collaborator", resourceScope: "full", disclosure: { kind: "invitation_collaborator", version: 1, digest: "d", text: { heading: "h", items: [], acknowledgement: "a" } }, twoWayNoticeCode: "MSG-73-016", confirmationNoticeCode: "MSG-73-051", expiresAt: "2026-09-16T00:00:00Z", choice: { accept: false, decline: false } });
+    return Response.json({ ceremonyId: "c1", proposedRole: "collaborator", resourceScope: "full", disclosure: { kind: "invitation_collaborator", version: 1, digest: "d", text: { heading: "h", items: [], acknowledgement: "a" } }, twoWayNoticeCode: "MSG-73-016", confirmationNoticeCode: "MSG-73-051", budgetSpaceName: "Household", inviterDisplayName: "Alex", expiresAt: "2026-09-16T00:00:00Z", choice: { accept: false, decline: false } });
   });
   assert.equal(await api.attach("c1"), "attached");
   assert.equal(calls[0].url, "/v1/identity/me", "the CSRF value is bootstrapped before the first mutation");
@@ -62,6 +62,7 @@ test("attach, read and accept carry the bootstrap CSRF value, accept sends only 
   assert.deepEqual(body(calls[1]), {});
   const view: WireDisclosureView = await api.readCeremony("c1");
   assert.deepEqual(view.choice, { accept: false, decline: false });
+  assert.equal(view.budgetSpaceName, "Household"); assert.equal(view.inviterDisplayName, "Alex");
   const accepted = await api.accept("c1", { kind: view.disclosure.kind, version: view.disclosure.version });
   assert.equal("state" in accepted && accepted.state, "awaiting_confirmation");
   assert.deepEqual(body(), { acknowledgedDisclosure: { kind: "invitation_collaborator", version: 1 } });
@@ -206,6 +207,8 @@ test("PK8-02 over the mock: invite, resolve with the cookie, exhaust a link term
   assert.equal(await invitee.api.attach(second.ceremonyId), "attached");
   const view = await invitee.api.readCeremony(second.ceremonyId);
   assert.equal(view.disclosure.kind, "invitation_collaborator");
+  // PK8-F06: the mock disclosure names the space and carries the inviter label (the mock keeps no display names).
+  assert.equal(view.budgetSpaceName, "Shared"); assert.equal(view.inviterDisplayName, "A MoneyPact member");
   assert.ok(view.disclosure.text.items.length >= 5, "the approved text");
   assert.deepEqual(view.choice, { accept: false, decline: false });
   await assert.rejects(invitee.api.accept(second.ceremonyId, { kind: view.disclosure.kind, version: 2 }), (error: unknown) => error instanceof InvitationApiError && error.code === "stale_disclosure");

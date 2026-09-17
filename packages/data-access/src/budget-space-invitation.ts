@@ -216,15 +216,16 @@ export async function readInvitationDestinationCiphertext(
 
 export interface BudgetSpaceFactsRow {
   readonly budget_space_id: string;
+  readonly name: string;
   readonly lifecycle: string;
 }
 
 export async function readBudgetSpaceFacts(client: TenantStatementClient, budgetSpaceId: string): Promise<BudgetSpaceFactsRow | null> {
   const result = await client.tenantSelect({
-    table: BUDGET_SPACE_TABLE, budgetSpaceId, columns: ["budget_space_id", "lifecycle"],
+    table: BUDGET_SPACE_TABLE, budgetSpaceId, columns: ["budget_space_id", "name", "lifecycle"],
   });
   const row = result.rows[0] as Record<string, unknown> | undefined;
-  return row === undefined ? null : { budget_space_id: textValue(row.budget_space_id), lifecycle: textValue(row.lifecycle) };
+  return row === undefined ? null : { budget_space_id: textValue(row.budget_space_id), name: textValue(row.name), lifecycle: textValue(row.lifecycle) };
 }
 
 // ---------------------------------------------------------------------------

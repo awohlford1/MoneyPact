@@ -217,6 +217,10 @@ describe("PK6-01 live: the whole invitation ceremony over HTTP on real PostgreSQ
         assert.equal(view.json().disclosure.version, 1);
         assert.ok(view.json().disclosure.text.items.length > 0, "the approved text");
         assert.deepEqual(view.json().choice, { accept: false, decline: false });
+        // PK8-F06: the space name from the budget_space row and the inviter's display label (the seeded name, or the neutral label).
+        assert.equal(view.json().budgetSpaceName, `PK-6 ${space.spaceId.slice(0, 8)}`);
+        assert.ok(typeof view.json().inviterDisplayName === "string" && view.json().inviterDisplayName.length > 0);
+        assert.ok(!view.body.includes(owner.accountSubjectId), "never the inviter's subject id");
         const stale = await h.inject("POST", `/v1/invitations/${ceremonyId}/accept`, mutation(invitee.csrfValue), { acknowledgedDisclosure: { kind: "invitation_collaborator", version: 2 } });
         assert.equal(stale.statusCode, 409); assert.deepEqual(stale.json(), { error: "stale_disclosure" });
         const accepted = await h.inject("POST", `/v1/invitations/${ceremonyId}/accept`, mutation(invitee.csrfValue), { acknowledgedDisclosure: { kind: "invitation_collaborator", version: 1 } });

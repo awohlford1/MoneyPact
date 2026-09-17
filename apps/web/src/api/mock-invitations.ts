@@ -205,7 +205,9 @@ export async function handleMockInvitationRequest(directory: MockDirectory, sess
     // An unattached or foreign ceremony is the boundary's uniform denial on these cells (PR 361).
     if (!loaded || loaded.ceremony.attachedSubjectId !== subject) return json(DENY, 403);
     if (path.length === 2 && request.method === "GET") {
-      return json({ ceremonyId, proposedRole: loaded.invitation.proposedRole, resourceScope: "full", disclosure: structuredClone(DISCLOSURES[loaded.invitation.proposedRole]), twoWayNoticeCode: "MSG-73-016", confirmationNoticeCode: "MSG-73-051", expiresAt: loaded.ceremony.expiresAt, choice: { accept: false, decline: false } });
+      // PK8-F06: the space name and the inviter's display label, behind attachment only. The mock keeps no
+      // display names (its members list shows the neutral label too), so the inviter is the neutral label.
+      return json({ ceremonyId, proposedRole: loaded.invitation.proposedRole, resourceScope: "full", disclosure: structuredClone(DISCLOSURES[loaded.invitation.proposedRole]), twoWayNoticeCode: "MSG-73-016", confirmationNoticeCode: "MSG-73-051", budgetSpaceName: directory.names.get(loaded.invitation.budgetSpaceId) ?? "Your budget space", inviterDisplayName: NEUTRAL_DISPLAY_LABEL, expiresAt: loaded.ceremony.expiresAt, choice: { accept: false, decline: false } });
     }
     if (path.length === 3 && path[2] === "accept" && request.method === "POST") {
       if (loaded.ceremony.proof !== "proved") return json(UNIFORM, 404);

@@ -94,9 +94,14 @@ export interface InviteeContext {
   readonly correlationId: string;
 }
 
-/** What the invitation state service needs to know about a budget space before it writes to it. */
+/**
+ * What the invitation state service needs to know about a budget space before
+ * it writes to it, plus the space's name for the post-attachment disclosure
+ * (PK8-F06). The name is never read on a surface served before attachment.
+ */
 export interface BudgetSpaceFacts {
   readonly budgetSpaceId: string;
+  readonly name: string;
   readonly lifecycle: string;
 }
 
@@ -402,6 +407,7 @@ export interface FinancialProfileDisplayRow {
 
 export interface BudgetSpaceFactsRow {
   readonly budget_space_id: string;
+  readonly name: string;
   readonly lifecycle: string;
 }
 
