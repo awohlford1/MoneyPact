@@ -136,6 +136,15 @@ describe("CBD-236 p6: writeDisplayName / readDisplayIdentity (DI-91-065, SEC-PK2
       ["upper case, padded, doubled spaces", "  A  MONEYPACT   MEMBER "],
       ["fullwidth compatibility letters", "Ａ ＭｏｎｅｙＰａｃｔ ｍｅｍｂｅｒ"],
       ["U+1D5A0 MATHEMATICAL SANS-SERIF CAPITAL A spelling the A", "\u{1D5A0} MoneyPact member"],
+      // SEC-NF-R1 / REV-NF-1: invisible padding folds away before the comparison.
+      ["label with a trailing U+2800", "A MoneyPact member⠀"],
+      ["U+115F Hangul choseong filler before member", "A MoneyPactᅟ member"],
+      ["U+3164 Hangul filler inside MoneyPact", "A MoㅤneyPact member"],
+      ["U+FE00 variation selector after A", "A︀ MoneyPact member"],
+      ["U+E0100 variation selector after A", "A\u{E0100} MoneyPact member"],
+      ["U+034F combining grapheme joiner inside MoneyPact", "A Mo͏neyPact member"],
+      ["U+200C ZWNJ between letters (passes the Cc/Cf rule)", "A Money‌Pact member"],
+      ["U+200D ZWJ between letters (passes the Cc/Cf rule)", "A Money‍Pact member"],
     ] as const) {
       await assert.rejects(() => writeDisplayName(client, "subject-1", name, 1), RangeError, label);
       assert.equal(row().version, 1, `nothing written for ${label}`);

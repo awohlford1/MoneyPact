@@ -204,7 +204,8 @@ describe("PROTO-WIRE-01/02 identity routes through the real Fastify instance", (
       assert.equal(zeroWidth.statusCode, 400, zeroWidth.body);
       assert.deepEqual(zeroWidth.json<object>(), tooLong.json<object>(), "same envelope and code as the length bound");
       // SEC-NS-R1 / SEC-NS-R2: no visible grapheme, or the neutral label in any spelling, is refused with the same envelope.
-      for (const displayName of ["  ", "　", "́̈", "⠀", "A MoneyPact member", "a moneypact member"]) {
+      // SEC-NF-R1 / REV-NF-1: an orthographic ZWNJ inside the label passes the Cc/Cf rule and is still the label.
+      for (const displayName of ["  ", "　", "́̈", "⠀", "A MoneyPact member", "a moneypact member", "A Money‌Pact member"]) {
         const refused = await b.inject("PUT", "/v1/identity/me/display-name", mutation, { displayName });
         assert.equal(refused.statusCode, 400, `${JSON.stringify(displayName)}: ${refused.body}`);
         assert.deepEqual(refused.json<object>(), tooLong.json<object>(), `${JSON.stringify(displayName)}: same envelope and code as the length bound`);

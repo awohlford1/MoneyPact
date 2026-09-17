@@ -86,9 +86,22 @@ export function normalizeDisplayName(value: string): string {
 /** Why a normalized display name is refused; every reason answers with the same `display_name_invalid` envelope. */
 export type DisplayNameRejection = "length" | "control_or_format" | "no_visible_grapheme" | "neutral_label";
 
-/** SEC-NS-R2: NFKC, whitespace-collapsed, case-folded (`toUpperCase().toLowerCase()`, the closest JS has to full folding). */
+/**
+ * SEC-NF-R1 / REV-NF-1: `INVISIBLE` minus White_Space. Removed before the label
+ * comparison so an invisible-padded label (a trailing U+2800, a Hangul filler,
+ * a variation selector, a combining grapheme joiner, or an orthographic
+ * ZWJ/ZWNJ the Cc/Cf rule lets through between letters) still folds to the label.
+ */
+const INVISIBLE_NOT_WHITESPACE = /[\p{M}\p{Cf}︀-️\u{E0100}-\u{E01EF}ㅤﾠᅟᅠ⠀]/gu;
+
+/**
+ * SEC-NS-R2: invisible characters removed (after NFKD, so a mark that arrived
+ * precomposed is removed too), NFKC, whitespace-collapsed, case-folded
+ * (`toUpperCase().toLowerCase()`, the closest JS has to full folding).
+ */
 function foldedForLabelComparison(value: string): string {
-  return value.normalize("NFKC").replace(WHITESPACE_RUN, " ").replace(LEADING_TRAILING_WHITESPACE, "").toUpperCase().toLowerCase();
+  return value.normalize("NFKD").replace(INVISIBLE_NOT_WHITESPACE, "").normalize("NFKC")
+    .replace(WHITESPACE_RUN, " ").replace(LEADING_TRAILING_WHITESPACE, "").toUpperCase().toLowerCase();
 }
 const FOLDED_NEUTRAL_LABEL = foldedForLabelComparison(NEUTRAL_DISPLAY_LABEL);
 
