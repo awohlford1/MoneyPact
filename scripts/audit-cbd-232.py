@@ -100,8 +100,8 @@ def check_markdown_structure(audit: Audit, text: str) -> None:
         f"{DOC}: package status is not the 0.3 consent-amendment approval",
     )
     audit.check(
-        "| Document version | 0.3.1 |" in text,
-        f"{DOC}: document version is not 0.3.1",
+        "| Document version | 0.3.2 |" in text,
+        f"{DOC}: document version is not 0.3.2",
     )
     headings = re.findall(r"^#{2,6}\s+(.+)$", text, flags=re.MULTILINE)
     duplicates = sorted(h for h, count in Counter(headings).items() if count > 1)
