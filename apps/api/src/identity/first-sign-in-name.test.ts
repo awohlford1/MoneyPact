@@ -61,6 +61,38 @@ describe("CBD-190 identity amendments proposal §2: first-sign-in display-name w
     assert.equal(displayNameFor(h, result.accountSubjectId), null, "a claim with a Cc/Cf character seeds no name");
   });
 
+  it("SEC-NS-R1: name claim of U+2800 alone (no visible grapheme) -> treated as absent, NULL, never a ceremony failure", async () => {
+    const h = buildHarness();
+    const result = await h.signIn("name-invisible");
+    assert.equal(result.kind, "success", JSON.stringify(result));
+    if (result.kind !== "success") return;
+    assert.equal(displayNameFor(h, result.accountSubjectId), null, "a claim with no visible grapheme seeds no name");
+  });
+
+  it("SEC-NS-R1: name claim of NBSP and U+3000 only -> treated as absent, NULL, never a ceremony failure", async () => {
+    const h = buildHarness();
+    const result = await h.signIn("name-lookalike-blank");
+    assert.equal(result.kind, "success", JSON.stringify(result));
+    if (result.kind !== "success") return;
+    assert.equal(displayNameFor(h, result.accountSubjectId), null, "look-alike whitespace collapses to nothing and seeds no name");
+  });
+
+  it("SEC-NS-R2: name claim equal to the neutral label in another casing -> treated as absent, NULL, never a ceremony failure", async () => {
+    const h = buildHarness();
+    const result = await h.signIn("name-neutral-label");
+    assert.equal(result.kind, "success", JSON.stringify(result));
+    if (result.kind !== "success") return;
+    assert.equal(displayNameFor(h, result.accountSubjectId), null, "a claim spelling the neutral label seeds no name");
+  });
+
+  it("SEC-NS-R1: name claim with internal NBSP runs -> written collapsed to single spaces", async () => {
+    const h = buildHarness();
+    const result = await h.signIn("name-internal-nbsp");
+    assert.equal(result.kind, "success", JSON.stringify(result));
+    if (result.kind !== "success") return;
+    assert.equal(displayNameFor(h, result.accountSubjectId), "Ada A. Local", "the same collapse PUT /v1/identity/me/display-name applies");
+  });
+
   it("C190-N04/N05: a later sign-in with a different name never overwrites the value the first sign-in wrote", async () => {
     const h = buildHarness();
     const first = await h.signIn("subject-a");

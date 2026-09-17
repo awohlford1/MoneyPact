@@ -9,7 +9,7 @@
  */
 import { createPublicKey, timingSafeEqual, verify } from "node:crypto";
 import type { KeyObject } from "node:crypto";
-import { hasControlOrFormatCharacter, MAX_DISPLAY_NAME_LENGTH } from "../../../../packages/data-access/src/financial-profile.ts";
+import { displayNameRejection, normalizeDisplayName } from "../../../../packages/data-access/src/financial-profile.ts";
 import type { Jwk } from "./local-issuer.ts";
 
 export const SUBJECT_MAX_LENGTH = 256;
@@ -113,18 +113,18 @@ function numericDate(value: unknown): number | undefined {
 }
 
 /**
- * §2.2: the first-sign-in seed from the provider `name` claim, trimmed. A claim
- * outside the 1..80-code-point bound (`[...trimmed].length`, matching
- * `writeDisplayName`'s own count), or one carrying a Unicode control or format
- * character (SEC-F06-OBS1 / SEC-C190-OBS1: bidi override, zero-width), is
- * treated as absent -- never a sign-in failure.
+ * §2.2: the first-sign-in seed from the provider `name` claim, normalized
+ * exactly as `PUT /v1/identity/me/display-name` normalizes its body
+ * (`normalizeDisplayName`: NFC, whitespace runs collapsed, trimmed) and held to
+ * the same rule set (`displayNameRejection`: the 1..80-code-point bound, no
+ * Cc/Cf per SEC-F06-OBS1 / SEC-C190-OBS1, a visible grapheme per SEC-NS-R1, not
+ * the neutral label per SEC-NS-R2). Any rejected claim is treated as absent --
+ * never a sign-in failure.
  */
 function boundedName(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  const length = [...trimmed].length;
-  if (length < 1 || length > MAX_DISPLAY_NAME_LENGTH) return undefined;
-  return hasControlOrFormatCharacter(trimmed) ? undefined : trimmed;
+  const normalized = normalizeDisplayName(value);
+  return displayNameRejection(normalized) === undefined ? normalized : undefined;
 }
 
 function constantTimeEqual(a: string, b: string): boolean {

@@ -95,6 +95,25 @@ describe("CBD-232-AC01: name normalization", () => {
     }
   });
 
+  it("SEC-NS-R1: a name with no visible grapheme is reported as name.required (no new catalog code), after the Cc/Cf check", () => {
+    for (const name of ["  ", "　", "̣́̈", "⠀", "ㅤ", "ﾠ ⠀", "ᅟᅠ", "️"]) {
+      const result = validateCreateProposalRequest("k".repeat(16), { ...VALID_BODY, name }, deps());
+      assert.equal(result.ok, false, JSON.stringify(name));
+      if (!result.ok) assert.deepEqual(result.fieldErrors.filter((e) => e.path === "name"), [{ code: "name.required", path: "name", message: "Enter a budget name." }], JSON.stringify(name));
+    }
+    const lone = validateCreateProposalRequest("k".repeat(16), { ...VALID_BODY, name: "​" }, deps());
+    assert.equal(lone.ok, false);
+    if (!lone.ok) assert.deepEqual(lone.fieldErrors.filter((e) => e.path === "name").map((e) => e.code), ["name.control-characters"], "a lone Cf is still the Cc/Cf rule's, not name.required");
+  });
+
+  it("SEC-NS-R2 does not apply to budget names: the neutral member label is an acceptable budget name, and an internal NBSP collapses", () => {
+    for (const [name, expected] of [["A MoneyPact member", "A MoneyPact member"], ["a moneypact member", "a moneypact member"], ["Grocery Budget", "Grocery Budget"]] as const) {
+      const result = validateCreateProposalRequest("k".repeat(16), { ...VALID_BODY, name }, deps());
+      assert.equal(result.ok, true, JSON.stringify(name));
+      if (result.ok) assert.equal(result.normalizedInputs.name, expected);
+    }
+  });
+
   it("applies NFC and collapses internal whitespace runs", () => {
     const result = validateCreateProposalRequest("k".repeat(16), { ...VALID_BODY, name: "  Grocery   Budget  " }, deps());
     assert.equal(result.ok, true);

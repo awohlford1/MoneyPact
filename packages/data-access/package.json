@@ -17,6 +17,7 @@
     "verify:live": "node --env-file-if-exists=../../.env.local scripts/verify-live.ts"
   },
   "dependencies": {
+    "@cobudget/budget-domain": "*",
     "@cobudget/migrations": "*",
     "pg": "8.23.0"
   },

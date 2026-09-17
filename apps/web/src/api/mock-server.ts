@@ -21,6 +21,18 @@ import type { Confirmation, Disclosure, Draft, Proposal, ProposalRead } from "./
 import { activeMembership, createMockDirectory, handleMockInvitationRequest, mockAssurance, registerMockSpace, sharedMockDirectory } from "./mock-invitations.ts";
 import type { MockDirectory } from "./mock-invitations.ts";
 
+/**
+ * SEC-F06-OBS1 / REV-NS-3: the mock emulates `name.control-characters` with the same condition as
+ * `packages/budget-application/src/creation-proposals/normalize.ts` (`hasControlOrFormatCharacter`), so a mock-backed
+ * journey can exercise the rejection: no Cc/Cf except an emoji-sequence ZWJ or a between-letters ZWJ/ZWNJ.
+ */
+const EMOJI_ZERO_WIDTH_JOINER = /(?<=(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\uFE0F))\u200D(?=\p{Extended_Pictographic})/gu;
+const ORTHOGRAPHIC_JOINER = /(?<=[\p{L}\p{M}])[\u200C\u200D](?=[\p{L}\p{M}])/gu;
+const CONTROL_OR_FORMAT = /[\p{Cc}\p{Cf}]/u;
+function hasControlOrFormatCharacter(value: string): boolean {
+  return CONTROL_OR_FORMAT.test(value.replace(EMOJI_ZERO_WIDTH_JOINER, "").replace(ORTHOGRAPHIC_JOINER, ""));
+}
+
 /** The mock's stand-in for config/consent-disclosure-registry.json; the live API serves the approved entry. */
 const MOCK_DISCLOSURE: Disclosure = {
   kind: "primary_owner_self", version: 1, digest: "mock-consent-disclosure-digest",
@@ -243,6 +255,7 @@ export function createServerMock(now = Date.now, directory: MockDirectory<MockSp
       const errors: FieldError[] = [];
       const name = typeof draft.name === "string" ? draft.name.normalize("NFC").trim().replace(/\s+/gu, " ") : "";
       if (!name) errors.push({ path: "name", code: "name.required", message: "Enter a budget name." });
+      else if (hasControlOrFormatCharacter(name)) errors.push({ path: "name", code: "name.control-characters", message: "Remove control and invisible formatting characters." });
       if ([...new Intl.Segmenter("en", { granularity: "grapheme" }).segment(name)].length > 100) errors.push({ path: "name", code: "name.too-long", message: "Use 100 characters or fewer." });
       let timeZone = typeof draft.timeZone === "string" ? draft.timeZone.trim() : "";
       try { if (!timeZone.includes("/")) throw new Error(); timeZone = new Intl.DateTimeFormat("en", { timeZone }).resolvedOptions().timeZone; }

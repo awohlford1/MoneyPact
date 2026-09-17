@@ -40,7 +40,7 @@ import type { DynamicModule } from "@nestjs/common";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { DataAccessClient } from "@cobudget/data-access";
 import { checkCsrf, readSessionCookieValue } from "@cobudget/sessions";
-import { hasControlOrFormatCharacter, MAX_DISPLAY_NAME_LENGTH, writeDisplayName } from "../../../../packages/data-access/src/financial-profile.ts";
+import { displayNameRejection, normalizeDisplayName, writeDisplayName } from "../../../../packages/data-access/src/financial-profile.ts";
 import { Authorization, Authorize, PreAuthenticationSurface, RouteFailure, SessionAuthenticatedSurface } from "../authorization/http.js";
 import type { IdentityCeremony } from "./ceremony.ts";
 import { LOCAL_ISSUER_PATH } from "./config.ts";
@@ -223,10 +223,12 @@ export function identityHttp(runtime: IdentityRuntime | undefined): IdentityHttp
       // AuthorizationBoundary#execute's catch-all and converted into a generic deny (the notices route's own
       // convention -- see its header comment -- and the reason the uniform denial vocabulary never leaks HTTP status).
       if (typeof raw !== "string") return new RouteFailure(400, "invalid_request");
-      const trimmed = raw.trim();
-      if (trimmed.length === 0 || [...trimmed].length > MAX_DISPLAY_NAME_LENGTH) return new RouteFailure(400, "display_name_invalid");
-      // SEC-F06-OBS1 / SEC-C190-OBS1: no Cc/Cf (bidi override, zero-width) in a name; same envelope as the length bound.
-      if (hasControlOrFormatCharacter(trimmed)) return new RouteFailure(400, "display_name_invalid");
+      // One normalization and one rule set for every display-name writer (`token.ts` `boundedName` is the other):
+      // NFC, whitespace runs collapsed, trimmed; then the 1..80-code-point bound, no Cc/Cf (SEC-F06-OBS1 /
+      // SEC-C190-OBS1), a visible grapheme (SEC-NS-R1) and not the neutral label (SEC-NS-R2). Every reason answers
+      // with the length bound's own envelope, so the response never says which rule fired.
+      const trimmed = normalizeDisplayName(raw);
+      if (displayNameRejection(trimmed) !== undefined) return new RouteFailure(400, "display_name_invalid");
       const client = effect.transaction as DataAccessClient;
       if (!client.profileSelect || !client.profileUpdate) return new RouteFailure(503, "identity_unavailable");
       let version: number | null;

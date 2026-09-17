@@ -229,6 +229,19 @@ for (const schedule of [
   assert.ok(proposal.preview.periods.every(period => period.lengthInDays > 0));
 });
 
+test("REV-NS-3: the server mock refuses a budget name carrying U+202E with name.control-characters, as the live API does, and still accepts an emoji-ZWJ name", async () => {
+  const api = createMockClient(clock); await api.me();
+  await assert.rejects(api.createProposal({ ...draft, name: "Groceries ‮seirecorg" }, crypto.randomUUID()), (error: unknown) => {
+    assert.ok(error instanceof ApiError);
+    assert.equal(error.status, 400);
+    assert.equal(error.code, "validation_failed");
+    assert.deepEqual(error.fieldErrors, [{ path: "name", code: "name.control-characters", message: "Remove control and invisible formatting characters." }]);
+    return true;
+  });
+  const family = await api.createProposal({ ...draft, name: "Family \u{1F468}‍\u{1F469}‍\u{1F467}" }, crypto.randomUUID());
+  assert.equal(family.normalizedInputs.name, "Family \u{1F468}‍\u{1F469}‍\u{1F467}");
+});
+
 
 // --- PROTO-INCREMENT-B-001: manual accounts, manual expenses and budget progress ---------------
 
