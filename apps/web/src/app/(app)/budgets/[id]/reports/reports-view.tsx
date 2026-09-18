@@ -77,6 +77,10 @@ const CATEGORY_COLUMNS: readonly Column[] = [
   { key: "label", label: "Category" },
   { key: "planned", label: "Planned", numeric: true },
   { key: "settled", label: "Settled", numeric: true },
+  // REV-UIP04-3: pending was previously implied only through "remaining after pending"; AC03 names it as its
+  // own labelled state, so it gets its own column, reading "no pending activity" today (always zero for a
+  // manual transaction) exactly as correctly as "no activity" reads for settled.
+  { key: "pending", label: "Pending", numeric: true },
   { key: "remainingAfterSettled", label: "Remaining after settled", numeric: true },
   { key: "remainingAfterPending", label: "Remaining after pending", numeric: true },
 ];
@@ -84,8 +88,8 @@ const CATEGORY_COLUMNS: readonly Column[] = [
 /** The category breakdown for one period. Large result sets scroll within their own region (never the page in
  * two dimensions -- section 6.1.2); the totals row is marked "Total" in text, not by colour or position alone. */
 function ReportTable({ caption, rows, totals, loading, error }: { caption: string; rows: readonly CategoryRow[]; totals: CategoryTotalsRow | null; loading: boolean; error?: string }) {
-  const tableRows: Record<string, ReactNode>[] = rows.map(row => ({ label: row.label, planned: row.planned, settled: row.settled, remainingAfterSettled: row.remainingAfterSettled, remainingAfterPending: row.remainingAfterPending }));
-  if (totals && rows.length > 0) tableRows.push({ label: <strong>Total, all categories</strong>, planned: totals.planned, settled: totals.settled, remainingAfterSettled: totals.remainingAfterSettled, remainingAfterPending: totals.remainingAfterPending });
+  const tableRows: Record<string, ReactNode>[] = rows.map(row => ({ label: row.label, planned: row.planned, settled: row.settled, pending: row.pending, remainingAfterSettled: row.remainingAfterSettled, remainingAfterPending: row.remainingAfterPending }));
+  if (totals && rows.length > 0) tableRows.push({ label: <strong>Total, all categories</strong>, planned: totals.planned, settled: totals.settled, pending: totals.pending, remainingAfterSettled: totals.remainingAfterSettled, remainingAfterPending: totals.remainingAfterPending });
   const large = rows.length > LARGE_ROW_THRESHOLD;
   const table = <Table caption={caption} columns={CATEGORY_COLUMNS} rows={tableRows} loading={loading} error={error} emptyMessage="No categories yet. Add a category from the plan to see it here." />;
   return large ? <div className="max-h-[32rem] overflow-y-auto" data-testid="reports-category-scroll-region">
@@ -108,31 +112,59 @@ function PeriodsSection({ result, rows, selectedPeriodId, onSelectPeriod }: {
         <PeriodFilter periods={rows} selectedPeriodId={selectedPeriodId} onChange={onSelectPeriod} />
         <Table caption="Periods for this budget" columns={[
           { key: "range", label: "Period" }, { key: "planned", label: "Planned", numeric: true },
-          { key: "settled", label: "Settled", numeric: true }, { key: "income", label: "Income", numeric: true },
+          { key: "settled", label: "Settled", numeric: true },
+          // REV-UIP04-3: pending, its own labelled column, not just implied through remaining-after-pending.
+          { key: "pending", label: "Pending", numeric: true },
+          { key: "income", label: "Income", numeric: true },
           { key: "remainingAfterPending", label: "Remaining after pending", numeric: true },
-        ]} rows={rows.map(row => ({ range: `${row.start} to ${row.end} (${row.relation})`, planned: row.planned, settled: row.settled, income: row.income, remainingAfterPending: row.remainingAfterPending }))} />
+          // REV-UIP04-2: adjustedAfterEnd is on the wire and named by AC03 as a required labelled state; a
+          // word on the row, not a colour or an omission, for every period -- "Not adjusted" is itself a fact.
+          { key: "adjustment", label: "Adjustment" },
+        ]} rows={rows.map(row => ({
+          range: `${row.start} to ${row.end} (${row.relation})`, planned: row.planned, settled: row.settled,
+          pending: row.pending, income: row.income, remainingAfterPending: row.remainingAfterPending,
+          adjustment: row.adjustedAfterEnd ? "Adjusted after period end" : "Not adjusted",
+        }))} />
       </>}
   </section>;
 }
 
-function CategoriesSection({ result, rows, allRows, totals, scope, dataAsOf, periodLabel, categoryFilter, onCategoryFilterChange }: {
+function CategoriesSection({ result, rows, allRows, totals, scope, dataAsOf, periodLabel, categoryFilter, onCategoryFilterChange, periodsLoading, periodsEmpty }: {
   result: ReturnType<typeof useResource<unknown>>;
   rows: readonly CategoryRow[]; allRows: readonly CategoryRow[]; totals: CategoryTotalsRow | null;
   scope?: "complete" | "limited"; dataAsOf?: string; periodLabel?: PeriodRow;
   categoryFilter: string; onCategoryFilterChange(categoryId: string): void;
+  /** REV-UIP04-1: whether the *periods* region has resolved yet, and whether it resolved to nothing. Neither is
+   * this region's own failure -- a categories read is never even attempted until a period id exists, so this
+   * region must not show its own terminal error while it is only waiting on its sibling. */
+  periodsLoading: boolean; periodsEmpty: boolean;
 }) {
-  const loading = !result.value && !result.error;
   const caption = periodLabel ? `Categories for the period ${periodLabel.start} to ${periodLabel.end}` : "Categories for this period";
+  const waitingForPeriod = periodsLoading || !periodLabel;
+  const loading = !result.value && !result.error;
+  let body: ReactNode;
+  if (periodsEmpty) {
+    // True-empty (CBD-67 §14.6), not a 404-derived terminal error: there is genuinely no active period to
+    // report categories against, which is a fact about the budget, not a failed read.
+    body = <Alert>This budget has no active period, so there are no categories to report on yet.</Alert>;
+  } else if (waitingForPeriod) {
+    body = <ReportTable caption={caption} rows={[]} totals={null} loading />;
+  } else if (result.error) {
+    body = <RegionFailure error={result.error} retry={result.refresh} label="categories" />;
+  } else if (loading) {
+    body = <ReportTable caption={caption} rows={[]} totals={null} loading />;
+  } else {
+    body = <>
+      {scope && <ScopeNotice scope={scope} />}
+      {dataAsOf && isStale(dataAsOf) && <Alert title="Report captured earlier">This report reflects data captured earlier and may not include the most recent activity.</Alert>}
+      {allRows.length > 0 && <CategoryFilter rows={allRows} value={categoryFilter} onChange={onCategoryFilterChange} />}
+      <ReportTable caption={caption} rows={rows} totals={totals} loading={false} />
+      {dataAsOf && <FreshnessNotice dataAsOf={dataAsOf} />}
+    </>;
+  }
   return <section className="space-y-4" aria-labelledby="reports-categories-heading">
     <h2 id="reports-categories-heading" className="text-2xl font-semibold">Categories</h2>
-    {result.error ? <RegionFailure error={result.error} retry={result.refresh} label="categories" />
-      : loading ? <ReportTable caption={caption} rows={[]} totals={null} loading /> : <>
-        {scope && <ScopeNotice scope={scope} />}
-        {dataAsOf && isStale(dataAsOf) && <Alert title="Report captured earlier">This report reflects data captured earlier and may not include the most recent activity.</Alert>}
-        {allRows.length > 0 && <CategoryFilter rows={allRows} value={categoryFilter} onChange={onCategoryFilterChange} />}
-        <ReportTable caption={caption} rows={rows} totals={totals} loading={false} />
-        {dataAsOf && <FreshnessNotice dataAsOf={dataAsOf} />}
-      </>}
+    {body}
   </section>;
 }
 
@@ -152,6 +184,9 @@ export function ReportsView({ id }: { id: string }) {
   const loadPeriods = useCallback((signal: AbortSignal) => api.periods(id, PERIODS_LIMIT, signal), [api, id]);
   const periods = useResource(`${session.sessionRef}:${session.sessionVersion}:${id}:periods`, loadPeriods);
 
+  const periodsLoading = !periods.value && !periods.error;
+  const periodsEmpty = Boolean(periods.value && periods.value.periods.length === 0);
+
   const [selectedPeriodId, setSelectedPeriodId] = useState("");
   // The last period id actually seen, kept across a periods refresh's own momentary loading gap (`periods.value`
   // is briefly undefined then) so a "Refresh reports" click does not bounce the categories read's identity to
@@ -160,15 +195,30 @@ export function ReportsView({ id }: { id: string }) {
   const [knownPeriodId, setKnownPeriodId] = useState("");
   const freshPeriodId = periods.value?.periods[0]?.periodId;
   if (freshPeriodId && freshPeriodId !== knownPeriodId) setKnownPeriodId(freshPeriodId);
-  const activePeriodId = selectedPeriodId || knownPeriodId;
+  const periodRowsForValidation = periods.value?.periods ?? [];
+  // REV-UIP04-9: a selection that no longer names a period in the current list (a stale selection from before a
+  // refresh changed what is available) falls back to the last known-good period rather than pointing at nothing.
+  const selectedPeriodValid = selectedPeriodId !== "" && periodRowsForValidation.some(period => period.periodId === selectedPeriodId);
+  const activePeriodId = selectedPeriodValid ? selectedPeriodId : knownPeriodId;
 
+  // REV-UIP04-1: the categories read is never attempted until a real period id exists. Before that, `identity`
+  // stays constant (no network call fires: `enabled` short-circuits before the fetcher runs), so this region
+  // shows its own loading/true-empty state instead of a 404-derived terminal failure while it only waits on
+  // its sibling region to resolve.
+  const categoriesEnabled = activePeriodId !== "";
   const loadCategories = useCallback((signal: AbortSignal) => {
-    if (!activePeriodId) return Promise.reject(new ApiError(404, "period_not_found"));
+    if (!categoriesEnabled) return new Promise<never>(() => { /* never resolves; discarded by the next identity change or unmount */ });
     return api.categories(id, activePeriodId, signal);
-  }, [api, id, activePeriodId]);
+  }, [api, id, activePeriodId, categoriesEnabled]);
   const categories = useResource(`${session.sessionRef}:${session.sessionVersion}:${id}:categories:${activePeriodId}`, loadCategories);
 
   const [categoryFilter, setCategoryFilter] = useState("all");
+  // REV-UIP04-8: a period switch can leave the filter pointing at a category the new period does not have (or
+  // does not plan the same way); reset to "All categories" whenever the person picks a different period. Reset
+  // during render (the same "adjusting state when a prop changes" pattern `knownPeriodId` above already uses),
+  // not in an effect, so the reset commits in the same pass as the period change rather than one render later.
+  const [categoryFilterFor, setCategoryFilterFor] = useState(selectedPeriodId);
+  if (selectedPeriodId !== categoryFilterFor) { setCategoryFilterFor(selectedPeriodId); setCategoryFilter("all"); }
 
   const currencyCode = periods.value?.currencyCode ?? categories.value?.currencyCode ?? "USD";
   const precision = periods.value?.minorUnitPrecision ?? categories.value?.minorUnitPrecision ?? 2;
@@ -198,6 +248,7 @@ export function ReportsView({ id }: { id: string }) {
       scope={categories.value?.scope} dataAsOf={categories.value?.dataAsOf}
       periodLabel={periodRows.find(row => row.periodId === activePeriodId)}
       categoryFilter={categoryFilter} onCategoryFilterChange={setCategoryFilter}
+      periodsLoading={periodsLoading} periodsEmpty={periodsEmpty}
     />
   </section>;
 }

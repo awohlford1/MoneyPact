@@ -13,7 +13,7 @@ import { formatMinorUnits } from "./client.ts";
 import { ApiError } from "./client.ts";
 import { createMockClient, handleMockRequest } from "./mock-server.ts";
 import type { MockWire } from "./mock-server.ts";
-import { createReportsClient, planLabel, remainingLabel, settledLabel, toCategoryRow, toCategoryTotalsRow, toPeriodRow } from "./reports.ts";
+import { createReportsClient, pendingLabel, planLabel, remainingLabel, settledLabel, toCategoryRow, toCategoryTotalsRow, toPeriodRow } from "./reports.ts";
 import type { WireCategoriesReport, WireCategoryReportRow, WirePeriodReport, WirePeriodsReport } from "./reports.ts";
 
 // --- CBD-358-AC01: the view module applies no arithmetic operator to a minor-unit value ------------------------
@@ -25,9 +25,13 @@ test("CBD-358-AC01: the reports view module contains no MinorUnits field and no 
   // the view never even names a *MinorUnits field, which is the strongest form of "applies no arithmetic to
   // one" -- there is nothing of that shape to operate on.
   assert.equal(/MinorUnits/u.test(source), false, "the view module must never reference a raw minor-unit field");
-  // Belt and braces: no arithmetic operator appears anywhere next to an identifier that merely mentions "amount"
-  // in code (not prose), in case a future edit reintroduces a numeric field under a different name. Comment
-  // lines are excluded -- this file's own JSDoc prose about money is not code applying arithmetic to it.
+  // REV-UIP04-5: this second check is narrow on purpose, and its narrowness is stated rather than implied. It
+  // catches only an arithmetic operator directly adjacent to a code identifier (not a comment) whose name
+  // contains "amount" -- e.g. a reintroduced `amountMinorUnits - fee` -- and nothing else. It does NOT catch a
+  // numeric field smuggled in under an unrelated name (a local alias, a destructured rename, a differently
+  // spelled money field). The strong guarantee here is the check above: this file names no *MinorUnits field at
+  // all, so there is nothing of that shape for any name to operate on. This check is a narrower second layer
+  // for the one specific field name the wire shapes actually use, not a general arithmetic scanner.
   const codeLines = source.split("\n").filter(line => !/^\s*(?:\/\/|\*|\/\*\*)/u.test(line));
   for (const line of codeLines) {
     if (!/\bamount\b/iu.test(line)) continue;
@@ -48,6 +52,7 @@ test("CBD-358-AC01: period and category rows format every figure from the wire's
   assert.equal(row.settled, `${formatMinorUnits(12345, 2)} USD spent`);
   assert.equal(row.income, `${formatMinorUnits(0, 2)} USD`);
   assert.equal(row.remainingAfterPending, `${formatMinorUnits(37655, 2)} USD remaining`);
+  assert.equal(row.pending, "no pending activity", "REV-UIP04-3: pending is its own labelled value, not only implied through remaining-after-pending");
   assert.equal(row.dataAsOf, wirePeriod.dataAsOf);
 
   const overspent: WireCategoryReportRow = { categoryId: "c1", label: "Groceries", plannedMinorUnits: 10000, settledMinorUnits: -12000, pendingMinorUnits: 0, varianceMinorUnits: -2000, remainingAfterSettledMinorUnits: -2000, remainingAfterPendingMinorUnits: -2000 };
@@ -56,6 +61,7 @@ test("CBD-358-AC01: period and category rows format every figure from the wire's
   assert.equal(overspentRow.settled, `${formatMinorUnits(12000, 2)} USD spent`);
   assert.equal(overspentRow.remainingAfterSettled, `over by ${formatMinorUnits(2000, 2)} USD`);
   assert.equal(overspentRow.remainingAfterPending, `over by ${formatMinorUnits(2000, 2)} USD`);
+  assert.equal(overspentRow.pending, "no pending activity");
 
   const noActivity: WireCategoryReportRow = { categoryId: "c2", label: "Entertainment", plannedMinorUnits: 5000, settledMinorUnits: 0, pendingMinorUnits: 0, varianceMinorUnits: 5000, remainingAfterSettledMinorUnits: 5000, remainingAfterPendingMinorUnits: 5000 };
   assert.equal(toCategoryRow(noActivity, "USD", 2).settled, "no activity");
@@ -63,6 +69,9 @@ test("CBD-358-AC01: period and category rows format every figure from the wire's
   assert.equal(planLabel(0, 2, "USD"), "0.00 USD");
   assert.equal(settledLabel(150, 2, "USD"), "1.50 USD refunded");
   assert.equal(remainingLabel(-1, 2, "USD"), "over by 0.01 USD");
+  assert.equal(pendingLabel(0, 2, "USD"), "no pending activity");
+  assert.equal(pendingLabel(-500, 2, "USD"), "5.00 USD pending spend");
+  assert.equal(pendingLabel(500, 2, "USD"), "5.00 USD pending refund");
 
   const totals = toCategoryTotalsRow({ plannedMinorUnits: 15000, settledMinorUnits: -12000, pendingMinorUnits: 0, varianceMinorUnits: 3000, remainingAfterSettledMinorUnits: 3000, remainingAfterPendingMinorUnits: 3000 }, "USD", 2);
   assert.equal(totals.remainingAfterSettled, `${formatMinorUnits(3000, 2)} USD remaining`);
@@ -107,6 +116,10 @@ test("CBD-358: reports/periods and reports/categories reconcile against the prog
   // already-formatted `Progress` -- is the baseline the report must reconcile against.
   const progress = mock.progress(budgetSpaceId, periodId);
   const cell = progress.cells.find(entry => entry.categoryId === categoryId)!;
+  // REV-UIP04-6: guard the fixture itself. Without this, every comparison below against `cell.settledActualMinorUnits`
+  // would still pass if the recorded expense silently stopped landing in this period (a zero on both sides
+  // reconciles trivially), which would let the reconciliation test degenerate into comparing two zeros.
+  assert.notEqual(cell.settledActualMinorUnits, 0, "the fixture's recorded expense must actually settle against this category and period");
 
   const periodsReport: WirePeriodsReport = await reports.periods(budgetSpaceId, 12);
   assert.equal(periodsReport.periods.length, 1, "the mock has no periodId for an unreached future period, so it reports only the current one");

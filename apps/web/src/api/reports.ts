@@ -63,18 +63,26 @@ export function remainingLabel(amountMinorUnits: number, precision: number, curr
 export function planLabel(amountMinorUnits: number, precision: number, currencyCode: string): string {
   return magnitude(amountMinorUnits, precision, currencyCode);
 }
+/** REV-UIP04-3: pending is on the wire but was otherwise only implied through "remaining after pending" --
+ * labelled here in its own right, exactly as "no activity" spells out a zero settled figure in words. Always
+ * "no pending activity" today (every manual transaction is settled; CBD-211-AC02), correctly, since the field
+ * exists so the surface reads right once a pending record (an import) can occur. */
+export function pendingLabel(amountMinorUnits: number, precision: number, currencyCode: string): string {
+  if (amountMinorUnits === 0) return "no pending activity";
+  return amountMinorUnits < 0 ? `${magnitude(amountMinorUnits, precision, currencyCode)} pending spend` : `${magnitude(amountMinorUnits, precision, currencyCode)} pending refund`;
+}
 
 export interface PeriodRow {
   periodId: string; start: string; end: string; lengthInDays: number; relation: string;
-  planned: string; settled: string; income: string; remainingAfterPending: string;
+  planned: string; settled: string; pending: string; income: string; remainingAfterPending: string;
   adjustedAfterEnd: boolean; dataAsOf: string;
 }
 export interface CategoryRow {
   categoryId: string; label: string;
-  planned: string; settled: string; remainingAfterSettled: string; remainingAfterPending: string;
+  planned: string; settled: string; pending: string; remainingAfterSettled: string; remainingAfterPending: string;
 }
 export interface CategoryTotalsRow {
-  planned: string; settled: string; remainingAfterSettled: string; remainingAfterPending: string;
+  planned: string; settled: string; pending: string; remainingAfterSettled: string; remainingAfterPending: string;
 }
 
 export function toPeriodRow(wire: WirePeriodReport, currencyCode: string, precision: number): PeriodRow {
@@ -82,6 +90,7 @@ export function toPeriodRow(wire: WirePeriodReport, currencyCode: string, precis
     periodId: wire.periodId, start: wire.start, end: wire.end, lengthInDays: wire.lengthInDays, relation: wire.relation,
     planned: planLabel(wire.plannedMinorUnits, precision, currencyCode),
     settled: settledLabel(wire.settledMinorUnits, precision, currencyCode),
+    pending: pendingLabel(wire.pendingMinorUnits, precision, currencyCode),
     income: planLabel(wire.incomeMinorUnits, precision, currencyCode),
     remainingAfterPending: remainingLabel(wire.remainingAfterPendingMinorUnits, precision, currencyCode),
     adjustedAfterEnd: wire.adjustedAfterEnd, dataAsOf: wire.dataAsOf,
@@ -92,6 +101,7 @@ export function toCategoryRow(wire: WireCategoryReportRow, currencyCode: string,
     categoryId: wire.categoryId, label: wire.label,
     planned: planLabel(wire.plannedMinorUnits, precision, currencyCode),
     settled: settledLabel(wire.settledMinorUnits, precision, currencyCode),
+    pending: pendingLabel(wire.pendingMinorUnits, precision, currencyCode),
     remainingAfterSettled: remainingLabel(wire.remainingAfterSettledMinorUnits, precision, currencyCode),
     remainingAfterPending: remainingLabel(wire.remainingAfterPendingMinorUnits, precision, currencyCode),
   };
@@ -100,6 +110,7 @@ export function toCategoryTotalsRow(wire: WireCategoryReportTotals, currencyCode
   return {
     planned: planLabel(wire.plannedMinorUnits, precision, currencyCode),
     settled: settledLabel(wire.settledMinorUnits, precision, currencyCode),
+    pending: pendingLabel(wire.pendingMinorUnits, precision, currencyCode),
     remainingAfterSettled: remainingLabel(wire.remainingAfterSettledMinorUnits, precision, currencyCode),
     remainingAfterPending: remainingLabel(wire.remainingAfterPendingMinorUnits, precision, currencyCode),
   };

@@ -71,10 +71,13 @@ export function Table({
   }
 
   return (
-    // `tabIndex`/`role`/`aria-label`: a horizontally scrollable region needs to be keyboard-reachable and
-    // named (axe `scrollable-region-focusable`, WCAG 2.1.1/4.1.2) whenever its content is wider than it is --
-    // harmless when it is not, since nothing changes size or tab order otherwise. UI-P04 (CBD-358) surfaced
-    // this against a real caption/columns combination at 320 px; fixed here once for every consumer of Table.
+    // `tabIndex`/`role`/`aria-label` are unconditional, not conditional on whether the content actually
+    // overflows: axe's `scrollable-region-focusable` rule (WCAG 2.1.1/4.1.2) checks the potentially-scrollable
+    // container regardless of the current viewport, and there is no reliable, render-time way to know here
+    // whether this table is wider than its column will be at every width the page is later resized or zoomed
+    // to. Always keyboard-reachable and named is harmless when the content happens to fit -- nothing else about
+    // size or tab order changes -- and correct whenever it does not. UI-P04 (CBD-358) surfaced the gap against
+    // a real caption/columns combination at 320 px; fixed here once for every consumer of Table.
     <div tabIndex={0} role="region" aria-label={caption} className="overflow-x-auto rounded-lg border border-border bg-surface-raised">
       <table aria-busy={loading || undefined} className="w-full border-collapse text-on-surface">
         <caption className="px-4 py-3 text-left font-semibold">{caption}</caption>

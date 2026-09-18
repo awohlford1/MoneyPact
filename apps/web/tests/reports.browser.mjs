@@ -132,5 +132,28 @@ export async function reportsJourney(t, { browser, origin, errors }) {
     assert.equal(await page.$eval("#report-category", node => node.value), options.find(value => value !== "all"));
   });
 
+  await t.test("REV-UIP04-1: a normal first load never shows the categories region's own terminal failure while periods is still resolving", async () => {
+    await page.setRequestInterception(true);
+    const onRequest = request => {
+      if (request.url().includes("/reports/periods")) { setTimeout(() => request.continue(), 1500); return; }
+      request.continue();
+    };
+    page.on("request", onRequest);
+    await page.reload();
+    // Sampled repeatedly across the whole delay window: the categories region must never render its own
+    // role="alert" terminal failure just because it has not yet been told which period to read.
+    const deadline = Date.now() + 2000;
+    let sawTerminalFailure = false;
+    while (Date.now() < deadline) {
+      const alertText = await page.evaluate(() => document.querySelector('[role="alert"]')?.textContent ?? "");
+      if (alertText.includes("Unable to load categories")) { sawTerminalFailure = true; break; }
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert.equal(sawTerminalFailure, false, "REV-UIP04-1: the categories region rendered its own terminal failure before periods had resolved");
+    page.off("request", onRequest);
+    await page.setRequestInterception(false);
+    await d.waitText("no activity");
+  });
+
   await context.close();
 }
