@@ -16,6 +16,7 @@
  * The approved disclosure texts are read from `docs/consent-disclosures/`, as the real registry serves them.
  */
 import { randomUUID } from "node:crypto";
+import { NEUTRAL_DISPLAY_LABEL } from "@cobudget/budget-domain/shared";
 import invitationCollaborator from "../../../../docs/consent-disclosures/invitation-collaborator.v1.json" with { type: "json" };
 import invitationCoOwner from "../../../../docs/consent-disclosures/invitation-co-owner.v1.json" with { type: "json" };
 import transferRecipient from "../../../../docs/consent-disclosures/primary-transfer-recipient.v1.json" with { type: "json" };
@@ -26,7 +27,6 @@ import { TRANSFER_ACTION } from "./invitations.ts";
 
 export const CEREMONY_COOKIE = "__Host-mp_invitation_ceremony";
 export const MAX_CHANNEL_ATTEMPTS = 5;
-const NEUTRAL_DISPLAY_LABEL = "A MoneyPact member";
 const UNIFORM = Object.freeze({ error: "invitation_unusable", messageCode: "MSG-73-003" });
 const DENY = Object.freeze({ outcome: "deny", reason: "denied" });
 const INVITATION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;

@@ -127,6 +127,27 @@ describe("CBD-236 p6: writeDisplayName / readDisplayIdentity (DI-91-065, SEC-PK2
     }
   });
 
+  it("SEC-NF-R3: refuses a name made only of private-use, unassigned, surrogate, or the specifically named invisible characters, writing nothing", async () => {
+    const { client, row } = fakeClient({ profile_id: "profile-1", account_subject_id: "subject-1", profile_state: "active", display_name: "Alex W.", version: 5 });
+    for (const [label, name] of [
+      ["U+E000 private use (Co) alone", ""],
+      ["U+FDD0 permanently unassigned noncharacter (Cn) alone", "﷐"],
+      ["U+D800 lone high surrogate (Cs) alone", "\uD800"],
+      ["U+1D159 MUSICAL SYMBOL NULL NOTEHEAD alone", "\u{1D159}"],
+      ["U+FFFC OBJECT REPLACEMENT CHARACTER alone", "￼"],
+      ["U+FFFD REPLACEMENT CHARACTER alone", "�"],
+    ] as const) {
+      assert.equal(displayNameRejection(name), "no_visible_grapheme", label);
+      await assert.rejects(() => writeDisplayName(client, "subject-1", name, 5), RangeError, label);
+      assert.equal(row().version, 5, `nothing written for ${label}`);
+      assert.equal(row().display_name, "Alex W.", `nothing written for ${label}`);
+    }
+  });
+
+  it("SEC-NF-R3: a visible letter surrounded only by SEC-NF-R3 characters is still an accepted name", () => {
+    assert.equal(displayNameRejection("A�"), undefined);
+  });
+
   it("SEC-NS-R2: refuses a name that equals or visually equals the neutral label in any casing, compatibility spelling or whitespace, writing nothing", async () => {
     const { client, row } = fakeClient({ profile_id: "profile-1", account_subject_id: "subject-1", profile_state: "active", display_name: null, version: 1 });
     for (const [label, name] of [
