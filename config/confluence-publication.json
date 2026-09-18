@@ -1759,6 +1759,13 @@
       "rationale": "The CBD-191 non-blocking idle-expiry extension design proposal (ARCH-CBD191-IDLE-EXTENSION-001, SEC-G429-F2) is held repository-only because no approved Confluence target is registered for it; it proposes a contract amendment and Executive decisions and creates no pages.",
       "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy, matching the docs/cbd-190-identity-amendments-proposal.md precedent in this manifest.",
       "reopen_when": "The Executive records the section 7 decisions and the Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
+      "path": "docs/cbd-313-provider-secret-custody-specification.md",
+      "disposition": "unpublished",
+      "rationale": "CBD-313 v0.1 provider-secret custody specification (task packet CBD-313-SECRET-INVENTORY r1) is held repository-only because no approved Confluence target is registered for it and this change does not create pages; the document is Proposed, not yet reviewed or Approved.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy, matching the docs/cbd-266-rate-limit-parameter-registry-contract.md precedent in this manifest.",
+      "reopen_when": "Independent and Security review conclude and the Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
     }
   ],
   "retained_pages": []
