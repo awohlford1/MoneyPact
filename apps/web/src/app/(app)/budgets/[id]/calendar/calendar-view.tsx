@@ -11,6 +11,11 @@
  * every navigation (Previous/Next/Today/the month input) computes its next request from that server-supplied
  * date or from the month already on screen -- never from the device clock. This file contains no `Date.now()`
  * and no `new Date()` anywhere; `calendar.test.ts` greps it (and `../../../../../api/calendar.ts`) to prove it.
+ *
+ * OQ-UI-16 (REV-UIP06-1): this surface is mock-only, the same as UI-P05's goals. `mockMode` (the flag
+ * `(app)/layout.tsx` already reads from `@/api/runtime-mode`) gates the whole surface, in `CalendarView` below,
+ * before `CalendarViewConnected` constructs a client or reads a session -- a live build never even makes the
+ * bootstrap request, and instead renders the honest, explicit "This part of MoneyPact is not connected yet."
  */
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, RefObject } from "react";
@@ -23,7 +28,7 @@ import type {
   CalendarCell, CalendarEventKind, CalendarViewState, WireCalendar, WireCalendarEvent,
 } from "../../../../../api/calendar";
 import { ApiError } from "../../../../../api/client";
-import { apiBase } from "@/api/runtime-mode";
+import { mockMode, apiBase } from "@/api/runtime-mode";
 import { useSession } from "../../../../../session/SessionProvider";
 import { Alert } from "../../../../../components/Alert";
 import { Button } from "../../../../../components/Button";
@@ -54,9 +59,12 @@ function useCalendarClient() {
   return useMemo(() => createCalendarClient(apiBase), []);
 }
 
+// REV-UIP06-11: every per-event display reads the server's own `label` field (an event's own name), never a
+// client-side re-statement of it. `KIND_LABELS` stays as the vocabulary for controls that have no event
+// instance to read a label from -- the filter checkboxes and `UnavailableKindsNotice`'s per-kind names.
 function eventSummary(events: readonly WireCalendarEvent[]): string {
   if (events.length === 0) return "";
-  return events.map(event => KIND_LABELS[event.kind]).join(", ");
+  return events.map(event => event.label).join(", ");
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +174,7 @@ function MonthGrid({ monthStart, cells, today, selectedDate, onOpenDate }: {
                   <span className="text-sm font-semibold">
                     {dayOfMonth}{isToday && <span className="ml-1 font-normal">(Today)</span>}{isSelected && <span className="ml-1 font-normal">(Selected)</span>}
                   </span>
-                  {cell.events.map(cellEvent => <span key={cellEvent.eventId} className="truncate text-xs text-on-surface-muted">{KIND_LABELS[cellEvent.kind]}</span>)}
+                  {cell.events.map(cellEvent => <span key={cellEvent.eventId} className="truncate text-xs text-on-surface-muted">{cellEvent.label}</span>)}
                 </button>
               </td>;
             })}
@@ -200,7 +208,7 @@ function AgendaList({ events, today, selectedDate, onOpenDate }: {
         </button>
         <ul className="mt-1 space-y-1">
           {group.events.map(event => <li key={event.eventId} className="text-on-surface-muted">
-            {KIND_LABELS[event.kind]} &middot; {event.status === "actual" ? "actual" : "projected"}
+            {event.label} &middot; {event.status === "actual" ? "actual" : "projected"}
           </li>)}
         </ul>
       </li>;
@@ -225,7 +233,7 @@ function EventDetail({ date, events, dialogRef }: { date: string | null; events:
     <h2 id={titleId} className="mb-3 font-display text-xl font-semibold">{date ? dayLabel(date) : "Date detail"}</h2>
     {events.length === 0 ? <p className="mb-4 text-on-surface-muted">No events on this date.</p> : <ul className="mb-4 space-y-3">
       {events.map(event => <li key={event.eventId} className="border-t border-border pt-3 first:border-0 first:pt-0">
-        <p className="font-semibold">{KIND_LABELS[event.kind]}</p>
+        <p className="font-semibold">{event.label}</p>
         <p className="text-on-surface-muted">{KIND_MEANING[event.kind]}</p>
         <p className="text-on-surface-muted">{event.status === "actual" ? "Actual" : "Projected"}, {event.freshness === "stale" ? "captured earlier" : "current"}.</p>
         {event.href && <a className="text-interactive underline" href={event.href}>Open</a>}
@@ -241,7 +249,26 @@ function EventDetail({ date, events, dialogRef }: { date: string | null; events:
 // The view.
 // ---------------------------------------------------------------------------
 
-function RegionFailure({ error, retry }: { error: unknown; retry(): void }) {
+/** REV-UIP06-3: true only for a lost response (no server answer at all) while the browser itself reports no
+ * connection -- never for an ordinary 4xx/5xx, which already has its own uniform state. Copied from UI-P05's
+ * `goals-view.tsx` (no shared helper exists yet in `resource.tsx`). Section 6.2.10: "offline" never means
+ * cached data, so this branch renders no stale content of its own, only the fact and a retry/sign-out pair. */
+function isOffline(error: unknown): boolean {
+  return !(error instanceof ApiError) && typeof navigator !== "undefined" && "onLine" in navigator && !navigator.onLine;
+}
+
+function OfflineNotice({ retry, onSignOut }: { retry(): void; onSignOut(): void }) {
+  return <Alert tone="danger" title="You appear to be offline">
+    <p>Current financial information is unavailable while you are offline. Nothing shown here is saved or queued until you are back online.</p>
+    <div className="mt-2 flex flex-wrap gap-3">
+      <Button variant="secondary" onClick={retry}>Try again</Button>
+      <Button variant="secondary" onClick={onSignOut}>Sign out</Button>
+    </div>
+  </Alert>;
+}
+
+function RegionFailure({ error, retry, onSignOut }: { error: unknown; retry(): void; onSignOut(): void }) {
+  if (isOffline(error)) return <OfflineNotice retry={retry} onSignOut={onSignOut} />;
   const kind = classifyFailure(error);
   if (kind === "denied") return <DeniedState><p>Your current session cannot see the calendar for this budget.</p></DeniedState>;
   return <Alert tone="danger" title="Unable to load the calendar">
@@ -253,11 +280,27 @@ function RegionFailure({ error, retry }: { error: unknown; retry(): void }) {
 function UnavailableKindsNotice({ unavailableKinds }: { unavailableKinds: readonly string[] }) {
   if (unavailableKinds.length === 0) return null;
   const names = unavailableKinds.map(kind => KIND_LABELS[kind as CalendarEventKind] ?? kind).join(", ");
-  return <Alert title="Some events are not shown">{names} could not be included. The events shown above are complete for the kinds that loaded.</Alert>;
+  return <Alert title="Some events are not shown">{names} could not be included. The events below are complete for the kinds that loaded.</Alert>;
+}
+
+// ---------------------------------------------------------------------------
+// REV-UIP06-1 (OQ-UI-16): the mock-only unavailable state, gating the whole surface before any client exists.
+// ---------------------------------------------------------------------------
+
+function UnavailableSurface() {
+  return <section className="space-y-6">
+    <h1 tabIndex={-1} className="font-display text-3xl font-semibold">Calendar</h1>
+    <Alert title="Not connected">This part of MoneyPact is not connected yet.</Alert>
+  </section>;
 }
 
 export function CalendarView({ id }: { id: string }) {
-  const { session } = useSession();
+  if (!mockMode) return <UnavailableSurface />;
+  return <CalendarViewConnected id={id} />;
+}
+
+function CalendarViewConnected({ id }: { id: string }) {
+  const { session, logout } = useSession();
   const api = useCalendarClient();
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -293,6 +336,12 @@ export function CalendarView({ id }: { id: string }) {
 
   const events = calendar.value?.events ?? [];
   const selectedEvents = state.selectedDate ? events.filter(event => event.date === state.selectedDate) : [];
+  // REV-UIP06-2: `displayMonthStart` survives a navigation-triggered loading gap (`knownMonthStart`/
+  // `state.monthStart` are separate state from `calendar.value`, which briefly clears on every identity
+  // change), so once it is set the toolbar has something real to show and stays mounted through that gap --
+  // only the region below it swaps between loading/error/content. Before the very first response ever
+  // resolves there is nothing yet to keep mounted, so that one case still shows a page-level loading state.
+  const haveEverLoaded = displayMonthStart !== "";
 
   return <section className="space-y-6" aria-labelledby="calendar-heading">
     <div className="flex flex-wrap items-center justify-between gap-4">
@@ -309,9 +358,12 @@ export function CalendarView({ id }: { id: string }) {
       </div>
     </div>
     <StatusRegion id="calendar" message={calendar.refreshed ? "Calendar refreshed." : ""} />
-    {calendar.error ? <RegionFailure error={calendar.error} retry={calendar.refresh} />
-      : loading ? <Alert loading>Loading the calendar…</Alert>
+    {!haveEverLoaded
+      ? (calendar.error ? <RegionFailure error={calendar.error} retry={calendar.refresh} onSignOut={() => void logout()} /> : <Alert loading>Loading the calendar…</Alert>)
       : <>
+        {/* REV-UIP06-2: mounted unconditionally once there is a month to show -- a Previous/Next/Today/month-
+           input/filter click never unmounts the very control the person just activated, even while its own
+           navigation is loading or fails. */}
         <CalendarToolbar
           monthStart={displayMonthStart} kinds={state.kinds}
           onPrevious={() => setState(previous => withMonthStart(previous, addMonths(displayMonthStart, -1)))}
@@ -320,22 +372,23 @@ export function CalendarView({ id }: { id: string }) {
           onGoToMonth={monthStart => setState(previous => withMonthStart(previous, monthStart))}
           onKindChange={(kind, enabled) => setState(previous => withKind(previous, kind, enabled))}
         />
-        <UnavailableKindsNotice unavailableKinds={calendar.value?.unavailableKinds ?? []} />
-        {events.length === 0 && <Alert>No events in this range yet.</Alert>}
-        {/* CBD-323-AC05: below `sm`, the month grid is replaced by the agenda -- the same events, not a lesser
-           set -- regardless of the "Month"/"Agenda" toggle above; the toggle additionally lets a person choose
-           the agenda at any width. */}
-        <div className={state.presentation === "agenda" ? "hidden" : "hidden sm:block"}>
-          {/* REV-UIP06-1: `displayMonthStart` can still be "" on the one throwaway render pass where React is
-             about to re-run this component after the bootstrap `setKnownMonthStart` call above (the same
-             "adjust state during render" pattern `reports-view.tsx`'s `knownPeriodId` already uses) --
-             `monthGridCells("", ...)` would throw before that re-run ever happens, so this guards on it too. */}
-          {today && displayMonthStart && <MonthGrid monthStart={displayMonthStart} cells={monthGridCells(displayMonthStart, events)} today={today} selectedDate={state.selectedDate} onOpenDate={openDetail} />}
-        </div>
-        <div className={state.presentation === "agenda" ? "block" : "sm:hidden"}>
-          {today && <AgendaList events={events} today={today} selectedDate={state.selectedDate} onOpenDate={openDetail} />}
-        </div>
-        {calendar.value && <p className="text-on-surface-muted">Data as of {calendar.value.dataAsOf}.</p>}
+        {calendar.error ? <RegionFailure error={calendar.error} retry={calendar.refresh} onSignOut={() => void logout()} />
+          : loading ? <Alert loading>Loading the calendar…</Alert>
+          : <>
+            <UnavailableKindsNotice unavailableKinds={calendar.value?.unavailableKinds ?? []} />
+            {/* CBD-323-AC05: below `sm`, the month grid is replaced by the agenda -- the same events, not a
+               lesser set -- regardless of the "Month"/"Agenda" toggle above; the toggle additionally lets a
+               person choose the agenda at any width. REV-UIP06-7: the true-empty state is `AgendaList`'s own
+               message (it is the presentation shown at every width the grid is not); a second, page-level
+               empty alert next to a mostly-blank grid would say the same thing twice. */}
+            <div className={state.presentation === "agenda" ? "hidden" : "hidden sm:block"}>
+              <MonthGrid monthStart={displayMonthStart} cells={monthGridCells(displayMonthStart, events)} today={today!} selectedDate={state.selectedDate} onOpenDate={openDetail} />
+            </div>
+            <div className={state.presentation === "agenda" ? "block" : "sm:hidden"}>
+              <AgendaList events={events} today={today!} selectedDate={state.selectedDate} onOpenDate={openDetail} />
+            </div>
+            {calendar.value && <p className="text-on-surface-muted">Data as of {calendar.value.dataAsOf}.</p>}
+          </>}
       </>}
     <EventDetail date={state.selectedDate} events={selectedEvents} dialogRef={dialogRef} />
   </section>;

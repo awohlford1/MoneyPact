@@ -139,6 +139,25 @@ test("CBD-323: a paycheck-cadence calendar reports a payday event for every Frid
   assert.equal(previous.today, bootstrap.today, "today does not move when navigating");
 });
 
+test("CBD-323: a custom-fixed-length cadence's period boundaries walk correctly, extrapolating backward from its start boundary", async () => {
+  const clock = () => Date.parse("2026-09-15T12:00:00Z"); // a Tuesday, America/New_York
+  const { mock, budgetSpaceId } = await setUpBudget(clock, { cadence: "custom-fixed-length", startBoundary: "2026-09-01", lengthInDays: 14 });
+  const calendar = createCalendarClient("/v1", csrfFetcher(mock));
+
+  const result = await calendar.calendar(budgetSpaceId, "", "", ["period_start", "period_end"]);
+  assert.equal(result.today, "2026-09-15");
+  assert.equal(result.unavailableKinds.length, 0);
+  // Fourteen-day periods from 2026-09-01, extrapolated backward: ...2026-08-18..2026-08-31, 2026-09-01..09-14,
+  // 2026-09-15..09-28, 2026-09-29..10-12... The Monday-first grid range for September (2026-08-31 to 2026-10-04)
+  // spans three period-start boundaries and three period-end boundaries.
+  const starts = result.events.filter(event => event.kind === "period_start").map(event => event.date).sort();
+  assert.deepEqual(starts, ["2026-09-01", "2026-09-15", "2026-09-29"]);
+  const ends = result.events.filter(event => event.kind === "period_end").map(event => event.date).sort();
+  assert.deepEqual(ends, ["2026-08-31", "2026-09-14", "2026-09-28"]);
+  const currentPeriodStart = result.events.find(event => event.kind === "period_start" && event.date === "2026-09-15");
+  assert.equal(currentPeriodStart?.status, "actual", "the current fourteen-day period starts today, which counts as already arrived");
+});
+
 test("CBD-323: a kind with no registered source is named in unavailableKinds; registered kinds still render", async () => {
   const clock = () => Date.parse("2026-09-15T12:00:00Z");
   const { mock, budgetSpaceId } = await setUpBudget(clock, { cadence: "monthly", anchor: { kind: "day-of-month", day: 1 } });

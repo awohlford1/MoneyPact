@@ -41,6 +41,9 @@ function driver(page, errors, name) {
   const zoomed = async () => {
     await page.setViewport({ width: 320, height: 225, deviceScaleFactor: 4 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${new URL(page.url()).pathname} scrolls horizontally at 320x225 dsf4`);
+    // REV-UIP06-4: axe at 320x225@dsf4 too, matching `narrow()`'s own 320px pass -- the plan requires all
+    // three viewports (default/320/320x225@dsf4), and this call was missing.
+    await accessibility();
     await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
   };
   return { page, text, waitText, clickText, accessibility, narrow, zoomed };
