@@ -210,7 +210,13 @@ test("CBD-341: create, edit, contribute, reverse, archive and restore over the m
   assert.equal(restored.archivedAt, null);
 });
 
-test("CBD-341-AC05: an unrecognised goal id is refused 404, and a subject with no membership is refused 403 -- both uniform, neither distinguishing the other", async () => {
+// REV-UIP05-7: a 403 and a 404 here are not the same claim and this test does not say they are. The
+// space-level boundary (not a member of this budget space at all) is the uniform 403 CBD-341-AC05 requires
+// -- it never distinguishes "this space does not exist" from "you may not see it". A 404 is a different,
+// separate outcome one boundary in (a member of the space asking about a goal id that is not in it), and it
+// is non-leaking in its own right: it never says whether that id was ever real. Neither status is a
+// substitute for the other, and this test asserts each on its own boundary.
+test("CBD-341-AC05: a space-level 403 is the uniform denial, and an in-space 404 for an unrecognised goal id is its own separate, non-leaking outcome", async () => {
   const clock = () => Date.parse("2026-09-15T12:00:00Z");
   const { mock, budgetSpaceId } = await setUpBudget(clock);
   const goals = createGoalsClient("/v1", csrfFetcher(mock));
