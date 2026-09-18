@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved — User/Product Owner, September 18, 2026 (`EXEC-UI-DECISIONS-001`, accepting the OQ-UI-17 recommendation in `UI-BUILD-PLAN.md` section 5/5.1)** |
+| Status | **Proposed — awaiting Product Owner approval of this exact text; adoption of WCAG 2.2 AA authorized by `EXEC-UI-DECISIONS-001` (OQ-UI-17)** |
 | Document version | 0.1 |
 | Jira ticket | None. This document has no dedicated CBD subtask; it is authorized directly by the cited executive decision and closes the gap that decision named. See §5 for the assumption this recorded. |
 | Parent | [CBD-15](https://cobudget.atlassian.net/browse/CBD-15) family accessibility findings (`OI-102-007`) and [CBD-71](https://cobudget.atlassian.net/browse/CBD-71) (`RF-71-23`) |
@@ -87,7 +87,7 @@ text, not a product-specific departure from it.
 
 | Foreground | Background | Light | Dark | Rationale (verbatim from `contrast-record.md`) |
 | --- | --- | --- | --- | --- |
-| `focus` | `accent` | 6.12:1 | 1.25:1 | "Focus ring around a primary button. The ring is offset 2px onto the surface and never touches the fill; the governing pairings are focus on surface and on surface-raised." |
+| `focus` | `accent` | 6.12:1 | 1.25:1 | "Focus ring around a primary button. The ring is offset 2px onto the surface and never touches the fill; the governing pairings are focus on surface and on surface-raised." (`contrast-record.md`'s own text for this row names no success criterion directly; it is grouped under WCAG 1.4.11 here because it is a non-text focus-indicator boundary, and the criterion is satisfied by the passing `focus`-on-`surface`/`surface-raised` pairings rather than by this pairing.) |
 | `accent` | `surface` | 1.12:1 | 14.03:1 | "Primary button fill on the page ground. WCAG 1.4.11: the fill's boundary is not required to identify the control; its on-accent label (a text pairing above) does. No control may rely on this fill alone." |
 | `accent` | `surface-raised` | 1.25:1 | 12.65:1 | "Primary button fill inside a card or dialog. WCAG 1.4.11, as above." |
 | `border` | `surface` | 1.22:1 | 1.45:1 | "Card edges, table row lines, section frames. Decorative separation between regions; WCAG 1.4.11 applies to boundaries needed to identify a component." |
@@ -97,8 +97,9 @@ WCAG 1.4.11 (Non-text Contrast) requires a 3:1 minimum only for a visual
 boundary that is itself required to identify a component or its state or
 boundary. Each of these five pairings measures below 3:1 in at least one
 theme, and each is exempt because a different, passing pairing carries the
-identification requirement instead: the primary-button label text (§3, `on-accent`
-on `accent`, 10.71:1/14.03:1) identifies the button, not its fill or the focus
+identification requirement instead: the primary-button label text
+(`contrast-record.md`'s `on-accent` on `accent` text pairing, 10.71:1/14.03:1,
+which passes its 4.5:1 minimum) identifies the button, not its fill or the focus
 ring's overlap with the fill; and card/table borders are decorative
 separators, not component-identifying boundaries.
 
@@ -133,12 +134,14 @@ Accordingly:
   AA. A conformance claim beyond "tested against, zero violations found at
   this scope" is not supported by a single page's evidence and is exactly the
   kind of unsupported claim `EXC-76-004` forbids.
-- This discipline matches `UI-BUILD-PLAN.md` §6.1 item 0, which this document
-  now gives an approved home: "Conformance is tested against, never claimed."
-  Every UI packet's `accessibility()` harness call (axe over `main` with
-  `wcag2a, wcag2aa, wcag21aa`, asserting zero violations at the default
-  viewport, at 320 CSS pixels, and at 320×225 at 4x device scale factor) is
-  evidence of testing against this standard, not a certification of it.
+- This discipline matches the "tested against, never claimed" principle
+  recorded in the session's UI planning notes (a planning artifact outside
+  this repository, paraphrased here rather than cited as a resolvable
+  document). Any future automated accessibility check a UI packet adds
+  should record what it actually tested — for example, an axe run over the
+  page with the applicable WCAG 2.2 A/AA rule tags, asserting zero
+  violations at the viewports it checked — as evidence of testing against
+  this standard, not as a certification of it.
 
 ## 5. Cross-references and dependent open items
 
@@ -190,18 +193,19 @@ handoff in the result, not performed here.
    document a CBD ticket and number, renaming it and updating
    `config/confluence-publication.json` is a small follow-on change.
 2. **Assumption — "the two known contrast exceptions" is two exception
-   classes, not two pairing rows.** `contrast-record.md` marks six pairings
-   `exempt`, not two. `UI-BUILD-PLAN.md` §5 (OQ-UI-17) and §5.1 both say "the
-   two known contrast exceptions" without naming rows. Grouped by the WCAG
-   success criterion that exempts them, the six rows fall into exactly two
-   classes (§3.1 WCAG 1.4.3 inactive-component text, two rows; §3.2 WCAG
-   1.4.11 non-identifying boundaries, five rows) — two classes, six rows.
-   This document reproduces every exempt row's rationale verbatim under its
-   class rather than picking two rows and omitting four, on the reasoning
-   that partial reproduction of a verbatim record would misstate what the
-   record contains.
+   classes, not two pairing rows.** `contrast-record.md` marks seven pairings
+   `exempt`, not two. The session's UI planning notes (a planning artifact
+   outside this repository, paraphrased rather than cited as a resolvable
+   document) describe "the two known contrast exceptions" without naming
+   rows. Grouped by the WCAG success criterion that exempts them, the seven
+   rows fall into exactly two classes (§3.1 WCAG 1.4.3 inactive-component
+   text, two rows; §3.2 WCAG 1.4.11 non-identifying boundaries, five rows) —
+   two classes, seven rows. This document reproduces every exempt row's
+   rationale verbatim under its class rather than picking two rows and
+   omitting five, on the reasoning that partial reproduction of a verbatim
+   record would misstate what the record contains.
 3. **No code change made.** This packet is documentation-only. If any of the
-   six exempt pairings' measured ratios or rationale ever need to change,
+   seven exempt pairings' measured ratios or rationale ever need to change,
    that is a `check:tokens` / `contrast-pairings.json` change in a separate,
    focused change — not this document, and not this packet. Nothing in this
    packet's evidence suggests re-pinning is currently needed; §3 restates the
@@ -227,4 +231,4 @@ one.
 
 | Version | Date | Author | Change | Disposition |
 | --- | --- | --- | --- | --- |
-| 0.1 | September 18, 2026 | Documentation specialist, dispatched under `DOC-A11Y-WCAG22AA-001` | Initial adoption of WCAG 2.2 AA as the product conformance standard; both known contrast exception classes recorded verbatim from `contrast-record.md`; evidence-vs-conformance-claim discipline stated; cross-references to CBD-68 §21.1, CBD-71 `RF-71-23`, CBD-102 `OI-102-007`, and CBD-190 §7 added. | Approved — User/Product Owner, September 18, 2026 (`EXEC-UI-DECISIONS-001`); disposition `unpublished` (no Confluence target registered). |
+| 0.1 | September 18, 2026 | Documentation specialist, dispatched under `DOC-A11Y-WCAG22AA-001` | Initial adoption of WCAG 2.2 AA as the product conformance standard; both known contrast exception classes recorded verbatim from `contrast-record.md`; evidence-vs-conformance-claim discipline stated; cross-references to CBD-68 §21.1, CBD-71 `RF-71-23`, CBD-102 `OI-102-007`, and CBD-190 §7 added. | Proposed; adoption of WCAG 2.2 AA authorized by `EXEC-UI-DECISIONS-001` (OQ-UI-17), this exact text awaiting a separate Product Owner approval revision; disposition `unpublished` (no Confluence target registered). |
