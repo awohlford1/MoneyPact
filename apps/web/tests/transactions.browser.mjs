@@ -220,6 +220,31 @@ export async function transactionsJourney(t, { browser, origin, errors }) {
     await page.waitForSelector("#transaction-create-account");
   });
 
+  await t.test("NEW-UIP03-A: a client-side amount refusal (parseMajorUnits' own baseAmount code) is announced AND focused, never silent", async () => {
+    await d.clickText("Edit End of period edited");
+    await d.waitText("Edit this transaction");
+    // A negative amount: `parseMajorUnits` refuses it before any network request, under the field name
+    // `baseAmount` -- distinct from the server's own `amount` codes (e.g. `amount_overflow`). This also
+    // covers NEW-UIP03-B: a negative amount is refused here, before it can ever reach the confirm dialog's
+    // own summary as a submitted value.
+    await d.fill("#transaction-edit-amount", "-5.00");
+    await d.clickText("Save changes");
+    await page.waitForSelector("dialog[open]");
+    await d.clickText("Confirm and save changes");
+    await d.waitText("Enter a zero-or-positive amount with up to 2 decimal places.");
+    assert.equal(await page.$("dialog[open]"), null, "the confirm dialog must close before the message and focus land");
+    assert.equal(await page.$eval('[data-testid="transactions-status"]', node => node.textContent.trim()), "Enter a zero-or-positive amount with up to 2 decimal places.", "the refusal must be visible in the page's own status region, not silent");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "transaction-edit-amount", "focus must land on the amount field, not a button or <body>");
+    await d.accessibility();
+    // Restore a valid amount so the transaction's state is known for later tests.
+    await d.fill("#transaction-edit-amount", "2.50");
+    await d.clickText("Save changes");
+    await page.waitForSelector("dialog[open]");
+    await d.clickText("Confirm and save changes");
+    await d.waitText("Transaction updated.");
+    await page.waitForSelector("#transaction-create-account");
+  });
+
   await t.test("CBD-202-AC03: removal shows the affected transaction and its categories in a confirmation dialog before it takes effect", async () => {
     await d.clickText("Remove Weekly groceries");
     await page.waitForSelector("dialog[open]");

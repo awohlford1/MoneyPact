@@ -82,7 +82,10 @@ function TransactionsFailure({ error, retry }: { error: unknown; retry(): void }
   </Alert>;
 }
 
-const FIELD_SUFFIX: Readonly<Record<string, string>> = Object.freeze({ accountId: "account", budgetDate: "date", amount: "amount", description: "description" });
+// NEW-UIP03-A: `baseAmount` is `parseMajorUnits`'s own field name for a client-side amount refusal (negative,
+// too many decimals, or non-numeric text) -- distinct from the server's `amount` (e.g. `amount_overflow`).
+// Without an entry here, `focusFirstInvalid` matched nothing and moved no focus for that one refusal shape.
+const FIELD_SUFFIX: Readonly<Record<string, string>> = Object.freeze({ accountId: "account", budgetDate: "date", amount: "amount", baseAmount: "amount", description: "description" });
 /** Moves focus to the first invalid field, leaving every other entered value untouched (CBD-202-AC02). */
 function focusFirstInvalid(prefix: string, fields: Readonly<Record<string, string>>): void {
   for (const path of Object.keys(FIELD_SUFFIX)) if (fields[path]) { document.getElementById(`transaction-${prefix}-${FIELD_SUFFIX[path]}`)?.focus(); return; }
@@ -320,7 +323,7 @@ function EditTransactionForm({ id, loaded, basis, onDone, announce, refresh }: {
         }}
         onSuccess={() => { setErrors({}); announce(transactionAnnouncement("updated")); focusTransactionsHeading(); onDone(); refresh(); }}
         onDenied={message => { announce(message); focusTransactionsHeading(); onDone(); refresh(); }}
-        onInvalid={report => { setErrors(report.fields); focusFirstInvalid("edit", report.fields); }}
+        onInvalid={report => { setErrors(report.fields); announce(report.summary); focusFirstInvalid("edit", report.fields); }}
         refresh={refresh}
       />
       <Button variant="secondary" onClick={onDone}>Cancel</Button>
