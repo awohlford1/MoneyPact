@@ -4,13 +4,16 @@
  * with two sessions of the same Primary Owner (the second is 429 in_flight or the uniform 403 depending on whether
  * the first has reached its session write; record which)."
  *
- * This is an observation case, not a fix: whichever answer the loser gets, no rule is broken (CBD-266 SEC-G429-F2,
- * PROTO-CBD266-429-SEC-001-RESULT.r1, records both are legitimate depending on whether the winner's serializable
- * effect transaction has already extended the session's idle expiry and fenced the revocation epoch by the time the
- * loser's request reaches the gate). The case fires two concurrent `confirm` requests for the *same* live transfer
- * from two independent sessions belonging to the same Primary Owner (`subject-a` signed in twice, matching a
- * two-tab or two-device scenario), each holding its own fresh-assurance grant from its own step-up, and records the
- * loser's exact status and body.
+ * IDLE-T05 (CBD-191 SC-191-006, applied by `PROTO-CBD191-IDLE-IMPL-001`): before this amendment, both answers
+ * were legitimate (CBD-266 SEC-G429-F2, PROTO-CBD266-429-SEC-001-RESULT.r1, IDLE-F04) because the loser's
+ * session gate could block on the winner's session-row lock and time out to the uniform 403. The gate's slide
+ * outside a mutation's effect transaction is now best-effort (never waits on that lock), so the loser's
+ * session always resolves quickly and reaches the in-flight counter; the uniform-403 branch is a regression
+ * here, not a legitimate outcome, so this case now asserts 429 only, with the winner's effect transaction
+ * deliberately held open past the fact-assembly deadline (`beforeCommit`) so the loser unambiguously arrives
+ * while the winner is still in flight. The case fires two concurrent `confirm` requests for the *same* live
+ * transfer from two independent sessions belonging to the same Primary Owner (`subject-a` signed in twice,
+ * matching a two-tab or two-device scenario), each holding its own fresh-assurance grant from its own step-up.
  *
  * Same harness pattern as ./transfer.live.test.ts (opt-in on COBUDGET_DB_NAME, never cobudget_dev/cobudget_demo).
  * Identity-ceremony budget: this file spends five `begin`s (subject-a session A, subject-b, subject-a session B,
@@ -56,7 +59,7 @@ interface Harness {
 }
 let beginCount = 0;
 
-async function harness(): Promise<Harness> {
+async function harness(overrides: { beforeCommit?: (transaction: unknown) => Promise<void> } = {}): Promise<Harness> {
   const { createApiConnection } = await import("../../../../packages/data-access/src/connection.ts");
   const { bindClient } = await import("../../../../packages/data-access/src/binding.ts");
   const pool = createApiConnection();
@@ -64,7 +67,7 @@ async function harness(): Promise<Harness> {
   const locatorPool = createApiConnection();
   const port = 20_000 + Math.floor(Math.random() * 40_000);
   const config = localConfig({ NODE_ENV: "development", COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY: Buffer.alloc(32, 13).toString("base64"), COBUDGET_FIELD_ENCRYPTION_KEY_VERSION: "pk9-live-v1", COBUDGET_IDENTITY_ENVIRONMENT_ID: ENVIRONMENT, COBUDGET_IDENTITY_CEREMONY_ORIGIN: `http://127.0.0.1:${port}`, COBUDGET_IDENTITY_ISSUER: `http://127.0.0.1:${port}/v1/identity/local` });
-  const { app } = await createComposedApiApplication(config, () => undefined, readReleaseHistory(), { client, locator: locatorPool, scheduler: null });
+  const { app } = await createComposedApiApplication(config, () => undefined, readReleaseHistory(), { client, locator: locatorPool, scheduler: null, ...overrides });
   await app.init();
   await (app.getHttpAdapter().getInstance() as FastifyInstance).ready();
   const inject: Harness["inject"] = async (jar, method, url, headers = {}, payload) => {
@@ -148,8 +151,20 @@ async function seedCoOwner(spaceId: string, primarySubject: string, subject: str
 const mutation = (csrf: string) => ({ origin: APPLICATION_ORIGIN, "sec-fetch-site": "same-origin", "x-cobudget-csrf": csrf, "content-type": "application/json" });
 
 describe("PK9-R PK7B-F03 live: concurrent confirm from two sessions of the same Primary Owner", { skip: !configured }, () => {
-  it("both sessions hold their own fresh-assurance grant and confirm the same live transfer concurrently; one wins with a committed transfer and the loser is recorded", async () => {
-    const h = await harness();
+  it("IDLE-T05 (CBD-191 SC-191-006): both sessions hold their own fresh-assurance grant and confirm the same live transfer concurrently, the winner's effect transaction held open past the fact-assembly deadline; one wins with a committed transfer and the loser is always 429 in_flight, never the uniform 403", async () => {
+    // IDLE-T05: with the gate/precheck slide now best-effort (SC-191-006), the loser's session gate never
+    // blocks on the winner's session-row lock, so it always reaches the in-flight counter and is answered 429
+    // -- the uniform-403 branch this case previously accepted (SEC-G429-F2, IDLE-F04) is a regression here,
+    // not a legitimate outcome. `beforeCommit` holds the winner's transaction open well past the 5 s
+    // fact-assembly deadline so the loser's request unambiguously arrives while the winner is still in flight.
+    let held = false;
+    const h = await harness({
+      beforeCommit: async () => {
+        if (held) return;
+        held = true;
+        await new Promise((resolve) => setTimeout(resolve, 5_500));
+      },
+    });
     try {
       const jarA1: Jar = { cookies: {} }; const jarA2: Jar = { cookies: {} }; const jarB: Jar = { cookies: {} };
       const primarySessionA = await signIn(h, jarA1, "subject-a");
@@ -195,10 +210,12 @@ describe("PK9-R PK7B-F03 live: concurrent confirm from two sessions of the same 
       assert.equal(winners.length, 1, `exactly one winner: ${JSON.stringify(outcomes)}`);
       assert.equal(losers.length, 1, `exactly one loser: ${JSON.stringify(outcomes)}`);
       const loser = losers[0]!;
-      const loserIsRateLimited = loser.status === 429 && /in_flight/u.test(loser.body);
-      const loserIsUniformDenial = loser.status === 403 && (() => { try { return JSON.parse(loser.body).reason === "denied"; } catch { return false; } })();
-      assert.ok(loserIsRateLimited || loserIsUniformDenial, `loser must be 429 in_flight or the uniform 403: ${JSON.stringify(loser)}`);
-      console.log(`PK7B-F03 OBSERVED: the loser received ${loserIsRateLimited ? "429 in_flight (the per-actor rate-limit bucket)" : "the uniform 403 (refused at the session gate)"}`);
+      // IDLE-T05: tightened from "429 in_flight or the uniform 403" to 429 only. Before SC-191-006 the loser's
+      // session gate could block on the winner's session-row lock and time out to the uniform 403 (SEC-G429-F2);
+      // the gate's slide is now best-effort and never waits, so the loser always reaches the in-flight counter.
+      assert.equal(loser.status, 429, `the loser must be 429 in_flight, never the uniform 403 (SC-191-006 / IDLE-T05): ${JSON.stringify(loser)}`);
+      assert.match(loser.body, /in_flight/u);
+      console.log("PK7B-F03 OBSERVED: the loser received 429 in_flight (the per-actor rate-limit bucket)");
 
       // Exactly one commit reached the row: no double-spend, whichever request lost. The recipient already accepted
       // above (TR-73-43), so the winning confirm both records the Primary's leg and completes the pair in the same

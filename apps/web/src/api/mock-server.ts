@@ -11,15 +11,26 @@
 import { randomUUID, createHash } from "node:crypto";
 import { buildPaycheckSchedule, customBoundaries, describeCadence, parseCadenceDefinition, periodLengthInDays, setupPreview, weeklyMonthlyBoundaries } from "@cobudget/budget-domain/schedule";
 import type { CadenceDefinition } from "@cobudget/budget-domain/schedule";
-import { addDays, toISODate } from "@cobudget/budget-domain/shared";
+import { addDays, collapseWhitespace, hasControlOrFormatCharacter, toISODate } from "@cobudget/budget-domain/shared";
 import { fullPeriodTargets } from "@cobudget/budget-domain/targets";
 import { ApiError, createHttpClient } from "./client.ts";
 import type { ApiClient, FieldError, WireAccountList, WireAccountMutation, WireCategoryDetail, WireCategoryList, WirePlan, WireProgress, WireSession, WireSpaceDetail, WireSpaceList, WireTargetSet, WireTransactionMutation } from "./client.ts";
 import type { Confirmation, Disclosure, Draft, Proposal, ProposalRead } from "./proposals.ts";
 // PK-8: the invitation, members, ceremony, Primary-transfer, step-up and notices routes live in their own module; the
 // directory they share across sessions is also where every session's budget spaces and memberships now live.
-import { activeMembership, createMockDirectory, handleMockInvitationRequest, mockAssurance, registerMockSpace, sharedMockDirectory } from "./mock-invitations.ts";
+import { activeMembership, createMockDirectory, mockAssurance, registerMockSpace, sharedMockDirectory } from "./mock-invitations.ts";
 import type { MockDirectory } from "./mock-invitations.ts";
+// CBD-35: the invitation, members, transfer, step-up and notices routes are the first entry in the mock route
+// module registry; later packets register their own module here instead of hard-coding another delegation.
+import { MOCK_ROUTE_MODULES } from "./mock-registry.ts";
+
+// SEC-F06-OBS1 / REV-NS-3 / SEC-NS-R1: the mock emulates `name.control-characters` and the live
+// budget-name whitespace collapse with the same shared Unicode name rules as
+// `packages/budget-application/src/creation-proposals/normalize.ts` and
+// `packages/data-access/src/financial-profile.ts` (`@cobudget/budget-domain/shared`), so a
+// mock-backed journey can exercise the same rejection: no Cc/Cf except an emoji-sequence ZWJ or
+// a between-letters ZWJ/ZWNJ, and the same `\p{White_Space}` collapse (not JS `\s`, which misses
+// U+FEFF and other non-`\s` White_Space code points).
 
 /** The mock's stand-in for config/consent-disclosure-registry.json; the live API serves the approved entry. */
 const MOCK_DISCLOSURE: Disclosure = {
@@ -241,8 +252,9 @@ export function createServerMock(now = Date.now, directory: MockDirectory<MockSp
       authorize();
       const { supersedesProposalId: supersedes, ...draft } = body;
       const errors: FieldError[] = [];
-      const name = typeof draft.name === "string" ? draft.name.normalize("NFC").trim().replace(/\s+/gu, " ") : "";
+      const name = typeof draft.name === "string" ? collapseWhitespace(draft.name) : "";
       if (!name) errors.push({ path: "name", code: "name.required", message: "Enter a budget name." });
+      else if (hasControlOrFormatCharacter(name)) errors.push({ path: "name", code: "name.control-characters", message: "Remove control and invisible formatting characters." });
       if ([...new Intl.Segmenter("en", { granularity: "grapheme" }).segment(name)].length > 100) errors.push({ path: "name", code: "name.too-long", message: "Use 100 characters or fewer." });
       let timeZone = typeof draft.timeZone === "string" ? draft.timeZone.trim() : "";
       try { if (!timeZone.includes("/")) throw new Error(); timeZone = new Intl.DateTimeFormat("en", { timeZone }).resolvedOptions().timeZone; }
@@ -504,9 +516,16 @@ export async function handleMockRequest(mock: MockWire, request: Request, path: 
     const body = request.method === "GET" ? {} : await request.json().catch(() => ({}));
     const idempotency = request.headers.get("Idempotency-Key") ?? "";
     const route = path.join("/");
-    // PK-8: the invitation, members, transfer, step-up, local-delivery and notices routes of a signed-in session.
+    // CBD-35: MOCK_ROUTE_MODULES dispatches in order; a module returning undefined falls through to the next
+    // and finally to the existing ladder below. PK-8's invitation, members, transfer, step-up, local-delivery
+    // and notices routes are the first entry.
     const subject = mock.subject(); const csrf = mock.csrf();
-    if (subject && csrf) { const owned = await handleMockInvitationRequest(mock.directory, { accountSubjectId: subject, csrf }, request, path, body, mock.now); if (owned) return owned; }
+    if (subject && csrf) {
+      for (const routeModule of MOCK_ROUTE_MODULES) {
+        const owned = await routeModule(mock.directory, { accountSubjectId: subject, csrf }, request, path, body, mock.now);
+        if (owned) return owned;
+      }
+    }
     if (route === "identity/me" && request.method === "GET") { const session = mock.me(); if (!session) throw new ApiError(403, "authorization_denied"); return json(session); }
     if (route === "identity/logout" && request.method === "POST") { mock.logout(); return json({ signedOut: true }); }
     if (path[0] === "budget-creation-proposals") {

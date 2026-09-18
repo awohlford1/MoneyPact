@@ -1,13 +1,28 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { describe, it } from "node:test";
-import { SESSION_COOKIE_NAME } from "@cobudget/sessions";
+import { createSessionStore, resolveSession, SESSION_COOKIE_NAME } from "@cobudget/sessions";
+import type { IdentityView } from "./ceremony.ts";
 import type { CompletionResult } from "./ceremony.ts";
 import { setSubjectLifecycle } from "./store.ts";
+import { resolveApiSessionConfiguration } from "../sessions/index.ts";
 import { APPLICATION_ORIGIN, buildHarness, cookieValueFrom } from "./test-support/harness.ts";
 import type { IdentityHarness } from "./test-support/harness.ts";
 
 interface Counts { subjects: number; profiles: number; activeProfiles: number; bindings: number; callbacks: number; handoffs: number; consumed: number; prepared: number; terminalFailed: number; sessions: number; activeSessions: number }
+
+/**
+ * REV-IDLE-5: replaces the now-deleted `IdentityCeremony#view` for this suite's own resolution/CSRF-recovery
+ * coverage -- resolves the cookie (best-effort, matching the real gate) and, if resolved, reads the bootstrap
+ * view exactly as the real `/v1/identity/me` route does through `viewResolved`.
+ */
+async function view(h: IdentityHarness, cookieValue: string | undefined): Promise<IdentityView | undefined> {
+  const store = createSessionStore(h.client);
+  const { session } = resolveApiSessionConfiguration(h.config);
+  const resolved = await resolveSession(cookieValue, store, session, h.config.COBUDGET_IDENTITY_ENVIRONMENT_ID!, h.now(), "skip_locked");
+  if (resolved.status !== "resolved") return undefined;
+  return h.ceremony.viewResolved(h.client, { accountSubjectId: resolved.accountSubjectId, sessionRef: resolved.sessionRef, sessionVersion: resolved.sessionVersion, assurance: resolved.assurance.level });
+}
 
 function counts(h: IdentityHarness): Counts {
   const db = h.db;
@@ -54,7 +69,7 @@ describe("CBD-190-AC03 identity mapping (CT-190-001/002, CBD190-PROFILE-ATOMIC-0
     assert.equal(result.setCookie.length, 1, "only the session cookie is ever set");
     assert.ok(result.setCookie[0]!.includes("HttpOnly") && result.setCookie[0]!.includes("Secure") && result.setCookie[0]!.includes("SameSite=Lax"));
     const sessionCookieValue = cookieValueFrom(result.setCookie, SESSION_COOKIE_NAME)!;
-    const bootstrap = await h.ceremony.view(sessionCookieValue);
+    const bootstrap = await view(h, sessionCookieValue);
     assert.ok(bootstrap?.csrfValue, "the raw CSRF value is recoverable, in-process, through the bootstrap view");
     const callback = h.db.rows("identity_callback")[0]!;
     assert.equal(callback.challenge_id, result.challengeId);
@@ -427,26 +442,26 @@ describe("identity view and logout", () => {
     // in first-sign-in-name.test.ts).
     const signedIn = success(await h.signIn("subject-b"));
     const cookie = cookieValueFrom(signedIn.setCookie, SESSION_COOKIE_NAME)!;
-    const view = await h.ceremony.view(cookie);
-    assert.ok(view);
-    assert.equal(view.accountSubjectId, signedIn.accountSubjectId);
-    assert.equal(view.profileId, h.db.rows("financial_profile")[0]!.profile_id);
-    assert.equal(view.sessionRef, signedIn.sessionRef);
-    assert.ok(view.csrfValue, "C9: the raw CSRF bootstrap value is recoverable in-process before logout");
-    assert.equal(view.sessionVersion, 1, "CBD-191 section 5.1: the per-session version is a permitted client hint");
-    assert.deepEqual(Object.keys(view).sort(), ["accountSubjectId", "assurance", "csrfValue", "displayName", "environmentId", "identityBindingId", "profileId", "sessionRef", "sessionVersion"]);
-    assert.equal(view.displayName, null, "P6-F01: unset until profile.set_display_name writes it (subject-b carries no name claim, CBD-190 §2)");
+    const viewResult = await view(h, cookie);
+    assert.ok(viewResult);
+    assert.equal(viewResult.accountSubjectId, signedIn.accountSubjectId);
+    assert.equal(viewResult.profileId, h.db.rows("financial_profile")[0]!.profile_id);
+    assert.equal(viewResult.sessionRef, signedIn.sessionRef);
+    assert.ok(viewResult.csrfValue, "C9: the raw CSRF bootstrap value is recoverable in-process before logout");
+    assert.equal(viewResult.sessionVersion, 1, "CBD-191 section 5.1: the per-session version is a permitted client hint");
+    assert.deepEqual(Object.keys(viewResult).sort(), ["accountSubjectId", "assurance", "csrfValue", "displayName", "environmentId", "identityBindingId", "profileId", "sessionRef", "sessionVersion"]);
+    assert.equal(viewResult.displayName, null, "P6-F01: unset until profile.set_display_name writes it (subject-b carries no name claim, CBD-190 §2)");
     const csrf = await h.ceremony.csrfDigestFor(cookie);
     assert.ok(csrf);
     const deletion = await h.ceremony.logout(csrf.sessionRef);
     // C9: only the session cookie is ever deleted -- there is no CSRF cookie to delete.
     assert.equal(deletion.length, 1);
     assert.ok(deletion.every((header) => header.includes("Max-Age=0")));
-    assert.equal(await h.ceremony.view(cookie), undefined);
+    assert.equal(await view(h, cookie), undefined);
     assert.equal(h.db.count("account_session", [{ column: "state", value: "revoked" }]), 1);
     assert.equal(h.db.count("revocation_outbox", [{ column: "cause", value: "logout" }]), 1);
-    assert.equal(await h.ceremony.view(undefined), undefined);
-    assert.equal(await h.ceremony.view("not-a-cookie"), undefined);
+    assert.equal(await view(h, undefined), undefined);
+    assert.equal(await view(h, "not-a-cookie"), undefined);
   });
 
   it("PROTO-IDENTITY-API-001 RC-06 / PROTO-ACTIVATION-001: the raw CSRF bootstrap value is returned on every bootstrap read of a live session (a reload must be able to mutate again), bounded by the session's absolute expiry and erased at logout", async () => {
@@ -454,12 +469,12 @@ describe("identity view and logout", () => {
     const h = buildHarness({ now: () => now });
     const signedIn = success(await h.signIn("subject-a"));
     const cookie = cookieValueFrom(signedIn.setCookie, SESSION_COOKIE_NAME)!;
-    const first = await h.ceremony.view(cookie);
+    const first = await view(h, cookie);
     assert.ok(first?.csrfValue, "the first bootstrap read returns the raw value");
-    const second = await h.ceremony.view(cookie);
+    const second = await view(h, cookie);
     assert.equal(second?.csrfValue, first.csrfValue, "a reload's bootstrap read receives the same session-bound value: it is held only in browser memory (CBD-191 section 5.1)");
     now = new Date(now.getTime() + 3601 * 1000);
-    const expired = await h.ceremony.view(cookie);
+    const expired = await view(h, cookie);
     assert.equal(expired, undefined, "the session itself has passed its absolute lifetime");
     assert.equal((await h.ceremony.csrfDigestFor(cookie)), undefined);
   });
@@ -473,7 +488,7 @@ describe("identity view and logout", () => {
     assert.ok(csrf);
     await h.ceremony.logout(csrf.sessionRef);
     assert.equal(h.ceremony.retainedCsrfValues, 0, "logout erased the raw value");
-    assert.equal(await h.ceremony.view(cookie), undefined, "the revoked session no longer resolves");
+    assert.equal(await view(h, cookie), undefined, "the revoked session no longer resolves");
     const again = success(await h.signIn("subject-a"));
     assert.equal(h.ceremony.retainedCsrfValues, 1);
     const switched = success(await h.signIn("subject-a", "account_switch", cookieValueFrom(again.setCookie, SESSION_COOKIE_NAME)));

@@ -84,7 +84,7 @@ export const NEGATIVE_TOKEN_SCENARIOS = Object.freeze([
  * `subject-a`'s immutable `sub` with a different valid name, for the
  * never-overwrite negative (`C190-N04`/`C190-N05`).
  */
-export const NAME_BOUND_SCENARIOS = Object.freeze(["subject-a-second-name", "name-blank", "name-oversized", "name-bidi-override"] as const);
+export const NAME_BOUND_SCENARIOS = Object.freeze(["subject-a-second-name", "name-blank", "name-oversized", "name-bidi-override", "name-invisible", "name-lookalike-blank", "name-neutral-label", "name-internal-nbsp"] as const);
 export type LocalScenario = (typeof HUMAN_SCENARIOS)[number] | (typeof NEGATIVE_TOKEN_SCENARIOS)[number] | (typeof NAME_BOUND_SCENARIOS)[number];
 const ALL_SCENARIOS: readonly string[] = [...HUMAN_SCENARIOS, ...NEGATIVE_TOKEN_SCENARIOS, ...NAME_BOUND_SCENARIOS];
 
@@ -97,6 +97,13 @@ function nameForScenario(scenario: LocalScenario): string | undefined {
     case "name-oversized": return "N".repeat(81);
     // SEC-F06-OBS1 / SEC-C190-OBS1: U+202E RIGHT-TO-LEFT OVERRIDE inside an otherwise valid name.
     case "name-bidi-override": return "Ada \u202ELacol";
+    // SEC-NS-R1: U+2800 BRAILLE PATTERN BLANK alone renders as nothing; NBSP and U+3000 are look-alike whitespace.
+    case "name-invisible": return "\u2800";
+    case "name-lookalike-blank": return "\u00A0\u3000\u00A0";
+    // SEC-NS-R2: the neutral label "A MoneyPact member" in another casing.
+    case "name-neutral-label": return "a moneypact member";
+    // SEC-NS-R1: internal NBSP runs collapse to single spaces, so this is written as "Ada A. Local".
+    case "name-internal-nbsp": return "Ada\u00A0\u00A0A.\u00A0Local";
     default: return undefined;
   }
 }

@@ -312,7 +312,9 @@ export class IdentityCeremony {
     let currentAccountSubjectId: string | undefined;
     let currentSessionRef: string | undefined;
     if (input.ceremony === "account_switch") {
-      const resolved = await resolveSession(input.sessionCookie, this.#d.sessionStore, this.#d.sessionConfig, config.environmentId, this.#d.now());
+      // REV-IDLE-5: outside any mutation's effect transaction, so it never waits on the current session's
+      // own in-flight mutation (SC-191-006).
+      const resolved = await resolveSession(input.sessionCookie, this.#d.sessionStore, this.#d.sessionConfig, config.environmentId, this.#d.now(), "skip_locked");
       if (resolved.status !== "resolved") return { ok: false, reason: "session_required" };
       currentAccountSubjectId = resolved.accountSubjectId;
       currentSessionRef = resolved.sessionRef;
@@ -563,16 +565,6 @@ export class IdentityCeremony {
   }
 
   /**
-   * GET /v1/identity/me: the resolved subject's identifiers for the web; no contact attribute, no
-   * provider value. RC-06: `csrfValue` is the bounded in-process bootstrap value.
-   */
-  async view(cookieValue: string | undefined): Promise<IdentityView | undefined> {
-    const resolved = await resolveSession(cookieValue, this.#d.sessionStore, this.#d.sessionConfig, this.#d.config.environmentId, this.#d.now());
-    if (resolved.status !== "resolved") return undefined;
-    return this.viewResolved(this.#d.client, { accountSubjectId: resolved.accountSubjectId, sessionRef: resolved.sessionRef, sessionVersion: resolved.sessionVersion, assurance: resolved.assurance.level });
-  }
-
-  /**
    * PROTO-ACTIVATION-001: the `me` route runs inside the authorization boundary, whose fact assembly
    * already resolved the session (and slid its idle expiry). The handler therefore reads the
    * subject, binding and profile rows through the boundary's transaction client for the subject the
@@ -595,9 +587,19 @@ export class IdentityCeremony {
     return entry.value;
   }
 
-  /** POST /v1/identity/logout: CBD-191 §6.1 `logout` plus cookie deletion; the CSRF check is the caller's (`checkCsrf`) with the digest returned here. */
+  /**
+   * The A1 CSRF check's session read (CBD-191 §5.1), called for every non-safe method before any replay,
+   * policy or effect (`apps/api/src/authorization/runtime.ts`'s `csrf` option; also the `SessionAuthenticatedSurface`
+   * routes' own mutation guard) -- outside any mutation's effect transaction. SC-191-006: this is the same
+   * shape as the preHandler session gate's identity-only resolution, so it slides best-effort and never waits
+   * on the session's own in-flight mutation; a same-session second mutation's CSRF check would otherwise
+   * block on the first mutation's session-row lock even though the gate itself no longer does.
+   *
+   * POST /v1/identity/logout: CBD-191 §6.1 `logout` plus cookie deletion; the CSRF check is the caller's
+   * (`checkCsrf`) with the digest returned here.
+   */
   async csrfDigestFor(cookieValue: string | undefined): Promise<{ readonly sessionRef: string; readonly csrfDigest: string } | undefined> {
-    const resolved = await resolveSession(cookieValue, this.#d.sessionStore, this.#d.sessionConfig, this.#d.config.environmentId, this.#d.now());
+    const resolved = await resolveSession(cookieValue, this.#d.sessionStore, this.#d.sessionConfig, this.#d.config.environmentId, this.#d.now(), "skip_locked");
     if (resolved.status !== "resolved") return undefined;
     const record = await this.#d.sessionStore.findBySessionRef(resolved.sessionRef);
     if (!record) return undefined;
@@ -647,7 +649,11 @@ export class IdentityCeremony {
       this.#evidence("step_up_not_permitted", undefined, undefined, "space");
       return { ok: false, reason: "space_not_permitted" };
     }
-    const resolved = await resolveSession(input.sessionCookie, this.#d.sessionStore, this.#d.sessionConfig, config.environmentId, this.#d.now());
+    // SC-191-006: POST /v1/identity/step-up/begin is a `SessionAuthenticatedSurface` mutation (CBD-191 §5.1's
+    // own CSRF check is its gate); this resolution is outside any mutation's effect transaction and redundant
+    // with the preHandler gate's own slide moments earlier, so it never waits on the session's own in-flight
+    // mutation.
+    const resolved = await resolveSession(input.sessionCookie, this.#d.sessionStore, this.#d.sessionConfig, config.environmentId, this.#d.now(), "skip_locked");
     if (resolved.status !== "resolved") return { ok: false, reason: "session_required" };
     // The membership read is the closed subject-scoped seam (CBD-246
     // `readOwnBudgetMemberships`), not an arbitrary predicate: it returns only

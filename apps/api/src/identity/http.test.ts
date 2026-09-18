@@ -203,7 +203,19 @@ describe("PROTO-WIRE-01/02 identity routes through the real Fastify instance", (
       const zeroWidth = await b.inject("PUT", "/v1/identity/me/display-name", mutation, { displayName: "Alex\u200B W." });
       assert.equal(zeroWidth.statusCode, 400, zeroWidth.body);
       assert.deepEqual(zeroWidth.json<object>(), tooLong.json<object>(), "same envelope and code as the length bound");
+      // SEC-NS-R1 / SEC-NS-R2: no visible grapheme, or the neutral label in any spelling, is refused with the same envelope.
+      // SEC-NF-R1 / REV-NF-1: an orthographic ZWNJ inside the label passes the Cc/Cf rule and is still the label.
+      for (const displayName of ["  ", "　", "́̈", "⠀", "A MoneyPact member", "a moneypact member", "A Money‌Pact member"]) {
+        const refused = await b.inject("PUT", "/v1/identity/me/display-name", mutation, { displayName });
+        assert.equal(refused.statusCode, 400, `${JSON.stringify(displayName)}: ${refused.body}`);
+        assert.deepEqual(refused.json<object>(), tooLong.json<object>(), `${JSON.stringify(displayName)}: same envelope and code as the length bound`);
+      }
       assert.equal(db.rows("financial_profile").find((row) => row.account_subject_id === db.rows("account_subject")[0]!.account_subject_id)?.version, version, "nothing written by any rejected body");
+      // SEC-NS-R1: an internal NBSP run collapses to one space and the collapsed name is what is stored and echoed.
+      const collapsed = await b.inject("PUT", "/v1/identity/me/display-name", mutation, { displayName: "Alex  W." });
+      assert.equal(collapsed.statusCode, 200, collapsed.body);
+      assert.equal(collapsed.json<{ displayName: string }>().displayName, "Alex W.");
+      assert.equal(db.rows("financial_profile").find((row) => row.display_name === "Alex W.")?.version, version + 1);
       assert.equal(runtime.audit!.snapshot().some((event) => event.cellRef === JSON.stringify({ kind: "subject", action: "profile.set_display_name" })), true);
     } finally { await app.close(); }
   });

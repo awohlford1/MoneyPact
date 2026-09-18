@@ -38,6 +38,8 @@ import { Alert } from "../../../components/Alert";
 import { Button } from "../../../components/Button";
 import { Input } from "../../../components/Input";
 import { Select } from "../../../components/Select";
+// CBD-35: the polite live region and the denied-access notice are shared shapes, not this module's own copies.
+import { DeniedState, StatusRegion } from "../../../ui/resource";
 
 const ACCOUNT_TYPES = ["checking", "savings", "cash", "credit-card", "other"] as const;
 
@@ -104,7 +106,7 @@ export function Spending({ budget }: { budget: BudgetDetail }) {
   const announce = useCallback((message: string) => { setStatus(message); }, []);
   const heading = <>
     <h2 id="spending-heading" className="text-2xl font-semibold">Accounts and spending</h2>
-    <p aria-live="polite" role="status" className="text-on-surface-muted" data-testid="spending-status">{status}</p>
+    <StatusRegion id="spending" message={status} />
   </>;
 
   if (state?.error) {
@@ -351,12 +353,15 @@ export function CategoryDetailView({ id, categoryId }: { id: string; categoryId:
   if (state?.error) {
     const status = state.error instanceof ApiError ? state.error.status : 503;
     const denied = status === 401 || status === 403;
+    const back = <NextLink className="ml-3 underline" href={`/budgets/${encodeURIComponent(id)}`}>Back to the budget</NextLink>;
     return <section className="space-y-4"><h1 className="font-display text-3xl font-semibold">Category detail</h1>
-      <Alert tone="danger" title={denied ? "Access unavailable" : "Unable to load this category"}>
-        <p>{denied ? "Your current session cannot open this category." : "We could not load the transactions behind this figure."}</p>
-        {!denied && <Button variant="secondary" onClick={reload}>Try again</Button>}
-        <NextLink className="ml-3 underline" href={`/budgets/${encodeURIComponent(id)}`}>Back to the budget</NextLink>
-      </Alert>
+      {denied
+        ? <DeniedState><p>Your current session cannot open this category.</p>{back}</DeniedState>
+        : <Alert tone="danger" title="Unable to load this category">
+          <p>We could not load the transactions behind this figure.</p>
+          <Button variant="secondary" onClick={reload}>Try again</Button>
+          {back}
+        </Alert>}
     </section>;
   }
   if (!state?.value) {
@@ -377,7 +382,7 @@ export function CategoryDetailView({ id, categoryId }: { id: string; categoryId:
   return <section className="space-y-6">
     <h1 className="break-words font-display text-3xl font-semibold">{detail.label}</h1>
     <NextLink className="text-interactive underline" href={`/budgets/${encodeURIComponent(id)}`}>Back to the budget</NextLink>
-    <p aria-live="polite" role="status" className="text-on-surface-muted" data-testid="detail-status">{status}</p>
+    <StatusRegion id="detail" message={status} />
     {cell && <DetailFigures cell={cell} currencyCode={detail.currencyCode} />}
     <section aria-labelledby="items-heading" className="space-y-4">
       <h2 id="items-heading" className="text-2xl font-semibold">Transactions in this category</h2>

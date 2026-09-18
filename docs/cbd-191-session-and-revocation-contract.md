@@ -2,12 +2,12 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Approved — Product Owner, September 15, 2026 (PO-CONTRACT-APPROVALS-004), applying the 0.3 fresh-assurance-record amendment to the 0.2.2 approval of September 13, 2026 (PO-CONTRACT-APPROVALS-001); open questions and residuals stay recorded and open** |
-| Document version | 0.3.1 |
+| Status | **Approved — Product Owner, September 15, 2026 (PO-CONTRACT-APPROVALS-004), applying the 0.3 fresh-assurance-record amendment to the 0.2.2 approval of September 13, 2026 (PO-CONTRACT-APPROVALS-001); 0.4 applies amendment `SC-191-006` per Executive decision `EXEC-IDLE-001` (2026-09-17); open questions and residuals stay recorded and open** |
+| Document version | 0.4 |
 | Jira subtask | [CBD-191](https://cobudget.atlassian.net/browse/CBD-191) |
 | Parent | [CBD-21](https://cobudget.atlassian.net/browse/CBD-21) |
 | Repository baseline | `4ea0078` |
-| Last updated | September 15, 2026 |
+| Last updated | September 17, 2026 |
 
 ## 1. Purpose, authority, and status
 
@@ -312,6 +312,41 @@ A session's `idle_expires_at` slides forward on every successfully resolved
 request (bounded by `absolute_expires_at`, which never moves). Both are
 re-checked at resolution (§3.3 case 5); neither is extended past
 `absolute_expires_at`.
+
+**`SC-191-006` (Binding). The slide never waits on the session's own
+in-flight mutation.** A slide performed outside a mutation's effect
+transaction is best-effort: it is one atomic statement that updates the row
+only if the row can be locked without waiting. The general rule is that a
+row held by any conflicting lock holder is skipped, not failed: the same
+session's in-flight effect transaction in any process, an in-flight
+single-row revocation or rotation of that row, or any future holder of a
+`FOR UPDATE` or `FOR NO KEY UPDATE` lock on it. The same session's own effect
+transaction is the expected case. A skipped slide is not a store outage and
+does not reject the request; the idle window is then measured from the
+lock-holding transaction's own resolution instant, which is never earlier
+than the request that preceded it, so the under-extension is at most the
+duration of the lock-holding transaction. A skipped slide is still evaluated
+for expiry against the committed row (§3.3 case 5): a request whose slide is
+skipped and whose committed `idle_expires_at` or `absolute_expires_at` has
+passed is expired, never extended (fail-closed). The slide performed
+*inside* a mutation's effect transaction is not best-effort: it takes the
+session-row lock at the commit-time re-read and holds it to COMMIT, so a
+single-row revocation cannot land between that re-read and the commit (§4;
+CBD-236 `PC-236-014`). Resolution outside an effect transaction never waits
+on this lock, so a second request of the same session — including one that
+will be answered `deny_in_flight` by the rate-limit gate (CBD-266 §7) — is
+answered within the ordinary resolution time, not after the fact-assembly
+deadline. Every non-transactional resolution that carries the identity-only
+discriminator slides best-effort on its own terms, and a single request may
+perform more than one such resolution — for example, a route whose
+authorization metadata names a replay check or a pre-policy locator selection
+resolves the session again, separately from the preHandler gate, and that
+second resolution also slides best-effort; this is a harmless repetition of
+the same idempotent write, not a further wait. The one resolution per request
+that is read-only is the policy precheck performed inside `canActivate`'s
+authorization evaluation: it restates a resolution the same request already
+performed moments earlier for the purpose of assembling the full policy
+input, not to slide the session again, and performs no slide at all.
 
 #### 5.1.1 Fresh assurance as a record (`account_session_fresh_assurance`)
 
@@ -713,6 +748,7 @@ Required dated cases, in the shape CBD-190 §9 uses:
 | `CT-191-016` | Access-loss and reconnect clearing | Seed cookie, CBD-232 draft, cached identifiers, and queued client mutation; simulate access loss and reconnect to denied/changed context; all state clears before render/subscription/mutation resume. |
 | `CT-191-016A` | Fresh-assurance grant record (§5.1.1) | A completed step-up issues exactly one grant; a replayed callback issues none and reports the same one. A second step-up for the same session, action, and space is refused while the first is unconsumed. The grant reports `fresh` only for its own action and space and `session` for any other. One protected commit consumes it and a second identical commit denies; a rolled-back effect leaves it unspent. Revoking, rotating, or expiring the session makes it unreportable at the next read with no separate sweep, and an attempt to rewrite any field other than the consumption mark, or to re-consume a spent grant, is refused by the database (CBD-191-AC04, AC07, AC08) |
 | `CT-191-017` | Delegated worker revocation barrier | Queue a user-delegated job, bump for deletion/security/selected permission loss, and pause retirement delivery. Worker start/commit fail closed while pending and after retirement; no customer mutation occurs. |
+| `CT-191-018` | Same-session request during an in-flight mutation | When the in-flight mutation is visible to the rate-limit counter (one process today): while a mutation's effect transaction holds the session row (a handler held open past the fact-assembly deadline), a second request of the same session resolves within the ordinary resolution bound, is answered `429` `in_flight` on a `concurrency=1` surface or its ordinary outcome on any other surface, and is never the uniform denial for reason of the lock; its skipped slide leaves `idle_expires_at` at the in-flight mutation's value and `absolute_expires_at` untouched. The `CT-191-013` and A2 fence scenarios (single-row revoke and subject-wide bump during the transaction) keep their outcomes (CBD-191-AC07, AC08) |
 
 Every negative case above is paired with a valid positive control, following
 the CBD-190 §9 non-vacuous-test rule, so a suite that rejects everything
@@ -772,7 +808,7 @@ Implementation dependencies are:
 | `CBD-191-AC05` | §6.2, §8 `CT-191-006`, `007` | Closed state vocabulary; authenticity/dedupe/cursor/equal-time/future-skew/reconciliation matrix with local events. | Real delivery authenticity/cursor semantics (`OQ-191-002`). **Open until chosen and activated.** |
 | `CBD-191-AC06` | §6.1–§6.3, §8 `CT-191-006`, `008`, `012` | Occurrence-to-visibility outage/reconciliation and separate current/global artifact tests, including no-browser causes and hard lifetime branch. | Live global operation or enforced hosted-session lifetime (`OQ-191-003`). **Open until activation; risk acceptance required only if neither branch is supportable.** |
 | `CBD-191-AC07` | §4, §5.1.1, §7, §8 `CT-191-005`, `013`, `016`, `016A`, `017` | Per-session proposal invalidation, commit denial, access-loss/reconnect clearing, and fail-closed delegation retirement. | None provider-only; delegation owner remains an integration dependency. |
-| `CBD-191-AC08` | §8 (all rows) | Concurrency, lost result, barrier, event/order/skew, outages, store failure, boundary, bulk, clearing, and delegation cases against local fixtures. | Provider fidelity for delivery/global invalidation once `OQ-191-002/003` resolve. |
+| `CBD-191-AC08` | §8 (all rows) | Concurrency, lost result, barrier, event/order/skew, outages, store failure, boundary, bulk, clearing, delegation, and same-session non-blocking (`CT-191-018`) cases against local fixtures. | Provider fidelity for delivery/global invalidation once `OQ-191-002/003` resolve. |
 
 This document closes the design gaps but is not executed evidence. AC02 and
 the application-owned portion of AC07 can be evidenced locally. AC03 remains
@@ -795,6 +831,7 @@ retain configuration or provider evidence named above.
 
 | Version | Date | Author | Change | Disposition |
 | --- | --- | --- | --- | --- |
+| 0.4 | September 17, 2026 | Implementation specialist, `PROTO-CBD191-IDLE-IMPL-001` | Applied amendment `SC-191-006` from `docs/cbd-191-idle-extension-nonblocking-proposal.md` (`IDLE-R01`–`IDLE-R03`): the idle slide outside an effect transaction is best-effort and never waits on the session's own in-flight mutation; the in-transaction slide and the authority fence are unchanged. Closes the single-process shape of `SEC-G429-F2`; the cross-process shape remains `SEC-C200-F4` / `IDLE-F03`. Correction round (`REV-IDLE-11`, reviewer disposition `request_changes`): §5.1's `SC-191-006` paragraph gained a sentence on repeated resolutions of one request. Second correction round (`REV002-2`, reviewer disposition `request_changes`): that sentence was factually wrong (a route whose metadata carries a replay check or a pre-policy locator selection resolves the session a second time with the identity-only discriminator set, and that resolution does slide best-effort — reproduced empirically, two `account_session` updates for two resolutions of one request); corrected to state that every identity-only resolution slides best-effort and a request may perform more than one, and that only the policy-precheck resolution inside `canActivate`'s authorization evaluation is read-only. | Approved — Executive decision `EXEC-IDLE-001`, September 17, 2026 (`IDLE-D01`, three conditions met: `SC-191-006` wording as stated, the structural transaction-bound-store guard, and a pre-merge Security reading). |
 | 0.3.1 | September 15, 2026 | Documentation specialist, dispatched under `PROTO-DOC-SWEEP-003` | `OQ-191-005` closed by Executive decision `EXEC-FOLLOWUPS-003`: assurance facts read from `account_session_fresh_assurance` carry provenance `idp_evidence`, matching the merged fact source. §5.1.1's closing paragraph and the §12 row state the decision; the "does not decide it" caveat is removed. No mechanism changed. | Approved — Executive, September 15, 2026 (`EXEC-FOLLOWUPS-003`). |
 | 0.3 | September 15, 2026 | Specification specialist, dispatched under `PROTO-CBD190-191-STEPUP-AMEND-001` | Applied amendment. Fresh assurance proposed at this version by `PROTO-INVITATIONS-PK4-STEPUP-001` is now normative contract text as a record rather than session-row state, together with the `SEC-PK4-F3` hardening as merged in PR #355. New §5.1.1 (`SC-191-003B`) states `account_session_fresh_assurance` in full: its fields, write-once by unique ceremony reference with every other field immutable, at most one live grant per session/action/space, consumed once by the CBD-236 §5.3 `fresh_assurance` obligation discharge inside the authorizing transaction after the commit-time re-decision, and reachable only through an active unexpired session, enforced by the reader itself. §3.1 records that the four assurance-bearing `account_session` fields are unchanged; §5.1 names `COBUDGET_SESSION_FRESH_ASSURANCE_WINDOW_SECONDS` as the configured window; §5.2 states that a CBD-190 §4.4 `step_up` is not `assurance_elevation` and rotates nothing; §6.1 states that a grant dies with its session and needs no sweep; §8 gains `CT-191-016A`; §11 adds §5.1.1 to AC04 and AC07. `OQ-191-005` is explicitly not decided here. Finding-to-line map follows in §13.1. | **Approved — Product Owner, September 15, 2026 (PO-CONTRACT-APPROVALS-004).** Status and document version bumped in the same change; `OQ-191-002` through `OQ-191-007` stay open. |
 | 0.2.2 (approval) | September 13, 2026 | Manager, in the merge lane | Product Owner approval recorded (PO-CONTRACT-APPROVALS-001). Status Proposed → Approved at the same version; no decision, identifier or contract text changed. | Approved. |

@@ -1,6 +1,6 @@
 "use client";
 // Data requests, cancellation, editing, and status announcements require client state.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import NextLink from "next/link";
 import { ApiError } from "../../api/client";
 import type { BudgetDetail, Category, Plan, Target } from "../../api/client";
@@ -11,35 +11,9 @@ import { Input } from "../../components/Input";
 // PROTO-INCREMENT-B-001: accounts, expenses and progress render from the budget this module
 // already read, so the section costs no second detail read of its own.
 import { Spending } from "./budgets/spending";
+// CBD-35: useResource and Failure moved to ../../ui/resource, the single source of truth every view reads from.
+import { Failure, PartialNotice, StaleNotice, useResource } from "../../ui/resource";
 
-function useResource<T>(identity: string, load: (signal: AbortSignal) => Promise<T>) {
-  const [result, setResult] = useState<{ identity: string; value?: T; error?: unknown; refreshed?: boolean }>();
-  const [revision, setRevision] = useState(0);
-  const sequence = useRef(0);
-  useEffect(() => {
-    const abort = new AbortController();
-    const request = ++sequence.current;
-    load(abort.signal).then(value => {
-      if (!abort.signal.aborted && request === sequence.current) setResult({ identity, value, refreshed: revision > 0 });
-    }, error => {
-      if (!abort.signal.aborted && request === sequence.current) setResult({ identity, error });
-    });
-    return () => { abort.abort(); };
-  }, [identity, load, revision]);
-  const refresh = () => { sequence.current++; setResult(undefined); setRevision(value => value + 1); };
-  return { ...(result?.identity === identity ? result : {}), refresh };
-}
-function Failure({ error, retry }: { error: unknown; retry(): void }) {
-  const status = error instanceof ApiError ? error.status : 503;
-  const denied = status === 401 || status === 403;
-  const terminal = status === 404 || status === 410 || status === 502;
-  return <Alert tone="danger" title={denied ? "Access unavailable" : terminal ? "Budget unavailable" : "Unable to load this budget"}>
-    <p>{denied ? "Your current session cannot open this budget." : terminal ? "This budget cannot be opened from this link." : "We could not refresh the budget. You can try again."}</p>
-    {!denied && !terminal && <Button variant="secondary" onClick={retry}>Try again</Button>}
-    {denied && <NextLink className="underline" href="/sign-in">Sign in again</NextLink>}
-    <NextLink className="ml-3 underline" href="/budgets">Back to budgets</NextLink>
-  </Alert>;
-}
 export function BudgetNavigation() {
   const { logout } = useSession();
   return <nav aria-label="Budgets" className="flex flex-wrap items-center justify-between gap-4">
@@ -72,8 +46,8 @@ export function Dashboard({ id, editing = false }: { id: string; editing?: boole
 function BudgetContent({ budget, refreshed, editing }: { budget: BudgetDetail; refreshed: boolean; editing: boolean }) {
   const period = budget.activePeriod;
   return <>
-    {budget.freshness === "stale" && <Alert title="Saved budget snapshot">Budget details were last updated {budget.updatedAt}. They may have changed. Refresh before editing.</Alert>}
-    {budget.completeness === "partial" && <Alert title="Budget details are incomplete">Some budget details are unavailable. The category plan is withheld until a complete response is available.</Alert>}
+    {budget.freshness === "stale" && <StaleNotice updatedAt={budget.updatedAt} />}
+    {budget.completeness === "partial" && <PartialNotice />}
     {!period ? <Alert title="No active period">This budget has no active period to display.</Alert> : <>
       {budget.freshness === "current" && budget.completeness === "complete" && <Alert>{refreshed ? "Budget refreshed. The current active period is shown." : "The active budget period is ready."}</Alert>}
       <dl className="grid gap-3 rounded-lg border border-border p-5 sm:grid-cols-2">

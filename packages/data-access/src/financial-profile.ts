@@ -22,39 +22,81 @@
  * caller read, so two concurrent writers cannot both believe they set the
  * name, and it returns the new version or null when the row had moved on.
  */
+import {
+  collapseWhitespace,
+  hasControlOrFormatCharacter,
+  hasNoVisibleGrapheme,
+  LEADING_TRAILING_WHITESPACE,
+  NEUTRAL_DISPLAY_LABEL,
+  WHITESPACE_RUN,
+} from "@cobudget/budget-domain/shared";
 import { integerValue, textValue } from "./budget-category.ts";
 import type { QueryResult } from "./driver.ts";
 import type { ProfileSelectQuery, ProfileUpdateQuery } from "./profile.ts";
 
 export const FINANCIAL_PROFILE_TABLE = "financial_profile";
 
-/**
- * SEC-F06-OBS1 / SEC-C190-OBS1: a name must carry no Unicode control (Cc) or
- * format (Cf) character. A bidi override (U+202E) or a zero-width character
- * (U+200B) inside a display name can visually reorder or spoof the sentence
- * that renders it. The one exception is U+200D ZERO WIDTH JOINER *inside an
- * emoji sequence* (between two pictographic characters, or after a skin-tone
- * modifier or VS16), which is how family and profession emoji are spelled;
- * a ZWJ anywhere else is rejected like any other Cf -- except that ZWJ and
- * U+200C ZERO WIDTH NON-JOINER are accepted between two letters or marks,
- * where several scripts use them orthographically (REV-NS-2).
- *
- * The same test is duplicated, deliberately, in
- * `packages/budget-application/src/creation-proposals/normalize.ts`
- * (`normalizeName`): that package consumes `@cobudget/budget-domain/schedule`
- * only, so it cannot import this one. Change both together.
- */
-const EMOJI_ZERO_WIDTH_JOINER = /(?<=(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\uFE0F))\u200D(?=\p{Extended_Pictographic})/gu;
-// REV-NS-2: U+200C ZWNJ and U+200D ZWJ are orthographic in Persian, Urdu, Sinhala, Malayalam and Tamil, so either is
-// allowed when immediately between two letters or marks. At a string edge, next to a space, doubled, or beside any
-// other Cc/Cf character they stay rejected. Both lookarounds read the original string, so a doubled joiner never
-// qualifies through its twin.
-const ORTHOGRAPHIC_JOINER = /(?<=[\p{L}\p{M}])[\u200C\u200D](?=[\p{L}\p{M}])/gu;
-const CONTROL_OR_FORMAT = /[\p{Cc}\p{Cf}]/u;
+// SEC-F06-OBS1 / SEC-C190-OBS1 / SEC-NS-R1: `hasControlOrFormatCharacter`, the whitespace
+// collapse and the no-visible-grapheme test are the shared Unicode name rules in
+// `@cobudget/budget-domain/shared` (`packages/budget-domain/src/shared/name-characters.ts`),
+// imported here byte-identical to `packages/budget-application/src/creation-proposals/normalize.ts`
+// and the apps/web mock server.
 
-/** True when `value` contains a Cc or Cf character other than an emoji-sequence ZWJ or a between-letters ZWJ/ZWNJ. */
-export function hasControlOrFormatCharacter(value: string): boolean {
-  return CONTROL_OR_FORMAT.test(value.replace(EMOJI_ZERO_WIDTH_JOINER, "").replace(ORTHOGRAPHIC_JOINER, ""));
+/** The longest display name the `M1` CHECK admits. */
+export const MAX_DISPLAY_NAME_LENGTH = 80;
+
+/**
+ * SEC-NS-R1: NFC, then every `\p{White_Space}` run (NBSP, U+3000, the thin
+ * spaces, line separators) collapsed to one U+0020, then trimmed. Applied by
+ * every display-name writer before its checks, so `"Alex\u00A0W."` is stored
+ * as `"Alex W."` and an NBSP-only name is empty. Idempotent.
+ */
+export function normalizeDisplayName(value: string): string {
+  return collapseWhitespace(value);
+}
+
+/** Why a normalized display name is refused; every reason answers with the same `display_name_invalid` envelope. */
+export type DisplayNameRejection = "length" | "control_or_format" | "no_visible_grapheme" | "neutral_label";
+
+/**
+ * SEC-NF-R1 / REV-NF-1 / SEC-NF-R3: the shared `INVISIBLE` class minus White_Space. Removed
+ * before the label comparison so an invisible-padded label (a trailing U+2800, a Hangul
+ * filler, a variation selector, a combining grapheme joiner, an orthographic ZWJ/ZWNJ the
+ * Cc/Cf rule lets through between letters, a private-use or unassigned code point, a lone
+ * surrogate, U+1D159, U+FFFC or U+FFFD) still folds to the label. Stripped only for this
+ * comparison, never from the stored value.
+ */
+const INVISIBLE_NOT_WHITESPACE =
+  /[\p{M}\p{Cf}\p{Co}\p{Cn}\p{Cs}︀-️\u{E0100}-\u{E01EF}ㅤﾠᅟᅠ⠀\u{1D159}￼�]/gu;
+
+/**
+ * SEC-NS-R2: invisible characters removed (after NFKD, so a mark that arrived
+ * precomposed is removed too), NFKC, whitespace-collapsed, case-folded
+ * (`toUpperCase().toLowerCase()`, the closest JS has to full folding).
+ */
+function foldedForLabelComparison(value: string): string {
+  return value.normalize("NFKD").replace(INVISIBLE_NOT_WHITESPACE, "").normalize("NFKC")
+    .replace(WHITESPACE_RUN, " ").replace(LEADING_TRAILING_WHITESPACE, "").toUpperCase().toLowerCase();
+}
+const FOLDED_NEUTRAL_LABEL = foldedForLabelComparison(NEUTRAL_DISPLAY_LABEL);
+
+/**
+ * The one display-name rule set, checked in this order on a name
+ * `normalizeDisplayName` has already produced: the 1..80-code-point bound
+ * (`M1`), no Cc/Cf (SEC-F06-OBS1 / SEC-C190-OBS1), at least one visible
+ * grapheme (SEC-NS-R1), and not the neutral label "A MoneyPact member" in any
+ * casing or compatibility spelling (SEC-NS-R2). `undefined` means accepted.
+ * `PUT /v1/identity/me/display-name` maps every reason to `400
+ * display_name_invalid`; the first-sign-in claim (`token.ts` `boundedName`)
+ * maps every reason to an absent claim, never a sign-in failure.
+ */
+export function displayNameRejection(normalized: string): DisplayNameRejection | undefined {
+  const length = [...normalized].length;
+  if (length < 1 || length > MAX_DISPLAY_NAME_LENGTH) return "length";
+  if (hasControlOrFormatCharacter(normalized)) return "control_or_format";
+  if (hasNoVisibleGrapheme(normalized)) return "no_visible_grapheme";
+  if (foldedForLabelComparison(normalized) === FOLDED_NEUTRAL_LABEL) return "neutral_label";
+  return undefined;
 }
 
 /** The subset of a data-access client these statements need. */
@@ -95,9 +137,6 @@ export async function readDisplayIdentity(
   return row === undefined ? null : toRow(accountSubjectId, row);
 }
 
-/** The longest display name the `M1` CHECK admits. */
-export const MAX_DISPLAY_NAME_LENGTH = 80;
-
 /**
  * Set (or clear) `display_name` and advance `version`, but only while the row
  * still carries `expectedVersion`. Returns the new version, or null when the
@@ -107,14 +146,15 @@ export async function writeDisplayName(
   client: ProfileStatementClient, accountSubjectId: string, displayName: string | null, expectedVersion: number,
 ): Promise<number | null> {
   if (displayName !== null) {
-    const trimmed = displayName.trim();
-    if (trimmed.length === 0 || [...trimmed].length > MAX_DISPLAY_NAME_LENGTH) {
-      throw new RangeError(`display_name must be 1 to ${MAX_DISPLAY_NAME_LENGTH} code points, or null`);
+    const normalized = normalizeDisplayName(displayName);
+    switch (displayNameRejection(normalized)) {
+      case "length": throw new RangeError(`display_name must be 1 to ${MAX_DISPLAY_NAME_LENGTH} code points, or null`);
+      case "control_or_format": throw new RangeError("display_name must not contain control or format characters");
+      case "no_visible_grapheme": throw new RangeError("display_name must contain a visible character");
+      case "neutral_label": throw new RangeError("display_name must not be the neutral member label");
+      case undefined: break;
     }
-    if (hasControlOrFormatCharacter(trimmed)) {
-      throw new RangeError("display_name must not contain control or format characters");
-    }
-    displayName = trimmed;
+    displayName = normalized;
   }
   const result = await client.profileUpdate({
     table: FINANCIAL_PROFILE_TABLE, accountSubjectId,

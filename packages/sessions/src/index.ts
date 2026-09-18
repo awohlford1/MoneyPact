@@ -37,10 +37,11 @@ export type { OpaqueIdentifier, ParsedCookieValue } from "./crypto.ts";
 
 export { DeliveryEnvelopeTamperedError } from "./envelope.ts";
 
-export { SessionStore, createSessionStore } from "./store.ts";
+export { SessionStore, createSessionStore, createTransactionSessionStore } from "./store.ts";
+export type { SessionResolutionStore, TransactionSessionStore } from "./store.ts";
 
 export { resolveSession, verifySessionStillLive } from "./resolve.ts";
-export type { ResolutionOutcome, ResolvedSession, RejectedSession, ResolutionDiagnostic } from "./resolve.ts";
+export type { ResolutionOutcome, ResolvedSession, RejectedSession, ResolutionDiagnostic, SlideMode } from "./resolve.ts";
 
 export { consumeAndIssue, IssuanceRejectedError, UnsupportedUnderV03Error } from "./issuance.ts";
 

@@ -54,6 +54,10 @@ export interface IdentityHarness {
   readonly ceremony: IdentityCeremony;
   readonly issuer: LocalIssuer;
   readonly events: Parameters<ReliabilitySink>[0][];
+  /** REV-IDLE-5: the same clock the composed runtime (and `ceremony`) were built with, so a test-local
+   * resolution (replacing the now-deleted `IdentityCeremony#view`) observes the same controllable time a
+   * test that overrides `now` expects, instead of the wall clock. */
+  readonly now: () => Date;
   /** Drives begin -> hosted authorize -> chooser -> callback URL for `scenario`; returns the callback URL to deliver. */
   callbackFor(scenario: LocalScenario, ceremony?: string, sessionCookie?: string): Promise<{ readonly callbackUrl: string; readonly challengeId: string }>;
   /** Delivers a callback URL to the ceremony as the browser would. */
@@ -100,5 +104,6 @@ export function buildHarness(overrides: RuntimeOverrides & { readonly environmen
     const { callbackUrl, challengeId } = await callbackFor(scenario, ceremonyName, sessionCookie);
     return { ...(await deliver(callbackUrl)), challengeId };
   };
-  return { config, db, client, runtime, ceremony, issuer, events, callbackFor, deliver, signIn };
+  const now = overrides.now ?? (() => new Date());
+  return { config, db, client, runtime, ceremony, issuer, events, callbackFor, deliver, signIn, now };
 }

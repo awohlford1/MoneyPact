@@ -94,9 +94,12 @@ export function createApiFactSource(options: ApiFactSourceOptions): FactSourceAd
   return {
     async read(source, lookup, transaction) {
       if (source === "session_store") {
-        // The opaque cookie value only; the sessions adapter resolves it.
+        // REV-IDLE-1 (CBD-191 SC-191-006): the opaque cookie value plus the explicit `identityOnly`
+        // discriminator FactAssembler#resolveSession sets, forwarded unchanged into @cobudget/sessions's
+        // dispatch -- dropping this field is exactly the regression that made every non-transactional
+        // resolution silently fall back to read-only "none" (never sliding at all).
         const value = lookup.credential;
-        return options.sessions.read(source, { credential: value }, transaction);
+        return options.sessions.read(source, { credential: value, ...(lookup.identityOnly ? { identityOnly: true } : {}) }, transaction);
       }
       const subjectId = lookup.identity?.["subject.accountSubjectId"];
       if (typeof subjectId !== "string" || subjectId.length === 0) return null;
