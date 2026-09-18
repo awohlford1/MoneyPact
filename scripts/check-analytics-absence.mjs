@@ -34,7 +34,7 @@
 
 import { readFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -45,6 +45,10 @@ export const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), ".."
 // package-lock.json `packages` key, or as a package.json dependency key).
 // Scoped and unscoped variants are both listed explicitly; this check does
 // not guess at a vendor's naming convention.
+// L1: entries restricted to names the analytics vendors actually publish.
+// A bare generic word (`heap`, `fullstory`, `hotjar`, `crazyegg`, `logrocket`)
+// risks a false-fail on an unrelated package resolving that name (`heap` is a
+// real, unrelated binary-heap data-structure package on npm).
 export const DENYLISTED_PACKAGES = new Map([
   ["analytics-node", "Segment server-side SDK"],
   ["@segment/analytics-next", "Segment browser SDK"],
@@ -57,23 +61,33 @@ export const DENYLISTED_PACKAGES = new Map([
   ["react-ga", "Google Analytics wrapper"],
   ["react-ga4", "Google Analytics wrapper"],
   ["@fullstory/browser", "FullStory session replay"],
-  ["fullstory", "FullStory session replay"],
-  ["hotjar", "Hotjar session replay / heatmap"],
   ["@hotjar/browser", "Hotjar session replay / heatmap"],
   ["posthog-js", "PostHog product analytics / session replay"],
   ["posthog-node", "PostHog product analytics"],
-  ["heap", "Heap product analytics"],
   ["@heap/browser", "Heap product analytics"],
+  ["heap-api", "Heap product analytics"],
   ["clarity-js", "Microsoft Clarity session replay / heatmap"],
   ["@microsoft/clarity", "Microsoft Clarity session replay / heatmap"],
+  // "logrocket" is unscoped but is the vendor's own single published name —
+  // unlike heap/fullstory/hotjar there is no alternate scoped package to
+  // prefer, and no known unrelated npm package resolves this exact name.
   ["logrocket", "LogRocket session replay"],
   ["smartlook-client", "Smartlook session replay"],
   ["mouseflow", "Mouseflow session replay / heatmap"],
-  ["@sentry/replay", "Sentry session replay (distinct from error-only Sentry)"],
+  ["@sentry/replay", "Sentry session replay (deprecated standalone package)"],
   ["@sentry/session-replay", "Sentry session replay"],
+  ["@sentry/nextjs", "Sentry Next.js SDK — ships replayIntegration() session replay"],
+  ["@sentry/react", "Sentry React SDK — ships replayIntegration() session replay"],
+  ["@sentry/browser", "Sentry browser SDK — ships replayIntegration() session replay"],
   ["@snowplow/browser-tracker", "Snowplow behavioural event tracker"],
-  ["crazyegg", "Crazy Egg heatmap / session replay"],
+  // Crazy Egg ships no first-party npm package (snippet-only); host-list
+  // detection below (crazyegg.com) is the only useful signal for it.
   ["@datadog/browser-rum", "Datadog Real User Monitoring (session-level behavioural capture)"],
+  ["@vercel/analytics", "Vercel Web Analytics (product analytics)"],
+  ["@vercel/speed-insights", "Vercel Speed Insights (behavioural performance telemetry)"],
+  ["@next/third-parties", "Next.js third-party helper — ships ready-made GoogleAnalytics/GoogleTagManager components"],
+  ["rrweb", "rrweb session-replay recording engine"],
+  ["@openreplay/tracker", "OpenReplay session replay"],
 ]);
 
 // Script-host domains a built bundle must not reference. Superset of the
@@ -111,6 +125,9 @@ export const DENYLISTED_HOSTS = [
   "crazyegg.com",
   "quantserve.com",
   "quantcount.com",
+  "vitals.vercel-insights.com",
+  "va.vercel-scripts.com",
+  "connect.facebook.net",
 ];
 
 // --- Dependency graph. ---------------------------------------------------
@@ -155,13 +172,16 @@ export function scanManifest(manifest, label) {
 
 // --- Built bundles. -------------------------------------------------------
 
-const BUNDLE_DIRECTORIES = [
-  join("apps", "web", ".next"),
-  join("apps", "api", "dist"),
-  join("apps", "worker", "dist"),
-];
-const BUNDLE_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".html", ".json"]);
-const SKIP_DIRECTORY_NAMES = new Set(["node_modules", "cache", ".git"]);
+// Build-output subdirectory names this repository's toolchains produce
+// (Next.js -> .next, esbuild/tsc app builds -> dist). Checked dynamically
+// per app below rather than hardcoding the three current app names, so a
+// new app under apps/* is covered without a script change.
+const BUNDLE_SUBDIRECTORIES = [".next", "dist"];
+// .rsc (React Server Component flight payload) and .css (an `@import
+// url(...)` can carry a tracker host) are scanned as text alongside the
+// script/markup/data extensions.
+const BUNDLE_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".html", ".json", ".rsc", ".css"]);
+const SKIP_DIRECTORY_NAMES = new Set(["node_modules", ".git"]);
 
 async function listBundleFiles(directory) {
   const out = [];
@@ -174,7 +194,11 @@ async function listBundleFiles(directory) {
     }
     for (const entry of entries) {
       if (entry.isDirectory()) {
+        // Narrow skip: only the top-level `.next/cache` webpack build cache,
+        // not any directory that happens to be named `cache` at any depth
+        // (which could otherwise hide a shipped `.next/static/.../cache/`).
         if (SKIP_DIRECTORY_NAMES.has(entry.name)) continue;
+        if (entry.name === "cache" && basename(current) === ".next") continue;
         await walk(join(current, entry.name));
       } else if (BUNDLE_EXTENSIONS.has(entry.name.slice(entry.name.lastIndexOf(".")))) {
         out.push(join(current, entry.name));
@@ -183,6 +207,35 @@ async function listBundleFiles(directory) {
   }
   await walk(directory);
   return out;
+}
+
+/** Apps under apps/* that declare a `build` script — the ones this check
+ * expects to have produced a bundle. Enumerated the same dynamic way
+ * `workspaceManifests` below enumerates workspace manifests, rather than a
+ * fixed list of app names. */
+async function buildableApps(root) {
+  const appsPath = join(root, "apps");
+  if (!existsSync(appsPath)) return [];
+  const result = [];
+  for (const entry of await readdir(appsPath, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const pkgPath = join(appsPath, entry.name, "package.json");
+    if (!existsSync(pkgPath)) continue;
+    const manifest = JSON.parse(await readFile(pkgPath, "utf8"));
+    if (manifest?.scripts?.build) result.push(entry.name);
+  }
+  return result;
+}
+
+/** Which of BUNDLE_SUBDIRECTORIES actually exist under one app, as paths
+ * relative to `root`. */
+async function bundleDirectoriesForApp(root, app) {
+  const found = [];
+  for (const sub of BUNDLE_SUBDIRECTORIES) {
+    const candidate = join("apps", app, sub);
+    if (existsSync(join(root, candidate))) found.push(candidate);
+  }
+  return found;
 }
 
 /** Findings from one built file's text: any denylisted host referenced. */
@@ -229,20 +282,36 @@ export async function run({ root = repositoryRoot, requireBundles = true } = {})
     }
   }
 
+  // H2: each app's build output is required independently. Accumulating one
+  // total across every bundle directory and only checking the total against
+  // zero lets a partial build (one app's dist/.next missing or empty) pass
+  // cleanly with that app entirely unscanned, because a sibling app's files
+  // carry the total above zero. Every configured directory for every
+  // buildable app must itself yield at least one file.
   let bundleFilesSeen = 0;
-  for (const relDirectory of BUNDLE_DIRECTORIES) {
-    const directory = join(root, relDirectory);
-    const files = await listBundleFiles(directory);
-    bundleFilesSeen += files.length;
-    for (const file of files) {
-      const text = await readFile(file, "utf8").catch(() => "");
-      for (const finding of scanBundleText(text, relative(root, file).replaceAll("\\", "/"))) {
-        failures.push(`built bundle: ${finding.path} references ${finding.host}`);
+  for (const app of await buildableApps(root)) {
+    const candidates = await bundleDirectoriesForApp(root, app);
+    if (candidates.length === 0) {
+      if (requireBundles) {
+        failures.push(`apps/${app} has no built output under .next or dist — run the build first`);
+      }
+      continue;
+    }
+    for (const relDirectory of candidates) {
+      const directory = join(root, relDirectory);
+      const files = await listBundleFiles(directory);
+      bundleFilesSeen += files.length;
+      const label = relDirectory.replaceAll("\\", "/");
+      if (requireBundles && files.length === 0) {
+        failures.push(`${label} is empty — run the build first`);
+      }
+      for (const file of files) {
+        const text = await readFile(file, "utf8").catch(() => "");
+        for (const finding of scanBundleText(text, relative(root, file).replaceAll("\\", "/"))) {
+          failures.push(`built bundle: ${finding.path} references ${finding.host}`);
+        }
       }
     }
-  }
-  if (requireBundles && bundleFilesSeen === 0) {
-    failures.push("no built bundle was found under apps/*/.next or apps/*/dist — run the build first");
   }
 
   return { failures, bundleFilesSeen };
