@@ -27,6 +27,7 @@ export {
   InvalidIdentifierError,
   MissingBudgetSpaceError,
   ReservedColumnError,
+  SkipLockedNotSupportedError,
   UnknownPlatformTableError,
   UnknownTenantTableError,
 } from "./tenant.ts";

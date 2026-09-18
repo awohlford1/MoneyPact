@@ -13,7 +13,7 @@
  */
 import { createApiClient } from "@cobudget/data-access";
 import type { DataAccessClient } from "@cobudget/data-access";
-import { createSessionFactSourceAdapter, createSessionStore } from "@cobudget/sessions";
+import { createSessionFactSourceAdapter, createSessionStore, createTransactionSessionStore } from "@cobudget/sessions";
 import type { MinimalFactSourceAdapter, SessionConfig } from "@cobudget/sessions";
 
 function isDataAccessClient(value: unknown): value is DataAccessClient {
@@ -27,7 +27,10 @@ function isDataAccessClient(value: unknown): value is DataAccessClient {
  */
 export function buildSessionFactSourceAdapter(config: SessionConfig, environmentId: string, client: DataAccessClient = createApiClient(), fence = true): MinimalFactSourceAdapter {
   const store = createSessionStore(client);
-  return createSessionFactSourceAdapter(store, config, environmentId, fence ? (transaction) => isDataAccessClient(transaction) ? createSessionStore(transaction) : undefined : undefined);
+  // SC-191-006 / IDLE-E03 (SEC-IDLE-R4): the scoped, transaction-bound store is built by
+  // `createTransactionSessionStore`, not `createSessionStore` -- its type structurally lacks the best-effort
+  // slide, so the in-transaction resolution path cannot skip.
+  return createSessionFactSourceAdapter(store, config, environmentId, fence ? (transaction) => isDataAccessClient(transaction) ? createTransactionSessionStore(transaction) : undefined : undefined);
 }
 
 export { readSessionCookieValue, buildSessionCookieHeader, buildSessionCookieDeletionHeader, checkCsrf } from "@cobudget/sessions";

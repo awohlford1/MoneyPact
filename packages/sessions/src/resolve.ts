@@ -21,8 +21,22 @@
 import { randomUUID } from "node:crypto";
 import { cryptoRandomJitterMs, parseCookieValue, pepperedDigest, syntheticCandidate, verifyPepperedDigest } from "./crypto.ts";
 import type { SessionConfig } from "./config.ts";
-import type { SessionStore } from "./store.ts";
+import type { SessionResolutionStore, SessionStore } from "./store.ts";
 import type { AccountSubjectId, Environment, SessionRef, SessionVersion } from "./types.ts";
+
+/**
+ * SC-191-006 / IDLE-E04. Chosen structurally by the caller (`fact-source.ts`), never varied per-request:
+ *   - `"wait"` -- byte-identical to the pre-`SC-191-006` behaviour: waits for the row lock. Used for the
+ *     in-transaction slide (unchanged) and anywhere a slide must not be skipped.
+ *   - `"skip_locked"` -- SC-191-006's best-effort slide: one atomic statement that updates the row only if it
+ *     can be locked without waiting. Requires a store that exposes `extendIdleExpiryBestEffort` (the root
+ *     `SessionStore`; a `TransactionSessionStore` structurally lacks it, SEC-IDLE-R4). A zero row count is a
+ *     resolved outcome, not a failure (IDLE-E04) -- only a thrown error still fails closed to
+ *     `store_unavailable`.
+ *   - `"none"` -- IDLE-D04: no write at all. Used for a resolution that is redundant with a slide the same
+ *     request already performed moments earlier (the precheck's resolution, which restates the gate's).
+ */
+export type SlideMode = "wait" | "skip_locked" | "none";
 
 export type ResolutionDiagnostic =
   | "malformed"
@@ -67,10 +81,11 @@ async function sleep(ms: number): Promise<void> {
  */
 export async function resolveSession(
   cookieValue: string | undefined,
-  store: SessionStore,
+  store: SessionResolutionStore,
   config: SessionConfig,
   environmentId: Environment,
   now: Date,
+  slideMode: SlideMode = "wait",
 ): Promise<ResolutionOutcome> {
   const startedAtMs = Date.now();
 
@@ -80,7 +95,7 @@ export async function resolveSession(
 
   // Fixed-shape step 1: selector lookup, real or synthetic, always attempted.
   let storeUnavailable = false;
-  let lookup: Awaited<ReturnType<SessionStore["resolveBySelector"]>> = "not_found";
+  let lookup: Awaited<ReturnType<SessionResolutionStore["resolveBySelector"]>> = "not_found";
   try {
     lookup = await store.resolveBySelector(candidate.selector);
   } catch {
@@ -96,7 +111,7 @@ export async function resolveSession(
 
   // Fixed-shape step 3: one authority-row read, always attempted, against
   // the real subject when resolved or a synthetic one otherwise.
-  let authority: Awaited<ReturnType<SessionStore["readSubjectAuthorityStrict"]>>;
+  let authority: Awaited<ReturnType<SessionResolutionStore["readSubjectAuthorityStrict"]>>;
   try {
     authority = await store.readSubjectAuthorityStrict(row ? row.accountSubjectId : randomUUID());
   } catch {
@@ -136,14 +151,30 @@ export async function resolveSession(
   // (every `diagnostic`-setting branch above covers their absence).
   const liveRow = row!;
 
-  // §5.1: idle expiry slides forward on every successfully resolved request.
-  const slidIdleExpiry = new Date(Math.min(now.getTime() + config.idleTimeoutSeconds * 1000, liveRow.absoluteExpiresAt.getTime()));
-  try {
-    await store.extendIdleExpiry(liveRow.sessionRef, slidIdleExpiry);
-  } catch {
-    const alreadyElapsedMs = Date.now() - startedAtMs;
-    await sleep(config.rejectionTimingTimeoutBucketMs - alreadyElapsedMs);
-    return { status: "not_authenticated", diagnostic: "store_unavailable" };
+  // §5.1 / SC-191-006: idle expiry slides forward on every successfully resolved request, except a read-only
+  // resolution (`slideMode === "none"`, IDLE-D04) whose request already slid the row moments earlier through
+  // another resolution of the same request (the gate's, which the precheck's assemble-time resolution
+  // otherwise redundantly repeats, IDLE-F02). A read-only resolution still evaluated expiry above against the
+  // row as read (CT-191-010); it simply performs no write of its own.
+  if (slideMode !== "none") {
+    const slidIdleExpiry = new Date(Math.min(now.getTime() + config.idleTimeoutSeconds * 1000, liveRow.absoluteExpiresAt.getTime()));
+    try {
+      if (slideMode === "skip_locked") {
+        // SC-191-006's best-effort slide: only a store exposing `extendIdleExpiryBestEffort` (the root
+        // `SessionStore`) is ever passed with this mode (`fact-source.ts`'s own dispatch, not a runtime
+        // argument the caller varies); `SessionResolutionStore` does not declare the method (SEC-IDLE-R4), so
+        // the cast here is the one place that bridges the two. A row count of 0 (skipped, most often the same
+        // session's own in-flight effect transaction holding the lock) and 1 (slid) are both a resolved
+        // outcome, not a failure (IDLE-E04) -- the value is intentionally not inspected below.
+        await (store as SessionStore).extendIdleExpiryBestEffort(liveRow.sessionRef, slidIdleExpiry);
+      } else {
+        await store.extendIdleExpiry(liveRow.sessionRef, slidIdleExpiry);
+      }
+    } catch {
+      const alreadyElapsedMs = Date.now() - startedAtMs;
+      await sleep(config.rejectionTimingTimeoutBucketMs - alreadyElapsedMs);
+      return { status: "not_authenticated", diagnostic: "store_unavailable" };
+    }
   }
 
   // CBD191-REVIEW-IMPL-001 Medium finding: an expired fresh-assurance grant

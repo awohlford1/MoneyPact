@@ -7,6 +7,7 @@ import {
   InvalidIdentifierError,
   MissingBudgetSpaceError,
   ReservedColumnError,
+  SkipLockedNotSupportedError,
   UnknownPlatformTableError,
   UnknownTenantTableError,
   platformDelete,
@@ -185,6 +186,40 @@ void test("platformInsert, platformUpdate, and platformDelete also compose their
   assert.equal(calls[0]?.text, "insert into identity_accounts (email) values ($1)");
   assert.equal(calls[1]?.text, "update identity_accounts set email = $1 where id = $2");
   assert.equal(calls[2]?.text, "delete from identity_accounts where id = $1");
+});
+
+void test("IDLE-E02 (CBD-191 SC-191-006): skipLocked renders the exact best-effort ctid/skip-locked predicate, reusing the same bound conditions in both places", async () => {
+  const { pool, calls } = fakePool();
+  await platformUpdate(pool, {
+    table: "identity_accounts",
+    set: { email: "b@example.com" },
+    conditions: [{ column: "id", value: 1 }],
+    skipLocked: true,
+  }, TEST_CATALOG);
+  assert.equal(calls.length, 1);
+  assert.equal(
+    calls[0]?.text,
+    "update identity_accounts set email = $1 where id = $2 and ctid in (select ctid from identity_accounts where id = $2 for no key update skip locked)",
+  );
+  assert.deepEqual(calls[0]?.params, ["b@example.com", 1]);
+});
+
+void test("IDLE-E02: skipLocked with no condition is refused before the driver is called -- a lock with no predicate would target every row", () => {
+  const { pool, calls } = fakePool();
+  assert.throws(
+    () => platformUpdate(pool, { table: "identity_accounts", set: { email: "b@example.com" }, skipLocked: true }, TEST_CATALOG),
+    RangeError,
+  );
+  assert.equal(calls.length, 0);
+});
+
+void test("IDLE-E02: skipLocked is refused on a tenant statement -- CBD-191's best-effort slide is a platform-only predicate", () => {
+  const { pool, calls } = fakePool();
+  assert.throws(
+    () => tenantUpdate(pool, { table: "budget_line_items", budgetSpaceId: "space-1", set: { name: "x" }, conditions: [{ column: "id", value: 1 }], skipLocked: true }, TEST_CATALOG),
+    SkipLockedNotSupportedError,
+  );
+  assert.equal(calls.length, 0, "refused before the driver is ever called");
 });
 
 void test("CBD246-SECURITY-001 finding 3: a rejected driver query never reaches the caller with the driver's own message", async () => {

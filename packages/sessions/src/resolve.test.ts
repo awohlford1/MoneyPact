@@ -26,6 +26,88 @@ function baseCommand(overrides: Partial<SessionIssueCommandV1> = {}): SessionIss
 
 const envelopeKeyProvider = testEnvelopeKeyProvider();
 
+// IDLE-T01 (CBD-191 SC-191-006): resolve.ts's three `SlideMode`s. "wait" (the default, taken when the 6th
+// argument is omitted) is exercised by every other test in this file unchanged -- proving byte-identical
+// behaviour to before this amendment. These tests exercise "skip_locked" and "none" in isolation by swapping
+// in a controllable `extendIdleExpiryBestEffort`/`extendIdleExpiry`, since the fake in-memory store has no
+// real row-lock concept (the actual lock contention is `IDLE-T03`'s live probe).
+
+void test("IDLE-T01: skip_locked mode with a zero row count (skipped, e.g. locked by the session's own in-flight mutation) still resolves -- a skip is not a failure", async () => {
+  const { store } = buildTestHarness();
+  const config = testConfig();
+  const delivery = await consumeAndIssue(baseCommand(), store, config, envelopeKeyProvider, new Date());
+  const original = store.extendIdleExpiryBestEffort.bind(store);
+  let called = false;
+  store.extendIdleExpiryBestEffort = async () => { called = true; return 0; };
+  try {
+    const outcome = await resolveSession(delivery.cookieValue, store, config, "test", new Date(), "skip_locked");
+    assert.equal(outcome.status, "resolved");
+    assert.ok(called, "the best-effort slide was attempted");
+  } finally {
+    store.extendIdleExpiryBestEffort = original;
+  }
+});
+
+void test("IDLE-T01: skip_locked mode with a row count of 1 (slid) resolves the same way", async () => {
+  const { store } = buildTestHarness();
+  const config = testConfig();
+  const delivery = await consumeAndIssue(baseCommand(), store, config, envelopeKeyProvider, new Date());
+  const outcome = await resolveSession(delivery.cookieValue, store, config, "test", new Date(), "skip_locked");
+  assert.equal(outcome.status, "resolved");
+});
+
+void test("IDLE-T01: skip_locked mode still fails closed to store_unavailable when the store throws (CT-191-009)", async () => {
+  const { store } = buildTestHarness();
+  const config = testConfig({ rejectionTimingTimeoutBucketMs: 0 });
+  const delivery = await consumeAndIssue(baseCommand(), store, config, envelopeKeyProvider, new Date());
+  const original = store.extendIdleExpiryBestEffort.bind(store);
+  store.extendIdleExpiryBestEffort = async () => { throw new Error("simulated driver failure"); };
+  try {
+    const outcome = await resolveSession(delivery.cookieValue, store, config, "test", new Date(), "skip_locked");
+    assert.equal(outcome.status, "not_authenticated");
+    assert.equal((outcome as { diagnostic?: string }).diagnostic, "store_unavailable");
+  } finally {
+    store.extendIdleExpiryBestEffort = original;
+  }
+});
+
+void test("IDLE-T01 / IDLE-D04: none mode never writes a slide but still resolves and still evaluates expiry against the row as read", async () => {
+  const { store } = buildTestHarness();
+  const config = testConfig();
+  const delivery = await consumeAndIssue(baseCommand(), store, config, envelopeKeyProvider, new Date());
+  let waitCalled = false;
+  let bestEffortCalled = false;
+  const originalWait = store.extendIdleExpiry.bind(store);
+  const originalBestEffort = store.extendIdleExpiryBestEffort.bind(store);
+  store.extendIdleExpiry = async (...args: Parameters<typeof originalWait>) => { waitCalled = true; return originalWait(...args); };
+  store.extendIdleExpiryBestEffort = async (...args: Parameters<typeof originalBestEffort>) => { bestEffortCalled = true; return originalBestEffort(...args); };
+  try {
+    const outcome = await resolveSession(delivery.cookieValue, store, config, "test", new Date(), "none");
+    assert.equal(outcome.status, "resolved");
+    assert.equal(waitCalled, false, "none mode never calls the waiting slide");
+    assert.equal(bestEffortCalled, false, "none mode never calls the best-effort slide");
+  } finally {
+    store.extendIdleExpiry = originalWait;
+    store.extendIdleExpiryBestEffort = originalBestEffort;
+  }
+
+  // An already-expired row is still expired under none mode (fail-closed evaluation is unaffected by slide mode).
+  const config2 = testConfig({ idleTimeoutSeconds: 1 });
+  const soonExpired = await consumeAndIssue(baseCommand(), store, config2, envelopeKeyProvider, new Date(Date.now() - 5_000));
+  const expiredOutcome = await resolveSession(soonExpired.cookieValue, store, config2, "test", new Date(), "none");
+  assert.equal(expiredOutcome.status, "not_authenticated");
+});
+
+void test("IDLE-T01: wait mode (explicit or the default) is byte-identical -- both calling shapes resolve the same session", async () => {
+  const { store } = buildTestHarness();
+  const config = testConfig();
+  const delivery = await consumeAndIssue(baseCommand(), store, config, envelopeKeyProvider, new Date());
+  const implicit = await resolveSession(delivery.cookieValue, store, config, "test", new Date());
+  const explicit = await resolveSession(delivery.cookieValue, store, config, "test", new Date(), "wait");
+  assert.equal(implicit.status, "resolved");
+  assert.equal(explicit.status, "resolved");
+});
+
 void test("CT-191-002: an IdP-shaped credential (not a selector.verifier cookie) is rejected as malformed (CBD-191-AC01)", async () => {
   const { store } = buildTestHarness();
   const config = testConfig();
