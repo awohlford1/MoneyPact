@@ -1,19 +1,21 @@
+"use client";
 // Shared UI-state helpers (CBD-35, named by CBD-202 and CBD-198 as the owner of "shared interface-state
 // conventions"). `useResource` and `Failure` were moved verbatim out of `(app)/journey.tsx`, the single source of
 // truth every later view reads from instead of keeping its own copy. `EmptyState`, `StatusRegion`, `DeniedState`,
 // `StaleNotice` and `PartialNotice` generalize the states that already recurred at more than one call site --
 // see the three "distinct emptinesses" convention (CBD-67 SS14.6) and the uniform-denial convention (CBD-243-AC07).
 //
-// `useResource` and the failure classifier build no JSX, and live in `./resource-state.ts` (re-exported below)
-// so they can be unit-tested directly under this workspace's plain `node --test`, which has no JSX transform and
-// cannot load this file at all (it uses `next/link`, resolvable only through a bundler's own resolver).
+// `useResource` and the failure classifier (`classifyFailure`) build no JSX. They live in `./resource-state.ts`
+// and are only re-exported here, so they can be unit-tested directly under this workspace's plain `node --test`,
+// which has no JSX transform and cannot load this file at all (it uses `next/link`, resolvable only through a
+// bundler's own resolver).
 import type { ReactNode } from "react";
 import NextLink from "next/link";
 import { Alert } from "../components/Alert";
 import { Button } from "../components/Button";
 import { classifyFailure, useResource } from "./resource-state.ts";
 
-export { useResource };
+export { classifyFailure, useResource };
 
 /** Denials are uniform and uninformative (CBD-243-AC07, CBD-306-AC05, CBD-341-AC05): a denial never distinguishes
  * "does not exist" from "you may not see it". Every call site that reports a denial wraps its own sentence in this. */
