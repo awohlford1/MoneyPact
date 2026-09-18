@@ -11,6 +11,7 @@ import { reportsJourney } from "./reports.browser.mjs";
 import { errorsJourney } from "./errors.browser.mjs";
 import { goalsJourney } from "./goals.browser.mjs";
 import { transactionsJourney } from "./transactions.browser.mjs";
+import { calendarJourney } from "./calendar.browser.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const axeSource = readFileSync(fileURLToPath(import.meta.resolve("axe-core/axe.min.js")), "utf8");
@@ -419,6 +420,8 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     goalsJourney,
     // UI-P03 (CBD-202): manual transactions -- list, editor, allocation and removal.
     transactionsJourney,
+    // UI-P06 (CBD-323): the financial calendar, month and agenda.
+    calendarJourney,
   ];
   for (const journey of JOURNEY_REGISTRY) await journey(t, { browser, origin, errors });
   assert.deepEqual(errors, []);

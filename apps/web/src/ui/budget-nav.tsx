@@ -36,6 +36,8 @@ const REPORTS_DESTINATION: Destination = { key: "reports", label: "Reports", hre
 const GOALS_DESTINATION: Destination = { key: "goals", label: "Goals", href: id => `/budgets/${encodeURIComponent(id)}/goals` };
 // UI-P03 (CBD-202): manual transactions -- list, editor, allocation and removal.
 const TRANSACTIONS_DESTINATION: Destination = { key: "transactions", label: "Transactions", href: id => `/budgets/${encodeURIComponent(id)}/transactions` };
+// UI-P06 (CBD-323): the financial calendar, month and agenda.
+const CALENDAR_DESTINATION: Destination = { key: "calendar", label: "Calendar", href: id => `/budgets/${encodeURIComponent(id)}/calendar` };
 const MEMBERS_DESTINATION: Destination = { key: "members", label: "Members", href: id => `/budgets/${encodeURIComponent(id)}/members` };
 const INVITATIONS_DESTINATION: Destination = { key: "invitations", label: "Invitations", href: id => `/budgets/${encodeURIComponent(id)}/invitations` };
 const DESTINATION_REGISTRY: readonly Destination[] = [
@@ -45,6 +47,7 @@ const DESTINATION_REGISTRY: readonly Destination[] = [
   REPORTS_DESTINATION,
   GOALS_DESTINATION,
   TRANSACTIONS_DESTINATION,
+  CALENDAR_DESTINATION,
   MEMBERS_DESTINATION,
   INVITATIONS_DESTINATION,
 ];

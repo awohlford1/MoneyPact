@@ -2,6 +2,7 @@
  * undefined for a request it does not own, so `mock-server.ts` can fall through in order and finally to its own
  * existing ladder. Imported by `mock-server.ts` only, never by browser components. */
 import type { MockDirectory } from "./mock-invitations.ts";
+import { handleMockCalendarRequest } from "./mock-calendar.ts";
 import { handleMockInvitationRequest } from "./mock-invitations.ts";
 import { handleMockReportsRequest } from "./mock-reports.ts";
 import { handleMockGoalsRequest } from "./mock-goals.ts";
@@ -26,4 +27,6 @@ export const MOCK_ROUTE_MODULES: MockRouteModule[] = [
   handleMockGoalsRequest,
   // UI-P03 (CBD-202): the one budget-wide transaction list read, derived from the existing manual-transaction store.
   handleMockTransactionsRequest,
+  // UI-P06 (CBD-323): the financial calendar, one read derived from the existing schedule engine.
+  handleMockCalendarRequest,
 ];
