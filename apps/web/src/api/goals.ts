@@ -134,9 +134,8 @@ function magnitude(amountMinorUnits: number, precision: number, currencyCode: st
 export interface GoalRow {
   goalId: string; label: string; version: number;
   target: string; progress: string; remaining: string | null; excess: string | null;
-  /** "142.00 of 500.00 USD saved; 358.00 USD remaining" -- the text progress statement the bar is decoration
-   * beside (section 4.5's exact wording shape). Never shown for an archived goal, which states its own
-   * archived-progress sentence instead. */
+  /** "142.00 of 500.00 USD saved; 358.00 USD remaining" -- the text progress statement (section 4.5's exact
+   * wording shape). Never shown for an archived goal, which states its own archived-progress sentence instead. */
   statement: string;
   state: GoalState; stateLabel: string;
   targetDate: string | null; currencyCode: string; precision: number;
@@ -151,9 +150,9 @@ export const GOAL_STATE_LABELS: Readonly<Record<GoalState, string>> = Object.fre
   active: "In progress", completed: "Completed", archived: "Archived",
 });
 
-/** The one text progress statement the bar is decoration beside; never a bare number (section 4.5's own exact
- * wording shape: "142.00 of 500.00 USD saved; 358.00 USD remaining" -- the currency named once, against the
- * target, not repeated against every figure that shares it). */
+/** The one text progress statement; never a bare number (section 4.5's own exact wording shape: "142.00 of
+ * 500.00 USD saved; 358.00 USD remaining" -- the currency named once, against the target, not repeated
+ * against every figure that shares it). */
 function progressStatement(wire: WireGoal): string {
   const progress = formatMinorUnits(wire.progressMinorUnits, wire.minorUnitPrecision);
   const target = magnitude(wire.targetMinorUnits, wire.minorUnitPrecision, wire.currencyCode);

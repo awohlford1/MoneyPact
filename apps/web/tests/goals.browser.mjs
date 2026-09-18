@@ -82,6 +82,17 @@ export async function goalsJourney(t, { browser, origin, errors }) {
     await d.accessibility(); await d.narrow(); await d.zoomed();
   });
 
+  await t.test("REV-UIP05-1/12: a validation error on the create-goal form focuses the invalid field and preserves the rest", async () => {
+    await d.fill("#goal-create-label", "");
+    await d.fill("#goal-create-target", "250.00");
+    await d.clickText("Add goal");
+    await d.waitText("Enter a name between 1 and 120 characters.");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "goal-create-label", "focus must move to the invalid field");
+    assert.equal(await page.$eval("#goal-create-target", node => node.value), "250.00", "an untouched field must keep its entered value");
+    await d.accessibility();
+    await d.fill("#goal-create-label", ""); await d.fill("#goal-create-target", "");
+  });
+
   await t.test("CBD-341-AC02/AC03: recording a contribution carries the standing intent sentence, updates progress and the ledger, without ever reporting an unsaved mutation as saved", async () => {
     await d.clickText("Open Emergency fund"); await d.waitText("Goal detail");
     await d.waitText("Recording a contribution records your intent. MoneyPact moves no money.");
@@ -121,21 +132,34 @@ export async function goalsJourney(t, { browser, origin, errors }) {
   });
 
   await t.test("archiving and restoring a goal keeps its ledger and names what is kept", async () => {
+    // REV-UIP05-12: a fresh, unreversed contribution before archiving, so the Reverse-hidden assertion below
+    // actually tests the archive-hides-it fix -- without one, the only other unreversed entry could already
+    // be gone by this point in the journey, and the control's absence would prove nothing in particular.
+    await d.fill("#contribution-amount", "10.00");
+    await d.clickText("Record a contribution");
+    await d.waitText("Contribution recorded.");
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll("button")].some(node => node.textContent.trim() === "Reverse")), true, "a live goal with an unreversed contribution offers Reverse");
+
     await d.clickText("Archive Emergency fund");
     await d.waitText("Archive Emergency fund?");
     await d.clickText("Archive goal");
     await d.waitText("Archived");
     assert.equal(await page.$("#contribution-amount"), null, "an archived goal offers no contribution control");
+    // REV-UIP05-3/12: the same unreversed contribution recorded above is still in the ledger (it is only
+    // marked reversed, never removed) -- its Reverse control disappearing here is the archive-hides-it fix,
+    // not a coincidence of every contribution already being reversed.
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll("button")].some(node => node.textContent.trim() === "Reverse")), false, "an archived goal hides the Reverse control even though an unreversed contribution still exists");
     await d.clickText("Restore Emergency fund");
     await d.waitText("Restore Emergency fund?");
     await d.clickText("Restore goal");
-    // The target was reduced below progress in the previous step, so this goal restores as completed, not
+    // The target was reduced below progress in an earlier sub-test, so this goal restores as completed, not
     // active -- restoring changes only `archivedAt`, never the target/progress figures that decide the rest.
     await d.waitText("Completed");
-    // REV-UIP05-9: the detail page's own sub-tests above only ever called `accessibility()` at the default
-    // viewport; the 320px reflow and 400%-zoom-equivalent checks (section 6.1.1/6.1.2) were only exercised
-    // on the list page. Cover the detail page here too, on its fully populated state.
-    await d.narrow(); await d.zoomed();
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll("button")].some(node => node.textContent.trim() === "Reverse")), true, "restoring brings the Reverse control back for the still-unreversed contribution");
+    // REV-UIP05-10: the same triple every other site in this file (and accounts.browser.mjs/reports.browser.mjs)
+    // uses -- default-viewport axe, then 320px reflow, then the 400%-zoom-equivalent reflow. A prior round
+    // replaced this call instead of adding to it, dropping the default-viewport pass; restored here.
+    await d.accessibility(); await d.narrow(); await d.zoomed();
   });
 
   await t.test("CBD-341-AC04: keyboard-only reach into the create-goal form on the list page", async () => {
