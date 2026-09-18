@@ -8,6 +8,7 @@ import puppeteer from "puppeteer";
 import { pk8Journey } from "./invitations.browser.mjs";
 import { accountsJourney } from "./accounts.browser.mjs";
 import { reportsJourney } from "./reports.browser.mjs";
+import { errorsJourney } from "./errors.browser.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const axeSource = readFileSync(fileURLToPath(import.meta.resolve("axe-core/axe.min.js")), "utf8");
@@ -410,6 +411,8 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     accountsJourney,
     // UI-P04 (CBD-358): category and period reports.
     reportsJourney,
+    // UI-P07 (gap G12, OQ-UI-18): shared not-found/error route boundaries.
+    errorsJourney,
   ];
   for (const journey of JOURNEY_REGISTRY) await journey(t, { browser, origin, errors });
   assert.deepEqual(errors, []);
