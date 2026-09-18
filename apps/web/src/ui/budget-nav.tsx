@@ -30,6 +30,10 @@ const PLAN_DESTINATION: Destination = { key: "plan", label: "Category plan", hre
 const ACCOUNTS_DESTINATION: Destination = { key: "accounts", label: "Accounts", href: id => `/budgets/${encodeURIComponent(id)}/accounts` };
 // UI-P04 (CBD-358): category and period reports.
 const REPORTS_DESTINATION: Destination = { key: "reports", label: "Reports", href: id => `/budgets/${encodeURIComponent(id)}/reports` };
+// UI-P05 (CBD-341): savings goals. The detail route (`/goals/[goalId]`) has no `matches` override, for the
+// same reason ACCOUNTS_DESTINATION needs none: the default match (exact or nested route) already marks this
+// tab current for it.
+const GOALS_DESTINATION: Destination = { key: "goals", label: "Goals", href: id => `/budgets/${encodeURIComponent(id)}/goals` };
 const MEMBERS_DESTINATION: Destination = { key: "members", label: "Members", href: id => `/budgets/${encodeURIComponent(id)}/members` };
 const INVITATIONS_DESTINATION: Destination = { key: "invitations", label: "Invitations", href: id => `/budgets/${encodeURIComponent(id)}/invitations` };
 const DESTINATION_REGISTRY: readonly Destination[] = [
@@ -37,6 +41,7 @@ const DESTINATION_REGISTRY: readonly Destination[] = [
   PLAN_DESTINATION,
   ACCOUNTS_DESTINATION,
   REPORTS_DESTINATION,
+  GOALS_DESTINATION,
   MEMBERS_DESTINATION,
   INVITATIONS_DESTINATION,
 ];
