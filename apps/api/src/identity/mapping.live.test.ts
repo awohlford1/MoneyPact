@@ -20,14 +20,25 @@ import assert from "node:assert/strict";
 import { randomInt } from "node:crypto";
 import { test } from "node:test";
 import { loadLocalDatabaseConfig } from "@cobudget/migrations/local";
-import { SESSION_COOKIE_NAME } from "@cobudget/sessions";
-import { composeApiRuntime } from "../sessions/runtime.ts";
+import { createSessionStore, resolveSession, SESSION_COOKIE_NAME } from "@cobudget/sessions";
+import type { DataAccessClient } from "@cobudget/data-access";
+import { composeApiRuntime, resolveApiSessionConfiguration } from "../sessions/runtime.ts";
+import type { ApiConfig } from "../config.ts";
 import type { CompletionResult, IdentityCeremony } from "./ceremony.ts";
 import type { LocalIssuer, LocalScenario } from "./local-issuer.ts";
 import { APPLICATION_ORIGIN, cookieValueFrom, localConfig } from "./test-support/harness.ts";
 
 const database = loadLocalDatabaseConfig();
 const configured = database.database !== "cobudget_dev";
+
+/** REV-IDLE-5: replaces the now-deleted `IdentityCeremony#view` for this live suite's one existing-subject check. */
+async function view(client: DataAccessClient, config: ApiConfig, ceremony: IdentityCeremony, cookieValue: string | undefined) {
+  const store = createSessionStore(client);
+  const { session } = resolveApiSessionConfiguration(config);
+  const resolved = await resolveSession(cookieValue, store, session, config.COBUDGET_IDENTITY_ENVIRONMENT_ID!, new Date(), "skip_locked");
+  if (resolved.status !== "resolved") return undefined;
+  return ceremony.viewResolved(client, { accountSubjectId: resolved.accountSubjectId, sessionRef: resolved.sessionRef, sessionVersion: resolved.sessionVersion, assurance: resolved.assurance.level });
+}
 
 function success(result: CompletionResult): Extract<CompletionResult, { kind: "success" }> {
   assert.equal(result.kind, "success", JSON.stringify(result));
@@ -126,8 +137,8 @@ void test("CBD-190-AC03 live PostgreSQL: concurrent callbacks converge on one su
     assert.equal(await subjectsForIssuer(), 1);
     assert.equal(await sessionsForIssuer(), 3);
     const cookie = cookieValueFrom(again.setCookie, SESSION_COOKIE_NAME)!;
-    const view = await ceremony.view(cookie);
-    assert.equal(view?.accountSubjectId, again.accountSubjectId);
+    const viewResult = await view(client, config, ceremony, cookie);
+    assert.equal(viewResult?.accountSubjectId, again.accountSubjectId);
 
     // Distinct provider subject -> distinct account subject, still one active profile each.
     const other = success(await deliver((await callbackFor("subject-b")).url));

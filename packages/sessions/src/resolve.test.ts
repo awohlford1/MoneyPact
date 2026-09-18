@@ -48,12 +48,16 @@ void test("IDLE-T01: skip_locked mode with a zero row count (skipped, e.g. locke
   }
 });
 
-void test("IDLE-T01: skip_locked mode with a row count of 1 (slid) resolves the same way", async () => {
-  const { store } = buildTestHarness();
+void test("REV-IDLE-9 / IDLE-T01: skip_locked mode with a row count of 1 (slid, the uncontended case) actually moves idle_expires_at forward -- a row count of 1 must mean the row moved, not merely that the request resolved", async () => {
+  const { store, db } = buildTestHarness();
   const config = testConfig();
   const delivery = await consumeAndIssue(baseCommand(), store, config, envelopeKeyProvider, new Date());
-  const outcome = await resolveSession(delivery.cookieValue, store, config, "test", new Date(), "skip_locked");
+  const before = (db.tables.get("account_session")!.find((row) => row.session_ref === delivery.sessionRef)!.idle_expires_at as Date).getTime();
+  const now = new Date(Date.now() + 5_000);
+  const outcome = await resolveSession(delivery.cookieValue, store, config, "test", now, "skip_locked");
   assert.equal(outcome.status, "resolved");
+  const after = (db.tables.get("account_session")!.find((row) => row.session_ref === delivery.sessionRef)!.idle_expires_at as Date).getTime();
+  assert.ok(after > before, `idle_expires_at must move forward on an uncontended (row count 1) best-effort slide: before=${before} after=${after}`);
 });
 
 void test("IDLE-T01: skip_locked mode still fails closed to store_unavailable when the store throws (CT-191-009)", async () => {

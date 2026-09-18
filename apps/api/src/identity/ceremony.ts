@@ -312,7 +312,9 @@ export class IdentityCeremony {
     let currentAccountSubjectId: string | undefined;
     let currentSessionRef: string | undefined;
     if (input.ceremony === "account_switch") {
-      const resolved = await resolveSession(input.sessionCookie, this.#d.sessionStore, this.#d.sessionConfig, config.environmentId, this.#d.now());
+      // REV-IDLE-5: outside any mutation's effect transaction, so it never waits on the current session's
+      // own in-flight mutation (SC-191-006).
+      const resolved = await resolveSession(input.sessionCookie, this.#d.sessionStore, this.#d.sessionConfig, config.environmentId, this.#d.now(), "skip_locked");
       if (resolved.status !== "resolved") return { ok: false, reason: "session_required" };
       currentAccountSubjectId = resolved.accountSubjectId;
       currentSessionRef = resolved.sessionRef;
@@ -560,16 +562,6 @@ export class IdentityCeremony {
     this.#reliability("ok");
     const setCookie = [buildSessionCookieHeader(delivery.cookieValue, delivery.absoluteExpiresAt, now)];
     return { kind: "success", navigateTo: this.#successNavigation(challenge.postResultDestinationId, challenge.boundSpaceId), setCookie, challengeId: challenge.challengeId, accountSubjectId: handoff.accountSubjectId, sessionRef: delivery.sessionRef, firstDelivery: true };
-  }
-
-  /**
-   * GET /v1/identity/me: the resolved subject's identifiers for the web; no contact attribute, no
-   * provider value. RC-06: `csrfValue` is the bounded in-process bootstrap value.
-   */
-  async view(cookieValue: string | undefined): Promise<IdentityView | undefined> {
-    const resolved = await resolveSession(cookieValue, this.#d.sessionStore, this.#d.sessionConfig, this.#d.config.environmentId, this.#d.now());
-    if (resolved.status !== "resolved") return undefined;
-    return this.viewResolved(this.#d.client, { accountSubjectId: resolved.accountSubjectId, sessionRef: resolved.sessionRef, sessionVersion: resolved.sessionVersion, assurance: resolved.assurance.level });
   }
 
   /**

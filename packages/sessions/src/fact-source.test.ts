@@ -29,7 +29,7 @@ function baseCommand(overrides: Partial<SessionIssueCommandV1> = {}): SessionIss
   };
 }
 
-void test("IDLE-E05: the gate's identity-only resolution (empty operation.action, no transaction) uses the best-effort slide", async () => {
+void test("IDLE-E05 (corrected per REV-IDLE-1): the gate's identity-only resolution (identityOnly: true, no transaction) uses the best-effort slide", async () => {
   const { store } = buildTestHarness();
   const config = testConfig();
   const delivery = await consumeAndIssue(baseCommand(), store, config, envelopeKeyProvider, new Date());
@@ -40,7 +40,7 @@ void test("IDLE-E05: the gate's identity-only resolution (empty operation.action
   store.extendIdleExpiry = async (...args: Parameters<typeof originalWait>) => { waitCalled = true; return originalWait(...args); };
   try {
     const adapter = createSessionFactSourceAdapter(store, config, "test");
-    const facts = await adapter.read("session_store", { credential: delivery.cookieValue, operation: { action: "" } });
+    const facts = await adapter.read("session_store", { credential: delivery.cookieValue, identityOnly: true });
     assert.ok(facts, "the gate resolution succeeds");
     assert.equal(bestEffortCalled, true, "the gate's non-transactional resolution slides best-effort");
     assert.equal(waitCalled, false);
@@ -50,7 +50,27 @@ void test("IDLE-E05: the gate's identity-only resolution (empty operation.action
   }
 });
 
-void test("IDLE-D04: the precheck's resolution (a real action, no transaction) is read-only -- no slide of either kind", async () => {
+void test("REV-IDLE-1: identityOnly absent or false (matching every assemble() call, including the precheck) never dispatches skip_locked, regardless of operation.action -- the dispatch reads only the explicit discriminator", async () => {
+  const { store } = buildTestHarness();
+  const config = testConfig();
+  const delivery = await consumeAndIssue(baseCommand(), store, config, envelopeKeyProvider, new Date());
+  let bestEffortCalled = false;
+  const originalBestEffort = store.extendIdleExpiryBestEffort.bind(store);
+  store.extendIdleExpiryBestEffort = async (...args: Parameters<typeof originalBestEffort>) => { bestEffortCalled = true; return originalBestEffort(...args); };
+  try {
+    const adapter = createSessionFactSourceAdapter(store, config, "test");
+    // Deliberately omits identityOnly even though credential/shape otherwise looks exactly like the real
+    // apps/api wrapper's call for the (removed) sentinel action -- proving the dispatch no longer looks at
+    // operation.action at all, since this lookup carries none.
+    const facts = await adapter.read("session_store", { credential: delivery.cookieValue });
+    assert.ok(facts);
+    assert.equal(bestEffortCalled, false, "no identityOnly discriminator means no best-effort slide, however the credential/action happen to look");
+  } finally {
+    store.extendIdleExpiryBestEffort = originalBestEffort;
+  }
+});
+
+void test("IDLE-D04: the precheck's resolution (identityOnly absent, no transaction) is read-only -- no slide of either kind", async () => {
   const { store } = buildTestHarness();
   const config = testConfig();
   const delivery = await consumeAndIssue(baseCommand(), store, config, envelopeKeyProvider, new Date());
@@ -61,7 +81,7 @@ void test("IDLE-D04: the precheck's resolution (a real action, no transaction) i
   store.extendIdleExpiry = async (...args: Parameters<typeof originalWait>) => { waitCalled = true; return originalWait(...args); };
   try {
     const adapter = createSessionFactSourceAdapter(store, config, "test");
-    const facts = await adapter.read("session_store", { credential: delivery.cookieValue, operation: { action: "budget.create" } });
+    const facts = await adapter.read("session_store", { credential: delivery.cookieValue });
     assert.ok(facts, "the precheck resolution still succeeds (it reads, it just does not slide)");
     assert.equal(bestEffortCalled, false, "IDLE-D04: the precheck slide is removed");
     assert.equal(waitCalled, false);
@@ -89,7 +109,7 @@ void test("PROTO-ACTIVATION-001 A2 (unchanged): the transaction-bound path waits
     scoped.fenceRevocationEpoch = async (...args: Parameters<typeof originalFence>) => { fenceCalled = true; return originalFence(...args); };
     return scoped;
   });
-  const facts = await adapter.read("session_store", { credential: delivery.cookieValue, operation: { action: "budget.create" } }, scopedClientMarker);
+  const facts = await adapter.read("session_store", { credential: delivery.cookieValue }, scopedClientMarker);
   assert.ok(facts, "the transactional resolution succeeds and fences");
   assert.equal(waitCalled, true, "the in-transaction slide always waits");
   assert.equal(fenceCalled, true, "the in-transaction path fences the revocation epoch (A2, unchanged)");

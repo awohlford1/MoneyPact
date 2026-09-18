@@ -166,6 +166,8 @@ export async function resolveSession(
         // the cast here is the one place that bridges the two. A row count of 0 (skipped, most often the same
         // session's own in-flight effect transaction holding the lock) and 1 (slid) are both a resolved
         // outcome, not a failure (IDLE-E04) -- the value is intentionally not inspected below.
+        // REV-IDLE-8: safe only because fact-source.ts's dispatch is now gated on an explicit `identityOnly`
+        // discriminator, not an inferred one -- see fact-source.ts's dispatch comment.
         await (store as SessionStore).extendIdleExpiryBestEffort(liveRow.sessionRef, slidIdleExpiry);
       } else {
         await store.extendIdleExpiry(liveRow.sessionRef, slidIdleExpiry);

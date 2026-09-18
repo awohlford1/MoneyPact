@@ -27,6 +27,13 @@ export interface FactLookup {
   readonly identity?: Readonly<Record<string, unknown>>;
   readonly candidates?: Readonly<{ spaceId: string; membershipId: string }>;
   readonly signal?: AbortSignal;
+  /**
+   * REV-IDLE-1 / CBD-191 SC-191-006: an explicit discriminator, read only by the `session_store` producer
+   * (`apps/api/src/sessions/fact-source.ts`, forwarded into `@cobudget/sessions`'s dispatch), never inferred
+   * from `operation.action` or any other field a route could shape. `true` only on `resolveSession`'s
+   * identity-only gate resolution below; absent (falsy) on every `assemble()` call, including the precheck.
+   */
+  readonly identityOnly?: boolean;
 }
 /** Trusted server adapters return leaf values from the named producer only.
  * They must enforce subject/profile/membership associations in their queries.
@@ -122,7 +129,10 @@ export class FactAssembler {
 
   /** Prerequisite identity read only; no metadata, resource lookup or policy evaluation. */
   async resolveSession(credential: unknown): Promise<string> {
-    const identity = await this.#read("session_store", { credential, operation: { action: "", purpose: "user_delegated", mode: "user_delegated", fieldSet: "default" } });
+    // REV-IDLE-1 / CBD-191 SC-191-006: `identityOnly: true` is the explicit discriminator the session_store
+    // producer's non-transactional dispatch reads (never `operation.action`, which is an undocumented,
+    // producer-side-unguarded convention this call happened to use before -- REV-IDLE-4).
+    const identity = await this.#read("session_store", { credential, operation: { action: "", purpose: "user_delegated", mode: "user_delegated", fieldSet: "default" }, identityOnly: true });
     const actor = identity?.["subject.accountSubjectId"];
     if (typeof actor !== "string" || !actor.length || actor.length > 256) throw new FactFailure("not_authenticated");
     return actor;

@@ -23,7 +23,7 @@ import type { Environment } from "./types.ts";
 export interface MinimalFactSourceAdapter {
   read(
     source: string,
-    lookup: { readonly credential: unknown; readonly operation?: { readonly action?: string } },
+    lookup: { readonly credential: unknown; readonly identityOnly?: boolean },
     transaction?: unknown,
   ): Promise<Readonly<Record<string, unknown>> | null>;
 }
@@ -37,16 +37,19 @@ export interface MinimalFactSourceAdapter {
  * `FactSourceAdapter.read` exactly and the caller in
  * `apps/api/src/sessions/**` is what actually satisfies the real interface.
  *
- * SC-191-006 / IDLE-E05 / IDLE-D04: three resolution shapes, chosen structurally by call site -- never by a
- * runtime argument a caller could vary per request:
+ * SC-191-006 / IDLE-E05 / IDLE-D04 (corrected per REV-IDLE-1/REV-IDLE-4): three resolution shapes, chosen by
+ * an explicit discriminator the caller sets, never inferred from `operation.action` or any other field a
+ * route happens to shape -- an earlier revision of this dispatch sniffed `operation.action === ""`, which the
+ * `apps/api` wrapper (`apps/api/src/sessions/fact-source.ts`) never actually forwarded, so every
+ * non-transactional resolution silently took the read-only branch and the gate never slid at all (caught by
+ * the corrected live probe, `IDLE-T03`). `lookup.identityOnly` is the one field this module reads to choose:
  *
  *   - inside a mutation's effect transaction (`transaction !== undefined`): the scoped, transaction-bound
  *     store resolves in `"wait"` mode and fences, exactly as PROTO-ACTIVATION-001 A2 proved (unchanged).
- *   - the identity-only gate resolution (`apps/api/src/authorization/facts.ts`'s `FactAssembler#resolveSession`,
- *     called from the preHandler session gate -- recognizable here by the empty `operation.action` that call
- *     always passes, since no real route action is ever `""`): the one non-transactional resolution that must
- *     actually slide, and it does so best-effort (`"skip_locked"`), never waiting on the session's own
- *     in-flight mutation.
+ *   - `lookup.identityOnly === true` (set only by `apps/api/src/authorization/facts.ts`'s
+ *     `FactAssembler#resolveSession`, called from the preHandler session gate, and forwarded unchanged by the
+ *     `apps/api` wrapper): the one non-transactional resolution that must actually slide, and it does so
+ *     best-effort (`"skip_locked"`), never waiting on the session's own in-flight mutation.
  *   - every other non-transactional resolution (the precheck inside `canActivate`'s `boundary.authorize`,
  *     which resolves the same session again a few milliseconds later to assemble the full policy input): the
  *     slide is redundant with the gate's, which has already committed (autocommit) by the time this read
@@ -67,7 +70,7 @@ export function createSessionFactSourceAdapter(store: SessionStore, config: Sess
       let outcome: ResolutionOutcome;
       if (scoped) {
         outcome = await resolveSession(cookieValue, scoped, config, environmentId, now, "wait");
-      } else if (lookup.operation?.action === "") {
+      } else if (lookup.identityOnly === true) {
         outcome = await resolveSession(cookieValue, store, config, environmentId, now, "skip_locked");
       } else {
         outcome = await resolveSession(cookieValue, store, config, environmentId, now, "none");
