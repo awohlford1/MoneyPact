@@ -106,6 +106,16 @@ describe("CBD-232-AC01: name normalization", () => {
     if (!lone.ok) assert.deepEqual(lone.fieldErrors.filter((e) => e.path === "name").map((e) => e.code), ["name.control-characters"], "a lone Cf is still the Cc/Cf rule's, not name.required");
   });
 
+  it("SEC-NF-R3: a name made only of private-use, unassigned, surrogate, or the specifically named invisible characters is reported as name.required", () => {
+    for (const name of ["", "﷐", "\uD800", "\u{1D159}", "￼", "�"]) {
+      const result = validateCreateProposalRequest("k".repeat(16), { ...VALID_BODY, name }, deps());
+      assert.equal(result.ok, false, JSON.stringify(name));
+      if (!result.ok) assert.deepEqual(result.fieldErrors.filter((e) => e.path === "name"), [{ code: "name.required", path: "name", message: "Enter a budget name." }], JSON.stringify(name));
+    }
+    const visible = validateCreateProposalRequest("k".repeat(16), { ...VALID_BODY, name: "A�" }, deps());
+    assert.equal(visible.ok, true, "a visible letter surrounded only by SEC-NF-R3 characters is still an accepted name");
+  });
+
   it("SEC-NS-R2 does not apply to budget names: the neutral member label is an acceptable budget name, and an internal NBSP collapses", () => {
     for (const [name, expected] of [["A MoneyPact member", "A MoneyPact member"], ["a moneypact member", "a moneypact member"], ["Grocery Budget", "Grocery Budget"]] as const) {
       const result = validateCreateProposalRequest("k".repeat(16), { ...VALID_BODY, name }, deps());

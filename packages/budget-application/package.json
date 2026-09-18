@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Application layer for versioned budget-creation proposals and schedule previews (CBD-232). No I/O, no framework, no persistence, no provider SDK; consumes @cobudget/budget-domain/schedule only.",
+  "description": "Application layer for versioned budget-creation proposals and schedule previews (CBD-232). No I/O, no framework, no persistence, no provider SDK; consumes @cobudget/budget-domain/schedule and @cobudget/budget-domain/shared only.",
   "exports": {
     "./creation-proposals": "./src/creation-proposals/index.ts",
     "./targets": "./src/targets/index.ts",

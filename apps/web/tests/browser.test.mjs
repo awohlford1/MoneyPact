@@ -6,6 +6,8 @@ import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer";
 import { pk8Journey } from "./invitations.browser.mjs";
+import { accountsJourney } from "./accounts.browser.mjs";
+import { reportsJourney } from "./reports.browser.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const axeSource = readFileSync(fileURLToPath(import.meta.resolve("axe-core/axe.min.js")), "utf8");
@@ -398,7 +400,17 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     await waitText("Sign-in did not complete");
     assert.equal((await text()).includes("untrusted-provider-detail"), false); await accessibility();
   });
-  // PK-8: the invitation ceremony, members, notices and the Primary transfer, on this same development server.
-  await pk8Journey(t, { browser, origin, errors });
+  // JOURNEY REGISTRY -- append-only. Each entry is an async journey(t, {browser, origin, errors}) awaited in
+  // order on this same development server, after the shared setup above. Next packet: add your journey as the
+  // next entry.
+  const JOURNEY_REGISTRY = [
+    // PK-8: the invitation ceremony, members, notices and the Primary transfer.
+    pk8Journey,
+    // CBD-198: the manual accounts lifecycle -- list, detail, editor, archive/restore with confirmation.
+    accountsJourney,
+    // UI-P04 (CBD-358): category and period reports.
+    reportsJourney,
+  ];
+  for (const journey of JOURNEY_REGISTRY) await journey(t, { browser, origin, errors });
   assert.deepEqual(errors, []);
 });

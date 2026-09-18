@@ -75,10 +75,16 @@ export async function pk8Journey(t, { browser, origin, errors }) {
     await owner.waitEnabled("Confirm and create budget"); await owner.clickText("Confirm and create budget");
     await owner.waitText("No categories yet"); budgetId = new URL(owner.page.url()).pathname.split("/").at(-1);
     assert.ok(await owner.page.$('nav[aria-label="Members and invitations"]'), "the dashboard links to the member pages");
+    // P01-AC03: BudgetTabs renders one nav with an accessible name and exactly one current tab, on the dashboard.
+    assert.ok(await owner.page.$('nav[aria-label="Budget sections"]'), "BudgetTabs is not rendered on the dashboard");
+    assert.equal(await owner.page.$$eval('nav[aria-label="Budget sections"] [aria-current="page"]', nodes => nodes.length), 1, "exactly one Budget sections tab must be current on the dashboard");
     await owner.clickText("Members"); await owner.waitText("Everyone who belongs to this budget space");
     await owner.page.waitForFunction(() => document.title.includes("Members"));
     await owner.page.waitForFunction(() => document.querySelectorAll('[data-testid="member-row"]').length === 1);
     await owner.waitText("Primary Owner");
+    // P01-AC03, continued: and on the members page, where the current tab is now "Members".
+    assert.equal(await owner.page.$$eval('nav[aria-label="Budget sections"] [aria-current="page"]', nodes => nodes.length), 1, "exactly one Budget sections tab must be current on the members page");
+    assert.equal(await owner.page.$eval('nav[aria-label="Budget sections"] [aria-current="page"]', node => node.textContent.trim()), "Members");
     await owner.accessibility(); await owner.narrow();
   });
 
@@ -99,6 +105,31 @@ export async function pk8Journey(t, { browser, origin, errors }) {
     ({ code, channelChallenge: challenge } = deliveries.deliveries[0]);
     assert.match(challenge, /^\d{6}$/u);
     assert.ok(!(await owner.text()).includes(code), "the bearer is never on the owner's page");
+  });
+
+  await t.test("P01-AC05: cancelling an invitation is a DELETE that round-trips through /api/mock/v1", async () => {
+    // A disposable invitation, separate from the one the rest of this journey depends on, so cancelling it
+    // cannot disturb the invitee flow above or below.
+    await owner.fill("#invite-destination", "cancel-target@example.com"); await owner.clickText("Send invitation");
+    await owner.waitText("Invitation sent to c***@example.com as Collaborator.");
+    // The row itself is a second, async list refresh -- wait for its control to actually exist before
+    // clicking it, rather than racing the confirmation banner above.
+    await owner.page.waitForFunction(() => [...document.querySelectorAll("button")].some(node => node.textContent.trim() === "Cancel invitation to c***@example.com"));
+    const deletes = [];
+    const onResponse = response => {
+      if (response.request().method() === "DELETE" && new URL(response.url()).pathname.includes("/invitations/")) deletes.push({ status: response.status(), path: new URL(response.url()).pathname });
+    };
+    owner.page.on("response", onResponse);
+    await owner.clickText("Cancel invitation to c***@example.com");
+    await owner.waitText("Invitation to c***@example.com (Collaborator) cancelled.");
+    owner.page.off("response", onResponse);
+    assert.equal(deletes.length, 1, "cancelling an invitation must send exactly one DELETE");
+    assert.equal(deletes[0].status, 200, "the DELETE must round-trip through /api/mock/v1 successfully (previously unreachable: the mock route exported no DELETE)");
+    assert.match(deletes[0].path, /\/api\/mock\/v1\/budget-spaces\/.+\/invitations\/.+/u);
+    // The invitation's state updates in place: a cancelled invitation offers no further action.
+    const controls = await owner.page.$$eval("button", nodes => nodes.map(node => node.textContent.trim()));
+    assert.equal(controls.includes("Cancel invitation to c***@example.com"), false, "a cancelled invitation offers no further cancel");
+    await owner.accessibility();
   });
 
   await t.test("the link holder resolves the fragment link, gets the first-party ceremony cookie, proves the channel after one wrong code, and is handed to sign-in", async () => {

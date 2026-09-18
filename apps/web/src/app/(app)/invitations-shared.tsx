@@ -8,6 +8,8 @@ import type { InvitationsClient } from "../../api/invitations";
 import { Alert } from "../../components/Alert";
 import { Button } from "../../components/Button";
 import { apiBase } from "@/api/runtime-mode";
+// CBD-35: the uniform denied-access notice is a shared shape, not this module's own copy.
+import { DeniedState } from "../../ui/resource";
 
 /** One client per mounted view; the CSRF value it captures lives only in that closure. */
 export function useInvitationsClient(): InvitationsClient {
@@ -46,9 +48,10 @@ export function describeFailure(error: unknown, fallback = "This could not be co
 
 export function ReadFailure({ error, retry }: { error: unknown; retry(): void }) {
   const denied = error instanceof InvitationApiError && error.denied;
-  return <Alert tone="danger" title={denied ? "Access unavailable" : "Unable to load"}>
-    <p>{describeFailure(error, "We could not load this. You can try again.")}</p>
-    {!denied && <Button variant="secondary" onClick={retry}>Try again</Button>}
+  const message = <p>{describeFailure(error, "We could not load this. You can try again.")}</p>;
+  return denied ? <DeniedState>{message}</DeniedState> : <Alert tone="danger" title="Unable to load">
+    {message}
+    <Button variant="secondary" onClick={retry}>Try again</Button>
   </Alert>;
 }
 

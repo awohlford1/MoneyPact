@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Status | **Approved — Product Owner, September 15, 2026 (PO-CONTRACT-APPROVALS-003), applying the 0.3 consent amendment to the 0.2.1 approval of September 13, 2026 (PO-CONTRACT-APPROVALS-001); open questions and residuals stay recorded and open** |
-| Document version | 0.3.2 |
+| Document version | 0.3.3 |
 | Jira subtask | [CBD-232](https://cobudget.atlassian.net/browse/CBD-232) |
 | Parent | [CBD-23](https://cobudget.atlassian.net/browse/CBD-23) |
 | Repository baseline | `8ac588f36ca61fde9ee77c5f4ff9f9cf25041344` |
@@ -429,8 +429,9 @@ After authentication and context resolution, validation runs in this order:
 request field order (`name`, `timeZone`, `currencyCode`, `schedule`,
 `supersedesProposalId`). Unknown nested fields sort with their owning request
 field. Within each field, errors use lexical path/code order. The application
-returns all independently detectable errors except that a container shape error
-suppresses errors for descendants that cannot be inspected. `code` and `path`
+returns all independently detectable errors, except that a container shape error
+suppresses errors for descendants that cannot be inspected and except that
+`name` returns only its first failing check (§5.2). `code` and `path`
 are machine contracts;
 `message` is the canonical English default and may be localized at presentation.
 Entered raw values remain client-side draft state and are not echoed in logs or
@@ -446,7 +447,7 @@ error responses.
 | `name.expected-string` | `name` | Value is present but not text. | Enter a budget name. |
 | `name.required` | `name` | Normalized value is empty. | Enter a budget name. |
 | `name.control-characters` | `name` | Normalized value contains a Unicode control (`Cc`) or format (`Cf`) character, with two exceptions: U+200D ZERO WIDTH JOINER inside an emoji sequence (immediately preceded by an `Extended_Pictographic` or `Emoji_Modifier` character or U+FE0F, and immediately followed by an `Extended_Pictographic` character), and U+200C ZERO WIDTH NON-JOINER or U+200D immediately between two letters (`L`) or combining marks (`M`). Both exceptions read the original string, so a doubled joiner never qualifies through its twin; at a string edge, next to a space, or beside any other `Cc`/`Cf` character a joiner stays rejected. Evaluated after `name.required` and before `name.too-long`. | Remove control and invisible formatting characters. |
-| `name.too-long` | `name` | Normalized value exceeds 100 Unicode code points. | Use 100 characters or fewer. |
+| `name.too-long` | `name` | Normalized value exceeds 100 Unicode grapheme clusters (`Intl.Segmenter("und", { granularity: "grapheme" })`). | Use 100 characters or fewer. |
 | `time-zone.expected-string` | `timeZone` | Value is present but not text. | Enter a named IANA time zone. |
 | `time-zone.required` | `timeZone` | Trimmed value is empty or missing. | Enter a named IANA time zone. |
 | `time-zone.invalid` | `timeZone` | Value is an offset, abbreviation, unknown zone, or cannot be canonicalized. | Choose a valid named IANA time zone. |
@@ -879,6 +880,7 @@ confirmation-transaction participation remain enforceable.
 
 | Version | Date | Author | Change | Disposition |
 | --- | --- | --- | --- | --- |
+| 0.3.3 | September 17, 2026 | Documentation specialist, dispatched under `DOC-BATCH-232-DEV-001`, baseline merge commit `fd3966c` | §5.2 `name.too-long` condition corrected from "exceeds 100 Unicode code points" to "exceeds 100 Unicode grapheme clusters", matching `Intl.Segmenter("und", { granularity: "grapheme" })` in `packages/budget-application/src/creation-proposals/normalize.ts` verbatim (`DOC232-F01`); §5.1 gains one sentence reconciling the all-errors-returned statement with the `name`-only-first-failing-check behavior already noted at §5.2 (`DOC232-F02`). No other text, cell, or decision identifier changed. | Approved — user consent, September 17, 2026 (`DOC-BATCH-232-DEV-001`); disposition stays `unpublished`. |
 | 0.3.2 | September 17, 2026 | Documentation specialist, dispatched under `DOC-CBD232-NAME-CATALOG-001` | §5.2 gains the `name.control-characters` row and the `name` evaluation order, describing what PR #397 (merge commit `8697762`) implements in `packages/budget-application/src/creation-proposals/normalize.ts` (`REV-NS-3`, `PROTO-NAME-SANITIZE-REVIEW-001`). No other text, cell, or decision identifier changed. | Approved — user consent, September 17, 2026, to this out-of-scope approved-document change as its own focused pull request (AGENTS.md rule); disposition stays `unpublished`. |
 | 0.3.1 | September 15, 2026 | Documentation specialist, dispatched under `PROTO-DOC-SWEEP-003` | §3.2 corrected: the implementation directory is `apps/api/src/budget-creation/`, not `apps/api/src/budget-creation-proposals/` (`GUARD-F03`), verified against the merged tree. No other text, cell, or decision identifier changed. | Approved — Executive, September 15, 2026 (`EXEC-FOLLOWUPS-003`). |
 | 0.3 | September 15, 2026 | Specification specialist, dispatched by Manager (`PROTO-CONSENT-AMENDMENTS-001`) | The amendment `CBD236-CONSENT-SEMANTICS-001` item 6 deferred to this package, describing what PR #337 merged: §4.2 adds the `currentDisclosure` preview field with its always-current, outside-the-digest, rendered-verbatim and unticked-by-default acknowledgement rules; §4.4 reconciles the confirmation request with the CBD-233 0.2 `acknowledgedDisclosure` claim; §7.1 records the digest exclusion; §13 gains two traceability rows; §14 records `OQ-CF-004` resolved by reference and `OQ-CF-002`/`OQ-CF-003` left open. | **Approved — Product Owner, September 15, 2026 (`PO-CONTRACT-APPROVALS-003`).** Status and document version bumped in the same change; `OQ-CF-002`, `OQ-CF-003` and `OQ-CF-005` stay open. |
