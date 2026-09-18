@@ -25,6 +25,13 @@ function driver(page, errors) {
     for (const handle of handles) if ((await handle.evaluate(node => node.textContent.trim())) === label) { await handle.scrollIntoView(); await handle.click(); return; }
     assert.fail(`Missing control: ${label}`);
   };
+  // Waits for a control to appear, the same way `clickText` does internally, but only to assert presence --
+  // used where a re-render (a mutation's own refresh) can lag the state check by a tick, which an immediate
+  // `page.evaluate` right after `waitText` can lose the race against.
+  const controlPresent = async label => {
+    try { await page.waitForFunction(label => [...document.querySelectorAll("button, a")].some(node => node.textContent.trim() === label), {}, label); return true; }
+    catch { return false; }
+  };
   const fill = async (selector, value) => {
     await page.waitForSelector(selector);
     await page.focus(selector);
@@ -49,7 +56,7 @@ function driver(page, errors) {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${new URL(page.url()).pathname} scrolls horizontally at 320x225 dsf4`);
     await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
   };
-  return { page, text, waitText, clickText, fill, accessibility, narrow, zoomed };
+  return { page, text, waitText, clickText, controlPresent, fill, accessibility, narrow, zoomed };
 }
 
 export async function goalsJourney(t, { browser, origin, errors }) {
@@ -138,7 +145,7 @@ export async function goalsJourney(t, { browser, origin, errors }) {
     await d.fill("#contribution-amount", "10.00");
     await d.clickText("Record a contribution");
     await d.waitText("Contribution recorded.");
-    assert.equal(await page.evaluate(() => [...document.querySelectorAll("button")].some(node => node.textContent.trim() === "Reverse")), true, "a live goal with an unreversed contribution offers Reverse");
+    assert.equal(await d.controlPresent("Reverse"), true, "a live goal with an unreversed contribution offers Reverse");
 
     await d.clickText("Archive Emergency fund");
     await d.waitText("Archive Emergency fund?");
@@ -155,7 +162,7 @@ export async function goalsJourney(t, { browser, origin, errors }) {
     // The target was reduced below progress in an earlier sub-test, so this goal restores as completed, not
     // active -- restoring changes only `archivedAt`, never the target/progress figures that decide the rest.
     await d.waitText("Completed");
-    assert.equal(await page.evaluate(() => [...document.querySelectorAll("button")].some(node => node.textContent.trim() === "Reverse")), true, "restoring brings the Reverse control back for the still-unreversed contribution");
+    assert.equal(await d.controlPresent("Reverse"), true, "restoring brings the Reverse control back for the still-unreversed contribution");
     // REV-UIP05-10: the same triple every other site in this file (and accounts.browser.mjs/reports.browser.mjs)
     // uses -- default-viewport axe, then 320px reflow, then the 400%-zoom-equivalent reflow. A prior round
     // replaced this call instead of adding to it, dropping the default-viewport pass; restored here.
