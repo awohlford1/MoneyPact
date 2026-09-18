@@ -1,7 +1,11 @@
 import { reliabilityEvent } from "@cobudget/contracts/telemetry";
-import type { ReliabilityEvent } from "@cobudget/contracts/telemetry";
 
-export type ReliabilitySink = (event: ReliabilityEvent) => void;
+import type { ReliabilitySink } from "./telemetry/sink.ts";
+
+// CBD-262-AC01: the sink type now lives in ./telemetry/sink.ts, shared
+// byte-for-byte with apps/worker (see ./telemetry/parity.test.ts). Re-exported
+// here so existing imports of `ReliabilitySink` from "./telemetry.js" keep working.
+export type { ReliabilitySink } from "./telemetry/sink.ts";
 
 /**
  * The API's only structured-log writer. The shared runtime filter drops any
