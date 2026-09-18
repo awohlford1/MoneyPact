@@ -372,7 +372,7 @@ async function main() {
     await invitee.screenshot({ path: join(shots, `${SHOT_PREFIX}-16-disclosure.png`) });
     await invitee.click("#choice-accept"); await invitee.click("#acknowledged-disclosure"); await holder.waitEnabled("Record my acceptance");
     await holder.clickText("Record my acceptance"); await holder.waitText("Your acceptance is recorded");
-    log("Invitee signs in as subject-b and returns, attaches, reads, accepts", "POST /v1/identity/begin landed on /invitation (the bounded return destination, no return marker); the invitation link was reopened to reach the ceremony again; POST .../attach 200 (CSRF header); GET /v1/invitations/{ceremonyId}: the approved invitation_collaborator v1 text with choice {accept: false, decline: false}; POST .../accept 200 awaiting_confirmation with the acknowledged kind and version only");
+    log("Invitee signs in as subject-b and returns, attaches, reads, accepts", `POST ${API_BASE}/identity/begin landed on /invitation (the bounded return destination, no return marker); the invitation link was reopened to reach the ceremony again; POST .../attach 200 (CSRF header); GET /v1/invitations/{ceremonyId}: the approved invitation_collaborator v1 text with choice {accept: false, decline: false}; POST .../accept 200 awaiting_confirmation with the acknowledged kind and version only`);
     await invitee.screenshot({ path: join(shots, `${SHOT_PREFIX}-17-accepted.png`) });
 
     // The real API projects `awaiting_confirmation` the moment the invitee accepts (PK8-F05, apps/api/src/invitations/http.test.ts
@@ -411,7 +411,7 @@ async function main() {
     // challenge's own bound budget space; the post-result navigation returns to the space's transfer page with
     // no client-held return marker, in either mode. Mock skips the hosted-chooser hop itself (see the `skip` above).
     const stepUpNavigation = MOCK
-      ? "POST /v1/identity/step-up/begin bound to 29.transfer_primary_ownership and the space; the mock adapter issues the fresh-assurance grant with no chooser hop and navigates straight to the space's transfer page"
+      ? `POST ${API_BASE}/identity/step-up/begin bound to 29.transfer_primary_ownership and the space; the mock adapter issues the fresh-assurance grant with no chooser hop and navigates straight to the space's transfer page`
       : "POST /v1/identity/step-up/begin bound to 29.transfer_primary_ownership and the space, the hosted chooser, then GET /v1/identity/step-up/callback back to the space's transfer page (the budget_transfer destination, no client-held return marker)";
     log("Primary Owner steps up and confirms (TR-73-42, TR-73-43)", `${stepUpNavigation}; POST .../confirm with the acknowledgedDisclosure claim on the live transferId read from the view: committed, freshAssurance consumed; the members list now shows the former Primary Owner as Co-owner and the recipient as Primary Owner`);
     await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-20-transfer-committed.png`) });
