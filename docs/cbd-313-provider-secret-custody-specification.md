@@ -3,13 +3,13 @@
 | Field | Value |
 | --- | --- |
 | Status | **Proposed** — specification for independent review; not yet approved. |
-| Document version | 0.1 |
+| Document version | 0.1.1 |
 | Owner | Security specialist, dispatched under task packet `CBD-313-SECRET-INVENTORY` (r1) |
 | Jira | [CBD-313](https://cobudget.atlassian.net/browse/CBD-313) |
 | Governing requirements | CBD-94 `SR-94-039`–`SR-94-043` (`docs/cbd-94-risk-mitigation-requirement-register.md`); CBD-95 `FU-95-008` (`docs/cbd-95-architecture-roadmap-follow-up-register.md`) |
 | Governing topology | `docs/cbd-103-runtime-topology-specification.md` (`TD-103-017`, `TD-103-018` — KMS boundary, customer-managed keys); `docs/cbd-105-data-protection-and-recovery-specification.md` (`DP-105-001`, `DP-105-002` — what never appears in an ordinary row, create-time CMK) |
 | Consumed data classification | `docs/cbd-91-private-mvp-data-inventory.md` §S4 ("Secret" tier), `DI-91-002`, `DI-91-003`, `DI-91-006`, `DI-91-010`, `DI-91-051`, `DI-91-072` |
-| Consumed implementation pattern | `packages/data-access/src/encryption/*` (S4 field encryption, CBD-246-AC04); `packages/sessions/src/envelope-key.ts`, `packages/sessions/src/config.ts`; `packages/budget-application/src/invitations/secrets.ts`; `apps/api/src/budget-creation/composition.ts`; `apps/api/src/identity/config.ts`, `apps/api/src/identity/local-issuer.ts`; `packages/rate-limit/src/counter.ts` |
+| Consumed implementation pattern | `packages/data-access/src/encryption/*` (S4 field encryption, CBD-246-AC04); `packages/sessions/src/envelope-key.ts`, `packages/sessions/src/config.ts`; `packages/budget-application/src/invitations/secrets.ts`; `apps/api/src/budget-creation/composition.ts`; `apps/api/src/identity/config.ts`, `apps/api/src/identity/local-issuer.ts`; `packages/rate-limit/src/counter.ts`; `packages/contracts/src/authorization/transport.ts` (read-only — this document inventories it, per its own §2 it never edits that shared surface) |
 | Follow-on implementation packet | `CBD-315` builds the executable migration/startup check §6 specifies. This document specifies the rule only — no executable check is added here. |
 | Repository baseline | `70106b3` |
 | Last updated | September 18, 2026 |
@@ -54,7 +54,9 @@ signing/HMAC keys).
   (schedule-agnostic key-version rollover), not a calendar value no approved
   source supplies.
 * It does not change `packages/data-access/src/encryption/*`,
-  `packages/sessions/*`, or any other file outside this new document.
+  `packages/sessions/*`, `packages/contracts/src/authorization/*` (a shared
+  surface — inventoried in §3 below by reading, never edited here), or any
+  other file outside this new document and its manifest registration.
 
 ## 3. Secret and signing-value inventory (`SR-94-039`, AC1)
 
@@ -66,6 +68,21 @@ provider credential classes the packet names that are not yet implemented
 retention" state the custody rule this table holds every row to — `DP-105-001`'s
 exclusion table and `CBD-246-AC04`'s pattern — not a per-row exception.
 
+**Scope note.** This table covers provider and application **cryptographic**
+secrets and signing values — the class `SR-94-039` names ("secret/key/token/
+cursor/signing value"). It does not inventory infrastructure database-role
+credentials (`COBUDGET_DB_SUPERUSER_PASSWORD`, `COBUDGET_DB_MIGRATION_PASSWORD`,
+`COBUDGET_DB_API_PASSWORD`, `COBUDGET_DB_WORKER_PASSWORD` —
+`packages/migrations/src/local-config.ts`): those are operational access
+credentials to the datastore itself, already governed by `DP-105-003`'s role
+model, not values that encrypt, sign, or authenticate to an external provider.
+
+**`SR-94-039` also names "cursor" explicitly.** No provider sync cursor exists
+in this codebase as of this document's baseline — no financial-provider or
+other external-sync adapter is built yet (`DI-91-010`/CBD-107 remain
+unactivated). A cursor row is owed to this inventory once a provider adapter
+that maintains one is built; there is nothing to enumerate today.
+
 | Secret | Owner | Purpose | Source | Store | Readers | Writers | Encryption | Rotation | Revocation | Backup & retention | Prohibited destinations |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | S4 field-encryption key material (`COBUDGET_FIELD_ENCRYPTION_LOCAL_KEY` / KMS) | Security (custody); Infrastructure (KMS binding, `CBD-120`) | Encrypts every S4 field column at rest (AES-256-GCM, `packages/data-access/src/encryption/cipher.ts`) | Local: developer-supplied env value, dev/test only. Hosted: `TD-103-017`/`TD-103-018` KMS boundary via `createKmsKeyProvider` (`kms-provider.ts`) — no client exists yet (`KmsProviderNotConfiguredError`) | Local provider refused outside `NODE_ENV=development\|test` (`LocalProviderNotAllowedError`); hosted key never leaves the KMS boundary — the application holds only a `keyVersion` reference | `resolveFieldEncryptionProvider` caller inside `packages/data-access` only; no other package imports the raw key | `apps/api/src/config.ts`, `apps/worker/src/config.ts`, `packages/migrations/src/local-config.ts` (the three registered call sites; `scripts/check-environment.mjs` enforces the list) | Is the encryption key; not itself "encrypted," but non-exportable under KMS and never persisted in the primary datastore (`DP-105-001`) | Key-version rollover: `resolveFieldEncryptionProvider`/`KeyProvider.keyByVersion` already support multiple live versions; cadence is a `DP-105-*` open item | Retiring a `keyVersion` from the KMS boundary makes every ciphertext at that version undecryptable; §6 specifies the startup proof that no row still needs a retired version before retirement completes | DI-91-072 governs recovery copies: separate encrypted/non-exportable recovery boundary, quorum/break-glass, no ordinary backup operator access | Ordinary domain rows, logs, queues, audit, diagnostics, support, analytics, exports, client bundles, source control (`SR-94-040`; `DP-105-001`) |
@@ -75,6 +92,7 @@ exclusion table and `CBD-246-AC04`'s pattern — not a per-row exception.
 | Budget-creation-proposal binding HMAC key | Security | Signs/verifies the CBD-232 §7.1 confirmation-binding envelope so a proposal cannot be replayed or tampered with between preview and confirm | HKDF-derived once per process from the session pepper (`apps/api/src/budget-creation/composition.ts` `deriveBindingKeyring`); the pepper itself is never used directly as the HMAC key | In-process derived value, `keyId` `k1`; not persisted | `packages/budget-application/src/creation-proposals` binding sign/verify calls only | `composition.ts` at process startup | HKDF derivation, versioned binding format (`bindingVersion.keyId.mac`) | Rotates whenever the session pepper rotates (derived, not independent); a future independent rotation surface is an open item this document does not resolve | Same as session pepper revocation | Not persisted independently | Ordinary domain rows, logs, queues, exports, client bundles |
 | Rate-limit bucket-key pseudonymization secret | Security | HMACs the rate-limit counting key so raw actor/network identifiers are never used directly as a bucket key (`packages/rate-limit/src/counter.ts`, `CountingKeyDeriver`) | Randomly generated per process (`randomBytes(32)`) unless a caller supplies one; not a provider credential | In-process only; the prototype counter store is explicitly "NEVER a fallback" for continued/hosted use | `packages/rate-limit` consume/derive path only | Process startup (`CountingKeyDeriver` constructor) | HMAC-SHA256; supports an overlapping previous/current secret pair for rotation without dropping in-flight buckets | Caller-triggered `rotate()`; overlap window configurable (`overlapMs`) | Rotation with a short overlap is the revocation mechanism — no separate revoke path | Not persisted; ephemeral per process (a hosted/continued rate-limit store is a separate, not-yet-made decision) | Ordinary domain rows, logs, exports, client bundles |
 | Local identity-issuer RS256 signing key pair | Security | Signs the Cognito-shaped local OIDC issuer's ID tokens (`apps/api/src/identity/local-issuer.ts`, `PROVIDERS-LOCAL-001`) | Generated in-process (`generateKeyPairSync("rsa", 2048)`), dev/test only | Held only by the local issuer instance; public half published through its own JWKS endpoint | `local-issuer.ts` sign path only | Process startup and `rotateSigningKey()` | RSA private key never serialized to disk; public key is intentionally public (JWKS) | `rotateSigningKey()` supported; retired keys stay published until `retireOldKeys()` so in-flight tokens still verify | `retireOldKeys()` is the revocation path — a token signed by a retired, dropped key fails closed | Not persisted; regenerated per process, never a real secret outside a local environment | Private key material to any store, log, export, or client bundle |
+| Policy-decision transport Ed25519 signing key pair | Security (custody); owner of `packages/contracts/src/authorization` (Authorization/platform) for the code itself — not touched by this document | Signs (`signLocalDecision`) and verifies (`verifyLocalDecision`) a `TransportedPolicyDecision` so a policy decision carried across a process boundary cannot be forged or replayed outside its issuer/audience/lifetime binding (`packages/contracts/src/authorization/transport.ts`) | `generateLocalSigningKeyPair()` (`generateKeyPairSync("ed25519")`); exported production API, but as of this document's baseline it is constructed only in test code — no live cross-process issuer wires it yet | Test-only at this baseline: held in test-process memory, never persisted. A live issuer's custody path (KMS-backed, per `TD-103-017`, or otherwise) is owed to whichever packet wires a real cross-process transport | The verifying side of whatever process receives a `TransportedPolicyDecision`; today, test code only | The signing side of whatever process issues one; today, test code only | Ed25519 private key; not itself field-encrypted today because no live custody boundary exists yet — this is the gap a real-issuer packet must close before production use | No rotation exists; owed to the same future packet as custody | No revocation exists; owed to the same future packet as custody | Not persisted; nothing to back up at this baseline | Ordinary domain rows, logs, queues, audit, diagnostics, support, analytics, exports, client bundles, source control, once a live issuer exists |
 | Cognito client credentials (not yet provisioned) | Security (custody); Infrastructure (provider account, `CBD-120`) | Would authenticate CoBudget's OAuth client to the hosted Cognito user pool once `PROVIDERS-LOCAL-001` is superseded | Provider console at activation time; `apps/api/src/identity/config.ts` already reserves the `"cognito"` `IdentityProviderKind` and fails closed on it today (`identityConfigFailures` line 219) | Would follow the same KMS/secret-manager boundary as field encryption (`TD-103-017`), never an application config file or the primary datastore. `COBUDGET_IDENTITY_CLIENT_ID` is explicitly documented as public/PKCE, not the secret in question | Would be scoped to the identity adapter's token-exchange call only | Would be one of the three registered config call sites, extended for the `cognito` branch when it is built | Would be S4 per `DI-91-002`'s IdP-only credential boundary | Provider-defined rotation; owed to the activation packet | Provider-defined revocation; owed to the activation packet | DI-91-072 recovery boundary once provisioned | Ordinary domain rows, logs, queues, audit, diagnostics, support, analytics, exports, client bundles, source control, `.env.local` committed to version control |
 | Plaid client secret, access tokens, and webhook verification key (not yet provisioned) | Security (custody); Infrastructure (provider account, CBD-107/CBD-108) | Would authorize the financial-provider connection and verify webhook authenticity (`docs/cbd-107-connection-and-provenance-boundary-specification.md`) | Provider console at activation time; no client exists in this repository as of this document's baseline | Would be `DI-91-010` "financial-connection secret material": field-encrypted, separated from ordinary data, no product role or support access, service identity only under least privilege | Would be scoped to the provider adapter (a not-yet-built package) only | Would be added to the registered config call-site list when the adapter is built | Would use the same `EncryptionContext`-bound AES-256-GCM pattern `cipher.ts` already implements (tenant/table/row/column AAD), not a new construction | Revoke/rotate on disconnect or provider evidence, per `DI-91-010` | Revoke/delete on disconnect or provider termination subject to provider evidence (`DI-91-010`) | DI-91-072 recovery boundary; excluded from ordinary application backups (`DP-105-001`, `DI-91-044`) | Ordinary domain rows, logs, queues, audit, diagnostics, support, analytics, exports, client bundles, source control |
 | Customer-managed KMS root key (the key that protects every key above) | Security (custody); Infrastructure (provisioning) | Envelope-protects the field-encryption and session-envelope keys once the KMS provider (`createKmsKeyProvider`) is bound to a real client | Cloud KMS/HSM boundary selected by `TD-103-017`, created at instance-creation time per `DP-105-002` (retrofit is not possible on any evaluated candidate) | Never leaves the KMS/HSM boundary; the application never sees raw key bytes, only `keyVersion` references and ciphertext | No application code; only the KMS client binding CBD-120 has not yet delivered | Infrastructure/security operators through the provider's IAM boundary, least-privilege (`SR-94-041`) | Provider-native (HSM-backed); this key is the encryption root, not itself wrapped by another application key | Provider-native rotation; must not silently re-encrypt existing ciphertext (key-version references make old ciphertext remain decryptable across root rotation) | Disabling key access is the documented emergency stop (`DP-105-002`): it suspends or makes the instance/keys inaccessible | DI-91-072: separate recovery custodian holds key-recovery custody with **no** path to customer content (`HG-102-006`, `SR-94-069`) | Any application store, config file, log, export, or backup outside the KMS/HSM boundary itself |
@@ -121,9 +139,12 @@ extended here explicitly to provider tokens.
 The **envelope** is the record that selects which key and which purpose a
 ciphertext belongs to, without itself exposing the secret or any financial
 data. Its fields are metadata-safe by construction: none of them, alone or
-combined, reveal the plaintext, and all of them are exactly what `cipher.ts`'s
-`Ciphertext` and `EncryptionContext` types already carry today, made explicit
-as the one schema every provider-secret column uses.
+combined, reveal the plaintext. `keyVersion` and `boundTo` are derived from —
+and `boundTo` is deliberately weaker than — what `cipher.ts`'s `Ciphertext`
+and `EncryptionContext` types already carry; the other five fields
+(`envelopeVersion`, `keyProviderName`, `purpose`, `createdAt`, `rotatedFrom`)
+are new, extending that pattern to what a provider-secret column additionally
+needs to record.
 
 ```ts
 /** Provider-secret envelope metadata (CBD-313). Every field here is safe to
@@ -137,7 +158,13 @@ export interface ProviderSecretEnvelope {
   readonly keyVersion: string;
   /** Closed, non-financial purpose label -- never a provider account number, token value, or amount. */
   readonly purpose: ProviderSecretPurpose;
-  /** The EncryptionContext this ciphertext is bound to as AAD: tenant, table, row, column. */
+  /**
+   * NON-AUTHORITATIVE diagnostic record of the EncryptionContext this
+   * ciphertext was bound to as AAD when written: tenant, table, row, column.
+   * MUST NOT be passed as `expectedContext` to `decryptField` -- see ES-313-02.
+   * A caller always constructs its `EncryptionContext` independently, from
+   * the row it is actually reading, never from this field.
+   */
   readonly boundTo: {
     readonly tenantId: string;
     readonly table: string;
@@ -167,16 +194,35 @@ metadata that this schema promises stays safe to log.
 
 **`ES-313-02`.** The envelope never carries the secret, the ciphertext, the IV,
 or the authentication tag — those remain `Ciphertext`'s fields, stored beside
-but structurally separate from the envelope, exactly as `cipher.ts` already
-separates `EncryptionContext` (never persisted, passed fresh by the caller)
-from `Ciphertext` (persisted, self-describing only as to key version).
+but structurally separate from the envelope. `cipher.ts` deliberately never
+persists `EncryptionContext` at all: "nothing about that context is persisted
+in `Ciphertext`, so there is nothing for an attacker to forge alongside a
+stolen ciphertext" (`cipher.ts` lines 19–21). `boundTo` on the envelope does
+**not** relax that: it is a **non-authoritative diagnostic record**, useful
+for an operator inspecting why a row exists, and it carries **no** decrypt
+authority. The normative rule (`ES-313-02a`, binding on every implementation
+of this envelope): **`boundTo` MUST NOT be passed as `decryptField`'s
+`expectedContext`.** A caller reading a provider-secret column always
+constructs its `EncryptionContext` independently — from the tenant, table,
+row, and column it is actually querying, exactly as every other S4 field's
+reader does today — never by copying the envelope's `boundTo` field. Passing
+`boundTo` as `expectedContext` would let an attacker who copies a
+ciphertext-plus-envelope into a different tenant's row succeed, because the
+forged AAD context would then match the persisted (and equally forged)
+`boundTo` value — defeating the exact relocation defense `CBD246-SECURITY-001`
+finding 4 establishes. If a caller's independently constructed context ever
+disagrees with the envelope's `boundTo`, that disagreement is itself treated
+as a fail-closed error (the row is not where its own envelope says it should
+be), not resolved by trusting either value over the other.
 
-**`ES-313-03`.** `boundTo` is the same four fields `encodeAad` already
-requires (`assertNonBlank` on each), restated here as the schema's own
-requirement rather than an implementation detail of one function, so a second
-implementation of provider-token storage cannot drop the tenant/row binding
-that makes a copied ciphertext fail to decrypt in the wrong place
-(`CBD246-SECURITY-001` finding 4).
+**`ES-313-03`.** `boundTo`'s four field names match `encodeAad`'s four
+required fields (`assertNonBlank` on each) so the diagnostic record stays
+legible against the real AAD shape, but `boundTo` is not itself the AAD and
+is never substituted for the caller's own `EncryptionContext` (`ES-313-02a`).
+Restating the field names here, without restating them as an authoritative
+input, is what lets a second implementation of provider-token storage keep
+the same diagnostic shape without being tempted to also treat it as a
+decrypt-time shortcut.
 
 ## 6. Migration/startup check rule — specified, not implemented (`SR-94-040`, AC4)
 
@@ -194,7 +240,13 @@ designates as provider-secret-classified, the implementing check:
 1. Reads the column's stored value and rejects it unless it parses as exactly
    the `Ciphertext` shape (`keyVersion`, `iv`, `authTag`, `ciphertext`, all
    present, all base64-shaped for the latter three) **and** an accompanying
-   `ProviderSecretEnvelope` (§5) is present and structurally valid.
+   `ProviderSecretEnvelope` (§5) is present and structurally valid. This step
+   validates shape and presence only — it never decrypts, and it never
+   constructs an `EncryptionContext` from the envelope's `boundTo` field
+   (`ES-313-02a`). Where the check needs to prove a ciphertext actually
+   decrypts (see step 2's key-version resolution), it independently derives
+   `expectedContext` from the row it is reading (tenant, table, row id,
+   column), the same way every ordinary reader does, never from `boundTo`.
 2. Resolves `keyVersion` against the currently configured `KeyProvider`
    (`resolveFieldEncryptionProvider` or the equivalent for the column's key
    family). An unresolvable version is a fail-closed error naming the column
@@ -346,3 +398,4 @@ flowchart LR
 | Version | Date | Author | Change | Disposition |
 | --- | --- | --- | --- | --- |
 | 0.1 | September 18, 2026 | Security specialist, dispatched under task packet `CBD-313-SECRET-INVENTORY` (r1) | Initial provider-secret custody specification: inventory (§3), token custody rule (§4), envelope metadata schema (§5), specified (not implemented) migration/startup check rule (§6), `SR-94-039`–`043`/`FU-95-008` mapping (§7), data-flow diagram (§8), control map (§9), open items (§10). | Proposed; independent and Security review required before Approved. |
+| 0.1.1 | September 18, 2026 | Security specialist, dispatched under task packet `CBD-313-SECRET-INVENTORY` (r1), reviewer correction round | REV-313-1 (blocking, high): `boundTo` on `ProviderSecretEnvelope` made explicitly non-authoritative — added the `ES-313-02a` normative rule that it MUST NOT be passed as `decryptField`'s `expectedContext`, that a caller always constructs its own context independently, and that a mismatch is itself a fail-closed error; reworded §6 `MIGR-313-01` step 1 to the same effect. REV-313-2 (blocking, medium): added a §3 row for the `packages/contracts/src/authorization/transport.ts` Ed25519 policy-decision transport signing key pair, honest about its test-only status at this baseline (no code in that shared surface touched). REV-313-3: added a §3 scope note distinguishing provider/application cryptographic secrets from infrastructure database-role credentials, and a sentence on `SR-94-039`'s "cursor" naming no provider sync cursor yet existing. REV-313-4: §5's intro reworded from "exactly what cipher.ts's types already carry" to "derived from, and extending" (only `keyVersion`/`boundTo` come from the existing types; the other five fields are new). REV-313-5: covered by the same REV-313-3 edit. No other text, cell, or decision identifier changed. | Proposed; independent and Security review required before Approved. |
