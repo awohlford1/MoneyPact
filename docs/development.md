@@ -147,6 +147,14 @@ share stays at 8.00. It needs Docker Desktop running and Chrome installed.
 node scripts/prototype-browser-walkthrough.mjs --db cobudget_demo
 ```
 
+Pass `--mock` instead of `--db` to run against the web application's own mock
+adapter: no API process and no database, and any step the mock adapter cannot
+perform is logged as skipped rather than failing.
+
+```sh
+node scripts/prototype-browser-walkthrough.mjs --mock
+```
+
 The HTTP-only counterpart exercises the same journey through the real API
 process without a browser and prints a longer transcript that includes the
 denial cases:
