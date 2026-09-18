@@ -67,7 +67,9 @@ function focusFirstInvalid(fields: Readonly<Record<string, string>>, idOf: Reado
   for (const path of Object.keys(idOf)) if (fields[path]) { document.getElementById(idOf[path]!)?.focus(); return; }
 }
 
-function CreateAccountForm({ id, announce, created }: { id: string; announce(message: string): void; created(): void }) {
+function CreateAccountForm({ id, announce, created, focusHeading }: {
+  id: string; announce(message: string): void; created(): void; focusHeading(): void;
+}) {
   const { api } = useSession();
   const [label, setLabel] = useState("");
   const [accountType, setAccountType] = useState<AccountType>("checking");
@@ -82,6 +84,11 @@ function CreateAccountForm({ id, announce, created }: { id: string; announce(mes
       const account = await api.addAccount(id, { label, accountType, currencyCode, openingBalance });
       setLabel(""); setAccountType("checking"); setOpeningBalance("0");
       announce(accountAnnouncement("added", account.label));
+      // REV-UIP02-5: the submit button blurs the instant the request starts (Button's own `disabled`
+      // while `loading`), and `created()` (the list refresh) unmounts this whole form -- including
+      // whatever last had focus -- while it reloads. Move focus explicitly to the page's own stable
+      // heading, the same target and reasoning as `ArchiveOrRestoreControl`'s `onSuccess` (REV-UIP02-1).
+      focusHeading();
       created();
     } catch (error) {
       const report = reportAccountError(error);
@@ -119,9 +126,9 @@ function CreateAccountForm({ id, announce, created }: { id: string; announce(mes
  * still cannot guarantee a landing spot once the trigger is gone -- so the caller's `onSuccess` is
  * responsible for moving focus itself, explicitly, to something that survives the reload (CBD-198 SS6.1.5:
  * the surface's own `<h1 tabIndex={-1}>`). The native close alone does not handle every exit. */
-function ConfirmDialog({ triggerLabel, title, children, confirmLabel, confirmVariant = "primary", act, onSuccess, refresh }: {
+function ConfirmDialog({ triggerLabel, title, children, confirmLabel, confirmVariant = "primary", act, onSuccess, onDenied, refresh }: {
   triggerLabel: string; title: string; children: ReactNode; confirmLabel: string; confirmVariant?: "primary" | "danger";
-  act(): Promise<void>; onSuccess(): void; refresh(): void;
+  act(): Promise<void>; onSuccess(): void; onDenied(message: string): void; refresh(): void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -139,11 +146,18 @@ function ConfirmDialog({ triggerLabel, title, children, confirmLabel, confirmVar
     }
     catch (error) {
       const failure = reportAccountError(error);
-      setReport(failure);
-      // REV-UIP02-4: a denied mutation means this session's permissions no longer match what the page is
-      // currently showing. Re-read the list so the page falls into the already-tested controls-absent
-      // branch, rather than leaving Archive/Edit visible after a refusal.
-      if (failure.kind === "denied") refresh();
+      if (failure.kind === "denied") {
+        // REV-UIP02-6/7 (regression from REV-UIP02-4's fix): a denied mutation's re-read can succeed even
+        // though the write did not, and that re-read unmounts this whole dialog (AccountsBody re-renders
+        // from the reloaded list) -- taking a `report` held only in this component's own state with it
+        // before it is ever painted. Report it through the caller's `onDenied`, which writes into the
+        // page-level `StatusRegion` that survives the reload (the same order `AccountEditor`'s own denied
+        // branch already uses), and only then close and let the caller re-read and refocus.
+        ref.current?.close();
+        onDenied(failure.summary);
+      } else {
+        setReport(failure);
+      }
     }
     finally { setBusy(false); }
   }
@@ -174,6 +188,10 @@ function ArchiveOrRestoreControl({ id, account, announce, refresh, focusHeading 
 }) {
   const { api } = useSession();
   const onSuccess = () => { focusHeading(); refresh(); };
+  // REV-UIP02-6/7: a denied mutation is announced into the parent-owned StatusRegion (which survives the
+  // reload `refresh()` causes) before that reload runs, and focus still moves to the stable heading, the
+  // same as a successful confirm -- the dialog and its trigger are both about to disappear either way.
+  const onDenied = (message: string) => { announce(message); focusHeading(); refresh(); };
   if (account.archived) {
     return <ConfirmDialog
       triggerLabel={`Restore ${account.label}`}
@@ -181,6 +199,7 @@ function ArchiveOrRestoreControl({ id, account, announce, refresh, focusHeading 
       confirmLabel="Restore account"
       refresh={refresh}
       onSuccess={onSuccess}
+      onDenied={onDenied}
       act={async () => { const restored = await api.restoreAccount(id, account.id); announce(accountAnnouncement("restored", restored.label)); }}
     >
       <p>Restoring <bdi>{account.label}</bdi> brings it back to ordinary views, search, reports and totals.</p>
@@ -193,6 +212,7 @@ function ArchiveOrRestoreControl({ id, account, announce, refresh, focusHeading 
     confirmVariant="danger"
     refresh={refresh}
     onSuccess={onSuccess}
+    onDenied={onDenied}
     act={async () => { const archived = await api.archiveAccount(id, account.id); announce(accountAnnouncement("archived", archived.label)); }}
   >
     <p>Archiving <bdi>{account.label}</bdi> removes it from ordinary views, search, reports and totals. Its transaction and audit history is kept, and you can restore it later.</p>
@@ -248,7 +268,7 @@ function AccountsBody({ id, accounts, showArchived, setShowArchived, announce, r
         {allArchived && <Alert title="Every account here is archived">Every account here is archived. Restore one to record against it again.</Alert>}
         <Table caption={`Manual accounts in this budget${effectiveShowArchived ? ", including archived accounts" : ""}`} columns={COLUMNS} rows={rows} emptyMessage="No active accounts. Show archived accounts to see the ones you have archived." />
       </>}
-    <CreateAccountForm id={id} announce={announce} created={refresh} />
+    <CreateAccountForm id={id} announce={announce} created={refresh} focusHeading={focusHeading} />
   </section>;
 }
 

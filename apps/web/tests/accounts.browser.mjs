@@ -95,6 +95,9 @@ export async function accountsJourney(t, { browser, origin, errors }) {
     await driven.fill("#account-create-label", "Everyday checking");
     await driven.clickText("Add account");
     await driven.waitText("Everyday checking added.");
+    // REV-UIP02-5: the submit button blurs the instant the request starts and the list refresh unmounts
+    // the whole form while it reloads, so a successful add must not leave focus on <body> either.
+    assert.equal(await driven.page.evaluate(() => document.activeElement?.id), "accounts-heading", "focus must land on the list page's own heading after a successful add, not on <body>");
     assert.ok(await driven.page.$("table"), "a table must replace the empty state");
     await driven.waitText("Checking");
     await driven.waitText("Active");
@@ -162,6 +165,39 @@ export async function accountsJourney(t, { browser, origin, errors }) {
     await driven.clickText("Restore Everyday"); await driven.clickText("Restore account");
     await driven.waitText("Everyday restored.");
     assert.equal(await driven.page.evaluate(() => document.activeElement?.id), "accounts-heading", "focus must land on the list page's own heading after a successful restore, not on <body>");
+  });
+
+  await t.test("REV-UIP02-6/7: a denied mutation whose subsequent list re-read succeeds still announces the refusal, not silence", async () => {
+    // The prior test's own restore is still reloading the list when its announcement text lands; wait for
+    // the row (and its trigger) to actually be back before this test starts clicking it.
+    await driven.waitText("Active");
+    // The archive write is refused (403) but the list GET that follows it succeeds (200, real data) --
+    // exactly the combination that regressed: before this fix the reload wiped the dialog, and with it
+    // the only place the refusal was shown, before anyone could read it.
+    await driven.page.setRequestInterception(true);
+    const denyArchive = request => {
+      const url = new URL(request.url());
+      if (request.method() === "POST" && /\/accounts\/[^/]+\/archive$/u.test(url.pathname)) {
+        void request.respond({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "authorization_denied" }) });
+      } else void request.continue();
+    };
+    driven.page.on("request", denyArchive);
+    try {
+      await driven.clickText("Archive Everyday"); await driven.clickText("Archive account");
+      await driven.waitText("Your current session cannot do this here.");
+      // The refusal must persist in the page-level status region after the reload, not vanish with the
+      // dialog it was raised in.
+      assert.equal(await driven.page.$eval('[data-testid="accounts-status"]', node => node.textContent.trim()), "Your current session cannot do this here.", "the refusal must be visible in the status region after the reload completes");
+      // The account is still live -- the write never took effect -- and the archive control is still
+      // there to try again, since this session's permissions did not actually change; only this one
+      // write was refused (an intercepted single request, not the mock's own authorize() gate).
+      await driven.waitText("Active");
+      assert.notEqual(await driven.page.evaluate(() => document.activeElement === document.body), true, "focus must not fall to <body> on a denied mutation either");
+      assert.equal(await driven.page.evaluate(() => document.activeElement?.id), "accounts-heading", "focus must land on the page's own heading after a denied mutation, the same target a successful one uses");
+    } finally {
+      driven.page.off("request", denyArchive);
+      await driven.page.setRequestInterception(false);
+    }
   });
 
   await t.test("CBD-198-AC02/AC03: a genuine 409 conflict is reported distinctly from a validation error, with no silent overwrite", async () => {
