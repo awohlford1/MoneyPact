@@ -23,7 +23,7 @@
 //    presence only (a field is non-empty, at least one allocation row is filled): never a sum, which stays the
 //    server's own check via `allocation_sum_mismatch`.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, SubmissionKey } from "../../../../../api/client";
+import { ApiError, SubmissionKey, directionOf, parseMajorUnits } from "../../../../../api/client";
 import type { Account, AmountDirection, Category, ExpenseDraft } from "../../../../../api/client";
 import { createTransactionsClient } from "../../../../../api/transactions";
 import type { TransactionRow } from "../../../../../api/transactions";
@@ -88,6 +88,18 @@ function focusFirstInvalid(prefix: string, fields: Readonly<Record<string, strin
   for (const path of Object.keys(FIELD_SUFFIX)) if (fields[path]) { document.getElementById(`transaction-${prefix}-${FIELD_SUFFIX[path]}`)?.focus(); return; }
   if (fields.allocations) document.getElementById(`transaction-${prefix}-allocations`)?.focus();
 }
+/** REV-UIP03-2 (the same pattern UI-P02's second correction round established): the stable focus target after
+ * any completed `ImpactConfirm` action -- success or denial, edit or removal. Every one of those unmounts the
+ * dialog's own trigger control (via `onDone()`/`refresh()`), so the platform's own focus-return-to-trigger has
+ * nothing left to land on; `#transactions-heading` is rendered in every branch of `TransactionsView` (loading,
+ * error, populated) and survives the reload, exactly like `accounts-heading` does for `AccountsView`. */
+function focusTransactionsHeading(): void { document.getElementById("transactions-heading")?.focus(); }
+/** Best-effort minor-units parse of a user-typed amount: `null`, never a thrown validation error, so a summary
+ * built mid-typing (an incomplete or invalid amount) degrades to "no sign" rather than crashing the dialog. */
+function safeParseAmount(amount: string, precision: number): number | null {
+  if (amount.trim() === "") return null;
+  try { return -parseMajorUnits(amount, precision); } catch { return null; }
+}
 
 /** A draft's presence check only -- never a sum (section 6.3 item 1). Blocks submission until every field an
  * empty request would be refused for is actually filled (CBD-202-AC02). */
@@ -118,10 +130,16 @@ function ImpactSummaryBody({ summary }: { summary: TransactionSummary }) {
  * (CBD-202-AC03): every value shown here is one the caller already entered or already read, never a new one
  * ("exposing no value the caller could not already read"). The trigger button, the dialog and the confirmed
  * action are one component, following `accounts-view.tsx`'s `ConfirmDialog` precedent. */
-function ImpactConfirm({ triggerLabel, triggerDisabled, title, summary, confirmLabel, confirmVariant = "primary", act, onSuccess, onDenied, refresh }: {
+function ImpactConfirm({ triggerLabel, triggerDisabled, title, summary, confirmLabel, confirmVariant = "primary", act, onSuccess, onDenied, onInvalid, refresh }: {
   triggerLabel: string; triggerDisabled?: boolean; title: string; summary: TransactionSummary;
   confirmLabel: string; confirmVariant?: "primary" | "danger";
-  act(): Promise<void>; onSuccess(): void; onDenied(message: string): void; refresh(): void;
+  act(): Promise<void>; onSuccess(): void; onDenied(message: string): void;
+  /** REV-UIP03-1: a 400 the underlying form can fix by changing a named field. Called only after the dialog
+   * is fully closed, so the field it names is reachable -- a modal `<dialog>` makes everything behind it inert,
+   * and `.focus()` on an inert element is silently refused (worse than doing nothing: the field then cannot
+   * even be reached by Tab until something else moves focus first). */
+  onInvalid?(report: TransactionErrorReport): void;
+  refresh(): void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
@@ -141,6 +159,11 @@ function ImpactConfirm({ triggerLabel, triggerDisabled, title, summary, confirmL
         // through the caller's page-level status region instead.
         ref.current?.close();
         onDenied(failure.summary);
+      } else if (failure.kind === "validation" && onInvalid) {
+        // REV-UIP03-1: close first, exactly like the `denied` branch above, so the field `onInvalid` focuses
+        // is no longer behind an inert modal.
+        ref.current?.close();
+        onInvalid(failure);
       } else {
         setReport(failure);
       }
@@ -169,13 +192,22 @@ function ImpactConfirm({ triggerLabel, triggerDisabled, title, summary, confirmL
 interface EditorDraftState {
   accountId: string; amount: string; budgetDate: string; description: string; allocations: Record<string, string>;
 }
-function summaryOf(state: EditorDraftState, categories: readonly Category[], currencyCode: string): TransactionSummary {
+/** REV-UIP03-7: the same `directionOf` the list rows already use (`transactions.ts`'s `toTransactionRow`),
+ * applied to the same negation `toExpenseBody` will actually submit -- never a hardcoded "spend" and never a
+ * fabricated "0.00" for an amount not yet (or no longer) typed. `precision` is needed to parse the typed
+ * major-unit string the same way the write itself will. */
+function summaryOf(state: EditorDraftState, categories: readonly Category[], currencyCode: string, precision: number): TransactionSummary {
+  const parsedAmount = safeParseAmount(state.amount, precision);
   return {
     description: state.description.trim() === "" ? null : state.description,
-    amount: state.amount || "0", direction: "spend", currencyCode,
+    amount: state.amount, direction: parsedAmount === null ? "zero" : directionOf(parsedAmount), currencyCode,
     categories: categories
       .filter(category => (state.allocations[category.id] ?? "").trim() !== "")
-      .map(category => ({ label: category.name, amount: state.allocations[category.id]!, direction: "spend" as const })),
+      .map(category => {
+        const raw = state.allocations[category.id]!;
+        const parsed = safeParseAmount(raw, precision);
+        return { label: category.name, amount: raw, direction: parsed === null ? "zero" as const : directionOf(parsed) };
+      }),
   };
 }
 function draftOf(state: EditorDraftState, categories: readonly Category[]): ExpenseDraft {
@@ -274,7 +306,7 @@ function EditTransactionForm({ id, loaded, basis, onDone, announce, refresh }: {
     <div className="flex flex-wrap gap-3">
       <ImpactConfirm
         triggerLabel="Save changes" triggerDisabled={!complete} title="Save changes to this transaction?"
-        summary={summaryOf(state, loaded.categories, loaded.currencyCode)}
+        summary={summaryOf(state, loaded.categories, loaded.currencyCode, loaded.precision)}
         confirmLabel="Confirm and save changes"
         act={async () => {
           const key = submissionKey.next();
@@ -283,13 +315,12 @@ function EditTransactionForm({ id, loaded, basis, onDone, announce, refresh }: {
             submissionKey.settle(true);
           } catch (error) {
             submissionKey.settle(error instanceof ApiError);
-            const report = reportTransactionError(error);
-            if (report.kind === "validation") { setErrors(report.fields); focusFirstInvalid("edit", report.fields); }
             throw error;
           }
         }}
-        onSuccess={() => { setErrors({}); announce(transactionAnnouncement("updated")); onDone(); refresh(); }}
-        onDenied={message => { announce(message); onDone(); refresh(); }}
+        onSuccess={() => { setErrors({}); announce(transactionAnnouncement("updated")); focusTransactionsHeading(); onDone(); refresh(); }}
+        onDenied={message => { announce(message); focusTransactionsHeading(); onDone(); refresh(); }}
+        onInvalid={report => { setErrors(report.fields); focusFirstInvalid("edit", report.fields); }}
         refresh={refresh}
       />
       <Button variant="secondary" onClick={onDone}>Cancel</Button>
@@ -312,8 +343,8 @@ function RemoveTransactionControl({ id, transaction, loaded, announce, refresh }
     confirmLabel="Remove transaction"
     confirmVariant="danger"
     act={() => api.removeExpense(id, transaction.transactionId, transaction.transactionVersionId)}
-    onSuccess={() => { announce(transactionAnnouncement("removed")); refresh(); }}
-    onDenied={message => { announce(message); refresh(); }}
+    onSuccess={() => { announce(transactionAnnouncement("removed")); focusTransactionsHeading(); refresh(); }}
+    onDenied={message => { announce(message); focusTransactionsHeading(); refresh(); }}
     refresh={refresh}
   />;
 }

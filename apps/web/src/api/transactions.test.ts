@@ -139,3 +139,19 @@ test("CBD-200-F03/CBD-266-F04: a repeated Idempotency-Key on the reused create e
   const list = await transactions.list(budgetSpaceId, periodId);
   assert.equal(list.transactions.filter(row => row.description === "Replay").length, 1, "a replayed key must never create a second transaction");
 });
+
+test("REV-UIP03-6/CBD-200-F03: a repeated Idempotency-Key with a DIFFERENT request body is refused 409 idempotency_mismatch, never a silent replay of the mismatched request", async () => {
+  const clock = () => Date.parse("2026-09-15T12:00:00Z");
+  const { client, mock, budgetSpaceId, periodId, categoryId, accountId, budgetDate } = await setUpBudget(clock);
+  const first = { accountId, amount: "5.00", budgetDate, description: "First attempt", allocations: [{ categoryId, amount: "5.00" }] };
+  const differentBody = { accountId, amount: "6.00", budgetDate, description: "Different attempt", allocations: [{ categoryId, amount: "6.00" }] };
+  await client.recordExpense(budgetSpaceId, first, 2, "idempotent-mismatch-0000000001");
+  await assert.rejects(
+    client.recordExpense(budgetSpaceId, differentBody, 2, "idempotent-mismatch-0000000001"),
+    (error: unknown) => { assert.ok(error instanceof ApiError); assert.equal(error.status, 409); assert.equal(error.code, "idempotency_mismatch"); return true; },
+  );
+  const transactions = createTransactionsClient("/v1", csrfFetcher(mock));
+  const list = await transactions.list(budgetSpaceId, periodId);
+  assert.equal(list.transactions.filter(row => row.description === "First attempt").length, 1);
+  assert.equal(list.transactions.filter(row => row.description === "Different attempt").length, 0, "the mismatched request must never be written, silently or otherwise");
+});

@@ -7,7 +7,11 @@
  * Covers the exact journey list CBD-202-AC04 names: create, each editable field, an exact split, a mismatched
  * split, a boundary date, removal, a 403 role denial, a cross-budget id, a stale version, a retried key, and
  * aggregate-to-detail reconciliation against `categoryDetail`; axe at default, 320 px and the 400%-zoom
- * equivalent (section 6.1).
+ * equivalent (section 6.1). Also (REV-UIP03 correction round): a full successful edit (amount, description
+ * and allocation together), a validation refusal discovered inside the confirm dialog (focus must land on the
+ * invalid field, never <body>, and only once the dialog itself is closed), and `document.activeElement` read
+ * directly after every completed `ImpactConfirm` action -- success-edit, success-remove, denied-edit,
+ * denied-remove -- proving focus lands on `#transactions-heading`, never left on `<body>`.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -174,6 +178,48 @@ export async function transactionsJourney(t, { browser, origin, errors }) {
     await d.fill("#transaction-create-date", periodStart);
   });
 
+  await t.test("CBD-202-AC01/REV-UIP03-2/REV-UIP03-3: a full edit changes amount, description and allocation, and focus lands on the heading after success", async () => {
+    await d.clickText("Edit End of period");
+    await d.waitText("Edit this transaction");
+    await d.fill("#transaction-edit-amount", "2.50");
+    await d.fill("#transaction-edit-description", "End of period edited");
+    await d.fill(`#transaction-edit-allocation-${groceriesId}`, "2.50");
+    await d.clickText("Save changes");
+    await page.waitForSelector("dialog[open]");
+    await d.waitText("End of period edited"); // the confirm dialog's own summary, before the write
+    await d.clickText("Confirm and save changes");
+    await d.waitText("Transaction updated.");
+    await d.waitText("End of period edited");
+    await d.waitText("2.50 USD spent");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "transactions-heading", "REV-UIP03-2: focus must land on the page heading after a successful edit, not <body>");
+    await d.accessibility();
+    // `onSuccess`'s `refresh()` reload is still settling when this test ends; wait for it to fully complete
+    // (the create form back, not the loading placeholder) before the next test starts clicking rows.
+    await page.waitForSelector("#transaction-create-account");
+  });
+
+  await t.test("REV-UIP03-1: a validation refusal discovered inside the confirm dialog closes it first, so focus lands on the invalid field, not <body>", async () => {
+    await d.clickText("Edit End of period edited");
+    await d.waitText("Edit this transaction");
+    await d.fill(`#transaction-edit-allocation-${rentId}`, "1.00"); // groceries 2.50 + rent 1.00 = 3.50, amount stays 2.50
+    await d.clickText("Save changes");
+    await page.waitForSelector("dialog[open]");
+    await d.clickText("Confirm and save changes");
+    await d.waitText("The category amounts must add up to the expense amount exactly.");
+    // The dialog must already be closed: the invalid field must be reachable, never left inert behind an open modal.
+    assert.equal(await page.$("dialog[open]"), null, "the confirm dialog must close before focus moves to the invalid field");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "transaction-edit-allocations", "focus must land on the allocations fieldset, not <body> or an inert field");
+    await d.accessibility();
+    // Restore the exact split so the transaction's state is known for later tests.
+    await d.fill(`#transaction-edit-allocation-${rentId}`, "");
+    await d.clickText("Save changes");
+    await page.waitForSelector("dialog[open]");
+    await d.clickText("Confirm and save changes");
+    await d.waitText("Transaction updated.");
+    // Same reload-settle wait as above: this test's own second edit triggers another `refresh()`.
+    await page.waitForSelector("#transaction-create-account");
+  });
+
   await t.test("CBD-202-AC03: removal shows the affected transaction and its categories in a confirmation dialog before it takes effect", async () => {
     await d.clickText("Remove Weekly groceries");
     await page.waitForSelector("dialog[open]");
@@ -184,6 +230,7 @@ export async function transactionsJourney(t, { browser, origin, errors }) {
     await d.clickText("Remove transaction");
     await d.waitText("Transaction removed.");
     assert.equal((await d.text()).includes("Weekly groceries"), false, "a removed transaction must no longer appear in the active list");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "transactions-heading", "REV-UIP03-2: focus must land on the page heading after a successful removal, not <body>");
     // The announcement lands before `refresh()`'s reload resolves; wait for the create form to actually be
     // back (not the loading placeholder) before the next test interacts with it.
     await page.waitForSelector("#transaction-create-account");
@@ -251,6 +298,44 @@ export async function transactionsJourney(t, { browser, origin, errors }) {
     await d.accessibility();
     await d.clickText("Review the current version");
     await d.waitText("25.00 USD spent");
+  });
+
+  await t.test("REV-UIP03-2/REV-UIP03-4: an edit refused (403) is announced, the row is unchanged, and focus lands on the heading", async () => {
+    await d.clickText("Edit Bad date");
+    await d.waitText("Edit this transaction");
+    await page.setRequestInterception(true);
+    const deny = request => {
+      if (request.method() === "PATCH" && request.url().includes("/transactions/")) void request.respond({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "authorization_denied" }) });
+      else void request.continue();
+    };
+    page.on("request", deny);
+    try {
+      await d.clickText("Save changes");
+      await page.waitForSelector("dialog[open]");
+      await d.clickText("Confirm and save changes");
+      await d.waitText("Your current session cannot do this here.");
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "transactions-heading", "REV-UIP03-2: focus must land on the page heading after a denied edit, not <body>");
+      // The row survives unchanged: the intercepted write never reached the mock, so the prior (post-review) figure still reads.
+      await d.waitText("Bad date");
+      await d.waitText("25.00 USD spent");
+    } finally { page.off("request", deny); await page.setRequestInterception(false); }
+  });
+
+  await t.test("REV-UIP03-2/REV-UIP03-4: a removal refused (403) is announced, the row is unchanged, and focus lands on the heading", async () => {
+    await page.setRequestInterception(true);
+    const deny = request => {
+      if (request.method() === "POST" && request.url().includes("/remove")) void request.respond({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "authorization_denied" }) });
+      else void request.continue();
+    };
+    page.on("request", deny);
+    try {
+      await d.clickText("Remove Bad date");
+      await page.waitForSelector("dialog[open]");
+      await d.clickText("Remove transaction");
+      await d.waitText("Your current session cannot do this here.");
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "transactions-heading", "REV-UIP03-2: focus must land on the page heading after a denied removal, not <body>");
+      await d.waitText("Bad date"); // the row survives: the intercepted write never reached the mock
+    } finally { page.off("request", deny); await page.setRequestInterception(false); }
   });
 
   await t.test("CBD-200-F04/CBD-266-F04: a retried Idempotency-Key replays one success, never a second transaction", async () => {
