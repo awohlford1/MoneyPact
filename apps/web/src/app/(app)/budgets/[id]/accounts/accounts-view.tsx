@@ -109,12 +109,19 @@ function CreateAccountForm({ id, announce, created }: { id: string; announce(mes
 
 /** Confirmation for archive and restore (CBD-198-AC02, CBD-72 row 36). A native `<dialog>`, matching the
  * shared `Dialog` component's shell, built locally because a confirmation needs its own confirm action and
- * busy/error state that `Dialog`'s fixed single dismiss button does not carry. `showModal`/`close` are the
- * platform's, including returning focus to the button that opened it when the dialog closes -- cancelling
- * or a successful confirm both close it, so that holds for every exit. */
-function ConfirmDialog({ triggerLabel, title, children, confirmLabel, confirmVariant = "primary", act, onConflictRefresh }: {
+ * busy/error state that `Dialog`'s fixed single dismiss button does not carry.
+ *
+ * REV-UIP02-1: `showModal`/`close` are the platform's, but the platform returns focus to the button that
+ * opened the dialog only when that button is still in the DOM to receive it. `onSuccess` runs `announce`
+ * and `refresh` -- and on the list route, `refresh` can hide the very row (and its trigger button) this
+ * dialog belongs to, since an archived row disappears when "Show archived" is off. Closing the dialog
+ * *before* calling `onSuccess` avoids racing that unmount against the platform's own focus return, but it
+ * still cannot guarantee a landing spot once the trigger is gone -- so the caller's `onSuccess` is
+ * responsible for moving focus itself, explicitly, to something that survives the reload (CBD-198 SS6.1.5:
+ * the surface's own `<h1 tabIndex={-1}>`). The native close alone does not handle every exit. */
+function ConfirmDialog({ triggerLabel, title, children, confirmLabel, confirmVariant = "primary", act, onSuccess, refresh }: {
   triggerLabel: string; title: string; children: ReactNode; confirmLabel: string; confirmVariant?: "primary" | "danger";
-  act(): Promise<void>; onConflictRefresh(): void;
+  act(): Promise<void>; onSuccess(): void; refresh(): void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -123,8 +130,21 @@ function ConfirmDialog({ triggerLabel, title, children, confirmLabel, confirmVar
 
   async function confirm() {
     setBusy(true); setReport(undefined);
-    try { await act(); ref.current?.close(); }
-    catch (error) { setReport(reportAccountError(error)); }
+    try {
+      await act();
+      // REV-UIP02-1: close before `onSuccess` reloads the list, so this dialog (and its trigger, which a
+      // reload can remove outright) is not torn down mid focus-return.
+      ref.current?.close();
+      onSuccess();
+    }
+    catch (error) {
+      const failure = reportAccountError(error);
+      setReport(failure);
+      // REV-UIP02-4: a denied mutation means this session's permissions no longer match what the page is
+      // currently showing. Re-read the list so the page falls into the already-tested controls-absent
+      // branch, rather than leaving Archive/Edit visible after a refusal.
+      if (failure.kind === "denied") refresh();
+    }
     finally { setBusy(false); }
   }
 
@@ -139,7 +159,7 @@ function ConfirmDialog({ triggerLabel, title, children, confirmLabel, confirmVar
       {report && <p role="alert" className="mb-4 font-semibold text-danger">{report.summary}</p>}
       <div className="flex flex-wrap justify-end gap-3">
         <Button type="button" variant="secondary" disabled={busy} onClick={() => ref.current?.close()}>Cancel</Button>
-        {report?.kind === "conflict" && <Button type="button" variant="secondary" onClick={() => { onConflictRefresh(); ref.current?.close(); }}>Refresh and review the current account</Button>}
+        {report?.kind === "conflict" && <Button type="button" variant="secondary" onClick={() => { refresh(); ref.current?.close(); }}>Refresh and review the current account</Button>}
         <Button type="button" variant={confirmVariant} loading={busy} onClick={() => void confirm()}>{confirmLabel}</Button>
       </div>
     </dialog>
@@ -147,16 +167,21 @@ function ConfirmDialog({ triggerLabel, title, children, confirmLabel, confirmVar
 }
 
 /** Archive when live, restore when archived -- never both, since an account is exactly one of the two (CBD-72
- * row 36). Shared by the list row and the detail page, so the two never word the confirmation differently. */
-function ArchiveOrRestoreControl({ id, account, announce, refresh }: { id: string; account: Account; announce(message: string): void; refresh(): void }) {
+ * row 36). Shared by the list row and the detail page, so the two never word the confirmation differently.
+ * `focusHeading` is the page's own explicit, stable focus target for a successful confirm (REV-UIP02-1). */
+function ArchiveOrRestoreControl({ id, account, announce, refresh, focusHeading }: {
+  id: string; account: Account; announce(message: string): void; refresh(): void; focusHeading(): void;
+}) {
   const { api } = useSession();
+  const onSuccess = () => { focusHeading(); refresh(); };
   if (account.archived) {
     return <ConfirmDialog
       triggerLabel={`Restore ${account.label}`}
       title={`Restore ${account.label}?`}
       confirmLabel="Restore account"
-      onConflictRefresh={refresh}
-      act={async () => { const restored = await api.restoreAccount(id, account.id); announce(accountAnnouncement("restored", restored.label)); refresh(); }}
+      refresh={refresh}
+      onSuccess={onSuccess}
+      act={async () => { const restored = await api.restoreAccount(id, account.id); announce(accountAnnouncement("restored", restored.label)); }}
     >
       <p>Restoring <bdi>{account.label}</bdi> brings it back to ordinary views, search, reports and totals.</p>
     </ConfirmDialog>;
@@ -166,17 +191,20 @@ function ArchiveOrRestoreControl({ id, account, announce, refresh }: { id: strin
     title={`Archive ${account.label}?`}
     confirmLabel="Archive account"
     confirmVariant="danger"
-    onConflictRefresh={refresh}
-    act={async () => { const archived = await api.archiveAccount(id, account.id); announce(accountAnnouncement("archived", archived.label)); refresh(); }}
+    refresh={refresh}
+    onSuccess={onSuccess}
+    act={async () => { const archived = await api.archiveAccount(id, account.id); announce(accountAnnouncement("archived", archived.label)); }}
   >
     <p>Archiving <bdi>{account.label}</bdi> removes it from ordinary views, search, reports and totals. Its transaction and audit history is kept, and you can restore it later.</p>
   </ConfirmDialog>;
 }
 
-function AccountRowActions({ id, account, announce, refresh }: { id: string; account: Account; announce(message: string): void; refresh(): void }) {
+function AccountRowActions({ id, account, announce, refresh, focusHeading }: {
+  id: string; account: Account; announce(message: string): void; refresh(): void; focusHeading(): void;
+}) {
   return <div className="flex flex-wrap gap-3">
     {!account.archived && <Link href={accountRoute(id, account.id)}>Edit {account.label}</Link>}
-    <ArchiveOrRestoreControl id={id} account={account} announce={announce} refresh={refresh} />
+    <ArchiveOrRestoreControl id={id} account={account} announce={announce} refresh={refresh} focusHeading={focusHeading} />
   </div>;
 }
 
@@ -189,9 +217,9 @@ const COLUMNS: readonly Column[] = [
   { key: "actions", label: "Actions" },
 ];
 
-function AccountsBody({ id, accounts, showArchived, setShowArchived, announce, refresh }: {
+function AccountsBody({ id, accounts, showArchived, setShowArchived, announce, refresh, focusHeading }: {
   id: string; accounts: readonly Account[]; showArchived: boolean; setShowArchived(value: boolean): void;
-  announce(message: string): void; refresh(): void;
+  announce(message: string): void; refresh(): void; focusHeading(): void;
 }) {
   // Three distinct emptinesses (CBD-67 SS14.6, applied by analogy): true-empty (no account was ever added),
   // all-archived (every account exists but none is live -- never rendered as the same "nothing here" as
@@ -206,7 +234,7 @@ function AccountsBody({ id, accounts, showArchived, setShowArchived, announce, r
     currency: account.currencyCode,
     opening: `${account.openingBalance} ${account.currencyCode}`,
     state: accountStateLabel(account),
-    actions: <AccountRowActions id={id} account={account} announce={announce} refresh={refresh} />,
+    actions: <AccountRowActions id={id} account={account} announce={announce} refresh={refresh} focusHeading={focusHeading} />,
   }));
   return <section aria-labelledby="accounts-list-heading" className="space-y-4">
     <h2 id="accounts-list-heading" className="text-2xl font-semibold">Your accounts</h2>
@@ -234,16 +262,20 @@ export function AccountsView({ id }: { id: string }) {
   // would disappear before it was read. Rendered in every branch for the same reason (CBD-198-AC02).
   const [status, setStatus] = useState("");
   const announce = useCallback((message: string) => setStatus(message), []);
+  // REV-UIP02-1: the stable focus target after a successful archive/restore. This heading is rendered in
+  // every branch (loading, error, populated) of this component, unlike the row and its trigger button
+  // below, so it survives the reload a mutation causes and is always a valid place to send focus.
+  const focusHeading = useCallback(() => document.getElementById("accounts-heading")?.focus(), []);
 
   return <section className="space-y-6">
-    <h1 className="font-display text-3xl font-semibold">Manual accounts</h1>
+    <h1 id="accounts-heading" tabIndex={-1} className="font-display text-3xl font-semibold">Manual accounts</h1>
     <StatusRegion id="accounts" message={status} />
     {list.error ? <AccountsFailure error={list.error} retry={list.refresh} />
       : !list.value ? <>
         <Alert loading>Loading accounts…</Alert>
         <Table caption="Manual accounts in this budget" columns={COLUMNS} rows={[]} loading />
       </>
-      : <AccountsBody id={id} accounts={list.value} showArchived={showArchived} setShowArchived={setShowArchived} announce={announce} refresh={list.refresh} />}
+      : <AccountsBody id={id} accounts={list.value} showArchived={showArchived} setShowArchived={setShowArchived} announce={announce} refresh={list.refresh} focusHeading={focusHeading} />}
   </section>;
 }
 
@@ -262,7 +294,10 @@ function AccountEditor({ id, account, announce, refresh }: { id: string; account
     } catch (error) {
       const report = reportAccountError(error);
       setErrors(report.fields); announce(report.summary);
-      if (report.fields.label) document.getElementById("account-edit-label")?.focus();
+      // REV-UIP02-4: a denied edit means this session's permissions no longer match what the page is
+      // showing -- re-read so the page falls into the already-tested controls-absent branch.
+      if (report.kind === "denied") refresh();
+      else if (report.fields.label) document.getElementById("account-edit-label")?.focus();
     } finally { setBusy(false); }
   }
 
@@ -277,7 +312,9 @@ function AccountEditor({ id, account, announce, refresh }: { id: string; account
   </form>;
 }
 
-function AccountDetailBody({ id, account, announce, refresh }: { id: string; account: Account; announce(message: string): void; refresh(): void }) {
+function AccountDetailBody({ id, account, announce, refresh, focusHeading }: {
+  id: string; account: Account; announce(message: string): void; refresh(): void; focusHeading(): void;
+}) {
   return <>
     <dl className="grid gap-3 rounded-lg border border-border p-5 sm:grid-cols-2">
       <div><dt className="font-semibold">Label</dt><dd className="break-words"><bdi>{account.label}</bdi></dd></div>
@@ -291,7 +328,7 @@ function AccountDetailBody({ id, account, announce, refresh }: { id: string; acc
       ? <p>This account is archived. Restore it to change its name.</p>
       : <AccountEditor id={id} account={account} announce={announce} refresh={refresh} />}
     <div className="flex flex-wrap gap-3">
-      <ArchiveOrRestoreControl id={id} account={account} announce={announce} refresh={refresh} />
+      <ArchiveOrRestoreControl id={id} account={account} announce={announce} refresh={refresh} focusHeading={focusHeading} />
     </div>
   </>;
 }
@@ -302,9 +339,12 @@ export function AccountDetailView({ id, accountId }: { id: string; accountId: st
   const list = useResource(`${session.sessionRef}:${session.sessionVersion}:${id}`, load);
   const [status, setStatus] = useState("");
   const announce = useCallback((message: string) => setStatus(message), []);
+  // REV-UIP02-1: rendered in every branch of this component (loading, error, populated), so it survives
+  // the reload a successful archive/restore causes and is always a valid, stable focus target.
+  const focusHeading = useCallback(() => document.getElementById("account-detail-heading")?.focus(), []);
 
   return <section className="space-y-6">
-    <h1 className="font-display text-3xl font-semibold">Account detail</h1>
+    <h1 id="account-detail-heading" tabIndex={-1} className="font-display text-3xl font-semibold">Account detail</h1>
     <NextLink className="text-interactive underline" href={accountsRoute(id)}>Back to accounts</NextLink>
     <StatusRegion id="account-detail" message={status} />
     {list.error ? <AccountsFailure error={list.error} retry={list.refresh} />
@@ -315,7 +355,7 @@ export function AccountDetailView({ id, accountId }: { id: string; accountId: st
         // budget, or was never in this list, the sentence is the same "no longer here", never a distinct
         // "not found" that would tell an unauthorized caller which is true.
         return account
-          ? <AccountDetailBody id={id} account={account} announce={announce} refresh={list.refresh} />
+          ? <AccountDetailBody id={id} account={account} announce={announce} refresh={list.refresh} focusHeading={focusHeading} />
           : <Alert tone="danger" title="Account unavailable"><p>This account is no longer here, or it is not yours to open.</p></Alert>;
       })()}
   </section>;

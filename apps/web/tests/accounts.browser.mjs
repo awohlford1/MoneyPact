@@ -120,9 +120,12 @@ export async function accountsJourney(t, { browser, origin, errors }) {
     await driven.fill("#account-edit-label", "Everyday");
     await driven.clickText("Save name"); await driven.waitText("Everyday updated.");
     await driven.accessibility();
+    // REV-UIP02-3: the narrow/400%-zoom-equivalent + axe pass ran only on the list route before; the
+    // detail route (its own editor form and archive/restore controls) needs the same proof.
+    await driven.narrow();
   });
 
-  await t.test("CBD-198-AC02/AC03 (CBD-72 row 36): archive with confirmation names what is kept, then restore", async () => {
+  await t.test("CBD-198-AC02/AC03 (CBD-72 row 36, REV-UIP02-1): archive with confirmation names what is kept, then restore, and focus lands on a stable target after each", async () => {
     await driven.clickText("Archive Everyday"); await driven.waitText("Archive Everyday?");
     await driven.waitText("transaction and audit history is kept");
     await driven.accessibility();
@@ -134,21 +137,31 @@ export async function accountsJourney(t, { browser, origin, errors }) {
     await driven.clickText("Archive Everyday"); await driven.clickText("Archive account");
     await driven.waitText("Everyday archived.");
     await driven.waitText("This account is archived. Restore it to change its name.");
+    // REV-UIP02-1: a successful confirm on the detail route must not leave focus on <body>. The dialog's
+    // own trigger button is gone after this reload (the editor it belonged to is no longer rendered for an
+    // archived account), so focus must have moved explicitly to the page's own stable heading.
+    assert.equal(await driven.page.evaluate(() => document.activeElement?.id), "account-detail-heading", "focus must land on the detail page's own heading after a successful archive, not on <body>");
     await driven.accessibility();
     await driven.clickText("Restore Everyday"); await driven.clickText("Restore account");
     await driven.waitText("Everyday restored.");
+    assert.equal(await driven.page.evaluate(() => document.activeElement?.id), "account-detail-heading", "focus must land on the detail page's own heading after a successful restore, not on <body>");
     await driven.accessibility();
   });
 
-  await t.test("CBD-198-AC03: all-archived-empty is distinct from true-empty, and the toggle reveals archived rows", async () => {
+  await t.test("CBD-198-AC03/REV-UIP02-1: all-archived-empty is distinct from true-empty, the toggle reveals archived rows, and focus lands on a stable target on the list route too", async () => {
     await driven.clickText("Back to accounts"); await driven.waitText("Your accounts");
     await driven.clickText("Archive Everyday"); await driven.clickText("Archive account");
     await driven.waitText("Every account here is archived.");
+    // REV-UIP02-1: on the list route, a successful archive can hide the very row (and its trigger button)
+    // the confirm dialog belonged to -- when "Show archived" is off, the row disappears outright. Focus
+    // must have moved explicitly to the list page's own heading, not fallen to <body>.
+    assert.equal(await driven.page.evaluate(() => document.activeElement?.id), "accounts-heading", "focus must land on the list page's own heading after a successful archive, not on <body>");
     assert.equal(await driven.page.$eval("#accounts-show-archived", node => node.checked), true, "the toggle must already be on when every account is archived");
     await driven.waitText("Everyday");
     await driven.accessibility();
     await driven.clickText("Restore Everyday"); await driven.clickText("Restore account");
     await driven.waitText("Everyday restored.");
+    assert.equal(await driven.page.evaluate(() => document.activeElement?.id), "accounts-heading", "focus must land on the list page's own heading after a successful restore, not on <body>");
   });
 
   await t.test("CBD-198-AC02/AC03: a genuine 409 conflict is reported distinctly from a validation error, with no silent overwrite", async () => {
