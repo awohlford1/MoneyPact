@@ -9,6 +9,7 @@ import { pk8Journey } from "./invitations.browser.mjs";
 import { accountsJourney } from "./accounts.browser.mjs";
 import { reportsJourney } from "./reports.browser.mjs";
 import { errorsJourney } from "./errors.browser.mjs";
+import { goalsJourney } from "./goals.browser.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const axeSource = readFileSync(fileURLToPath(import.meta.resolve("axe-core/axe.min.js")), "utf8");
@@ -413,6 +414,8 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
     reportsJourney,
     // UI-P07 (gap G12, OQ-UI-18): shared not-found/error route boundaries.
     errorsJourney,
+    // UI-P05 (CBD-341): savings goals and their contribution ledger.
+    goalsJourney,
   ];
   for (const journey of JOURNEY_REGISTRY) await journey(t, { browser, origin, errors });
   assert.deepEqual(errors, []);

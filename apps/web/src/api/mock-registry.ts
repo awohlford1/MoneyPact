@@ -4,6 +4,7 @@
 import type { MockDirectory } from "./mock-invitations.ts";
 import { handleMockInvitationRequest } from "./mock-invitations.ts";
 import { handleMockReportsRequest } from "./mock-reports.ts";
+import { handleMockGoalsRequest } from "./mock-goals.ts";
 
 export type MockRouteModule = (
   directory: MockDirectory,
@@ -20,4 +21,6 @@ export const MOCK_ROUTE_MODULES: MockRouteModule[] = [
   handleMockInvitationRequest,
   // UI-P04 (CBD-358): category and period reports, both reads derived from the existing progress engine.
   handleMockReportsRequest,
+  // UI-P05 (CBD-341): savings goals and their contribution ledger.
+  handleMockGoalsRequest,
 ];
