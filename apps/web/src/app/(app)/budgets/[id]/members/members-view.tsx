@@ -14,6 +14,8 @@ export function MembersView({ id }: { id: string }) {
   const list = useRead(`${session.sessionRef}:${id}`, load);
   return <section className="space-y-6">
     <h1 className="font-display text-3xl font-semibold">Members</h1>
+    {/* CBD-35 deviation: kept -- see the comment in [id]/page.tsx. BudgetTabs has no Primary-ownership or
+       Notices destination yet, and pk8Journey reaches Primary ownership from here. */}
     <SpaceNavigation id={id} current="members" />
     <p>Everyone who belongs to this budget space, by display name and role. A person without a display name yet is shown as a MoneyPact member.</p>
     {list.error ? <ReadFailure error={list.error} retry={list.refresh} /> : !list.value ? <Alert loading>Loading members…</Alert>
