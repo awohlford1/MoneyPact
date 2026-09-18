@@ -132,10 +132,13 @@ export async function goalsJourney(t, { browser, origin, errors }) {
     // The target was reduced below progress in the previous step, so this goal restores as completed, not
     // active -- restoring changes only `archivedAt`, never the target/progress figures that decide the rest.
     await d.waitText("Completed");
-    await d.accessibility();
+    // REV-UIP05-9: the detail page's own sub-tests above only ever called `accessibility()` at the default
+    // viewport; the 320px reflow and 400%-zoom-equivalent checks (section 6.1.1/6.1.2) were only exercised
+    // on the list page. Cover the detail page here too, on its fully populated state.
+    await d.narrow(); await d.zoomed();
   });
 
-  await t.test("OQ-UI-16: keyboard-only reach into the create-goal form on the list page", async () => {
+  await t.test("CBD-341-AC04: keyboard-only reach into the create-goal form on the list page", async () => {
     await page.goto(`${origin}/budgets/${new URL(page.url()).pathname.split("/")[2]}/goals`); await d.waitText("Your goals");
     await page.evaluate(() => document.getElementById("app-main")?.focus());
     let reached = false;

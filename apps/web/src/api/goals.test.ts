@@ -39,7 +39,10 @@ test("CBD-341-AC02: the standing contribution-intent sentence is exact, and the 
   assert.equal(CONTRIBUTION_INTENT_SENTENCE, "Recording a contribution records your intent. MoneyPact moves no money.");
   const path = fileURLToPath(new URL("../app/(app)/budgets/[id]/goals/goals-view.tsx", import.meta.url));
   const source = readFileSync(path, "utf8");
-  assert.ok(source.includes("CONTRIBUTION_INTENT_SENTENCE"), "the view renders the exported constant, not a paraphrase of it");
+  // REV-UIP05-6: proves the *render site*, not merely that the identifier appears somewhere (which the
+  // import line alone would already satisfy, and would still pass if the JSX text were paraphrased instead
+  // of interpolating the constant).
+  assert.ok(source.includes(">{CONTRIBUTION_INTENT_SENTENCE}<"), "the view interpolates the exported constant directly at its render site, never a paraphrase of it");
   assert.ok(source.includes('>Record a contribution<'), "the contribution control reads exactly \"Record a contribution\"");
   // Each pattern below is a *positive* funding claim -- "from your income", etc. -- never merely the word
   // "income"/"balance"/"cash" in prose, and never the word "automatically" alone: this view's own copy uses
@@ -198,6 +201,9 @@ test("CBD-341: create, edit, contribute, reverse, archive and restore over the m
   assert.equal(archived.state, "archived");
   assert.notEqual(archived.archivedAt, null);
   await assert.rejects(() => goals.contribute(budgetSpaceId, created.goalId, contributionDraftFromInputs("1.00", "", 2), archived.version, "goal-contribute-0000000003"), (error: unknown) => error instanceof ApiError && error.code === "goal_archived", "an archived goal refuses a new contribution");
+  // REV-UIP05-3: reversal is refused too, consistently with edit and contribute -- the still-unreversed
+  // first contribution is used, so this is a genuine reversal attempt, not one already refused for another reason.
+  await assert.rejects(() => goals.reverseContribution(budgetSpaceId, created.goalId, contribution.entry.contributionId, archived.version, "goal-reverse-0000000003"), (error: unknown) => error instanceof ApiError && error.code === "goal_archived", "an archived goal refuses a reversal too");
 
   const restored = await goals.restore(budgetSpaceId, created.goalId, archived.version);
   assert.equal(restored.state, "active");
@@ -213,4 +219,25 @@ test("CBD-341-AC05: an unrecognised goal id is refused 404, and a subject with n
   const outsider = createMockClient(clock);
   const outsiderGoals = createGoalsClient("/v1", csrfFetcher(outsider.mock));
   await assert.rejects(() => outsiderGoals.list(budgetSpaceId), (error: unknown) => error instanceof ApiError && error.status === 403);
+});
+
+test("REV-UIP05-5: an edit that fails validation partway through leaves the stored goal completely untouched", async () => {
+  const clock = () => Date.parse("2026-09-15T12:00:00Z");
+  const { mock, budgetSpaceId } = await setUpBudget(clock);
+  const goals = createGoalsClient("/v1", csrfFetcher(mock));
+  const created = await goals.create(budgetSpaceId, goalDraftFromInputs("Original label", "500.00", "", 2), "goal-create-0000000010");
+
+  // `goalDraftFromInputs` refuses a bad target client-side before any request is sent, so the mock's own
+  // partial-apply bug (label assigned before target validation ran) needs a request built directly, the
+  // same way `invitations.test.ts`'s raw `fetch` calls exercise a route below the client's own guard rails.
+  const fetcher = csrfFetcher(mock);
+  const response = await fetcher(`/v1/budget-spaces/${budgetSpaceId}/goals/${created.goalId}`, {
+    method: "PATCH", headers: { "content-type": "application/json", "X-CoBudget-CSRF": mock.csrf()! },
+    body: JSON.stringify({ label: "Label that must not stick", targetMinorUnits: -5, targetDate: null, expectedVersion: created.version }),
+  });
+  assert.equal(response.status, 400, "the negative target is refused");
+
+  const after = await goals.detail(budgetSpaceId, created.goalId);
+  assert.equal(after.goal.label, "Original label", "the label from the same rejected request must not have been assigned either");
+  assert.equal(after.goal.version, created.version, "no version bump for a write that did not land");
 });

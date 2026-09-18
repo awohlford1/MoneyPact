@@ -46,6 +46,16 @@ function useGoalsClient() {
   return useMemo(() => createGoalsClient(apiBase), []);
 }
 
+/** Moves focus to the first invalid field, in the order `idOf` states, leaving every other entered value
+ * untouched (section 6.1.5) -- the same one-line pattern `accounts-view.tsx`'s `focusFirstInvalid` uses,
+ * reused here rather than re-derived, with each form supplying its own path-to-element-id map. */
+function focusFirstInvalid(fields: Readonly<Record<string, string>>, idOf: Readonly<Record<string, string>>): void {
+  for (const path of Object.keys(idOf)) if (fields[path]) { document.getElementById(idOf[path]!)?.focus(); return; }
+}
+const CREATE_GOAL_FIELD_ID: Readonly<Record<string, string>> = Object.freeze({ label: "goal-create-label", target: "goal-create-target", targetDate: "goal-create-target-date" });
+const EDIT_GOAL_FIELD_ID: Readonly<Record<string, string>> = Object.freeze({ label: "goal-edit-label", target: "goal-edit-target", targetDate: "goal-edit-target-date" });
+const CONTRIBUTION_FIELD_ID: Readonly<Record<string, string>> = Object.freeze({ amount: "contribution-amount", note: "contribution-note" });
+
 /** True only for a lost response (no server answer at all) while the browser itself reports no connection --
  * never for an ordinary 4xx/5xx, which already has its own uniform state. Section 6.2.10: "offline" never means
  * cached data, so this branch renders no stale content of its own, only the fact and a retry/sign-out pair. */
@@ -99,21 +109,13 @@ function StaleNotice({ dataAsOf }: { dataAsOf: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// The decorative progress bar. Text carries the meaning (section 4.5); this is `aria-hidden`.
-// ---------------------------------------------------------------------------
-
-function ProgressBar({ row }: { row: GoalRow }) {
-  // A visual proportion only, built from strings already formatted server-side (no minor-unit arithmetic):
-  // the bar simply reflects whichever named state applies, and carries no information of its own.
-  const width = row.excess ? "100%" : row.remaining === null ? "100%" : "50%";
-  return <div aria-hidden="true" className="h-2 w-full overflow-hidden rounded-full bg-border">
-    <div className={`h-full ${row.state === "archived" ? "bg-on-surface-disabled" : "bg-interactive"}`} style={{ width }} />
-  </div>;
-}
-
-// ---------------------------------------------------------------------------
 // The list surface.
 // ---------------------------------------------------------------------------
+// REV-UIP05-2: no decorative progress bar. The plan's own text progress statement ("142.00 of 500.00 USD
+// saved; 358.00 USD remaining") already satisfies section 4.5's requirement, and a bar would need a genuine
+// server-computed proportion to avoid showing a fabricated figure to a sighted person -- the mock does not
+// have one, and inventing a fixed 50%/100% split (as an earlier draft of this file did) is exactly the false
+// claim about a money figure this surface exists to avoid making.
 
 function CreateGoalForm({ id, announce, created }: { id: string; announce(message: string): void; created(): void }) {
   const api = useGoalsClient();
@@ -138,6 +140,7 @@ function CreateGoalForm({ id, announce, created }: { id: string; announce(messag
       if (error instanceof ApiError) idempotency.current = undefined;
       const report = reportGoalError(error);
       setErrors(report.fields); announce(report.summary);
+      focusFirstInvalid(report.fields, CREATE_GOAL_FIELD_ID);
     } finally { setBusy(false); }
   }
 
@@ -161,7 +164,6 @@ function GoalCard({ id, row, announce, refresh, focusHeading }: {
       <h3 className="text-xl font-semibold"><NextLink className="text-interactive underline" href={goalRoute(id, row.goalId)}><bdi>{row.label}</bdi></NextLink></h3>
       <span className="font-semibold">{row.stateLabel}</span>
     </div>
-    <ProgressBar row={row} />
     <p>{row.statement}</p>
     <dl className="grid grid-cols-2 gap-2 text-on-surface-muted sm:grid-cols-4">
       <div><dt className="font-semibold text-on-surface">Target</dt><dd>{row.target}</dd></div>
@@ -310,6 +312,7 @@ function GoalEditor({ id, goal, announce, refresh }: { id: string; goal: WireGoa
       const report = reportGoalError(error);
       setErrors(report.fields); announce(report.summary);
       if (report.kind === "revoked" || report.kind === "denied" || report.kind === "conflict") refresh();
+      else focusFirstInvalid(report.fields, EDIT_GOAL_FIELD_ID);
     } finally { setBusy(false); }
   }
 
@@ -369,6 +372,7 @@ function ContributionForm({ id, goal, announce, refresh }: { id: string; goal: W
       const report = reportGoalError(error);
       setErrors(report.fields); announce(report.summary);
       if (report.kind === "revoked" || report.kind === "denied" || report.kind === "conflict") refresh();
+      else focusFirstInvalid(report.fields, CONTRIBUTION_FIELD_ID);
     } finally { setBusy(false); }
   }
 
@@ -398,7 +402,9 @@ function ReverseControl({ id, goal, entry, announce, refresh }: {
   id: string; goal: WireGoal; entry: LedgerRow; announce(message: string): void; refresh(): void;
 }) {
   const api = useGoalsClient();
-  if (entry.reversed) return null;
+  // REV-UIP05-3: an archived goal refuses a reversal (consistent with edit/contribute), so the control is
+  // absent here rather than present-and-failing.
+  if (entry.reversed || goal.archivedAt !== null) return null;
   const row = toGoalRow(goal);
   return <ImpactConfirmDialog
     triggerLabel="Reverse" title="Reverse this contribution?" confirmLabel="Reverse contribution" confirmVariant="danger"
@@ -438,7 +444,6 @@ function GoalDetailBody({ id, detail, announce, refresh }: { id: string; detail:
       <p className="font-semibold">{row.stateLabel}</p>
       {isStale(row.dataAsOf) && <StaleNotice dataAsOf={row.dataAsOf} />}
     </div>
-    <ProgressBar row={row} />
     <p>{row.statement}</p>
     <dl className="grid gap-3 rounded-lg border border-border p-5 sm:grid-cols-2">
       <div><dt className="font-semibold">Target</dt><dd>{row.target}</dd></div>

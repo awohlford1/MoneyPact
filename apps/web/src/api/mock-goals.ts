@@ -171,10 +171,16 @@ function handleEdit(state: GoalsSpaceState, space: GoalSpace, goalId: string, fi
     const goal = liveGoal(state, goalId);
     if (goal.archivedAt !== null) throw new ApiError(409, "goal_archived", [{ path: "goalId", code: "goal.archived", message: "This goal is archived. Restore it first, or choose another." }]);
     precondition(goal, space, now, fields);
+    // REV-UIP05-5: validate every field into a local first, and only assign once all three have passed. A
+    // failure partway through validation must leave the stored goal completely untouched, never a mix of
+    // the new label with the old target because target validation ran second and failed.
+    const label = requireLabel(fields);
+    const targetMinorUnits = requireTarget(fields);
+    const targetDate = normalizeTargetDate(fields);
     const previousVersion = goal.version;
-    goal.label = requireLabel(fields);
-    goal.targetMinorUnits = requireTarget(fields);
-    goal.targetDate = normalizeTargetDate(fields);
+    goal.label = label;
+    goal.targetMinorUnits = targetMinorUnits;
+    goal.targetDate = targetDate;
     goal.version += 1;
     return { previousVersion, goal: toWireGoal(goal, space, now) };
   });
@@ -196,6 +202,10 @@ function handleContribute(state: GoalsSpaceState, space: GoalSpace, goalId: stri
 function handleReverse(state: GoalsSpaceState, space: GoalSpace, goalId: string, contributionId: string, fields: Record<string, unknown>, idempotency: string, now: number) {
   return idempotent(state, `reverse:${goalId}:${contributionId}`, idempotency, fields, () => {
     const goal = liveGoal(state, goalId);
+    // REV-UIP05-3: consistent with edit and contribute, an archived goal refuses every write, including a
+    // reversal -- restore it first. Reversal is a correction to the ledger, not a read, so it gets no
+    // exception from the same rule that already governs every other mutation on an archived goal.
+    if (goal.archivedAt !== null) throw new ApiError(409, "goal_archived", [{ path: "goalId", code: "goal.archived", message: "This goal is archived. Restore it first, or choose another." }]);
     precondition(goal, space, now, fields);
     const ledger = state.ledger.get(goalId) ?? [];
     const entry = ledger.find(row => row.contributionId === contributionId);
