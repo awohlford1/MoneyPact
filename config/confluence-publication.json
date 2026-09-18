@@ -1628,6 +1628,13 @@
       "reopen_when": "The Executive records the section 17 decisions and the Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
     },
     {
+      "path": "docs/accessibility-conformance-standard.md",
+      "disposition": "unpublished",
+      "rationale": "The WCAG 2.2 AA product accessibility conformance-standard adoption (DOC-A11Y-WCAG22AA-001, resolving OQ-UI-17) is held repository-only because no approved Confluence target is registered for it; this change does not create pages.",
+      "authority": "CBD-115 out-of-scope page creation rule and AGENTS.md scoped publication policy, matching the docs/cbd-234-invitations-consent-design-proposal.md precedent in this manifest.",
+      "reopen_when": "The Product Owner approves this exact document and a verified existing Confluence target in a focused merged change."
+    },
+    {
       "path": "docs/cbd-231-budget-space-lifecycle-contract.md",
       "disposition": "unpublished",
       "rationale": "CBD-231 lifecycle and creation-constraint proposal is held repository-only because no approved Confluence target is registered for it; this change does not create pages.",
