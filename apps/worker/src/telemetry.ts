@@ -5,9 +5,16 @@ import type { ReadinessReport } from "@cobudget/contracts/health";
 import { reliabilityEvent } from "@cobudget/contracts/telemetry";
 import type { ReliabilityEvent } from "@cobudget/contracts/telemetry";
 
+import type { ReliabilitySink } from "./telemetry/sink.ts";
+
+// CBD-262-AC01: the sink type now lives in ./telemetry/sink.ts, shared
+// byte-for-byte with apps/api (see ./telemetry/parity.test.ts). Re-exported
+// here so existing imports of `ReliabilitySink` from "./telemetry.js" keep working.
+export type { ReliabilitySink } from "./telemetry/sink.ts";
+
 export interface WorkerEventSink {
   readonly readiness: (report: ReadinessReport) => void;
-  readonly reliability: (event: ReliabilityEvent) => void;
+  readonly reliability: ReliabilitySink;
 }
 
 export function serializeReadiness(report: ReadinessReport): string {
