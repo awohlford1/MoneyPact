@@ -29,6 +29,7 @@ export function InvitationsView({ id }: { id: string }) {
   const [notice, setNotice] = useState<{ tone: "neutral" | "danger"; text: string }>();
   return <section className="space-y-6">
     <h1 className="font-display text-3xl font-semibold">Invitations</h1>
+    {/* CBD-35 deviation: kept -- see the comment in [id]/page.tsx. */}
     <SpaceNavigation id={id} current="invitations" />
     <InviteForm id={id} sent={invitation => { setNotice({ tone: "neutral", text: `Invitation sent to ${invitation.destinationMasked} as ${roleLabel(invitation.proposedRole)}.` }); list.refresh(); }} />
     {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}

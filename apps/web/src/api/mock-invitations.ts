@@ -46,7 +46,9 @@ interface MockCeremony { ceremonyId: string; invitationId: string; secret: strin
 interface MockGrant { grantId: string; accountSubjectId: string; action: string; budgetSpaceId: string; expiresAt: string; consumed: boolean }
 interface MockNoticeRow extends WireNotice { accountSubjectId: string }
 
-/** Everything the invitation, members, transfer and notice routes share across mock sessions; `spaces` is the budget-space map every session reads. */
+/** Everything the invitation, members, transfer and notice routes share across mock sessions; `spaces` is the budget-space map every session reads.
+ * `extras` is CBD-35's own key: every later mock route module stores its state under its own key
+ * (`directory.extras.get("goals")`, and so on) without ever editing this file again. */
 export interface MockDirectory<S = unknown> {
   readonly spaces: Map<string, S>;
   readonly names: Map<string, string>;
@@ -57,9 +59,10 @@ export interface MockDirectory<S = unknown> {
   readonly receipts: Map<string, { invitationId: string; receipt: unknown }>;
   readonly grants: MockGrant[];
   readonly notices: MockNoticeRow[];
+  readonly extras: Map<string, unknown>;
 }
 export function createMockDirectory<S = unknown>(): MockDirectory<S> {
-  return { spaces: new Map(), names: new Map(), memberships: [], invitations: new Map(), ceremonies: new Map(), transfers: new Map(), receipts: new Map(), grants: [], notices: [] };
+  return { spaces: new Map(), names: new Map(), memberships: [], invitations: new Map(), ceremonies: new Map(), transfers: new Map(), receipts: new Map(), grants: [], notices: [], extras: new Map() };
 }
 const shared = globalThis as typeof globalThis & { moneyPactMockDirectory?: MockDirectory };
 /** The one directory every mock session in this Next server shares (the Next route keeps its sessions the same way). */

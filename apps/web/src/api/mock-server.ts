@@ -18,8 +18,11 @@ import type { ApiClient, FieldError, WireAccountList, WireAccountMutation, WireC
 import type { Confirmation, Disclosure, Draft, Proposal, ProposalRead } from "./proposals.ts";
 // PK-8: the invitation, members, ceremony, Primary-transfer, step-up and notices routes live in their own module; the
 // directory they share across sessions is also where every session's budget spaces and memberships now live.
-import { activeMembership, createMockDirectory, handleMockInvitationRequest, mockAssurance, registerMockSpace, sharedMockDirectory } from "./mock-invitations.ts";
+import { activeMembership, createMockDirectory, mockAssurance, registerMockSpace, sharedMockDirectory } from "./mock-invitations.ts";
 import type { MockDirectory } from "./mock-invitations.ts";
+// CBD-35: the invitation, members, transfer, step-up and notices routes are the first entry in the mock route
+// module registry; later packets register their own module here instead of hard-coding another delegation.
+import { MOCK_ROUTE_MODULES } from "./mock-registry.ts";
 
 // SEC-F06-OBS1 / REV-NS-3 / SEC-NS-R1: the mock emulates `name.control-characters` and the live
 // budget-name whitespace collapse with the same shared Unicode name rules as
@@ -513,9 +516,16 @@ export async function handleMockRequest(mock: MockWire, request: Request, path: 
     const body = request.method === "GET" ? {} : await request.json().catch(() => ({}));
     const idempotency = request.headers.get("Idempotency-Key") ?? "";
     const route = path.join("/");
-    // PK-8: the invitation, members, transfer, step-up, local-delivery and notices routes of a signed-in session.
+    // CBD-35: MOCK_ROUTE_MODULES dispatches in order; a module returning undefined falls through to the next
+    // and finally to the existing ladder below. PK-8's invitation, members, transfer, step-up, local-delivery
+    // and notices routes are the first entry.
     const subject = mock.subject(); const csrf = mock.csrf();
-    if (subject && csrf) { const owned = await handleMockInvitationRequest(mock.directory, { accountSubjectId: subject, csrf }, request, path, body, mock.now); if (owned) return owned; }
+    if (subject && csrf) {
+      for (const routeModule of MOCK_ROUTE_MODULES) {
+        const owned = await routeModule(mock.directory, { accountSubjectId: subject, csrf }, request, path, body, mock.now);
+        if (owned) return owned;
+      }
+    }
     if (route === "identity/me" && request.method === "GET") { const session = mock.me(); if (!session) throw new ApiError(403, "authorization_denied"); return json(session); }
     if (route === "identity/logout" && request.method === "POST") { mock.logout(); return json({ signedOut: true }); }
     if (path[0] === "budget-creation-proposals") {
