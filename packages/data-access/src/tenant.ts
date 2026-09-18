@@ -374,11 +374,23 @@ export interface TenantUpdateQuery {
   readonly budgetSpaceId: string;
   readonly set: Readonly<Record<string, unknown>>;
   readonly conditions?: readonly Condition[];
+  /** CBD-191 SC-191-006 / IDLE-E02: not supported on a tenant statement. Accepted on the type only so a
+   * caller's mistake is a clear runtime refusal (`SkipLockedNotSupportedError`) rather than a missing property;
+   * `tenantUpdate` always throws when this is set. */
+  readonly skipLocked?: true;
+}
+
+export class SkipLockedNotSupportedError extends Error {
+  constructor(table: string) {
+    super(`"skipLocked" is not supported on a tenant statement ("${table}"); CBD-191's best-effort idle-expiry slide (SC-191-006) is the only caller of this predicate today and it is always a platform statement -- refusing rather than half-supporting a tenant-scoped skip-locked update.`);
+    this.name = "SkipLockedNotSupportedError";
+  }
 }
 
 export function tenantUpdate(pool: Pick<Pool, "query">, query: TenantUpdateQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
   const table = assertTenantTable(catalog, query.table);
   assertBudgetSpaceId(table, query.budgetSpaceId);
+  if (query.skipLocked) throw new SkipLockedNotSupportedError(table);
   const entries = Object.entries(query.set);
   if (entries.length === 0) throw new RangeError(`tenant update on "${table}" must set at least one column`);
   const params: unknown[] = [query.budgetSpaceId];
@@ -456,6 +468,17 @@ export interface PlatformUpdateQuery {
   readonly table: string;
   readonly set: Readonly<Record<string, unknown>>;
   readonly conditions?: readonly Condition[];
+  /**
+   * CBD-191 SC-191-006 / IDLE-E01: renders the update as a best-effort, single-statement slide that updates
+   * the row only if it can lock it without waiting -- `and ctid in (select ctid from <table> where <same
+   * conditions> for no key update skip locked)`, reusing `buildConditions`'s own rendering (and therefore its
+   * bound parameters) for both occurrences so the table assertion and identifier checks apply unchanged and
+   * nothing here becomes a second, divergent predicate. Zero rows means the row could not be locked without
+   * waiting (held by any conflicting `FOR UPDATE`/`FOR NO KEY UPDATE` holder); that is data, not an error --
+   * the caller decides what a skip means. Requires at least one condition: a lock without a predicate would
+   * target every row in the table.
+   */
+  readonly skipLocked?: true;
 }
 
 export function platformUpdate(pool: Pick<Pool, "query">, query: PlatformUpdateQuery, catalog: TableCatalog = PRODUCTION_TABLE_CATALOG): Promise<QueryResult> {
@@ -469,8 +492,15 @@ export function platformUpdate(pool: Pick<Pool, "query">, query: PlatformUpdateQ
     return `${column} = $${params.length}`;
   });
   const extra = buildConditions(query.conditions, params, [table]);
-  const where = extra ? ` where ${extra.replace(/^ and /u, "")}` : "";
-  const text = `update ${table} set ${assignments.join(", ")}${where}`;
+  const conditionSql = extra.replace(/^ and /u, "");
+  if (query.skipLocked && !conditionSql) {
+    throw new RangeError(`platform update with skipLocked on "${table}" requires at least one condition; a lock without a predicate would target every row`);
+  }
+  const where = conditionSql ? ` where ${conditionSql}` : "";
+  const skipLockedClause = query.skipLocked
+    ? ` and ctid in (select ctid from ${table} where ${conditionSql} for no key update skip locked)`
+    : "";
+  const text = `update ${table} set ${assignments.join(", ")}${where}${skipLockedClause}`;
   return execute(pool, table, "update", text, params);
 }
 
