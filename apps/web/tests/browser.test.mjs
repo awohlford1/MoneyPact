@@ -6,6 +6,7 @@ import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer";
 import { pk8Journey } from "./invitations.browser.mjs";
+import { reportsJourney } from "./reports.browser.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const axeSource = readFileSync(fileURLToPath(import.meta.resolve("axe-core/axe.min.js")), "utf8");
@@ -404,6 +405,8 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
   const JOURNEY_REGISTRY = [
     // PK-8: the invitation ceremony, members, notices and the Primary transfer.
     pk8Journey,
+    // UI-P04 (CBD-358): category and period reports.
+    reportsJourney,
   ];
   for (const journey of JOURNEY_REGISTRY) await journey(t, { browser, origin, errors });
   assert.deepEqual(errors, []);

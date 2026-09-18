@@ -3,6 +3,7 @@
  * existing ladder. Imported by `mock-server.ts` only, never by browser components. */
 import type { MockDirectory } from "./mock-invitations.ts";
 import { handleMockInvitationRequest } from "./mock-invitations.ts";
+import { handleMockReportsRequest } from "./mock-reports.ts";
 
 export type MockRouteModule = (
   directory: MockDirectory,
@@ -17,4 +18,6 @@ export type MockRouteModule = (
 // here; dispatch order matters, and the first module to answer with a Response wins.
 export const MOCK_ROUTE_MODULES: MockRouteModule[] = [
   handleMockInvitationRequest,
+  // UI-P04 (CBD-358): category and period reports, both reads derived from the existing progress engine.
+  handleMockReportsRequest,
 ];
