@@ -5,6 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { handleMockCalendarRequest } from "./mock-calendar.ts";
 import { handleMockInvitationRequest } from "./mock-invitations.ts";
 import { handleMockReportsRequest } from "./mock-reports.ts";
 import { handleMockGoalsRequest } from "./mock-goals.ts";
@@ -23,11 +24,12 @@ async function dispatch(modules: readonly MockRouteModule[], path: string[]): Pr
   return undefined;
 }
 
-test("registers handleMockInvitationRequest first, then UI-P04's handleMockReportsRequest, then UI-P05's handleMockGoalsRequest, and no more (yet)", () => {
+test("registers handleMockInvitationRequest first, then UI-P04's handleMockReportsRequest, then UI-P05's handleMockGoalsRequest, then UI-P06's handleMockCalendarRequest, and no more (yet)", () => {
   assert.equal(MOCK_ROUTE_MODULES[0], handleMockInvitationRequest);
   assert.equal(MOCK_ROUTE_MODULES[1], handleMockReportsRequest);
   assert.equal(MOCK_ROUTE_MODULES[2], handleMockGoalsRequest);
-  assert.equal(MOCK_ROUTE_MODULES.length, 3, "the next packet after UI-P05 appends the next entry");
+  assert.equal(MOCK_ROUTE_MODULES[3], handleMockCalendarRequest);
+  assert.equal(MOCK_ROUTE_MODULES.length, 4, "the next packet after UI-P06 appends the next entry");
 });
 
 test("a module returning undefined falls through to the next one", async () => {
