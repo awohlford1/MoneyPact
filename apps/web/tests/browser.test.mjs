@@ -6,6 +6,7 @@ import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer";
 import { pk8Journey } from "./invitations.browser.mjs";
+import { accountsJourney } from "./accounts.browser.mjs";
 import { reportsJourney } from "./reports.browser.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -405,6 +406,8 @@ test("authenticated web journey, dashboard states, stale responses, keyboard and
   const JOURNEY_REGISTRY = [
     // PK-8: the invitation ceremony, members, notices and the Primary transfer.
     pk8Journey,
+    // CBD-198: the manual accounts lifecycle -- list, detail, editor, archive/restore with confirmation.
+    accountsJourney,
     // UI-P04 (CBD-358): category and period reports.
     reportsJourney,
   ];

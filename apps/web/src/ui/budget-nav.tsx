@@ -25,6 +25,9 @@ function defaultMatches(pathname: string, href: string): boolean {
 // packet's append lands in the right place without moving array elements.
 const DASHBOARD_DESTINATION: Destination = { key: "dashboard", label: "Dashboard", href: id => `/budgets/${encodeURIComponent(id)}` };
 const PLAN_DESTINATION: Destination = { key: "plan", label: "Category plan", href: id => `/budgets/${encodeURIComponent(id)}/plan` };
+// CBD-198: the accounts route has a detail child (`/accounts/[accountId]`), so a detail page still marks
+// this tab current through the default `matches` (exact match or nested route) -- no override needed.
+const ACCOUNTS_DESTINATION: Destination = { key: "accounts", label: "Accounts", href: id => `/budgets/${encodeURIComponent(id)}/accounts` };
 // UI-P04 (CBD-358): category and period reports.
 const REPORTS_DESTINATION: Destination = { key: "reports", label: "Reports", href: id => `/budgets/${encodeURIComponent(id)}/reports` };
 const MEMBERS_DESTINATION: Destination = { key: "members", label: "Members", href: id => `/budgets/${encodeURIComponent(id)}/members` };
@@ -32,6 +35,7 @@ const INVITATIONS_DESTINATION: Destination = { key: "invitations", label: "Invit
 const DESTINATION_REGISTRY: readonly Destination[] = [
   DASHBOARD_DESTINATION,
   PLAN_DESTINATION,
+  ACCOUNTS_DESTINATION,
   REPORTS_DESTINATION,
   MEMBERS_DESTINATION,
   INVITATIONS_DESTINATION,
