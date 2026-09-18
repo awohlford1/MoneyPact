@@ -11,7 +11,7 @@
 import { randomUUID, createHash } from "node:crypto";
 import { buildPaycheckSchedule, customBoundaries, describeCadence, parseCadenceDefinition, periodLengthInDays, setupPreview, weeklyMonthlyBoundaries } from "@cobudget/budget-domain/schedule";
 import type { CadenceDefinition } from "@cobudget/budget-domain/schedule";
-import { addDays, toISODate } from "@cobudget/budget-domain/shared";
+import { addDays, collapseWhitespace, hasControlOrFormatCharacter, toISODate } from "@cobudget/budget-domain/shared";
 import { fullPeriodTargets } from "@cobudget/budget-domain/targets";
 import { ApiError, createHttpClient } from "./client.ts";
 import type { ApiClient, FieldError, WireAccountList, WireAccountMutation, WireCategoryDetail, WireCategoryList, WirePlan, WireProgress, WireSession, WireSpaceDetail, WireSpaceList, WireTargetSet, WireTransactionMutation } from "./client.ts";
@@ -21,17 +21,13 @@ import type { Confirmation, Disclosure, Draft, Proposal, ProposalRead } from "./
 import { activeMembership, createMockDirectory, handleMockInvitationRequest, mockAssurance, registerMockSpace, sharedMockDirectory } from "./mock-invitations.ts";
 import type { MockDirectory } from "./mock-invitations.ts";
 
-/**
- * SEC-F06-OBS1 / REV-NS-3: the mock emulates `name.control-characters` with the same condition as
- * `packages/budget-application/src/creation-proposals/normalize.ts` (`hasControlOrFormatCharacter`), so a mock-backed
- * journey can exercise the rejection: no Cc/Cf except an emoji-sequence ZWJ or a between-letters ZWJ/ZWNJ.
- */
-const EMOJI_ZERO_WIDTH_JOINER = /(?<=(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\uFE0F))\u200D(?=\p{Extended_Pictographic})/gu;
-const ORTHOGRAPHIC_JOINER = /(?<=[\p{L}\p{M}])[\u200C\u200D](?=[\p{L}\p{M}])/gu;
-const CONTROL_OR_FORMAT = /[\p{Cc}\p{Cf}]/u;
-function hasControlOrFormatCharacter(value: string): boolean {
-  return CONTROL_OR_FORMAT.test(value.replace(EMOJI_ZERO_WIDTH_JOINER, "").replace(ORTHOGRAPHIC_JOINER, ""));
-}
+// SEC-F06-OBS1 / REV-NS-3 / SEC-NS-R1: the mock emulates `name.control-characters` and the live
+// budget-name whitespace collapse with the same shared Unicode name rules as
+// `packages/budget-application/src/creation-proposals/normalize.ts` and
+// `packages/data-access/src/financial-profile.ts` (`@cobudget/budget-domain/shared`), so a
+// mock-backed journey can exercise the same rejection: no Cc/Cf except an emoji-sequence ZWJ or
+// a between-letters ZWJ/ZWNJ, and the same `\p{White_Space}` collapse (not JS `\s`, which misses
+// U+FEFF and other non-`\s` White_Space code points).
 
 /** The mock's stand-in for config/consent-disclosure-registry.json; the live API serves the approved entry. */
 const MOCK_DISCLOSURE: Disclosure = {
@@ -253,7 +249,7 @@ export function createServerMock(now = Date.now, directory: MockDirectory<MockSp
       authorize();
       const { supersedesProposalId: supersedes, ...draft } = body;
       const errors: FieldError[] = [];
-      const name = typeof draft.name === "string" ? draft.name.normalize("NFC").trim().replace(/\s+/gu, " ") : "";
+      const name = typeof draft.name === "string" ? collapseWhitespace(draft.name) : "";
       if (!name) errors.push({ path: "name", code: "name.required", message: "Enter a budget name." });
       else if (hasControlOrFormatCharacter(name)) errors.push({ path: "name", code: "name.control-characters", message: "Remove control and invisible formatting characters." });
       if ([...new Intl.Segmenter("en", { granularity: "grapheme" }).segment(name)].length > 100) errors.push({ path: "name", code: "name.too-long", message: "Use 100 characters or fewer." });
