@@ -1,6 +1,6 @@
 import { BoundaryDiagnosticClient } from "./boundary-client";
 
-export const metadata = { title: "Boundary diagnostic" };
+export const metadata = { title: "Boundary diagnostic", robots: { index: false, follow: false } };
 
 /**
  * UI-P07 test-only diagnostic. Nothing in today's app throws an `ApiError` during render -- every read

@@ -26,10 +26,16 @@ import { classifyFailure, PageUnavailable } from "../../ui/resource";
 export default function AppError({ error, reset }: { error: Error & { digest?: string }; reset(): void }) {
   const router = useRouter();
   const status = error instanceof ApiError ? error.status : undefined;
+  // The one case with no dedicated branch below (an unrecognized ApiError status, or no ApiError at all).
+  const unclassified = status !== 401 && status !== 403 && status !== 429 && classifyFailure(error) !== "terminal";
 
   useEffect(() => {
-    if (status === 401) router.replace("/sign-in");
-  }, [status, router]);
+    if (status === 401) { router.replace("/sign-in"); return; }
+    // REV-UIP07-8: the rendered copy for this branch is deliberately generic ("Unable to load this page"),
+    // so `error.digest` -- the one thing that still correlates to the matching server-side log entry once a
+    // production build has redacted `error.message` -- would otherwise leave no trace at all.
+    if (unclassified) console.error("(app)/error.tsx: unclassified failure", error.digest);
+  }, [status, unclassified, error.digest, router]);
 
   if (status === 401) return <Alert loading>Redirecting to sign in…</Alert>;
 

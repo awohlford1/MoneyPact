@@ -1,15 +1,16 @@
 /**
- * UI-P07 (gap G12, OQ-UI-18): the shared `(app)`/`(public)` route-level failure boundaries --
- * `not-found.tsx` and `error.tsx`, both built on `../src/ui/resource.tsx`'s `classifyFailure`/
- * `PageUnavailable`/`DeniedState` -- against a real navigation in headless Chrome.
+ * UI-P07 (gap G12, OQ-UI-18): the shared route-level failure boundaries -- the root `not-found.tsx`, the
+ * `(app)` group's own `not-found.tsx` and `error.tsx`, all built on `../src/ui/resource.tsx`'s
+ * `classifyFailure`/`PageUnavailable`/`DeniedState` -- against a real navigation in headless Chrome.
  *
  * Five cases: a genuine 404, a permission-shaped denial (a thrown 403) textually and visually identical
  * to the 404 (no existence leak, CBD-306-AC05, CBD-243-AC07); a thrown 500 (recoverable, offers "Try
  * again"); a thrown 401 (session loss routes to sign-in, with no leaked destination text); and the uniform
- * throttled response (429) with its own honest, distinct label. The `(public)` group's own `not-found.tsx`
- * is proven too.
+ * throttled response (429) with its own honest, distinct label. An arbitrary unmatched top-level URL (a
+ * real visitor's typo, not a designed-in diagnostic) reaching the root `not-found.tsx` is proven too
+ * (REV-UIP07-2/3).
  *
- * None of this needs a signed-in session: every target here (`/diagnostics/*`, `/mission/*`) sits outside
+ * None of this needs a signed-in session: every target here (`/diagnostics/*`, `/no-such-...`) sits outside
  * `/budgets` and `/notices`, the only two subtrees `SessionProvider` wraps (`apps/web/src/app/(app)/budgets/
  * layout.tsx`, `.../notices/layout.tsx`).
  *
@@ -17,6 +18,10 @@
  * `errorsJourney` with its browser, exactly as it calls `accountsJourney`.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+const axeSource = readFileSync(fileURLToPath(import.meta.resolve("axe-core/axe.min.js")), "utf8");
 
 export async function errorsJourney(t, { browser, origin, errors }) {
   const context = await browser.createBrowserContext();
@@ -34,13 +39,31 @@ export async function errorsJourney(t, { browser, origin, errors }) {
     for (const handle of handles) if ((await handle.evaluate(node => node.textContent.trim())) === label) return true;
     return false;
   };
+  // REV-UIP07-4: same pattern as accounts.browser.mjs's own accessibility()/narrow().
+  const accessibility = async () => {
+    await page.evaluate(axeSource);
+    const violations = await page.evaluate(async () => (await window.axe.run(document.querySelector("main"), { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa"] } })).violations.map(item => ({ id: item.id, nodes: item.nodes.map(node => node.target) })));
+    assert.deepEqual(violations, [], `axe on ${new URL(page.url()).pathname}`);
+  };
+  const narrow = async () => {
+    await page.setViewport({ width: 320, height: 800 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${new URL(page.url()).pathname} scrolls horizontally at 320px`);
+    await accessibility();
+    // 1280x900 physical pixels at 400%: 320x225 CSS pixels, including media queries.
+    await page.setViewport({ width: 320, height: 225, deviceScaleFactor: 4 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${new URL(page.url()).pathname} scrolls horizontally at 400% zoom`);
+    await accessibility();
+    await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
+  };
 
   let notFoundHtml;
   await t.test("UI-P07-AC01: a genuine 404 (an unmatched route inside (app), reached through Next's own notFound()) renders the shared uniform sentence", async () => {
     await page.goto(`${origin}/diagnostics/does-not-exist`);
     await waitText("Page unavailable");
-    await waitText("This page is no longer here, or it is not yours to open.");
+    await waitText("This page is not here, or it is not yours to open.");
     notFoundHtml = await page.$eval("main", node => node.innerHTML);
+    await accessibility();
+    await narrow();
   });
 
   await t.test("UI-P07-AC02: a permission-shaped denial (a thrown 403) renders byte-identical markup to the 404 -- no existence leak", async () => {
@@ -57,6 +80,8 @@ export async function errorsJourney(t, { browser, origin, errors }) {
     const current = await text();
     assert.equal(current.includes("Page unavailable"), false, "a throttle is not the uniform not-here sentence");
     assert.equal(current.includes("Unable to load this page"), false, "a throttle is not a plain recoverable error either");
+    await accessibility();
+    await narrow();
   });
 
   await t.test("UI-P07-AC03: a thrown 500 uses the existing recoverable classification and offers Try again", async () => {
@@ -71,10 +96,15 @@ export async function errorsJourney(t, { browser, origin, errors }) {
     assert.equal((await text()).includes("diagnostics"), false, "the sign-in destination must carry no leaked route text");
   });
 
-  await t.test("UI-P07: an unmatched top-level URL reaches the (public) group's own not-found (a real visitor's default, not just (app)'s)", async () => {
+  // REV-UIP07-2/3: a genuine, entirely unmatched top-level URL -- not a designed-in diagnostic -- must
+  // reach the root `apps/web/src/app/not-found.tsx`, the one file Next actually resolves an arbitrary
+  // unmatched path to. `(app)/not-found.tsx` never fires for this case (only for an explicit `notFound()`
+  // call from within its own subtree, proven above by the `/diagnostics/does-not-exist` case), and there is
+  // no `(public)` catch-all any more to intercept it either.
+  await t.test("UI-P07: an arbitrary unmatched top-level URL reaches the shared root not-found, not a group-specific one", async () => {
     await page.goto(`${origin}/no-such-public-page-at-all`);
     await waitText("Page unavailable");
-    await waitText("This page is no longer here, or it is not yours to open.");
+    await waitText("This page is not here, or it is not yours to open.");
   });
 
   assert.deepEqual(errors, []);

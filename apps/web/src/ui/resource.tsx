@@ -31,7 +31,7 @@ export function DeniedState({ title = "Access unavailable", children }: { title?
  * matched here at all". */
 export function PageUnavailable() {
   return <Alert tone="danger" title="Page unavailable">
-    <p>This page is no longer here, or it is not yours to open.</p>
+    <p>This page is not here, or it is not yours to open.</p>
   </Alert>;
 }
 
