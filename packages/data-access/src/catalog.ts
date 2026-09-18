@@ -111,3 +111,14 @@ export function isPlatformTable(catalog: TableCatalog, table: string): boolean {
   const scope = catalog[table];
   return scope !== undefined && PLATFORM_SCOPES.includes(scope);
 }
+
+/**
+ * Every table the catalog classifies under `scope`, in declaration order.
+ * CBD-237-AC03's fixtures sweep the whole production catalog with this
+ * rather than sampling a table or two: a budget-space table the platform
+ * escape hatch could reach, or an identity table a tenant statement could
+ * reach, is a defect wherever it sits in the list.
+ */
+export function tablesInScope(catalog: TableCatalog, scope: TableScope): readonly string[] {
+  return Object.keys(catalog).filter((table) => catalog[table] === scope);
+}
