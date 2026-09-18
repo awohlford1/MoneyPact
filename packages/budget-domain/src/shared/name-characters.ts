@@ -19,6 +19,12 @@
  * a ZWJ anywhere else is rejected like any other Cf -- except that ZWJ and
  * U+200C ZERO WIDTH NON-JOINER are accepted between two letters or marks,
  * where several scripts use them orthographically (REV-NS-2).
+ *
+ * REV-NS3-2: carries the `g` flag, so it carries `lastIndex` state across
+ * calls. Use it only through `String.prototype.replace` (as
+ * {@link hasControlOrFormatCharacter} does) or another stateless string
+ * method -- never `.test()` or `.exec()`, which would read and advance that
+ * state and can silently skip or duplicate a match on the next call.
  */
 export const EMOJI_ZERO_WIDTH_JOINER =
   /(?<=(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|️))‍(?=\p{Extended_Pictographic})/gu;
@@ -27,6 +33,10 @@ export const EMOJI_ZERO_WIDTH_JOINER =
 // allowed when immediately between two letters or marks. At a string edge, next to a space, doubled, or beside any
 // other Cc/Cf character they stay rejected. Both lookarounds read the original string, so a doubled joiner never
 // qualifies through its twin.
+//
+// REV-NS3-2: carries the `g` flag, so it carries `lastIndex` state across calls. Use it only
+// through `String.prototype.replace` or another stateless string method -- never `.test()` or
+// `.exec()`.
 export const ORTHOGRAPHIC_JOINER = /(?<=[\p{L}\p{M}])[‌‍](?=[\p{L}\p{M}])/gu;
 
 export const CONTROL_OR_FORMAT = /[\p{Cc}\p{Cf}]/u;
@@ -36,7 +46,18 @@ export function hasControlOrFormatCharacter(value: string): boolean {
   return CONTROL_OR_FORMAT.test(value.replace(EMOJI_ZERO_WIDTH_JOINER, "").replace(ORTHOGRAPHIC_JOINER, ""));
 }
 
+/**
+ * REV-NS3-2: carries the `g` flag, so it carries `lastIndex` state across calls. Use it only
+ * through `String.prototype.replace` (as {@link collapseWhitespace} does) or another stateless
+ * string method -- never `.test()` or `.exec()`.
+ */
 export const WHITESPACE_RUN = /\p{White_Space}+/gu;
+
+/**
+ * REV-NS3-2: carries the `g` flag, so it carries `lastIndex` state across calls. Use it only
+ * through `String.prototype.replace` (as {@link collapseWhitespace} does) or another stateless
+ * string method -- never `.test()` or `.exec()`.
+ */
 export const LEADING_TRAILING_WHITESPACE = /^\p{White_Space}+|\p{White_Space}+$/gu;
 
 /**
@@ -56,6 +77,19 @@ export function collapseWhitespace(value: string): string {
  * NULL NOTEHEAD, U+FFFC OBJECT REPLACEMENT CHARACTER and U+FFFD REPLACEMENT
  * CHARACTER. A name with nothing left once these are removed has no visible
  * grapheme and is refused.
+ *
+ * REV-NS3-1: `\p{Cn}` (unassigned) is not a fixed set -- it is whatever the
+ * runtime's ICU build has not yet assigned a category to, so its membership
+ * tracks the host's Unicode version. Measured against Node 24.15 (ICU 78,
+ * Unicode 17): a name made entirely of code points newly encoded in a later
+ * Unicode version could be treated as visible on one host and as
+ * unassigned-and-invisible (`no_visible_grapheme`) on another until every
+ * host's ICU catches up.
+ *
+ * REV-NS3-2: carries the `g` flag, so it carries `lastIndex` state across
+ * calls. Use it only through `String.prototype.replace` (as
+ * {@link hasNoVisibleGrapheme} does) or another stateless string method --
+ * never `.test()` or `.exec()`.
  */
 export const INVISIBLE =
   /[\p{White_Space}\p{M}\p{Cf}\p{Co}\p{Cn}\p{Cs}︀-️\u{E0100}-\u{E01EF}ㅤﾠᅟᅠ⠀\u{1D159}￼�]/gu;
