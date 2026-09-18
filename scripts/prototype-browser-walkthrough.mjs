@@ -129,7 +129,7 @@ async function main() {
     };
 
     await page.goto(`${ORIGIN}/budgets`); await page.waitForFunction(() => location.pathname === "/sign-in");
-    log("GET /budgets signed out", "redirected to /sign-in (GET /v1/identity/me denied)");
+    log("GET /budgets signed out", `redirected to /sign-in (GET ${API_BASE}/identity/me denied)`);
     await clickText("Continue to sign in");
     if (MOCK) {
       // The mock's POST identity/begin sets the session cookie and answers `navigateTo: /budgets` itself: no provider hop.
@@ -358,24 +358,26 @@ async function main() {
 
     const ceremonyUrl = invitee.url();
     await holder.clickText("Sign in or create your MoneyPact account");
-    if (MOCK) {
-      // The mock's identity/begin for `invitation_ceremony` sets the session and lands on /invitation with no chooser;
-      // the person then reopens their invitation link (the same ceremony URL), as apps/web/tests/invitations.browser.mjs does.
-      skip("Invitee chooser subject-b", "the mock adapter signs the invitee in without the hosted chooser and lands on /invitation; the ceremony URL is reopened to continue");
-      await invitee.waitForFunction(() => location.pathname === "/invitation");
-      await invitee.goto(ceremonyUrl);
-    } else await holder.chooser("subject-b");
+    // CBD-190 section 3.5: the bounded return destination class for `invitation_ceremony` lands identity/begin
+    // on /invitation, not back on the ceremony itself, in both modes since PR #390. No per-invitation identifier
+    // travels through the identity challenge, so the person reopens their invitation link (the same ceremony
+    // URL) to continue, as apps/web/tests/invitations.browser.mjs (about lines 150-155) does.
+    if (MOCK) skip("Invitee chooser subject-b", "the mock adapter signs the invitee in without the hosted chooser and lands on /invitation");
+    else await holder.chooser("subject-b");
+    await invitee.waitForFunction(() => location.pathname === "/invitation");
+    await invitee.goto(ceremonyUrl);
     await invitee.waitForFunction(() => location.pathname.startsWith("/invitation/ceremony/"));
     await holder.waitText("Before you accept");
     expect((await invitee.$eval("#choice-accept", (node) => node.checked)) === false && (await invitee.$eval("#choice-decline", (node) => node.checked)) === false, "the choice is presented with no default");
     await invitee.screenshot({ path: join(shots, `${SHOT_PREFIX}-16-disclosure.png`) });
     await invitee.click("#choice-accept"); await invitee.click("#acknowledged-disclosure"); await holder.waitEnabled("Record my acceptance");
     await holder.clickText("Record my acceptance"); await holder.waitText("Your acceptance is recorded");
-    log("Invitee signs in as subject-b and returns, attaches, reads, accepts", "POST /v1/identity/begin returned to /budgets and the return marker brought the person back; POST .../attach 200 (CSRF header); GET /v1/invitations/{ceremonyId}: the approved invitation_collaborator v1 text with choice {accept: false, decline: false}; POST .../accept 200 awaiting_confirmation with the acknowledged kind and version only");
+    log("Invitee signs in as subject-b and returns, attaches, reads, accepts", `POST ${API_BASE}/identity/begin landed on /invitation (the bounded return destination, no return marker); the invitation link was reopened to reach the ceremony again; POST .../attach 200 (CSRF header); GET /v1/invitations/{ceremonyId}: the approved invitation_collaborator v1 text with choice {accept: false, decline: false}; POST .../accept 200 awaiting_confirmation with the acknowledged kind and version only`);
     await invitee.screenshot({ path: join(shots, `${SHOT_PREFIX}-17-accepted.png`) });
 
-    // The mock projects `awaiting_confirmation` the moment the invitee accepts; the live path keeps its original assertion unchanged.
-    await page.reload(); await owner.waitText(MOCK ? "Acceptance awaiting your confirmation" : "Sent, awaiting a response");
+    // The real API projects `awaiting_confirmation` the moment the invitee accepts (PK8-F05, apps/api/src/invitations/http.test.ts
+    // about line 265), exactly as the mock does; both modes wait for the same projected state.
+    await page.reload(); await owner.waitText("Acceptance awaiting your confirmation");
     await owner.clickText("Confirm acceptance from i***@example.com"); await owner.waitText("Acceptance confirmed: the person joined as Collaborator.");
     await owner.clickText("Members"); await owner.rows(2); await owner.waitText("Collaborator");
     await invitee.goto(`${ORIGIN}/budgets/${budgetId}/members`); await holder.rows(2);
@@ -405,7 +407,13 @@ async function main() {
     await page.goto(`${ORIGIN}/budgets/${budgetId}/members`); await owner.rows(2);
     const roles = await page.$$eval('[data-testid="member-row"] dd', (nodes) => nodes.map((node) => node.textContent));
     expect(roles.includes("Co-owner") && roles.includes("Primary Owner"), `the roles swapped: ${roles.join(", ")}`);
-    log("Primary Owner steps up and confirms (TR-73-42, TR-73-43)", "POST /v1/identity/step-up/begin bound to 29.transfer_primary_ownership and the space, the hosted chooser, GET /v1/identity/step-up/callback back to /budgets and the return marker; POST .../confirm with the acknowledgedDisclosure claim on the live transferId read from the view: committed, freshAssurance consumed; the members list now shows the former Primary Owner as Co-owner and the recipient as Primary Owner");
+    // CBD-190 §3.2/§3.3/§3.5: `budget_transfer` is a reserved destination the API derives from the step-up
+    // challenge's own bound budget space; the post-result navigation returns to the space's transfer page with
+    // no client-held return marker, in either mode. Mock skips the hosted-chooser hop itself (see the `skip` above).
+    const stepUpNavigation = MOCK
+      ? `POST ${API_BASE}/identity/step-up/begin bound to 29.transfer_primary_ownership and the space; the mock adapter issues the fresh-assurance grant with no chooser hop and navigates straight to the space's transfer page`
+      : "POST /v1/identity/step-up/begin bound to 29.transfer_primary_ownership and the space, the hosted chooser, then GET /v1/identity/step-up/callback back to the space's transfer page (the budget_transfer destination, no client-held return marker)";
+    log("Primary Owner steps up and confirms (TR-73-42, TR-73-43)", `${stepUpNavigation}; POST .../confirm with the acknowledgedDisclosure claim on the live transferId read from the view: committed, freshAssurance consumed; the members list now shows the former Primary Owner as Co-owner and the recipient as Primary Owner`);
     await page.screenshot({ path: join(shots, `${SHOT_PREFIX}-20-transfer-committed.png`) });
     await inviteeContext.close();
 
