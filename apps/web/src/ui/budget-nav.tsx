@@ -25,11 +25,14 @@ function defaultMatches(pathname: string, href: string): boolean {
 // packet's append lands in the right place without moving array elements.
 const DASHBOARD_DESTINATION: Destination = { key: "dashboard", label: "Dashboard", href: id => `/budgets/${encodeURIComponent(id)}` };
 const PLAN_DESTINATION: Destination = { key: "plan", label: "Category plan", href: id => `/budgets/${encodeURIComponent(id)}/plan` };
+// UI-P04 (CBD-358): category and period reports.
+const REPORTS_DESTINATION: Destination = { key: "reports", label: "Reports", href: id => `/budgets/${encodeURIComponent(id)}/reports` };
 const MEMBERS_DESTINATION: Destination = { key: "members", label: "Members", href: id => `/budgets/${encodeURIComponent(id)}/members` };
 const INVITATIONS_DESTINATION: Destination = { key: "invitations", label: "Invitations", href: id => `/budgets/${encodeURIComponent(id)}/invitations` };
 const DESTINATION_REGISTRY: readonly Destination[] = [
   DASHBOARD_DESTINATION,
   PLAN_DESTINATION,
+  REPORTS_DESTINATION,
   MEMBERS_DESTINATION,
   INVITATIONS_DESTINATION,
 ];

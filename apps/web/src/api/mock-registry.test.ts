@@ -6,6 +6,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { handleMockInvitationRequest } from "./mock-invitations.ts";
+import { handleMockReportsRequest } from "./mock-reports.ts";
 import type { MockRouteModule } from "./mock-registry.ts";
 import { MOCK_ROUTE_MODULES } from "./mock-registry.ts";
 
@@ -21,9 +22,10 @@ async function dispatch(modules: readonly MockRouteModule[], path: string[]): Pr
   return undefined;
 }
 
-test("registers handleMockInvitationRequest as the first (and, this packet, only) entry", () => {
+test("registers handleMockInvitationRequest first, then UI-P04's handleMockReportsRequest, and no more (yet)", () => {
   assert.equal(MOCK_ROUTE_MODULES[0], handleMockInvitationRequest);
-  assert.equal(MOCK_ROUTE_MODULES.length, 1, "this packet's registry carries no route module of its own -- the next packet appends the next entry");
+  assert.equal(MOCK_ROUTE_MODULES[1], handleMockReportsRequest);
+  assert.equal(MOCK_ROUTE_MODULES.length, 2, "the next packet after UI-P04 appends the next entry");
 });
 
 test("a module returning undefined falls through to the next one", async () => {

@@ -71,7 +71,11 @@ export function Table({
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-surface-raised">
+    // `tabIndex`/`role`/`aria-label`: a horizontally scrollable region needs to be keyboard-reachable and
+    // named (axe `scrollable-region-focusable`, WCAG 2.1.1/4.1.2) whenever its content is wider than it is --
+    // harmless when it is not, since nothing changes size or tab order otherwise. UI-P04 (CBD-358) surfaced
+    // this against a real caption/columns combination at 320 px; fixed here once for every consumer of Table.
+    <div tabIndex={0} role="region" aria-label={caption} className="overflow-x-auto rounded-lg border border-border bg-surface-raised">
       <table aria-busy={loading || undefined} className="w-full border-collapse text-on-surface">
         <caption className="px-4 py-3 text-left font-semibold">{caption}</caption>
         <thead>
