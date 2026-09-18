@@ -399,7 +399,9 @@ export class SessionStore {
     });
   }
 
-  /** §5.1: idle expiry slides forward on every successfully resolved request, never past `absoluteExpiresAt`. */
+  /** §5.1: idle expiry slides forward on every successfully resolved request, never past `absoluteExpiresAt`.
+   * Waits for the row lock if another writer holds it; used for the in-transaction slide (unchanged) and
+   * anywhere else a slide must not be skipped. */
   async extendIdleExpiry(sessionRef: SessionRef, newIdleExpiresAt: Date): Promise<void> {
     return withStoreFailure(async () => {
       await this.#client.platformUpdate({
@@ -410,6 +412,33 @@ export class SessionStore {
           { column: "state", value: "active" },
         ],
       });
+    });
+  }
+
+  /**
+   * SC-191-006 / IDLE-E03: the best-effort idle-expiry slide for a resolution outside any mutation's effect
+   * transaction. One atomic statement that updates the row only if it can lock it without waiting
+   * (`platformUpdate`'s `skipLocked` predicate); a row held by any conflicting lock holder -- most often the
+   * same session's own in-flight effect transaction -- is skipped, not waited on. Returns the row count (0 or
+   * 1) so the caller can tell "skipped" from "slid" without either being treated as a failure; only a thrown
+   * error still fails closed (`withStoreFailure` -> `SessionStoreUnavailableError`, CT-191-009).
+   *
+   * Root store only. `TransactionSessionStore` (below), which `createTransactionSessionStore` returns for a
+   * client bound to a mutation's effect transaction, does not expose this method at the type level (SEC-IDLE-R4):
+   * the slide performed inside a mutation's transaction always waits and is never skipped.
+   */
+  async extendIdleExpiryBestEffort(sessionRef: SessionRef, newIdleExpiresAt: Date): Promise<number> {
+    return withStoreFailure(async () => {
+      const result = await this.#client.platformUpdate({
+        table: "account_session",
+        set: { idle_expires_at: newIdleExpiresAt },
+        conditions: [
+          { column: "session_ref", value: sessionRef },
+          { column: "state", value: "active" },
+        ],
+        skipLocked: true,
+      });
+      return result.rowCount ?? 0;
     });
   }
 
@@ -736,4 +765,68 @@ export class SessionStore {
 
 export function createSessionStore(client: DataAccessClient): SessionStore {
   return new SessionStore(client);
+}
+
+/**
+ * SC-191-006 / IDLE-E03: the subset of `SessionStore` a session resolution needs, satisfied identically by
+ * the root store and by a transaction-bound store. Deliberately does NOT include `extendIdleExpiryBestEffort`
+ * -- a resolution holding only this type cannot call it, at compile time, regardless of which concrete store
+ * it was actually given (SEC-IDLE-R4). `SessionStore` already satisfies this structurally; no `implements` is
+ * needed there.
+ */
+export interface SessionResolutionStore {
+  resolveBySelector(selector: SessionSelector): Promise<SessionRecord | "not_found">;
+  readSubjectAuthorityStrict(accountSubjectId: AccountSubjectId): Promise<SubjectAuthority | undefined>;
+  extendIdleExpiry(sessionRef: SessionRef, newIdleExpiresAt: Date): Promise<void>;
+  fenceRevocationEpoch(accountSubjectId: AccountSubjectId): Promise<boolean>;
+}
+
+/** The exported type of `createTransactionSessionStore`'s result: exactly `SessionResolutionStore`, with no
+ * `extendIdleExpiryBestEffort` member. See `TransactionSessionStoreImpl` for why the runtime object still
+ * carries a throwing stub of that name. */
+export type TransactionSessionStore = SessionResolutionStore;
+
+/**
+ * SEC-IDLE-R4: backs a mutation's transaction-bound session store. Implements exactly
+ * `SessionResolutionStore` by delegating to an ordinary `SessionStore` over the transaction's own client, so
+ * `extendIdleExpiry`/`fenceRevocationEpoch` (both wait for the row lock, as today) and the read paths are
+ * unchanged. `extendIdleExpiryBestEffort` is declared here -- not omitted -- specifically so that a caller
+ * who reaches this object through a cast, `as any`, or other bypass of the exported `TransactionSessionStore`
+ * type still fails loudly with a message naming why, instead of hitting `undefined is not a function` or
+ * silently resolving to nothing. `createTransactionSessionStore`'s declared return type hides this member;
+ * only `TransactionSessionStore`'s (i.e. `SessionResolutionStore`'s) four methods are reachable through the
+ * type system.
+ */
+class TransactionSessionStoreImpl implements SessionResolutionStore {
+  readonly #inner: SessionStore;
+  constructor(client: DataAccessClient) {
+    this.#inner = new SessionStore(client);
+  }
+  resolveBySelector(selector: SessionSelector): Promise<SessionRecord | "not_found"> {
+    return this.#inner.resolveBySelector(selector);
+  }
+  readSubjectAuthorityStrict(accountSubjectId: AccountSubjectId): Promise<SubjectAuthority | undefined> {
+    return this.#inner.readSubjectAuthorityStrict(accountSubjectId);
+  }
+  extendIdleExpiry(sessionRef: SessionRef, newIdleExpiresAt: Date): Promise<void> {
+    return this.#inner.extendIdleExpiry(sessionRef, newIdleExpiresAt);
+  }
+  fenceRevocationEpoch(accountSubjectId: AccountSubjectId): Promise<boolean> {
+    return this.#inner.fenceRevocationEpoch(accountSubjectId);
+  }
+  /** SEC-IDLE-R4 / IDLE-T02: not reachable through `TransactionSessionStore`'s declared type; a deliberate
+   * bypass still fails closed instead of silently doing nothing. */
+  extendIdleExpiryBestEffort(): Promise<number> {
+    throw new Error(
+      "SC-191-006: a transaction-bound session store has no best-effort slide; the slide performed inside a "
+      + "mutation's effect transaction always waits and holds the row lock to COMMIT, it never skips",
+    );
+  }
+}
+
+/** SC-191-006 / IDLE-E03: builds the transaction-bound session store `apps/api/src/sessions/index.ts`'s
+ * `storeFor` factory hands to the scoped resolution path. Its declared return type (`TransactionSessionStore`
+ * = `SessionResolutionStore`) structurally lacks `extendIdleExpiryBestEffort`, so that path cannot skip. */
+export function createTransactionSessionStore(client: DataAccessClient): TransactionSessionStore {
+  return new TransactionSessionStoreImpl(client);
 }

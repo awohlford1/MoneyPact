@@ -102,6 +102,31 @@ describe("EXEC-POV-C200F01-001 item 3: a verified actor's second in-flight mutat
       assert.equal(h.state.spaces.length, 2);
     } finally { release(); await app.close(); }
   });
+  it("IDLE-T06 / SEC-G429-R02 (CBD-191 SC-191-006): the same-session second request while the first is held is answered 429 in_flight well under the 5s deadline, the counter is consulted exactly once for it, and the unauthenticated CBD-268 shape is unaffected", async () => {
+    handlerCalls = 0; const h = new Harness(); const { app, consumes } = await heldApplication(h);
+    try {
+      const first = app.inject({ method: "POST", url: "/protected/held", headers: { cookie: "opaque" } });
+      await untilHandler(1);
+      const consumedBeforeSecond = consumes();
+      const started = performance.now();
+      const second = await app.inject({ method: "POST", url: "/protected/held", headers: { cookie: "opaque" } });
+      const elapsedMs = performance.now() - started;
+      assert.equal(second.statusCode, 429); assert.deepEqual(second.json(), { outcome: "retry", reason: "in_flight" });
+      assert.equal(second.headers["retry-after"], "1");
+      assert.equal(consumes() - consumedBeforeSecond, 1, "the counter was consulted exactly once for the same-session second request");
+      assert.ok(elapsedMs < 1_000, `same-session second request answered in ${elapsedMs.toFixed(3)} ms, well under the 5 s fact-assembly deadline`);
+      // CBD-268: an unauthenticated caller's shape is unaffected by this session's own busy/in-flight state
+      // (this harness models the counter-level gate only; the CBD-191 idle-slide change this test packet
+      // makes is entirely within `apps/api/src/authorization`'s session gate, upstream of this synthetic
+      // boundary, so this assertion documents the invariant this suite is responsible for, not a live probe
+      // of the slide statement itself -- see `apps/api/src/sessions/idle-extension-nonblocking.live.test.ts`
+      // for that).
+      const unauthenticated = await app.inject({ method: "POST", url: "/protected/held" });
+      assert.equal(unauthenticated.statusCode, 403); assert.deepEqual(unauthenticated.json(), UNIFORM);
+      assert.equal(unauthenticated.headers["retry-after"], undefined);
+      release(); assert.equal((await first).statusCode, 201);
+    } finally { release(); await app.close(); }
+  });
   it("G429-01 / CBD-268: an unauthenticated caller cannot reach the 429 -- same status, body and header set as when idle, the counter store never consulted, timing within tolerance", async (t) => {
     handlerCalls = 0; const h = new Harness(); const { app, consumes } = await heldApplication(h);
     const unauthenticated = () => app.inject({ method: "POST", url: "/protected/held" });
