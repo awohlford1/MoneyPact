@@ -99,6 +99,28 @@ export async function calendarJourney(t, { browser, origin, errors }) {
     await page.keyboard.press("Tab");
     const stillInGrid = await page.evaluate(() => Boolean(document.activeElement?.closest('table[role="grid"]')));
     assert.equal(stillInGrid, false, "Tab must leave the calendar grid rather than moving to the next cell");
+
+    // REV-UIP06-12: an automated guard for the REV-UIP06-2 fix (`CalendarToolbar` stays mounted across a
+    // navigation-triggered loading gap). Focus "Previous month", click it, wait for the navigation to settle
+    // (the caption's month name changes), and assert focus is still that same button -- not <body>, which is
+    // what a remounted toolbar would drop it to.
+    async function findButtonByText(label) {
+      for (const handle of await page.$$("button")) if ((await handle.evaluate(node => node.textContent.trim())) === label) return handle;
+      assert.fail(`Missing control: ${label}`);
+    }
+    const captionBefore = await page.$eval('table[role="grid"] caption', node => node.textContent);
+    const previousButton = await findButtonByText("Previous month");
+    await previousButton.focus();
+    await previousButton.click();
+    await page.waitForFunction(text => document.querySelector('table[role="grid"] caption')?.textContent !== text, {}, captionBefore);
+    assert.notEqual(await page.evaluate(() => document.activeElement?.tagName), "BODY", "REV-UIP06-12: focus must not drop to <body> after a toolbar navigation");
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), "Previous month", "REV-UIP06-12: focus stays on the control that was just activated");
+
+    // Return to the month containing today (the "Today" button), so the later tests' `todayCellDate` still
+    // names a cell that exists in the displayed month.
+    const todayButton = await findButtonByText("Today");
+    await todayButton.click();
+    await page.waitForFunction(text => document.querySelector('table[role="grid"] caption')?.textContent === text, {}, captionBefore);
   });
 
   await t.test("CBD-323-AC04: arrow keys move within the grid, Enter opens the date's detail, and focus returns to the originating cell on close", async () => {
