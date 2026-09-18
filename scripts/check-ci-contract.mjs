@@ -23,6 +23,7 @@ const REQUIRED_CHECK_STAGES = [
   "npm run test",
   "npm run build",
   "npm run check:pages",
+  "npm run check:analytics",
 ];
 
 const REQUIRED_ROOT_SCRIPTS = {
@@ -33,6 +34,7 @@ const REQUIRED_ROOT_SCRIPTS = {
   "check:migrations": "node scripts/check-migrations.mjs",
   "check:authorization-policy-history": "node --test scripts/check-authorization-policy-history.test.mjs && node scripts/check-authorization-policy-history.mjs",
   "check:rate-limit-registry": "node --test scripts/check-rate-limit-registry.test.mjs && node scripts/check-rate-limit-registry.mjs",
+  "check:analytics": "node --test scripts/check-analytics-absence.test.mjs && node scripts/check-analytics-absence.mjs",
   lint: "eslint scripts && npm run lint --workspaces --if-present",
   typecheck: "npm run typecheck --workspaces --if-present",
   test: "npm run test --workspaces --if-present",
