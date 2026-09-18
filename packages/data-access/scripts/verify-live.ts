@@ -1,6 +1,6 @@
 /**
- * Manual evidence harness for CBD-246, run once against the real CBD-117
- * local database with `npm run verify:live --workspace=@cobudget/data-access`.
+ * Manual evidence harness for CBD-246 and CBD-237, run once against the real
+ * CBD-117 local database with `npm run verify:live --workspace=@cobudget/data-access`.
  *
  * Not part of `npm run check`: it needs Docker and a running database, which
  * CI does not have. It exists to produce the "prove the seam against the
@@ -18,7 +18,19 @@
 import { randomBytes } from "node:crypto";
 import { createLocalConnections } from "../src/connection.ts";
 import type { TableCatalog } from "../src/catalog.ts";
-import { MissingBudgetSpaceError, tenantInsert, tenantSelect } from "../src/tenant.ts";
+import {
+  InvalidPageBoundError,
+  MissingBudgetSpaceError,
+  ReservedColumnError,
+  UnknownPlatformTableError,
+  UnknownTenantTableError,
+  platformSelect,
+  tenantCount,
+  tenantDelete,
+  tenantInsert,
+  tenantSelect,
+  tenantUpdate,
+} from "../src/tenant.ts";
 import { createLocalKeyProvider } from "../src/encryption/local-provider.ts";
 import { encryptField, decryptField } from "../src/encryption/cipher.ts";
 import type { EncryptionContext } from "../src/encryption/cipher.ts";
@@ -28,6 +40,9 @@ import { StatementFailedError, statementLogLine, wrapDriverError } from "../src/
 const SCRATCH_TABLE = "cobudget_cbd246_live_verify";
 const SCRATCH_CATALOG: TableCatalog = { [SCRATCH_TABLE]: "budget-space" };
 const CANARY = "cbd246-canary-3f7c1e";
+const CBD237_PARENT = "cobudget_cbd237_live_category";
+const CBD237_CHILD = "cobudget_cbd237_live_line";
+const CBD237_CATALOG: TableCatalog = { [CBD237_PARENT]: "budget-space", [CBD237_CHILD]: "budget-space" };
 
 async function main() {
   const connections = createLocalConnections();
@@ -161,6 +176,98 @@ async function main() {
     if (wrapped.message.includes(CANARY) || line.includes(CANARY)) fail("canary leaked into a wrapped error or log line");
     void driverError;
     results.push("wrapped error and log line carry no statement text or bound values (canary check)");
+
+    // 9. CBD-237: tenant-scoped data-access paths, proven against the real
+    //    database rather than a fixture. Two budget-space scratch tables
+    //    (a category parent and a line child), two tenants, and one child
+    //    row whose foreign key has been substituted to the other tenant's
+    //    parent. Every read below goes through the api role, which holds
+    //    SELECT/INSERT/UPDATE/DELETE on both tables, so nothing but the
+    //    seam's own predicate stands between tenant A and tenant B.
+    await connections.migration.query(`DROP TABLE IF EXISTS ${CBD237_CHILD}`);
+    await connections.migration.query(`DROP TABLE IF EXISTS ${CBD237_PARENT}`);
+    await connections.migration.query(
+      `CREATE TABLE ${CBD237_PARENT} (budget_space_id text not null, category_id text not null, label text not null, primary key (budget_space_id, category_id))`,
+    );
+    await connections.migration.query(
+      `CREATE TABLE ${CBD237_CHILD} (budget_space_id text not null, line_id text primary key, category_id text not null, amount integer not null)`,
+    );
+    await connections.migration.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${CBD237_PARENT}, ${CBD237_CHILD} TO cobudget_api`);
+
+    const api = connections.api;
+    const seed = async (table: string, budgetSpaceId: string, values: Record<string, unknown>) => {
+      await tenantInsert(api, { table, budgetSpaceId, values }, CBD237_CATALOG);
+    };
+    await seed(CBD237_PARENT, "space-a", { category_id: "cat-a", label: "groceries" });
+    await seed(CBD237_PARENT, "space-b", { category_id: "cat-b", label: "rent" });
+    await seed(CBD237_CHILD, "space-a", { line_id: "line-1", category_id: "cat-a", amount: 500 });
+    await seed(CBD237_CHILD, "space-a", { line_id: "line-2", category_id: "cat-a", amount: 700 });
+    await seed(CBD237_CHILD, "space-b", { line_id: "line-3", category_id: "cat-b", amount: 900 });
+    // The substituted foreign key: tenant A's line pointing at tenant B's category.
+    await seed(CBD237_CHILD, "space-a", { line_id: "line-4", category_id: "cat-b", amount: 100 });
+    results.push("CBD-237 seed: two tenants, four lines, one cross-space foreign key, all inserted through tenantInsert as the api role");
+
+    // Control (CBD-246-AC05 / CBD-237-AC09 "direct repository use"): the
+    // database itself isolates nothing. A raw statement as the api role sees
+    // every tenant's rows, so whatever the seam withholds below, it withholds.
+    const unscoped = await api.query<{ count: string }>(`select count(*) as count from ${CBD237_CHILD}`);
+    if (unscoped.rows[0]?.count !== "4") fail(`control: expected the raw api-role count to be 4, got ${unscoped.rows[0]?.count}`);
+    results.push("CBD-237 control: a raw api-role statement counts all 4 lines across both tenants -- the database applies no tenant isolation of its own");
+
+    // AC04: horizontal IDOR and a guessed identifier are indistinguishable.
+    const shape = (result: { rows: unknown[]; rowCount: number | null }) => JSON.stringify({ rows: result.rows, rowCount: result.rowCount });
+    const substituted = await tenantSelect(api, { table: CBD237_CHILD, budgetSpaceId: "space-b", conditions: [{ column: "line_id", value: "line-1" }] }, CBD237_CATALOG);
+    const guessed = await tenantSelect(api, { table: CBD237_CHILD, budgetSpaceId: "space-b", conditions: [{ column: "line_id", value: `line-${randomBytes(6).toString("hex")}` }] }, CBD237_CATALOG);
+    if (substituted.rowCount !== 0) fail(`AC04: tenant B read tenant A's line-1: ${shape(substituted)}`);
+    if (shape(substituted) !== shape(guessed)) fail(`AC04: a substituted identifier (${shape(substituted)}) differs from a guessed one (${shape(guessed)})`);
+    results.push(`CBD-237-AC04: tenant A's line-1 under tenant B's scope -> ${shape(substituted)}; a guessed identifier -> ${shape(guessed)} (identical)`);
+
+    const updated = await tenantUpdate(api, { table: CBD237_CHILD, budgetSpaceId: "space-b", set: { amount: 1 }, conditions: [{ column: "line_id", value: "line-1" }] }, CBD237_CATALOG);
+    const deleted = await tenantDelete(api, { table: CBD237_CHILD, budgetSpaceId: "space-b", conditions: [{ column: "line_id", value: "line-1" }] }, CBD237_CATALOG);
+    const intact = await tenantSelect(api, { table: CBD237_CHILD, budgetSpaceId: "space-a", columns: ["amount"], conditions: [{ column: "line_id", value: "line-1" }] }, CBD237_CATALOG);
+    if (updated.rowCount !== 0 || deleted.rowCount !== 0) fail(`AC04: tenant B mutated tenant A's line-1 (update ${updated.rowCount}, delete ${deleted.rowCount})`);
+    if (intact.rows[0]?.amount !== 500) fail(`AC04: tenant A's line-1 changed: ${JSON.stringify(intact.rows)}`);
+    results.push(`CBD-237-AC04: tenant B's update and delete of line-1 -> rowCount ${updated.rowCount}/${deleted.rowCount}; line-1 still amount=${intact.rows[0]?.amount} under tenant A`);
+
+    // AC05: paging, ordering, and totals under one tenant never include the other's rows.
+    const pageB = await tenantSelect(api, { table: CBD237_CHILD, budgetSpaceId: "space-b", columns: ["line_id"], orderBy: [{ column: "amount", direction: "desc" }], limit: 10, offset: 0 }, CBD237_CATALOG);
+    const pageA = await tenantSelect(api, { table: CBD237_CHILD, budgetSpaceId: "space-a", columns: ["line_id"], orderBy: [{ column: "line_id" }], limit: 1, offset: 1 }, CBD237_CATALOG);
+    const totalA = await tenantCount(api, { table: CBD237_CHILD, budgetSpaceId: "space-a" }, CBD237_CATALOG);
+    const totalB = await tenantCount(api, { table: CBD237_CHILD, budgetSpaceId: "space-b" }, CBD237_CATALOG);
+    const nobodyPage = await tenantSelect(api, { table: CBD237_CHILD, budgetSpaceId: "space-nobody", limit: 10 }, CBD237_CATALOG);
+    const nobodyTotal = await tenantCount(api, { table: CBD237_CHILD, budgetSpaceId: "space-nobody" }, CBD237_CATALOG);
+    const ids = (result: { rows: unknown[] }) => (result.rows as { line_id: string }[]).map((row) => row.line_id).join(",");
+    if (ids(pageB) !== "line-3") fail(`AC05: tenant B's page contained ${ids(pageB)}`);
+    if (ids(pageA) !== "line-2") fail(`AC05: tenant A's second page-of-one contained ${ids(pageA)}`);
+    if (totalA.rows[0]?.count !== "3" || totalB.rows[0]?.count !== "1") fail(`AC05: totals A=${totalA.rows[0]?.count} B=${totalB.rows[0]?.count}`);
+    if (nobodyPage.rowCount !== 0 || nobodyTotal.rows[0]?.count !== "0") fail(`AC05: a tenant with no rows saw ${shape(nobodyPage)} / count ${nobodyTotal.rows[0]?.count}`);
+    results.push(`CBD-237-AC05: tenant B page -> [${ids(pageB)}]; tenant A limit 1 offset 1 -> [${ids(pageA)}]; totals A=${totalA.rows[0]?.count} B=${totalB.rows[0]?.count}; unknown tenant -> ${shape(nobodyPage)}, count ${nobodyTotal.rows[0]?.count}`);
+
+    // AC06: the substituted foreign key joins to nothing under either tenant.
+    const join = { table: CBD237_PARENT, on: { column: "category_id", references: "category_id" } };
+    const joinedA = await tenantSelect(api, {
+      table: CBD237_CHILD, budgetSpaceId: "space-a", columns: [`${CBD237_CHILD}.line_id`, `${CBD237_PARENT}.label`], joins: [join], orderBy: [{ column: `${CBD237_CHILD}.line_id` }],
+    }, CBD237_CATALOG);
+    const line4UnderA = await tenantSelect(api, { table: CBD237_CHILD, budgetSpaceId: "space-a", columns: [`${CBD237_PARENT}.label`], joins: [join], conditions: [{ column: `${CBD237_CHILD}.line_id`, value: "line-4" }] }, CBD237_CATALOG);
+    const line4UnderB = await tenantSelect(api, { table: CBD237_CHILD, budgetSpaceId: "space-b", columns: [`${CBD237_PARENT}.label`], joins: [join], conditions: [{ column: `${CBD237_CHILD}.line_id`, value: "line-4" }] }, CBD237_CATALOG);
+    const joinedCountA = await tenantCount(api, { table: CBD237_CHILD, budgetSpaceId: "space-a", joins: [join] }, CBD237_CATALOG);
+    if (ids(joinedA) !== "line-1,line-2") fail(`AC06: tenant A's join returned ${ids(joinedA)}`);
+    if (line4UnderA.rowCount !== 0 || line4UnderB.rowCount !== 0) fail(`AC06: the substituted foreign key joined under A (${shape(line4UnderA)}) or B (${shape(line4UnderB)})`);
+    if (joinedCountA.rows[0]?.count !== "2") fail(`AC06: joined count under A was ${joinedCountA.rows[0]?.count}`);
+    results.push(`CBD-237-AC06: tenant A join -> [${ids(joinedA)}] (line-4's tenant-B category excluded); line-4 joined under A -> ${shape(line4UnderA)}, under B -> ${shape(line4UnderB)}; joined count A=${joinedCountA.rows[0]?.count}`);
+
+    // AC09 "direct repository use": the escape hatches a caller might reach
+    // for are refused before the driver, even though the api role could
+    // physically read the table.
+    const refusals: string[] = [];
+    try { await platformSelect(api, { table: CBD237_CHILD }, CBD237_CATALOG); fail("platformSelect reached a budget-space table"); } catch (error) { if (!(error instanceof UnknownPlatformTableError)) throw error; refusals.push("platformSelect on a budget-space table"); }
+    try { await tenantSelect(api, { table: CBD237_CHILD, budgetSpaceId: "space-b", conditions: [{ column: "budget_space_id", value: "space-a" }] }, CBD237_CATALOG); fail("budget_space_id was accepted as a condition"); } catch (error) { if (!(error instanceof ReservedColumnError)) throw error; refusals.push("budget_space_id as a condition"); }
+    try { await tenantSelect(api, { table: CBD237_CHILD, budgetSpaceId: "space-a", joins: [{ table: SCRATCH_TABLE, on: { column: "value", references: "line_id" } }] }, CBD237_CATALOG); fail("a join reached a table outside the catalog"); } catch (error) { if (!(error instanceof UnknownTenantTableError)) throw error; refusals.push("join to a table outside the catalog"); }
+    try { await tenantSelect(api, { table: CBD237_CHILD, budgetSpaceId: "space-a", limit: -1 }, CBD237_CATALOG); fail("a negative limit was accepted"); } catch (error) { if (!(error instanceof InvalidPageBoundError)) throw error; refusals.push("negative limit"); }
+    results.push(`CBD-237-AC09 direct repository use refused before the driver: ${refusals.join("; ")}`);
+
+    await connections.migration.query(`DROP TABLE ${CBD237_CHILD}`);
+    await connections.migration.query(`DROP TABLE ${CBD237_PARENT}`);
 
     console.log(results.map((line) => `PASS: ${line}`).join("\n"));
   } finally {
