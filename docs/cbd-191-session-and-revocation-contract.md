@@ -336,12 +336,17 @@ CBD-236 `PC-236-014`). Resolution outside an effect transaction never waits
 on this lock, so a second request of the same session — including one that
 will be answered `deny_in_flight` by the rate-limit gate (CBD-266 §7) — is
 answered within the ordinary resolution time, not after the fact-assembly
-deadline. A second, redundant resolution of the *same* request (one that
-does not itself commit and re-slide, such as a policy precheck restating a
-resolution the same request already performed moments earlier) performs no
-slide at all rather than a further best-effort one: the request's own
-obligation under this section is discharged by whichever resolution actually
-slid or fenced it.
+deadline. Every non-transactional resolution that carries the identity-only
+discriminator slides best-effort on its own terms, and a single request may
+perform more than one such resolution — for example, a route whose
+authorization metadata names a replay check or a pre-policy locator selection
+resolves the session again, separately from the preHandler gate, and that
+second resolution also slides best-effort; this is a harmless repetition of
+the same idempotent write, not a further wait. The one resolution per request
+that is read-only is the policy precheck performed inside `canActivate`'s
+authorization evaluation: it restates a resolution the same request already
+performed moments earlier for the purpose of assembling the full policy
+input, not to slide the session again, and performs no slide at all.
 
 #### 5.1.1 Fresh assurance as a record (`account_session_fresh_assurance`)
 
@@ -826,7 +831,7 @@ retain configuration or provider evidence named above.
 
 | Version | Date | Author | Change | Disposition |
 | --- | --- | --- | --- | --- |
-| 0.4 | September 17, 2026 | Implementation specialist, `PROTO-CBD191-IDLE-IMPL-001` | Applied amendment `SC-191-006` from `docs/cbd-191-idle-extension-nonblocking-proposal.md` (`IDLE-R01`–`IDLE-R03`): the idle slide outside an effect transaction is best-effort and never waits on the session's own in-flight mutation; the in-transaction slide and the authority fence are unchanged. Closes the single-process shape of `SEC-G429-F2`; the cross-process shape remains `SEC-C200-F4` / `IDLE-F03`. Correction round (`REV-IDLE-11`, reviewer disposition `request_changes`): §5.1's `SC-191-006` paragraph gained one sentence stating that a redundant second resolution of the same request performs no slide at all, rather than a further best-effort one. | Approved — Executive decision `EXEC-IDLE-001`, September 17, 2026 (`IDLE-D01`, three conditions met: `SC-191-006` wording as stated, the structural transaction-bound-store guard, and a pre-merge Security reading). |
+| 0.4 | September 17, 2026 | Implementation specialist, `PROTO-CBD191-IDLE-IMPL-001` | Applied amendment `SC-191-006` from `docs/cbd-191-idle-extension-nonblocking-proposal.md` (`IDLE-R01`–`IDLE-R03`): the idle slide outside an effect transaction is best-effort and never waits on the session's own in-flight mutation; the in-transaction slide and the authority fence are unchanged. Closes the single-process shape of `SEC-G429-F2`; the cross-process shape remains `SEC-C200-F4` / `IDLE-F03`. Correction round (`REV-IDLE-11`, reviewer disposition `request_changes`): §5.1's `SC-191-006` paragraph gained a sentence on repeated resolutions of one request. Second correction round (`REV002-2`, reviewer disposition `request_changes`): that sentence was factually wrong (a route whose metadata carries a replay check or a pre-policy locator selection resolves the session a second time with the identity-only discriminator set, and that resolution does slide best-effort — reproduced empirically, two `account_session` updates for two resolutions of one request); corrected to state that every identity-only resolution slides best-effort and a request may perform more than one, and that only the policy-precheck resolution inside `canActivate`'s authorization evaluation is read-only. | Approved — Executive decision `EXEC-IDLE-001`, September 17, 2026 (`IDLE-D01`, three conditions met: `SC-191-006` wording as stated, the structural transaction-bound-store guard, and a pre-merge Security reading). |
 | 0.3.1 | September 15, 2026 | Documentation specialist, dispatched under `PROTO-DOC-SWEEP-003` | `OQ-191-005` closed by Executive decision `EXEC-FOLLOWUPS-003`: assurance facts read from `account_session_fresh_assurance` carry provenance `idp_evidence`, matching the merged fact source. §5.1.1's closing paragraph and the §12 row state the decision; the "does not decide it" caveat is removed. No mechanism changed. | Approved — Executive, September 15, 2026 (`EXEC-FOLLOWUPS-003`). |
 | 0.3 | September 15, 2026 | Specification specialist, dispatched under `PROTO-CBD190-191-STEPUP-AMEND-001` | Applied amendment. Fresh assurance proposed at this version by `PROTO-INVITATIONS-PK4-STEPUP-001` is now normative contract text as a record rather than session-row state, together with the `SEC-PK4-F3` hardening as merged in PR #355. New §5.1.1 (`SC-191-003B`) states `account_session_fresh_assurance` in full: its fields, write-once by unique ceremony reference with every other field immutable, at most one live grant per session/action/space, consumed once by the CBD-236 §5.3 `fresh_assurance` obligation discharge inside the authorizing transaction after the commit-time re-decision, and reachable only through an active unexpired session, enforced by the reader itself. §3.1 records that the four assurance-bearing `account_session` fields are unchanged; §5.1 names `COBUDGET_SESSION_FRESH_ASSURANCE_WINDOW_SECONDS` as the configured window; §5.2 states that a CBD-190 §4.4 `step_up` is not `assurance_elevation` and rotates nothing; §6.1 states that a grant dies with its session and needs no sweep; §8 gains `CT-191-016A`; §11 adds §5.1.1 to AC04 and AC07. `OQ-191-005` is explicitly not decided here. Finding-to-line map follows in §13.1. | **Approved — Product Owner, September 15, 2026 (PO-CONTRACT-APPROVALS-004).** Status and document version bumped in the same change; `OQ-191-002` through `OQ-191-007` stay open. |
 | 0.2.2 (approval) | September 13, 2026 | Manager, in the merge lane | Product Owner approval recorded (PO-CONTRACT-APPROVALS-001). Status Proposed → Approved at the same version; no decision, identifier or contract text changed. | Approved. |
