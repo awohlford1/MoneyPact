@@ -110,7 +110,8 @@ const validRootPackage = {
     test: "npm run test --workspaces --if-present",
     build: "npm run build --workspaces --if-present",
     "check:pages": "node scripts/check-public-pages.mjs",
-    check: "npm run check:ci && npm run check:secrets && npm run check:env && npm run check:publication && npm run check:docs && npm run check:tokens && npm run check:copy && npm run check:migrations && npm run check:authorization-policy-history && npm run check:rate-limit-registry && npm run lint && npm run typecheck && npm run test && npm run build && npm run check:pages",
+    "check:analytics": "node --test scripts/check-analytics-absence.test.mjs && node scripts/check-analytics-absence.mjs",
+    check: "npm run check:ci && npm run check:secrets && npm run check:env && npm run check:publication && npm run check:docs && npm run check:tokens && npm run check:copy && npm run check:migrations && npm run check:authorization-policy-history && npm run check:rate-limit-registry && npm run lint && npm run typecheck && npm run test && npm run build && npm run check:pages && npm run check:analytics",
   },
 };
 
