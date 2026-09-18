@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | **Proposed — awaiting Product Owner approval of this exact text; adoption of WCAG 2.2 AA authorized by `EXEC-UI-DECISIONS-001` (OQ-UI-17)** |
-| Document version | 0.1 |
+| Status | **Approved at v0.1 (`EXEC-A11Y-APPROVAL-001`, September 18, 2026)** |
+| Document version | 0.1.1 |
 | Jira ticket | None. This document has no dedicated CBD subtask; it is authorized directly by the cited executive decision and closes the gap that decision named. See §5 for the assumption this recorded. |
 | Parent | [CBD-15](https://cobudget.atlassian.net/browse/CBD-15) family accessibility findings (`OI-102-007`) and [CBD-71](https://cobudget.atlassian.net/browse/CBD-71) (`RF-71-23`) |
 | Repository baseline | `fd90e7f` |
@@ -232,3 +232,4 @@ one.
 | Version | Date | Author | Change | Disposition |
 | --- | --- | --- | --- | --- |
 | 0.1 | September 18, 2026 | Documentation specialist, dispatched under `DOC-A11Y-WCAG22AA-001` | Initial adoption of WCAG 2.2 AA as the product conformance standard; both known contrast exception classes recorded verbatim from `contrast-record.md`; evidence-vs-conformance-claim discipline stated; cross-references to CBD-68 §21.1, CBD-71 `RF-71-23`, CBD-102 `OI-102-007`, and CBD-190 §7 added. | Proposed; adoption of WCAG 2.2 AA authorized by `EXEC-UI-DECISIONS-001` (OQ-UI-17), this exact text awaiting a separate Product Owner approval revision; disposition `unpublished` (no Confluence target registered). |
+| 0.1.1 (approval) | September 18, 2026 | Manager, in the merge lane | Product Owner approval recorded (`EXEC-A11Y-APPROVAL-001`). Status Proposed → Approved; no text changed. | Approved. |
