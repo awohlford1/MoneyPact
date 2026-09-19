@@ -6,6 +6,7 @@ import { handleMockCalendarRequest } from "./mock-calendar.ts";
 import { handleMockInvitationRequest } from "./mock-invitations.ts";
 import { handleMockReportsRequest } from "./mock-reports.ts";
 import { handleMockGoalsRequest } from "./mock-goals.ts";
+import { handleMockTransactionsRequest } from "./mock-transactions.ts";
 
 export type MockRouteModule = (
   directory: MockDirectory,
@@ -24,6 +25,8 @@ export const MOCK_ROUTE_MODULES: MockRouteModule[] = [
   handleMockReportsRequest,
   // UI-P05 (CBD-341): savings goals and their contribution ledger.
   handleMockGoalsRequest,
+  // UI-P03 (CBD-202): the one budget-wide transaction list read, derived from the existing manual-transaction store.
+  handleMockTransactionsRequest,
   // UI-P06 (CBD-323): the financial calendar, one read derived from the existing schedule engine.
   handleMockCalendarRequest,
 ];
